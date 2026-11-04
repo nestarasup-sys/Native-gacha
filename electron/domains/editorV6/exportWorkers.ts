@@ -5,43 +5,21 @@ import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
-import { exportBitmap } from './exportBitmap'
+import { captureEditorV6FrameBitmap } from './exportCaptureBitmap'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
 const PAINT_TOKEN_SIZE = 24
-const PAINT_TOKEN_CELL_SIZE = 4
-const PAINT_TOKEN_COLUMNS = 6
 const FRAME_CAPTURE_TIMEOUT_MS = 60000
 const FRAME_CAPTURE_RETRY_MS = 16
-
-function captureHasPaintToken(image: Electron.NativeImage, width: number, height: number, token: number) {
-  const size = image.getSize()
-  if (size.width < width + PAINT_TOKEN_SIZE || size.height < height) return false
-  const bitmap = image.toBitmap({ scaleFactor: 1 })
-  if (bitmap.length !== size.width * size.height * 4) return false
-  // The opaque black/white bit cells live outside the scene. Sampling their
-  // centers from the same NativeImage that will be cropped avoids both stale
-  // compositor frames and color-profile rounding between adjacent frame IDs.
-  for (let bit = 0; bit < 24; bit++) {
-    const cellX = width + (bit % PAINT_TOKEN_COLUMNS) * PAINT_TOKEN_CELL_SIZE + PAINT_TOKEN_CELL_SIZE / 2
-    const cellY = Math.floor(bit / PAINT_TOKEN_COLUMNS) * PAINT_TOKEN_CELL_SIZE + PAINT_TOKEN_CELL_SIZE / 2
-    const offset = (cellY * size.width + cellX) * 4
-    const actual = bitmap[offset + 2] > 127
-    const expected = ((token >>> bit) & 1) === 1
-    if (actual !== expected || bitmap[offset + 3] < 254) return false
-  }
-  return true
-}
 
 async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number) {
   const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
   while (Date.now() < deadline) {
     signal.throwIfAborted()
     const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: width + PAINT_TOKEN_SIZE, height }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
-    if (captureHasPaintToken(image, width, height, token)) {
-      return exportBitmap(image.crop({ x: 0, y: 0, width, height }), width, height)
-    }
+    const bitmap = captureEditorV6FrameBitmap(image, width, height, token)
+    if (bitmap) return bitmap
     // Invalidate only after observing a stale readback. This is a bounded
     // readback fence, not a blind wait for any queued paint event: each retry
     // verifies the marker in the exact image that will be exported.
