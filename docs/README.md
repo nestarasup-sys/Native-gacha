@@ -16,6 +16,8 @@
 - [Editor V6 — plano de excelência V4](editor-v6/ROADMAP_V4_EXCELENCIA.md): auditoria pós-V3, CI, sincronismo de áudio/vídeo, oportunidades de timeline, exportação e experiência criativa.
 - [Editor V6 — Rodada 04 de aceleração](editor-v6/RODADA_04_V4_ACELERACAO_EXPORT.md): primeira otimização de leitura BGRA, correções de CI/encoder e meta de 10–15 s.
 - [Codex — Rodada 05 de velocidade real](editor-v6/CODEX_RODADA_05_V4_EXPORT_10_15S.md): benchmark isolado do Editor V6 06 com Preset 2, experimentos A/B e critérios de qualidade, memória e segurança.
+- [Editor V6 — Rodada 05 (benchmark real com áudio)](editor-v6/RODADA_05_V4_RETOMADA_BENCHMARK.md): correção do benchmark que rejeitava projetos reais com trilha sonora.
+- [Editor V6 — Rodada 06 (malha de cabelo mais eficiente)](editor-v6/RODADA_06_V4_MALHA_CABELO_GPU.md): menos cálculos/alocações por quadro e golden numérico de paridade.
 - [Editor V6 — plano histórico de aceleração](editor-v6/PLANO_ACELERACAO_EXPORT.md): medições, tentativas rejeitadas e gargalos anteriores; não confundir com baseline atual.
 - [Editor V6 V4 — Rodada 01 (boca, cabelo e memória)](editor-v6/RODADA_01_V4_BOCA_CABELO_MEMORIA.md): retenção corrigida, superfície de cabelo reutilizada, diagnóstico do quadrado facial e validação pendente.
 - [Codex — Rodada 02 V4 (boca isolada e RAM)](editor-v6/CODEX_RODADA_02_V4_BOCA_CABELO_RAM.md): prompt executável para validar o trabalho, corrigir a boca em peça independente e medir exportações longas.
