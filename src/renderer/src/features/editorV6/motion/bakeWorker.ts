@@ -11,7 +11,7 @@ export async function runEditorV6MotionWorker() {
     try {
       const nextRevision = JSON.stringify([request.character, request.plan.from.characterSourceUpdatedAt, request.plan.to.characterSourceUpdatedAt, [request.plan.from.modelSourceRevision, request.plan.to.modelSourceRevision].sort(), [request.plan.from.poseSourceRevision, request.plan.to.poseSourceRevision].sort(), [request.plan.from.wardrobeSourceRevision, request.plan.to.wardrobeSourceRevision].sort(), [request.plan.from.hairSourceRevision, request.plan.to.hairSourceRevision].sort(), [request.plan.from.headExtraSourceRevision, request.plan.to.headExtraSourceRevision].sort(), [request.plan.from.eyeSourceRevision, request.plan.to.eyeSourceRevision].sort(), request.plan.from.faceRendererVersion, request.plan.to.faceRendererVersion])
       if (!session || nextRevision !== revision || uses >= 8) {
-        session?.materials.clear()
+        session?.dispose()
         session = createEditorV6BakeSession(bridge.provider)
         revision = nextRevision; uses = 0
       }
@@ -19,7 +19,7 @@ export async function runEditorV6MotionWorker() {
       const result = await bakeEditorV6Motion(request, bridge.provider, session)
       await bridge.complete(result)
     } catch (error) {
-      session?.materials.clear(); session = undefined
+      session?.dispose(); session = undefined
       try { await bridge.complete(undefined, error instanceof Error ? error.message : String(error)) } catch { return }
     }
   }

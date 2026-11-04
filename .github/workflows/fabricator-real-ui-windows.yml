@@ -2,7 +2,7 @@ name: Fabricator - screenshots reais Windows
 
 on:
   push:
-    branches: [Dev-V2, feature/model-source-editor]
+    branches: [Dev-V2, dev-v2-zona-de-guerra, feature/model-source-editor]
     paths:
       - 'electron/**'
       - 'src/**'

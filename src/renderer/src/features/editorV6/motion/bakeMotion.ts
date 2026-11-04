@@ -199,9 +199,39 @@ function calibratePair(from: EditorV6Element, to: EditorV6Element) {
 }
 
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
-export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; materials: GachaReusableMaterialCache }
+/**
+ * Hidden Electron baker executes one request at a time per lane. Renderer rigs
+ * for byte-identical endpoint poses can survive across requests in THAT lane.
+ * Intermediate poses retain their original path and sample count.
+ */
+export type EditorV6BakeSession = {
+  provider: CharacterRenderAssetProvider
+  materials: GachaReusableMaterialCache
+  endpointRenderers: Map<string, Renderer>
+  trim(): void
+  dispose(): void
+}
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
-  return { provider: cachedProvider(provider, true), materials: new Map() }
+  const endpointRenderers = new Map<string, Renderer>()
+  const materials: GachaReusableMaterialCache = new Map()
+  return {
+    provider: cachedProvider(provider, true),
+    materials,
+    endpointRenderers,
+    trim() {
+      while (endpointRenderers.size > 4) {
+        const oldest = endpointRenderers.keys().next().value!
+        const renderer = endpointRenderers.get(oldest)!
+        endpointRenderers.delete(oldest)
+        renderer.dispose()
+      }
+    },
+    dispose() {
+      for (const renderer of endpointRenderers.values()) renderer.dispose()
+      endpointRenderers.clear()
+      materials.clear()
+    }
+  }
 }
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
@@ -223,8 +253,23 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const prepare = async (progress: number) => {
     if (samePose && reusable) return reusable
     const artwork = interpolateEditorV6Pose(fromPose, toPose, progress)
+    // No hash: exact character+model+interpolated pose identity. A one-byte
+    // change or minute pivot variation refuses reuse, preserving RGBA.
+    const key = session && (progress === 0 || progress === 1)
+      ? JSON.stringify([request.character, source.updatedAt, artwork])
+      : undefined
+    if (key) {
+      const cached = session!.endpointRenderers.get(key)
+      if (cached) {
+        session!.endpointRenderers.delete(key)
+        session!.endpointRenderers.set(key, cached)
+        if (samePose) reusable = cached
+        return cached
+      }
+    }
     const renderer = await prepareSavedCharacterRenderer(request.character, { source, artwork, assetProvider: provider, materialCache: materials })
     preparedRigs++
+    if (key) session!.endpointRenderers.set(key, renderer)
     if (samePose) reusable = renderer
     return renderer
   }
@@ -243,8 +288,13 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const result = layered ?? await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
       const layers = layered?.layers
       const mouth = isolateMouth ? await renderer.renderMouthToCanvas(face.appearance, face.transforms, face.effects, renderMode) : undefined
-      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: cropOf(mouth.canvas, fingerprint, 0) } : {}), dispose: () => { if (!samePose && !preparedRenderer) renderer.dispose() } }
-    } catch (error) { if (!samePose && !preparedRenderer) renderer.dispose(); throw error }
+      return { ...result, crop: cropOf(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: cropOf(mouth.canvas, fingerprint, 0) } : {}), dispose: () => {
+        if (!samePose && !preparedRenderer && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
+      } }
+    } catch (error) {
+      if (!samePose && !preparedRenderer && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
+      throw error
+    }
   }
   try {
     const staticMouthLoop = Boolean(!captureLayerAtlases && request.mouthScaleSamples && samePose
@@ -586,7 +636,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (behindFaceAtlas) behindFaceAtlas.width = behindFaceAtlas.height = 1
     if (faceLayerAtlas) faceLayerAtlas.width = faceLayerAtlas.height = 1
     if (inFrontOfFaceAtlas) inFrontOfFaceAtlas.width = inFrontOfFaceAtlas.height = 1
-    reusable?.dispose()
+    if (reusable && !(session && [...session.endpointRenderers.values()].includes(reusable))) reusable.dispose()
+    session?.trim()
     if (!session || materials.size > 4) materials.clear()
   }
 }

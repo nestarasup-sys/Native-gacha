@@ -4,9 +4,9 @@ name: Editor V6 - parity and export contracts
 
 on:
   pull_request:
-    branches: [Dev-V2]
+    branches: [Dev-V2, dev-v2-zona-de-guerra]
   push:
-    branches: [Dev-V2]
+    branches: [Dev-V2, dev-v2-zona-de-guerra]
   workflow_dispatch:
 
 permissions:

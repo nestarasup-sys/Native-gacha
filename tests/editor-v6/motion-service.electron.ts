@@ -48,6 +48,12 @@ async function main() {
   assert.equal(windows, firstWindows, 'Each transition opened a new window')
   assert.equal(modelReads, 1, 'The warm worker reloaded the model')
   assert.equal(first.asset.dataUrl, second.asset.dataUrl, 'Warm resources changed raster output')
+  // Identical pose endpoints, different stage coordinates: new rig work must
+  // disappear while output atlas bytes remain unchanged.
+  assert.ok(second.metrics.preparedRigs <= first.metrics.preparedRigs - 2,
+    `Warm endpoint reuse did not reduce the rig count: ${first.metrics.preparedRigs} -> ${second.metrics.preparedRigs}`)
+  assert.ok(first.motion.frames[0].x !== second.motion.frames[0].x,
+    'Session reuse accidentally returned the previous actor geometry')
   await writeFile(join(folder, 'client.html'), '<!doctype html><html><body></body></html>')
   await writeFile(join(folder, 'client-preload.cjs'), "const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('prepareTest',{prepare:r=>ipcRenderer.invoke('editor-v6:motion:prepare',r)})")
   const client = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, preload: join(folder, 'client-preload.cjs') } })
