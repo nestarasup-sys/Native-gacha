@@ -49,7 +49,7 @@ describe('V6 experimental draw plan — geometry only, never active export', () 
     const outputs = Array.from({ length: 30 }, (_, frame) =>
       createEditorV6ExperimentalDrawPlan(scene(frame, [character(frame)]), { animatedHair: false }))
     expect(outputs).toHaveLength(30)
-    expect(new Set(outputs.map(output => JSON.stringify(output.commands)))).size.toBe(30)
+    expect(new Set(outputs.map(output => JSON.stringify(output.commands))).size).toBe(30)
     expect(outputs.every(output => output.geometryOnlyCandidate && output.commands.length === 1)).toBe(true)
     expect(outputs[29].commands[0].flipX).toBe(true)
     expect(outputs[0].commands[0].centerX).not.toBe(outputs[29].commands[0].centerX)
