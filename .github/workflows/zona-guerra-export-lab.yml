@@ -115,6 +115,16 @@ jobs:
             foreach ($item in $benchmark) { "| $($item.check) | $($item.runs) | $($item.minSeconds) | $($item.medianSeconds) | $($item.maxSeconds) | $($item.failures) |" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8 }
           }
           if ($failures -gt 0) { throw "$failures synthetic checks failed. See uploaded logs." }
+      - name: Independently verify lab evidence and frame reports
+        if: always()
+        shell: pwsh
+        run: |
+          if (Test-Path 'out/zona-guerra-lab/summary.json') {
+            node scripts/editor-v6/verify-zona-guerra-lab.cjs out/zona-guerra-lab $env:LAB_ROUNDS
+            if ($LASTEXITCODE -ne 0) { throw 'Lab verification rejected incomplete or failing evidence.' }
+          } else {
+            throw 'Missing Windows lab summary: no results can be certified.'
+          }
       - name: Upload summaries, logs and synthetic output
         if: always()
         uses: actions/upload-artifact@v4
