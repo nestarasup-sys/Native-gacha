@@ -21,6 +21,10 @@
 | **G3 — integração curta** | Feature flag/novo módulo isolado, fallback, testes direcionados | Build, typecheck e testes sem regressão |
 | **G4 — 300 frames reais** | 3 exportações e A/B equivalente no Win11 AMD, MP4 e 300 hashes | Mediana melhor e qualidade intacta |
 
+## Rodada 18 — caminho executável
+
+O kit de testes Windows 11 e plano de desenho puro está em [Rodada 18](RODADA_18_HANDOFF_CODEX_WINDOWS.md). **Próxima hipótese: X05**, construir uma IR de sprites com cobertura explícita, uma única feature adicional por experimento e 30 frames distintos. **Ainda não é um renderer nativo de produção e nenhum ganho de MP4 foi medido.**
+
 ## Top 12 experimentos candidatos
 
 | ID | Hipótese falsificável | Primeiros arquivos | Primeira métrica | Estado |

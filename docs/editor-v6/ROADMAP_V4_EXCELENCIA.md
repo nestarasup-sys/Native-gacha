@@ -2,6 +2,12 @@
 
 # Editor V6 — Plano de excelência V4 (revisão de 2026-11-03)
 
+## Rodada 18 — execução rápida preparada para Codex
+
+**[Kit R18: comandos Windows offscreen e protótipo de plano de desenho](RODADA_18_HANDOFF_CODEX_WINDOWS.md).** A próxima tarefa é **X05**, evoluir a IR de sprites para um subconjunto visual adicional com 7 amostras e 30 quadros, **sem alterar o renderer de produção**. Primeiro `npm run test:editor-v6:doctor`, depois `npm run test:editor-v6:quick -- --scope=render`. Somente candidatos com paridade numérica e RGBA avançam para testes mais caros. R17 já rejeitou atalhos X02 e X07; Preset 2 ausente na cópia isolada mantém X00 bloqueado. **Não Linux e não cache de reexportação.**
+
+---
+
 ## Rodada 16 — pesquisa além do exportador (04/11/2026)
 
 **Investigação de todo o app:** [Pesquisa sistêmica de motores, Customizador/Fabricador e exportação](PESQUISA_SISTEMICA_MOTORES_E_EXPORT_2026-11-04.md) e [quadro de experimentos rápidos no Windows 11](EXPERIMENTOS_RAPIDOS_WINDOWS11.md).

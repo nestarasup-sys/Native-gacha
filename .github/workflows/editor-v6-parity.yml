@@ -50,6 +50,8 @@ jobs:
           cache: npm
       - name: Install without Electron postinstall hooks
         run: npm ci --ignore-scripts
+      - name: Verify quick Windows-only gate definitions
+        run: node --test tests/editor-v6/rapidWindowsGates.test.cjs
       - name: Editor V6 timeline, export and scene tests
         run: npm run test:editor-v6
       - name: Build bundle required by Windows export parity
