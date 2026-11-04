@@ -36,7 +36,7 @@ async function main() {
     await window.loadFile(path.join(folder, 'index.html'))
     await window.webContents.executeJavaScript(await fs.readFile(path.join(folder, 'r37.js'), 'utf8'))
     const result = await window.webContents.executeJavaScript('R37.runR37RasterParity()')
-    if (result.passed !== true || result.frames !== 30 || result.decodedImages !== 1 || result.exportReady !== false) {
+    if (result.passed !== true || result.frames !== 309 || result.decodedImages !== 1 || result.exportReady !== false) {
       throw Error('R37: incomplete pixel report')
     }
     const output = path.resolve(process.env.NATIVE_GACHA_TEST_OUTPUT_DIR || path.join(__dirname, '../../out'))
