@@ -6,8 +6,8 @@ if errorlevel 1 (
   goto :error
 )
 
-rem Branch oficial do desenvolvimento do Native Gacha.
-set "DEV_BRANCH=Main-desenvolvimento"
+rem Branch usada no desenvolvimento ativo do Native Gacha.
+set "DEV_BRANCH=Dev-V2"
 
 echo ================================================
 echo   NATIVE GACHA - ATUALIZAR DESENVOLVIMENTO
