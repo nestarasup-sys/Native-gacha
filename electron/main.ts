@@ -10,7 +10,7 @@ import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
 import type { EditorV6Document } from '../src/shared/editorV6'
-import type { EditorV6ExportOptions } from '../src/shared/editorV6Export'
+import { editorV6BenchmarkAudioMatchesExport, type EditorV6ExportOptions } from '../src/shared/editorV6Export'
 import type { EditorV6MotionCacheStats } from './domains/editorV6/motionCache'
 import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
@@ -1170,8 +1170,11 @@ app.whenReady().then(async () => {
           const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string; width?: number; height?: number }> } | undefined)?.streams ?? []
           const video = streams.find((stream) => stream.codec_type === 'video')
           const audio = streams.some((stream) => stream.codec_type === 'audio')
-          const expectedAudioClips = hairPresetSlot !== null ? 0 : undefined
-          const audioValid = expectedAudioClips === undefined ? report.audioClips >= 1 && audio : report.audioClips === expectedAudioClips && !audio
+          // Real projects may have music/video sound even with animated hair.
+          // Validate the actual mixed output; do not assume a silent fixture.
+          const audioValid = hairPresetSlot !== null
+            ? editorV6BenchmarkAudioMatchesExport(report.audioClips, audio)
+            : report.audioClips >= 1 && audio
           if (report.state !== 'completed' || report.totalFrames !== frameCount || Number(video?.nb_read_frames) !== frameCount
             || video?.r_frame_rate !== '30/1' || video.width !== options.width || video.height !== options.height
             || report.motionTransitionsPrepared !== report.motionTransitionsRequired
