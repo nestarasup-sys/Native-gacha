@@ -721,8 +721,11 @@ async function main() {
           const sameResolvedElements = JSON.stringify(resolveEditorV6SceneAtFrame(project, 0).elements)
             === JSON.stringify(resolveEditorV6SceneAtFrame(project, 1).elements)
           if (sameResolvedElements) {
-            assert(next.reused === true, 'R28: um quadro idêntico em repouso não foi reaproveitado.')
-            assert(next.bitmap && reaction.bitmap.equals(next.bitmap), 'R28: a captura reutilizada mudou o RGBA do repouso.')
+            const independent = await stillWorker.frame(1)
+            assert(independent.bitmap && stationary.bitmap.equals(independent.bitmap),
+              'R28: a referência independente de repouso mudou os pixels BGRA entre quadros idênticos.')
+            assert(next.reused === true && next.bitmap === undefined,
+              'R28: o worker deveria reutilizar o bitmap anterior sem outra captura para quadro idêntico.')
           }
         }
       }
