@@ -37,6 +37,8 @@ export async function runR37RasterParity() {
   const dataUrl = source.toDataURL('image/png')
   const from = makeArtwork(8, dataUrl)
   const to = makeArtwork(35, dataUrl)
+  // Exercise hidden layers and reverse authored order, not only two visible parts.
+  to.layerOrder = ['arm', 'body']
   const compiler = compileEditorV6PartMotionPrototype(from, to)
   let decodes = 0
   const renderer = createEditorV6PartRasterRenderer(async url => {
@@ -68,8 +70,15 @@ export async function runR37RasterParity() {
     context.clearRect(0, 0, expected.width, expected.height)
     // Independent reference drawing, matching the existing characterLayerRenderer
     // transform sequence for the plain-piece subset only.
-    for (const p of frame.parts) {
-      if (!p.visible) continue
+    const pose = interpolateEditorV6Pose(from, to, motionEase(i / (totalFrames - 1)))
+    const hidden = new Set(pose.hiddenPartIds)
+    const authoredOrder = [...new Set(pose.layerOrder)]
+    const ordered = [...pose.parts].sort((a, b) => {
+      const ai = authoredOrder.indexOf(a.id), bi = authoredOrder.indexOf(b.id)
+      return (ai < 0 ? pose.parts.indexOf(a) : ai) - (bi < 0 ? pose.parts.indexOf(b) : bi)
+    })
+    for (const p of ordered) {
+      if (hidden.has(p.id)) continue
       context.save()
       context.translate(p.x + p.width / 2, p.y + p.height / 2)
       context.rotate(p.rotation * Math.PI / 180)
