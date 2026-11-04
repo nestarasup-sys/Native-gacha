@@ -1,4 +1,4 @@
-import { createHairMotionMeshPositions, HAIR_MOTION_MESH_COLUMNS, HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_ROWS, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
+import { fillHairMotionMeshPositions, HAIR_MOTION_MESH_COLUMNS, HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_ROWS, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import type { HairMotionSettings, HairMotionState } from '../../../../shared/hairMotionEngine'
 
 type Resources = {
@@ -12,6 +12,9 @@ type Resources = {
   indices: number
   textures: WeakMap<HTMLImageElement, WebGLTexture>
   allocatedTextures: WebGLTexture[]
+  maxTextureSize: number
+  maxViewportWidth: number
+  maxViewportHeight: number
   lost: boolean
 }
 
@@ -76,9 +79,14 @@ function createResources(): Resources {
   gl.disable(gl.DEPTH_TEST)
   gl.disable(gl.CULL_FACE)
   gl.clearColor(0, 0, 0, 0)
+  // GPU capability queries can synchronize with the driver. They do not
+  // change during this context's lifetime; query once, not on each strand/frame.
+  const maxTextureSize = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
+  const maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array
+  const maxViewportWidth = maxViewport[0], maxViewportHeight = maxViewport[1]
   let lost = false
   canvas.addEventListener('webglcontextlost', event => { event.preventDefault(); lost = true })
-  return { canvas, gl, program, positionBuffer, uvBuffer, indexBuffer, positions, indices: indices.length, textures: new WeakMap(), allocatedTextures: [], get lost() { return lost }, set lost(value: boolean) { lost = value } }
+  return { canvas, gl, program, positionBuffer, uvBuffer, indexBuffer, positions, indices: indices.length, textures: new WeakMap(), allocatedTextures: [], maxTextureSize, maxViewportWidth, maxViewportHeight, get lost() { return lost }, set lost(value: boolean) { lost = value } }
 }
 
 /** One reusable WebGL context per export worker eliminates seams between raster strips. */
@@ -91,9 +99,8 @@ export function createExportHairMeshRenderer() {
     if (resources.lost || gl.isContextLost()) throw Error('A aceleração gráfica foi interrompida durante a animação de cabelo; a exportação não foi publicada.')
     const width = image.naturalWidth, height = image.naturalHeight
     const outputWidth = Math.max(1, Math.ceil(width * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(height * HAIR_MOTION_MESH_HEIGHT))
-    const maxTexture = gl.getParameter(gl.MAX_TEXTURE_SIZE) as number
-    const maxViewport = gl.getParameter(gl.MAX_VIEWPORT_DIMS) as Int32Array
-    if (width > maxTexture || height > maxTexture || outputWidth > maxViewport[0] || outputHeight > maxViewport[1]) {
+    if (width > resources.maxTextureSize || height > resources.maxTextureSize
+      || outputWidth > resources.maxViewportWidth || outputHeight > resources.maxViewportHeight) {
       throw Error(`A camada de cabelo (${width} × ${height}px) excede a capacidade gráfica disponível para manter a resolução original.`)
     }
     if (canvas.width !== outputWidth || canvas.height !== outputHeight) {
@@ -103,7 +110,7 @@ export function createExportHairMeshRenderer() {
     gl.viewport(0, 0, outputWidth, outputHeight)
     gl.useProgram(resources.program)
     gl.bindBuffer(gl.ARRAY_BUFFER, resources.positionBuffer)
-    resources.positions.set(createHairMotionMeshPositions(state, settings, intensity, phase))
+    fillHairMotionMeshPositions(resources.positions, state, settings, intensity, phase)
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, resources.positions)
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, resources.indexBuffer)
     let texture = resources.textures.get(image)
