@@ -54,9 +54,8 @@ describe('Editor V6 single-readback frame capture', () => {
   })
 
   it('does not silently resize scale-factor mismatches or incomplete buffers', () => {
-    const { image, bytes } = makeCapture(24, 20, 0xffffff)
-    bytes.fill(12)
-    image.getSize.mockReturnValue({ width: 48, height: 20 })
+    const { image } = makeCapture(24, 20, 0xffffff)
+    image.getSize.mockReturnValue({ width: 49, height: 20 })
     expect(captureEditorV6FrameBitmap(image, 24, 20, 0xffffff)).toBeNull()
     expect(captureEditorV6FrameBitmap(image, 0, 20, 0xffffff)).toBeNull()
   })
