@@ -13,6 +13,7 @@ A R22 altera somente esse caminho:
 3. `hairPoseReactionEndFrames` recebe eventos diretamente dos planos de troca de pose, sem exigir um atlas preparado antecipadamente na UI. Isso permite a reação começar após o fim mesmo quando o MP4 precisou preparar a transição canônica durante a exportação.
 4. O cabelo posterior (`rearHair`) continua sendo a única peça deformada depois da pose; `backHair`, rabo de cavalo, franja e ahoge permanecem imóveis. Reação = uma única oscilação e retorno ao repouso, sem vento contínuo.
 5. A preparação de personagens compartilha um `GachaReusableMaterialCache` **temporário dentro da exportação** para reduzir carregamento repetido dos mesmos manifestos de cabelo/roupas entre poses do mesmo personagem. O cache é descartado no fim dessa fase. Não guarda projetos, MP4s ou material de exportações anteriores.
+6. `preparedCharacterMaterials.ts` separa o manifesto de roupas da chave que inclui o cabelo: assim os renderizadores **original e sem cabelo** aguardam o **mesmo carregamento de roupas** mesmo em chamadas concorrentes. A leitura das roupas também começa em paralelo às três categorias de cabelo, sem esperar pelo fim delas. A composição e os pixels finais continuam no renderer original. Testes cobrem chamadas concorrentes, roupas alteradas, falhas e exportações distintas.
 
 ## Segurança e testes
 
