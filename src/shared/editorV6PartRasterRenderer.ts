@@ -52,6 +52,7 @@ export function createEditorV6PartRasterRenderer(
   let generation = 0
   const clear = () => { generation++; images.clear(); pending.clear() }
   const getImage = async (source: string, signal?: AbortSignal) => {
+    assertActive(signal)
     const cached = images.get(source)
     if (cached) {
       images.delete(source)
@@ -61,18 +62,18 @@ export function createEditorV6PartRasterRenderer(
     const version = generation
     let task = pending.get(source)
     if (!task) {
-      task = decode(source, signal)
+      // A shared decode must not be owned by any one caller's AbortSignal.
+      // Cancellation is checked per consumer after awaiting the shared task.
+      task = Promise.resolve().then(() => decode(source))
       pending.set(source, task)
     }
     try {
       const image = await task
       assertActive(signal)
       if (version !== generation) throw new Error('R37: source cache invalidated during decode')
-      if (version === generation) {
-        images.delete(source)
-        images.set(source, image)
-        while (images.size > maxCachedSources) images.delete(images.keys().next().value!)
-      }
+      images.delete(source)
+      images.set(source, image)
+      while (images.size > maxCachedSources) images.delete(images.keys().next().value!)
       return { image, reused: false }
     } finally {
       if (pending.get(source) === task) pending.delete(source)
@@ -106,6 +107,7 @@ export function createEditorV6PartRasterRenderer(
       assertActive(signal)
       context.clearRect(0, 0, canvas.width, canvas.height)
       for (const part of visible) {
+        assertActive(signal)
         context.save()
         try {
           context.translate(part.x + part.width / 2, part.y + part.height / 2)
