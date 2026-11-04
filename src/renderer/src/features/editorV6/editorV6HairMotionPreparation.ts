@@ -268,7 +268,10 @@ export async function prepareEditorV6HairMotionBundle(
           faceDataUrl: canvasDataUrl(capture.face),
           inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
         }
-      }, { from: fromRig.sourceCrop, to: toRig.sourceCrop })
+      }, {
+        from: { ...fromRig.sourceCrop, outputWidth: fromRig.outputWidth, outputHeight: fromRig.outputHeight },
+        to: { ...toRig.sourceCrop, outputWidth: toRig.outputWidth, outputHeight: toRig.outputHeight }
+      })
       reportStage('bakeHairlessMotionTransition', stageStarted)
       if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')

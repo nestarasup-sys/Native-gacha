@@ -9,6 +9,7 @@ import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type Gach
 import { chooseMotionAtlasLayout } from './motionAtlasLayout'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
+import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type Crop = { left: number; top: number; width: number; height: number; fingerprint?: number }
@@ -197,7 +198,7 @@ export type EditorV6BakeSession = { provider: CharacterRenderAssetProvider; mate
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
   return { provider: cachedProvider(provider, true), materials: new Map() }
 }
-export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: Omit<Crop, 'fingerprint'>; to: Omit<Crop, 'fingerprint'> }): Promise<EditorV6MotionBakeResult> {
+export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
@@ -371,33 +372,51 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       atlas.width = atlas.height = 1
       return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, samples: count, atlasPixels } }
     }
-    const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples)), fullWidth = first.width, fullHeight = first.height
-    // Static character assets use the union of all face-mode bounds. Motion
-    // endpoints must use those same bounds when interpreting element centers.
-    const endpointCrop = async (progress: number, initial: Crop, renderer: Renderer): Promise<Crop> => {
-      let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
-      for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
-        try {
-          const frame = await render(progress, mode, 1, false, renderer, true)
+    // The export-hair preparator already rendered both endpoint faces while
+    // building the static rigs. Reuse those exact measured canvas dimensions
+    // and union crops, avoiding two extra face/body renders per transition.
+    // Ordinary motion bakes retain their original path unchanged.
+    const endpointDimensions = captureLayerAtlases ? resolvedHairBakeEndpointDimensions(endpointCrops) : null
+    let fullWidth: number, fullHeight: number
+    let fromCrop: Crop, toCrop: Crop
+    let maximumCanvasWidth: number, maximumCanvasHeight: number
+    if (endpointDimensions && endpointCrops) {
+      fullWidth = endpointDimensions.firstWidth
+      fullHeight = endpointDimensions.firstHeight
+      fromCrop = endpointCrops.from
+      toCrop = endpointCrops.to
+      maximumCanvasWidth = Math.max(fullWidth, endpointDimensions.lastWidth)
+      maximumCanvasHeight = Math.max(fullHeight, endpointDimensions.lastHeight)
+    } else {
+      const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples))
+      fullWidth = first.width
+      fullHeight = first.height
+      // Static character assets use the union of all face-mode bounds. Motion
+      // endpoints must use those same bounds when interpreting element centers.
+      const endpointCrop = async (progress: number, initial: Crop, renderer: Renderer): Promise<Crop> => {
+        let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
+        for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
           try {
-            left = Math.min(left, frame.crop.left); top = Math.min(top, frame.crop.top)
-            right = Math.max(right, frame.crop.left + frame.crop.width); bottom = Math.max(bottom, frame.crop.top + frame.crop.height)
-          } finally { frame.dispose() }
-        } catch (error) {
-          const missingBlink = error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
-          if (!missingBlink || (mode !== 'blink' && mode !== 'talk-blink')) throw error
+            const frame = await render(progress, mode, 1, false, renderer, true)
+            try {
+              left = Math.min(left, frame.crop.left); top = Math.min(top, frame.crop.top)
+              right = Math.max(right, frame.crop.left + frame.crop.width); bottom = Math.max(bottom, frame.crop.top + frame.crop.height)
+            } finally { frame.dispose() }
+          } catch (error) {
+            const missingBlink = error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
+            if (!missingBlink || (mode !== 'blink' && mode !== 'talk-blink')) throw error
+          }
         }
+        return { left, top, width: right - left, height: bottom - top }
       }
-      return { left, top, width: right - left, height: bottom - top }
+      try { fromCrop = endpointCrops?.from ?? await endpointCrop(0, first.crop, first.renderer) }
+      finally { first.dispose() }
+      const last = staticMouthLoop ? null : await render(1)
+      try { toCrop = endpointCrops?.to ?? (last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop) }
+      finally { last?.dispose() }
+      maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth)
+      maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     }
-    let fromCrop: Crop
-    try { fromCrop = endpointCrops?.from ?? await endpointCrop(0, first.crop, first.renderer) }
-    finally { first.dispose() }
-    const last = staticMouthLoop ? null : await render(1)
-    let toCrop: Crop
-    try { toCrop = endpointCrops?.to ?? (last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop) }
-    finally { last?.dispose() }
-    const maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth), maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
     let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
