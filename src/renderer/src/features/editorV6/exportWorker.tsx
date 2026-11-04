@@ -6,7 +6,7 @@ import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLoopOffsets, prewarmHairMotionState, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
@@ -107,6 +107,7 @@ async function initialize() {
   // The worker owns one immutable export document. Pre-index only prepared interior
   // frames, keeping the first eligible transition when authored ranges overlap.
   const hairTransitionIndex = createExportHairTransitionFrameIndex(hairMotionTransitions)
+  const hairPoseReactionEnds = hairAnimation?.poseReactionOnly ? hairMotionPoseReactionEndFrames(hairMotionTransitions) : new Map<string, number[]>()
   const transitionForFrame = (elementId: string, frame: number) => hairTransitionIndex.get(elementId, frame)?.transition
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
@@ -264,7 +265,15 @@ async function initialize() {
     if (!state) { state = createHairMotionState(); hairMotionStates.set(stateKey, state) }
     const phase = (hairMotionInstancePhases.get(element.id) ?? editorV6HairMotionInstancePhase(element.id)) + piece.phase
     const headAtFrame = (sample: number) => editorV6HairMotionLayerHeadPosition(headXAtFrame(element.id, sample), pieceFlipXAtFrame(element.id, piece.id, sample, piece.flipX))
-    if (hairAnimation?.loopFrames) {
+    if (hairAnimation?.poseReactionOnly) {
+      // Explicit part ID, not a side alias: rearHair is POSTERIOR; backHair is TRASEIRO.
+      const transitionEnd = hairMotionLatestPoseEnd(hairPoseReactionEnds.get(element.id) ?? [], frame)
+      const moving = piece.id.startsWith('rearHair:')
+        ? sampleHairMotionPoseReaction(state.offsets, settings, frame, transitionEnd, phase)
+        : (state.offsets.fill(0), false)
+      state.time = moving ? 1 : 0 // Exact original pixels when the piece is at rest.
+      state.frame = frame
+    } else if (hairAnimation?.loopFrames) {
       let loop = hairMotionLoops.get(stateKey)
       if (!loop) {
         const prewarmStarted = performance.now()

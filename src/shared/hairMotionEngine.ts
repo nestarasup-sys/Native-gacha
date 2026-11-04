@@ -220,6 +220,64 @@ export function applyHairMotionLoopHeadImpulse(offsets: Float32Array, headDelta:
   }
 }
 
+
+/** One slight damped swing after an authored pose transition ends.
+ * Recomputed by absolute frame: no continuous breeze, no repeated loop,
+ * no spring history and no worker seam desynchronization.
+ */
+export const HAIR_MOTION_POSE_REACTION_FRAMES = 30
+
+export function hairMotionPoseReactionEndFrames(
+  transitions: readonly { elementId: string; endFrame: number; fromElement: { poseSlot?: number | null }; toElement: { poseSlot?: number | null } }[]
+): Map<string, number[]> {
+  const events = new Map<string, Set<number>>()
+  for (const transition of transitions) {
+    if (transition.fromElement.poseSlot === transition.toElement.poseSlot) continue
+    if (!Number.isSafeInteger(transition.endFrame) || transition.endFrame < 0) throw Error('Fim de transição de pose inválido.')
+    const frames = events.get(transition.elementId) ?? new Set<number>()
+    frames.add(transition.endFrame)
+    events.set(transition.elementId, frames)
+  }
+  return new Map([...events].map(([id, frames]) => [id, [...frames].sort((a, b) => a - b)]))
+}
+
+export function hairMotionLatestPoseEnd(events: readonly number[], frame: number): number | null {
+  if (!Number.isSafeInteger(frame) || frame < 0) throw Error('Quadro da reação de cabelo inválido.')
+  let low = 0, high = events.length
+  while (low < high) {
+    const middle = (low + high) >>> 1
+    if (events[middle] <= frame) low = middle + 1
+    else high = middle
+  }
+  return low ? events[low - 1] : null
+}
+
+/** Two opposing half-swings, returning exactly to unwarped rest.
+ * Smooth envelope makes both endpoints approach zero without sudden jumps.
+ */
+export function sampleHairMotionPoseReaction(
+  offsets: Float32Array,
+  settings: HairMotionSettings,
+  frame: number,
+  transitionEnd: number | null,
+  phase: number
+): boolean {
+  offsets.fill(0)
+  if (!settings.enabled || transitionEnd === null || !Number.isFinite(phase)) return false
+  const elapsed = frame - transitionEnd
+  if (!Number.isSafeInteger(elapsed) || elapsed <= 0 || elapsed >= HAIR_MOTION_POSE_REACTION_FRAMES) return false
+  const t = elapsed / HAIR_MOTION_POSE_REACTION_FRAMES
+  const envelope = Math.sin(Math.PI * t) ** 2
+  const swing = Math.sin(2 * Math.PI * t) * envelope
+  const strength = (0.045 + settings.responsiveness / 100 * 0.035) * (0.85 + Math.abs(Math.sin(phase)) * 0.15)
+  const direction = settings.wind < 0 ? -1 : 1
+  for (let index = 1; index < offsets.length; index += 1) {
+    const weight = index / (offsets.length - 1)
+    offsets[index] = Math.fround(direction * strength * swing * weight)
+  }
+  return true
+}
+
 export function hairMotionOffset(state: HairMotionState, vertical: number, anchor: number): number {
   const root = Math.max(0, Math.min(0.95, anchor / 100))
   const amount = Math.max(0, Math.min(1, (vertical - root) / (1 - root)))

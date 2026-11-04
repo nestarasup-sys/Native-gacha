@@ -3,6 +3,7 @@ import {
   applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState,
   hairMotionLoopOffsets, prewarmHairMotionState, advanceHairMotionToFrame,
   hairMotionPosteriorOnlyPreset, FIRST_HAIR_MOTION_PRESET,
+  hairMotionLatestPoseEnd, hairMotionPoseReactionEndFrames, sampleHairMotionPoseReaction, HAIR_MOTION_POSE_REACTION_FRAMES,
   type HairMotionSettings
 } from '../../src/shared/hairMotionEngine'
 import { planEditorV6Export } from '../../src/shared/editorV6Export'
@@ -12,10 +13,57 @@ const settings: HairMotionSettings = {
   damping: 52, responsiveness: 55, anchor: 14, enabled: true
 }
 describe('V6 experimental numerical hair loop', () => {
+
+  it('triggers only after changing pose, not after expression-only transitions', () => {
+    const events = hairMotionPoseReactionEndFrames([
+      { elementId: 'actor', endFrame: 29, fromElement: { poseSlot: 1 }, toElement: { poseSlot: 2 } },
+      { elementId: 'actor', endFrame: 61, fromElement: { poseSlot: 2 }, toElement: { poseSlot: 2 } },
+      { elementId: 'actor', endFrame: 90, fromElement: { poseSlot: 2 }, toElement: { poseSlot: 3 } },
+      { elementId: 'other', endFrame: 18, fromElement: { poseSlot: 1 }, toElement: { poseSlot: 2 } }
+    ])
+    expect(events.get('actor')).toEqual([29, 90])
+    expect(events.get('other')).toEqual([18])
+    expect(hairMotionLatestPoseEnd(events.get('actor')!, 28)).toBeNull()
+    expect(hairMotionLatestPoseEnd(events.get('actor')!, 61)).toBe(29)
+    expect(hairMotionLatestPoseEnd(events.get('actor')!, 92)).toBe(90)
+  })
+  it('swings once after the pose and then rests in the exact original position', () => {
+    const offsets = new Float32Array(9)
+    const tip: number[] = []
+    const end = 29
+    for (let frame = 0; frame < 200; frame++) {
+      const moving = sampleHairMotionPoseReaction(offsets, settings, frame, frame >= end ? end : null, 0.4)
+      tip.push(offsets[8])
+      if (frame <= end || frame >= end + HAIR_MOTION_POSE_REACTION_FRAMES) {
+        expect(moving).toBe(false)
+        expect([...offsets]).toEqual(Array(9).fill(0))
+      }
+    }
+    expect(tip.some(x => x > 0)).toBe(true)
+    expect(tip.some(x => x < 0)).toBe(true)
+    expect(tip[0]).toBe(0)
+    expect(tip[150]).toBe(0)
+  })
+  it('is independent of Turbo chunk boundaries and cannot combine with continuous loop', () => {
+    const events = [29, 149]
+    const a = new Float32Array(9), b = new Float32Array(9)
+    for (const frame of [0, 29, 30, 40, 45, 58, 59, 60, 120, 149, 151, 165, 180, 299]) {
+      const end = hairMotionLatestPoseEnd(events, frame)
+      sampleHairMotionPoseReaction(a, settings, frame, end, 1)
+      sampleHairMotionPoseReaction(b, settings, frame, end, 1)
+      expect([...a]).toEqual([...b])
+      if (frame === 120 || frame === 299) expect([...a]).toEqual(Array(9).fill(0))
+    }
+    const options = { startFrame: 0, endFrame: 300, width: 1920, height: 1080, turbo: true, encoder: 'auto' as const, hairAnimationPresetSlot: 2 }
+    expect(planEditorV6Export({ ...options, hairPoseReactionOnly: true }, 300)).toHaveLength(2)
+    expect(() => planEditorV6Export({ ...options, hairAnimationLoopFrames: 120, hairPoseReactionOnly: true }, 300)).toThrow(/não pode usar loop/)
+    expect(() => planEditorV6Export({ ...options, hairPoseReactionOnly: 'yes' as unknown as boolean }, 300)).toThrow(/reação/)
+  })
+
   it('creates an export-only preset with rear hair enabled and front layers disabled', () => {
     const preset = structuredClone(FIRST_HAIR_MOTION_PRESET)
     const result = hairMotionPosteriorOnlyPreset(preset)
-    expect(result.enabled).toEqual({ back: true, front: false, fringe: false })
+    expect(result.enabled).toEqual({ back: false, front: true, fringe: false })
     expect(result.physics).toEqual(preset.physics)
     expect(result.intensity).toEqual(preset.intensity)
     expect(preset.enabled).toEqual({ back: true, front: true, fringe: true })
