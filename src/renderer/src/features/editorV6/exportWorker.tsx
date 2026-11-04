@@ -7,7 +7,7 @@ import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, createHairMotionState, prewarmHairMotionState, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionHeadAnchor, editorV6HairMotionHeadPathDelta, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
+import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
@@ -86,14 +86,24 @@ async function initialize() {
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
   const hairRigs = new Map((hairAnimation?.rigs ?? []).map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
+  const hairPoseRigs = new Map<string, EditorV6HairMotionRig>()
+  for (const rig of hairAnimation?.rigs ?? []) {
+    const key = `${rig.elementId}:${rig.poseSlot ?? 'base'}`
+    if (!hairPoseRigs.has(key)) hairPoseRigs.set(key, rig)
+  }
+  const hairRigForElement = (element: { id: string; assetId?: string; poseSlot?: number | null }) => {
+    const direct = element.assetId ? hairRigs.get(`${element.id}:${element.assetId}`) : undefined
+    const poseSlot = element.poseSlot ?? direct?.poseSlot
+    return hairPoseRigs.get(`${element.id}:${poseSlot ?? 'base'}`) ?? direct
+  }
   const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; atlas?: EditorV6HairMotionTransition }> = []
+  const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; physicsFrom?: EditorV6HairMotionRig; physicsTo?: EditorV6HairMotionRig; fromElement: typeof project.elements[number]; toElement: typeof project.elements[number]; atlas?: EditorV6HairMotionTransition }> = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map(transition => [`${transition.elementId}:${transition.key}`, transition]))
   for (const plan of editorV6MotionPlans(project)) {
     if (motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
+    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
   }
   const transitionForFrame = (elementId: string, frame: number) => hairMotionTransitions.find(transition => transition.elementId === elementId
     && transition.atlas && transition.from && transition.to && frame > transition.startFrame && frame < transition.endFrame
@@ -164,26 +174,31 @@ async function initialize() {
       for (const elementId of animatedElementIds) {
         const path = headPaths.get(elementId)!
         const element = elements.get(elementId)
-        const previous = headPathPrevious.get(elementId)
         if (!element) {
           path[frame] = frame > 0 ? path[frame - 1] : 0
           continue
         }
-        const resolvedRig = hairRigAtFrame(element, frame)
-        const physicalElement = resolvedRig?.element ?? element
-        const anchor = resolvedRig
-          ? editorV6HairMotionHeadAnchor(resolvedRig.element, resolvedRig.crop ? { ...resolvedRig.rig, sourceCrop: resolvedRig.crop } : resolvedRig.rig)
-          : { x: (50 + element.x) / 100, y: (50 + element.y) / 100, localX: 0, localY: 0 }
-        const centerX = (50 + physicalElement.x) / 100, centerY = (50 + physicalElement.y) / 100
+        const previous = headPathPrevious.get(elementId)
+        const transition = transitionForFrame(elementId, frame)
+        const transitionSample = transition?.samples.find(sample => transition.endFrame + sample.offset === frame)
+        const pathPoint = transition && transitionSample && transition.physicsFrom && transition.physicsTo
+          ? interpolateEditorV6HairMotionHeadPathPoint(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo, motionEase(transitionSample.progress))
+          : (() => {
+              const rig = hairRigForElement(element)
+              return rig
+                ? editorV6HairMotionHeadPathPoint(element, rig)
+                : { centerX: (50 + element.x) / 100, centerY: (50 + element.y) / 100, localX: 0, rotation: element.rotation, flipX: Boolean(element.flipX) }
+            })()
         if (!previous || frame === 0) {
           path[frame] = 0
         } else {
-          // The authored head offset is already in the character's local image
-          // space. Keeping it separate avoids a false velocity when global
-          // flipX changes during a pose transition.
-          path[frame] = path[frame - 1] + editorV6HairMotionHeadPathDelta(previous, { centerX, centerY, localX: anchor.localX, rotation: physicalElement.rotation, flipX: Boolean(physicalElement.flipX) })
+          // Physics follows authored actor transforms and pose head geometry.
+          // Transition atlas crops remain visual-only and cannot inject false
+          // head velocity when a face expression changes its raster bounds.
+          path[frame] = path[frame - 1] + editorV6HairMotionHeadPathDelta(previous, pathPoint)
         }
-        headPathPrevious.set(elementId, { centerX, centerY, localX: anchor.localX, rotation: physicalElement.rotation, flipX: Boolean(physicalElement.flipX) })
+        headPathPrevious.set(elementId, pathPoint)
+        const resolvedRig = hairRigAtFrame(element, frame)
         for (const layer of resolvedRig?.rig.layers ?? []) {
           const key = `${elementId}:${layer.id}`
           const changes = headLayerFlipChanges.get(key) ?? []

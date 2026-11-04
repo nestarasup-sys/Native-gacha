@@ -276,7 +276,7 @@ async function main() {
     ],
     rigs: [
       {
-        elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-1', overlaySurfaceId: 'marker-pose-1',
+        elementId: actor.id, assetId: actor.assetId!, characterId: actor.characterId!, poseSlot: 1, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-1', overlaySurfaceId: 'marker-pose-1',
         artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
         sourceCrop: firstCrop, sourceHead: { width: 32, height: 24 },
         targetHead: { x: 16, y: 8, width: 32, height: 24, rotation: 0 },
@@ -288,7 +288,7 @@ async function main() {
         ]
       },
       {
-        elementId: actor.id, assetId: secondAssetId, characterId: actor.characterId!, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-2', overlaySurfaceId: 'marker-pose-2',
+        elementId: actor.id, assetId: secondAssetId, characterId: actor.characterId!, poseSlot: 2, baseSurfaceId: 'body', faceSurfaceId: 'face-pose-2', overlaySurfaceId: 'marker-pose-2',
         artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
         sourceCrop: secondCrop, sourceHead: { width: 32, height: 24 },
         targetHead: { x: 18, y: 8, width: 32, height: 24, rotation: 2 },
@@ -399,6 +399,36 @@ async function main() {
     }
     const fullTransitionFrames = [transitionStart, ...transitionMiddleFrames, transitionEnd]
     assert(fullTransitionFrames.every(frame => frame.bitmap && chromaticHairPixelCount(frame.bitmap) > 10), 'O cabelo desapareceu em pelo menos uma amostra da troca de pose.')
+    const expressionOnlyProject = structuredClone(project)
+    const expressionOnlyTrack = expressionOnlyProject.timeline.tracks.find(track => track.kind === 'character')!
+    const expressionOnlyState = { ...actor, activeExpressionPresetId: 'synthetic-expression-change' }
+    expressionOnlyTrack.blocks[1].state = expressionOnlyState
+    const expressionOnlyPlan = editorV6MotionPlans(expressionOnlyProject)[0]
+    assert(expressionOnlyPlan && expressionOnlyPlan.from.poseSlot === expressionOnlyPlan.to.poseSlot
+      && expressionOnlyPlan.from.x === expressionOnlyPlan.to.x && expressionOnlyPlan.from.y === expressionOnlyPlan.to.y
+      && expressionOnlyPlan.from.width === expressionOnlyPlan.to.width && expressionOnlyPlan.from.height === expressionOnlyPlan.to.height,
+      'O fixture facial deve trocar a expressão sem mudar pose, posição ou escala do ator.')
+    expressionOnlyTrack.blocks[1].incomingMotion = structuredClone(characterTrack.blocks[1].incomingMotion)
+    expressionOnlyTrack.blocks[1].incomingMotion!.key = expressionOnlyPlan.key
+    const expressionOnlyHair = structuredClone(hairAnimation)
+    expressionOnlyHair.motionTransitions![0].key = expressionOnlyPlan.key
+    expressionOnlyHair.preset.physics = { ...expressionOnlyHair.preset.physics, wind: 0, gust: 0, speed: 100, stiffness: 0, damping: 0, responsiveness: 100, anchor: 0 }
+    const expressionReferenceHair = structuredClone(expressionOnlyHair)
+    expressionReferenceHair.preset.physics.responsiveness = 0
+    const expressionOnlyWorker = await factory.create({ ...payload, project: expressionOnlyProject, hairAnimation: expressionOnlyHair }, new AbortController().signal)
+    const expressionReferenceWorker = await factory.create({ ...payload, project: expressionOnlyProject, hairAnimation: expressionReferenceHair }, new AbortController().signal)
+    try {
+      for (let frame = 23; frame <= 29; frame += 1) {
+        const actual = await expressionOnlyWorker.frame(frame), reference = await expressionReferenceWorker.frame(frame)
+        assert(actual.bitmap && reference.bitmap, `Quadro facial ${frame} ausente no teste de isolamento da física.`)
+        let differentPixels = 0
+        for (let offset = 0; offset < actual.bitmap.length; offset += 4) {
+          if (actual.bitmap[offset] !== reference.bitmap[offset] || actual.bitmap[offset + 1] !== reference.bitmap[offset + 1]
+            || actual.bitmap[offset + 2] !== reference.bitmap[offset + 2] || actual.bitmap[offset + 3] !== reference.bitmap[offset + 3]) differentPixels++
+        }
+        assert(differentPixels === 0, `Uma transição apenas facial injetou movimento físico no cabelo no quadro ${frame} (${differentPixels} pixels divergentes).`)
+      }
+    } finally { expressionOnlyWorker.close(); expressionReferenceWorker.close() }
     // Compare the same body's pixel bounds with and without hair export when
     // its saved rectangle deliberately does not follow the 16:9-derived height.
     const stretchedProject = structuredClone(project)

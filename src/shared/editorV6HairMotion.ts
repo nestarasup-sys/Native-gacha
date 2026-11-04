@@ -22,6 +22,8 @@ export type EditorV6HairMotionRig = {
   elementId: string
   assetId: string
   characterId: string
+  /** Resolved model pose; expression-specific raster crops must not redefine this physical rig. */
+  poseSlot: number | null
   baseSurfaceId: string
   faceSurfaceId: string
   overlaySurfaceId: string | null
@@ -101,6 +103,45 @@ export function editorV6HairMotionLocalHeadDelta(
 export function editorV6HairMotionHeadPathDelta(previous: EditorV6HairMotionHeadPathPoint, current: EditorV6HairMotionHeadPathPoint): number {
   return editorV6HairMotionLocalHeadDelta(current.centerX - previous.centerX, current.centerY - previous.centerY, current.rotation, current.flipX)
     + current.localX - previous.localX
+}
+
+/** Build the physics path point from authored actor geometry and a stable pose rig. */
+export function editorV6HairMotionHeadPathPoint(
+  element: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
+  rig: EditorV6HairMotionRig
+): EditorV6HairMotionHeadPathPoint {
+  // Keep the rig-local head offset in its authored direction. Actor mirroring
+  // is applied once to center movement by editorV6HairMotionHeadPathDelta.
+  const anchor = editorV6HairMotionHeadAnchor({ ...element, flipX: false }, rig)
+  return {
+    centerX: (50 + element.x) / 100,
+    centerY: (50 + element.y) / 100,
+    localX: anchor.localX,
+    rotation: element.rotation,
+    flipX: Boolean(element.flipX)
+  }
+}
+
+/** Interpolate physical head geometry independently of the transition's raster crop. */
+export function interpolateEditorV6HairMotionHeadPathPoint(
+  from: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
+  to: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
+  fromRig: EditorV6HairMotionRig,
+  toRig: EditorV6HairMotionRig,
+  progress: number
+): EditorV6HairMotionHeadPathPoint {
+  if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria da cabeça inválido.')
+  const fromPoint = editorV6HairMotionHeadPathPoint(from, fromRig)
+  const toPoint = editorV6HairMotionHeadPathPoint(to, toRig)
+  const mix = (left: number, right: number) => left + (right - left) * progress
+  const rotationDelta = ((((toPoint.rotation - fromPoint.rotation) % 360 + 540) % 360) - 180)
+  return {
+    centerX: mix(fromPoint.centerX, toPoint.centerX),
+    centerY: mix(fromPoint.centerY, toPoint.centerY),
+    localX: mix(fromPoint.localX, toPoint.localX),
+    rotation: fromPoint.rotation + rotationDelta * progress,
+    flipX: progress < .5 ? fromPoint.flipX : toPoint.flipX
+  }
 }
 
 /** Translate actor-local head movement to the coordinate direction of one flipped hair piece. */
@@ -197,6 +238,7 @@ const layer = z.object({
 }).strict()
 const rig = z.object({
   elementId: id, assetId: id, characterId: id, baseSurfaceId: id, faceSurfaceId: id, overlaySurfaceId: id.nullable(),
+  poseSlot: z.number().int().nullable(),
   artworkWidth: dimension, artworkHeight: dimension, outputWidth: dimension, outputHeight: dimension,
   shapeScaleX: finite.positive().max(10), shapeScaleY: finite.positive().max(10),
   sourceCrop: z.object({ left: finite.min(0).max(16_384), top: finite.min(0).max(16_384), width: dimension, height: dimension }).strict(),

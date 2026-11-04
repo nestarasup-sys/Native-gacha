@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { FIRST_HAIR_MOTION_PRESET } from '../src/shared/hairMotionEngine.ts'
-import { editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
+import { editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
 import { planEditorV6Export } from '../src/shared/editorV6Export.ts'
 import { expandEditorV6HairCrop } from '../src/renderer/src/features/editorV6/editorV6HairMotionGeometry.ts'
 
@@ -28,6 +28,7 @@ const validBundle = () => ({
   textures: [{ id: 'hair', dataUrl: 'data:image/png;base64,AA==' }],
   rigs: [{
     elementId: 'element-1', assetId: 'asset-1', characterId: 'character-1',
+    poseSlot: 1,
     baseSurfaceId: 'body', faceSurfaceId: 'face', overlaySurfaceId: null,
     artworkWidth: 100, artworkHeight: 200, outputWidth: 100, outputHeight: 200,
     shapeScaleX: 1, shapeScaleY: 1,
@@ -146,4 +147,33 @@ test('a âncora interpolada usa a geometria local da cabeça entre duas poses', 
   const element = { x: -25, y: 0, width: 40, height: 60, rotation: 0, flipX: false }
   assert.equal(editorV6HairMotionHeadAnchorX(element, halfway), .325)
   assert.throws(() => interpolateEditorV6HairMotionRig(from, to, 1.1), /progresso da geometria/i)
+})
+
+test('trocas só de expressão não transformam variações do recorte em velocidade física da cabeça', () => {
+  const rig = validBundle().rigs[0]
+  const actor = { x: -25, y: 0, width: 40, height: 60, rotation: 0, flipX: false, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+  const faceCropA = { ...rig, sourceCrop: { left: 0, top: 0, width: 80, height: 180 } }
+  const faceCropB = { ...rig, sourceCrop: { left: 12, top: 8, width: 56, height: 164 } }
+  assert.notEqual(editorV6HairMotionHeadAnchor(actor, faceCropA).localX, editorV6HairMotionHeadAnchor(actor, faceCropB).localX, 'o fixture precisa demonstrar a variação visual de recorte')
+
+  // Both expression endpoints use the same stable pose rig. Their rendered
+  // atlas crops are intentionally absent from this physical path calculation.
+  const start = editorV6HairMotionHeadPathPoint(actor, faceCropA)
+  const samples = [0, .25, .5, .75, 1].map(progress => interpolateEditorV6HairMotionHeadPathPoint(actor, actor, faceCropA, faceCropA, progress))
+  assert.ok(samples.every(point => editorV6HairMotionHeadPathDelta(start, point) === 0), 'a mudança de recorte facial não deve injetar impulso na física')
+})
+
+test('movimentos reais interpolam a geometria estável da cabeça entre poses', () => {
+  const fromRig = validBundle().rigs[0]
+  const toRig = { ...fromRig, poseSlot: 2, sourceCrop: { left: 14, top: 9, width: 56, height: 164 }, targetHead: { ...fromRig.targetHead, x: 42, y: 13, rotation: 18 } }
+  const from = { x: -25, y: 0, width: 40, height: 60, rotation: 0, flipX: false, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100 }
+  const to = { ...from, x: -17, y: 5, rotation: 28, flipX: true, width: 44, height: 62 }
+  const start = interpolateEditorV6HairMotionHeadPathPoint(from, to, fromRig, toRig, 0)
+  const middle = interpolateEditorV6HairMotionHeadPathPoint(from, to, fromRig, toRig, .5)
+  const end = interpolateEditorV6HairMotionHeadPathPoint(from, to, fromRig, toRig, 1)
+  assert.ok(editorV6HairMotionHeadPathDelta(start, middle) !== 0)
+  assert.ok(editorV6HairMotionHeadPathDelta(middle, end) !== 0)
+  assert.equal(middle.flipX, true)
+  assert.ok(Math.abs(middle.rotation - 14) < 1e-9)
+  assert.throws(() => interpolateEditorV6HairMotionHeadPathPoint(from, to, fromRig, toRig, 1.1), /progresso da geometria da cabeça/i)
 })

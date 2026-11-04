@@ -199,6 +199,7 @@ export async function prepareEditorV6HairMotionBundle(
         const faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, canvasDataUrl(splitFrame.face))
         rigs.push({
           elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
+          poseSlot: character.customization.poseSlot ?? null,
           baseSurfaceId, faceSurfaceId, overlaySurfaceId,
           artworkWidth: splitFrame.width, artworkHeight: splitFrame.height,
           outputWidth: splitFrame.outputWidth, outputHeight: splitFrame.outputHeight,
