@@ -260,6 +260,7 @@ async function initialize() {
     const texture = hairTextures.get(piece.textureId)
     if (!texture) throw Error('A exportação perdeu uma imagem do cabelo preparado.')
     const settings = motionSettings(piece.side)
+    if (hairAnimation?.posteriorOnly && !piece.id.startsWith('rearHair:')) settings.enabled = false
     const stateKey = `${element.id}:${piece.id}`
     let state = hairMotionStates.get(stateKey)
     if (!state) { state = createHairMotionState(); hairMotionStates.set(stateKey, state) }

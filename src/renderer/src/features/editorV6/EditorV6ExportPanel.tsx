@@ -94,7 +94,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
       project,
-      options: { ...options, hairAnimationLoopFrames: hairAnimationEnabled && !hairPoseReactionOnly && hairLoopMode ? hairLoopMode : undefined, hairPoseReactionOnly: hairAnimationEnabled && hairPoseReactionOnly ? true : undefined },
+      options: { ...options, hairAnimationLoopFrames: hairAnimationEnabled && !hairPoseReactionOnly && hairLoopMode ? hairLoopMode : undefined, hairPoseReactionOnly: hairAnimationEnabled && hairPoseReactionOnly ? true : undefined, hairPosteriorOnly: hairAnimationEnabled && (hairPosteriorOnly || hairPoseReactionOnly) ? true : undefined },
       hairPresetSlot,
       hairPreset: preparedHairPreset,
       prepareHair: prepareEditorV6HairMotionBundle,
@@ -141,12 +141,12 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <small>Neste modo, apenas a categoria Posterior (rearHair) é animada; Traseiro (backHair), rabo de cavalo, franja e ahoge continuam estáticos. O preset salvo não é alterado.</small>
           <label className="v6-export-check"><input type="checkbox" checked={hairPoseReactionOnly} disabled={!hairAnimationEnabled} onChange={(event) => setHairPoseReactionOnly(event.target.checked)} />Balançar só o cabelo posterior após trocar de pose</label>
           <small>Ativa automaticamente “apenas cabelo posterior”. Ao terminar uma troca real de pose, só o Posterior balança uma vez durante cerca de 1 segundo e volta à posição original. Alterações apenas de expressão não disparam.</small>
-          <label>Preset<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
-          <label>Movimento do cabelo<select value={hairLoopMode} disabled={hairPoseReactionOnly} onChange={(event) => setHairLoopMode(Number(event.target.value) as 0 | 90 | 120)}><option value={0}>Física contínua (atual)</option><option value={90}>Loop experimental · 3 segundos</option><option value={120}>Loop experimental · 4 segundos</option></select></label>
+          <label>Preset<select disabled={!hairAnimationEnabled} value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
+          <label>Movimento do cabelo<select value={hairLoopMode} disabled={!hairAnimationEnabled || hairPoseReactionOnly} onChange={(event) => setHairLoopMode(Number(event.target.value) as 0 | 90 | 120)}><option value={0}>Física contínua (atual)</option><option value={90}>Loop experimental · 3 segundos</option><option value={120}>Loop experimental · 4 segundos</option></select></label>
           <small>{hairPoseReactionOnly ? 'Reação única somente do Posterior: a física contínua e o loop ficam desligados nesta exportação.' : 'O loop prepara uma vez os deslocamentos das mechas e os repete no MP4. A preparação das poses continua necessária.'} A prévia normal do Editor V6 não muda.</small>
           <small>O preset usa a mesma chave do Fabricador DEV. O cabelo animado continua exclusivo do MP4.</small>
-          <button type="button" aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
-          {editingHairPreset && presetDraft?.slot === hairPresetSlot && <EditorV6HairPresetEditor slot={hairPresetSlot} preset={presetDraft.value}
+          <button type="button" disabled={!hairAnimationEnabled} aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
+          {hairAnimationEnabled && editingHairPreset && presetDraft?.slot === hairPresetSlot && <EditorV6HairPresetEditor slot={hairPresetSlot} preset={presetDraft.value}
             onChange={(value) => { setPresetDraft({ slot: hairPresetSlot, value }); setHairPresetMessage('') }}
             onSave={saveHairPreset}
             onDiscard={() => { setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }} />}

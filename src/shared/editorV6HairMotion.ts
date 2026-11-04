@@ -66,6 +66,7 @@ export type EditorV6HairMotionBundle = {
   preset: HairMotionPreset
   loopFrames?: 90 | 120
   poseReactionOnly?: boolean
+  posteriorOnly?: boolean
   surfaces: EditorV6HairMotionSurface[]
   textures: EditorV6HairMotionSurface[]
   rigs: EditorV6HairMotionRig[]
@@ -270,6 +271,7 @@ const bundleSchema = z.object({
   preset: z.unknown(),
   loopFrames: z.union([z.literal(90), z.literal(120)]).optional(),
   poseReactionOnly: z.boolean().optional(),
+  posteriorOnly: z.boolean().optional(),
   surfaces: z.array(surface).max(5000),
   textures: z.array(surface).max(2000),
   rigs: z.array(rig).min(1).max(10_000),
@@ -280,9 +282,10 @@ const bundleSchema = z.object({
 export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotionBundle {
   const parsed = bundleSchema.parse(value)
   if (parsed.poseReactionOnly && parsed.loopFrames) throw Error('O cabelo não pode repetir loop e reagir somente após pose ao mesmo tempo.')
+  if (parsed.poseReactionOnly && !parsed.posteriorOnly) throw Error('A reação após pose exige somente a categoria posterior.')
   const preset = normalizeHairMotionPreset(parsed.preset)
   if (!preset) throw Error('O preset de animação de cabelo está inválido.')
-  if (parsed.poseReactionOnly && (!preset.enabled.front || preset.enabled.back || preset.enabled.fringe)) throw Error('Reação após pose permite somente o cabelo posterior.')
+  if (parsed.posteriorOnly && (!preset.enabled.front || preset.enabled.back || preset.enabled.fringe)) throw Error('A seleção posterior exige somente a camada correspondente no preset.')
   const surfaces = new Set(parsed.surfaces.map(item => item.id))
   const textures = new Set(parsed.textures.map(item => item.id))
   const rigKeys = new Set<string>()

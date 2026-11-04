@@ -7,7 +7,7 @@ export type EditorV6ExportAudio = {
   libraryVideoId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean }
+export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Keep the UI encoder selector aligned with the validated IPC contract. */
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
@@ -39,6 +39,9 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (options.hairAnimationLoopFrames !== undefined && (![90, 120].includes(options.hairAnimationLoopFrames) || !options.hairAnimationPresetSlot)) throw Error('Ciclo do cabelo requer preset ativo e duração de 3 ou 4 segundos.')
   if (options.hairPoseReactionOnly !== undefined && typeof options.hairPoseReactionOnly !== 'boolean') throw Error('Configuração de reação do cabelo inválida.')
   if (options.hairPoseReactionOnly && (!options.hairAnimationPresetSlot || options.hairAnimationLoopFrames !== undefined)) throw Error('Reação após pose requer preset e não pode usar loop contínuo.')
+  if (options.hairPosteriorOnly !== undefined && typeof options.hairPosteriorOnly !== 'boolean') throw Error('Configuração de cabelo posterior inválida.')
+  if (options.hairPosteriorOnly && !options.hairAnimationPresetSlot) throw Error('Cabelo posterior exclusivo requer preset ativo.')
+  if (options.hairPoseReactionOnly && !options.hairPosteriorOnly) throw Error('A reação após pose exige a seleção exclusiva do cabelo posterior.')
   const count = options.endFrame - options.startFrame
   const middle = options.startFrame + Math.floor(count / 2)
   return options.turbo && count >= 2 ? [{ index: 0, startFrame: options.startFrame, endFrame: middle }, { index: 1, startFrame: middle, endFrame: options.endFrame }] : [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]

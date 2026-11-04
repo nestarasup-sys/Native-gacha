@@ -55,9 +55,22 @@ describe('V6 experimental numerical hair loop', () => {
       if (frame === 120 || frame === 299) expect([...a]).toEqual(Array(9).fill(0))
     }
     const options = { startFrame: 0, endFrame: 300, width: 1920, height: 1080, turbo: true, encoder: 'auto' as const, hairAnimationPresetSlot: 2 }
-    expect(planEditorV6Export({ ...options, hairPoseReactionOnly: true }, 300)).toHaveLength(2)
-    expect(() => planEditorV6Export({ ...options, hairAnimationLoopFrames: 120, hairPoseReactionOnly: true }, 300)).toThrow(/não pode usar loop/)
+    expect(planEditorV6Export({ ...options, hairPoseReactionOnly: true, hairPosteriorOnly: true }, 300)).toHaveLength(2)
+    expect(() => planEditorV6Export({ ...options, hairAnimationLoopFrames: 120, hairPoseReactionOnly: true, hairPosteriorOnly: true }, 300)).toThrow(/não pode usar loop/)
     expect(() => planEditorV6Export({ ...options, hairPoseReactionOnly: 'yes' as unknown as boolean }, 300)).toThrow(/reação/)
+  })
+
+
+  it('validates all three independent hair controls and rejects contradictory combinations', () => {
+    const base = { startFrame: 0, endFrame: 300, width: 1920, height: 1080, turbo: true, encoder: 'auto' as const, hairAnimationPresetSlot: 2 }
+    for (const controls of [
+      {}, { hairPosteriorOnly: true }, { hairAnimationLoopFrames: 90 as const },
+      { hairAnimationLoopFrames: 120 as const, hairPosteriorOnly: true },
+      { hairPosteriorOnly: true, hairPoseReactionOnly: true }
+    ]) expect(() => planEditorV6Export({ ...base, ...controls }, 300)).not.toThrow()
+    expect(() => planEditorV6Export({ ...base, hairPoseReactionOnly: true }, 300)).toThrow(/seleção exclusiva/)
+    expect(() => planEditorV6Export({ ...base, hairPosteriorOnly: true, hairAnimationPresetSlot: undefined }, 300)).toThrow(/preset ativo/)
+    expect(() => planEditorV6Export({ ...base, hairPosteriorOnly: 'true' as unknown as boolean }, 300)).toThrow(/posterior inválida/)
   })
 
   it('creates an export-only preset with rear hair enabled and front layers disabled', () => {
