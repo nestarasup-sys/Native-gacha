@@ -241,7 +241,7 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
       surfaces: [{ id: 'base', dataUrl }, { id: 'face', dataUrl }],
       textures: [{ id: 'hair', dataUrl }],
       rigs: [{
-        elementId: 'actor-element', assetId: 'actor-image', characterId: 'synthetic-character',
+        elementId: 'actor-element', assetId: 'actor-image', characterId: 'synthetic-character', poseSlot: null,
         baseSurfaceId: 'base', faceSurfaceId: 'face', overlaySurfaceId: null,
         artworkWidth: 64, artworkHeight: 64, outputWidth: 64, outputHeight: 64, shapeScaleX: 1, shapeScaleY: 1,
         sourceCrop: { left: 0, top: 0, width: 64, height: 64 }, sourceHead: { width: 32, height: 24 },
