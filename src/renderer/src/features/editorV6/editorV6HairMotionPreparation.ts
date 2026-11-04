@@ -30,12 +30,47 @@ function targetsForState(elementId: string, state: EditorV6Element): MotionTarge
   return targets
 }
 
-export function collectEditorV6HairMotionTargets(project: EditorV6Document): MotionTarget[] {
+/**
+ * Keep the historical full-document behavior for calls without an export range.
+ * For an MP4 range, the initial scene is always retained (legacy fallback),
+ * while only timeline states whose *effective* interval touches the export
+ * are prepared. Character states hold until the next character state, even
+ * if an older file has a short stored durationFrames. Consequently an
+ * in-progress transition still has BOTH its endpoint portraits.
+ *
+ * No written timeline or snapshot is ever changed by this selection.
+ */
+export function selectEditorV6HairTargetStates(
+  project: EditorV6Document,
+  range?: Readonly<{ startFrame: number; endFrame: number }>
+): EditorV6Element[] {
+  const states: EditorV6Element[] = [...project.elements]
+  for (const track of project.timeline.tracks) {
+    if (!range) {
+      for (const block of track.blocks) if (block.state) states.push(block.state)
+      continue
+    }
+    const blocks = track.kind === 'character'
+      ? [...track.blocks].sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id))
+      : track.blocks
+    for (let index = 0; index < blocks.length; index += 1) {
+      const block = blocks[index]
+      if (!block.state || block.startFrame >= range.endFrame) continue
+      const end = track.kind === 'character'
+        ? blocks[index + 1]?.startFrame ?? project.timeline.durationFrames
+        : block.startFrame + block.durationFrames
+      if (end > range.startFrame) states.push(block.state)
+    }
+  }
+  return states
+}
+
+export function collectEditorV6HairMotionTargets(
+  project: EditorV6Document,
+  range?: Readonly<{ startFrame: number; endFrame: number }>
+): MotionTarget[] {
   const targets = new Map<string, MotionTarget>()
-  const states = [
-    ...project.elements,
-    ...project.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))
-  ]
+  const states = selectEditorV6HairTargetStates(project, range)
   for (const state of states) {
     for (const target of targetsForState(state.id, state)) {
       const key = `${target.elementId}:${target.assetId}`
@@ -64,7 +99,7 @@ export async function prepareEditorV6HairMotionBundle(
   if (!Number.isInteger(presetSlot) || presetSlot < 1 || presetSlot > 5) throw Error('Selecione um preset de animação de cabelo válido.')
   const reportStage = (stage: string, started: number) => diagnostics?.onStage?.(stage, performance.now() - started)
   let stageStarted = performance.now()
-  const targets = collectEditorV6HairMotionTargets(project)
+  const targets = collectEditorV6HairMotionTargets(project, exportOptions)
   reportStage('collectTargets', stageStarted)
   if (!targets.length) throw Error('Este projeto ainda não tem personagens preparados para animar o cabelo.')
   stageStarted = performance.now()
