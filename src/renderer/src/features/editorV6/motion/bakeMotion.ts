@@ -136,7 +136,10 @@ function isBlinkUnavailable(error: unknown): boolean {
 function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
   const cache = new Map<string, Promise<unknown>>()
   return new Proxy({} as CharacterRenderAssetProvider, { get: (_target, property) => (...args: unknown[]) => {
-    if (sharedOnly && !['loadFabricatorSlot', 'loadFabricatorPose', 'loadHairStyle', 'loadWardrobeSet'].includes(String(property))) {
+    // Session-local immutable read-through memo for one character/source revision.
+    // Include face catalog metadata: expressions are still repainted per frame,
+    // but fetching the same catalog PNG and transform via IPC is redundant.
+    if (sharedOnly && !['loadFabricatorSlot', 'loadFabricatorPose', 'loadHairStyle', 'loadWardrobeSet', 'loadFaceSet', 'listFaceCatalog', 'loadFaceCatalogItem', 'listFaceComponentAssets', 'loadFaceComponentAsset', 'listFaceExpressionPresets', 'loadFaceExpressionPreset'].includes(String(property))) {
       return (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args)
     }
     const key = JSON.stringify([property, args]); let result = cache.get(key)
