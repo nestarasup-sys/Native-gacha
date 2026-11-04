@@ -62,6 +62,24 @@ describe('R37 isolated piece raster backend', () => {
     await expect(renderer.render(frame([part('a', 'a')]), canvas, controller.signal)).rejects.toThrow('cancelled')
     expect(calls).toHaveLength(0)
   })
+  it('shares concurrent decoding without coupling it to cancellation of one consumer', async () => {
+    let resolve!: (value: never) => void
+    let decodes = 0
+    const renderer = createEditorV6PartRasterRenderer(() => {
+      decodes++
+      return new Promise<never>(r => { resolve = r })
+    })
+    const cancelled = new AbortController()
+    const first = renderer.render(frame([part('a', 'same')]), harness().canvas, cancelled.signal)
+    const second = renderer.render(frame([part('b', 'same')]), harness().canvas)
+    await Promise.resolve()
+    cancelled.abort()
+    resolve({} as never)
+    await expect(first).rejects.toThrow('cancelled')
+    await expect(second).resolves.toMatchObject({ drawnParts: 1 })
+    expect(decodes).toBe(1)
+    expect(renderer.cachedSources()).toBe(1)
+  })
   it('rejects invalid cache capacities', () => {
     for (const capacity of [0, -1, 257, 1.5, Number.NaN]) {
       expect(() => createEditorV6PartRasterRenderer(async () => ({} as never), capacity)).toThrow()
