@@ -187,6 +187,13 @@ async function main() {
   let injected = false
   const fallback = await runEditorV6Export(project, options, { ...base, id: randomUUID(), outputPath: join(folder, 'fallback.mp4'), reportPath: join(folder, 'fallback.report.json'), createWorker: (renderProject, part, signal, layeredVideo) => { if (part.index === 1 && !injected) { injected = true; throw Error('Falha simulada na segunda parte.'); } return makeWorker(signal, 320, 180, renderProject, layeredVideo) } })
   assert(fallback.fallback && fallback.attempts.length === 2 && fallback.attempts[1].parallelism === 1 && active === 0, 'Recuperação segura não reiniciou e concluiu a exportação.')
+  const strictReportPath = join(folder, 'strict-turbo.report.json')
+  let strictError = ''
+  try {
+    await runEditorV6Export(project, { ...options, width: 1920, height: 1080, forceTurbo1080: true }, { ...base, id: randomUUID(), outputPath: join(folder, 'strict-turbo.mp4'), reportPath: strictReportPath, createWorker: () => { throw Error('Falha Turbo simulada.') } })
+  } catch (error) { strictError = String(error) }
+  const strictReport = JSON.parse(await readFile(strictReportPath, 'utf8'))
+  assert(strictError.includes('Turbo obrigatório falhou') && !strictReport.fallback && strictReport.attempts.length === 1 && active === 0, 'Turbo obrigatório não deve iniciar a recuperação segura.')
   const preserved = join(folder, 'preserved.mp4'), controller = new AbortController()
   await writeFile(preserved, 'arquivo anterior')
   let calls = 0, cancelled = false

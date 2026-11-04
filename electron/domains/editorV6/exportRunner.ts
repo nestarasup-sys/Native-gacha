@@ -370,6 +370,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       deps.signal.throwIfAborted()
       const attempt = report.attempts.at(-1)
       if (attempt) attempt.error = message(error)
+      if (options.forceTurbo1080) throw Error(`Turbo obrigatório falhou: ${message(error)}`)
       if (!options.turbo || requestedParts.length < 2) throw error
       report.fallback = true
       deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })

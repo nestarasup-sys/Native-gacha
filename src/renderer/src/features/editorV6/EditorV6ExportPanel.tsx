@@ -9,6 +9,10 @@ import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
 import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
 import { EditorV6ExportActivity } from './EditorV6ExportActivity'
 
+const FORCE_TURBO_STORAGE_KEY = 'editor-v6-force-turbo-1080'
+const readForceTurboPreference = () => {
+  try { return window.localStorage.getItem(FORCE_TURBO_STORAGE_KEY) === 'true' } catch { return false }
+}
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
 export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequired, onClose, onChange, onActivity, trackOperation }: { project: EditorV6Document; open: boolean; characterSourceRefreshRequired: boolean; onClose: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T> }) {
@@ -20,7 +24,10 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [open])
   const [job, setJob] = useState(rememberedJob)
-  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 })
+  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, width: 1920, height: 1080, turbo: true, forceTurbo1080: readForceTurboPreference(), encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30 })
+  useEffect(() => {
+    try { window.localStorage.setItem(FORCE_TURBO_STORAGE_KEY, String(Boolean(options.forceTurbo1080))) } catch { /* Export remains usable when storage is unavailable. */ }
+  }, [options.forceTurbo1080])
   const [hairAnimationEnabled, setHairAnimationEnabled] = useState(false)
   const [hairPosteriorOnly, setHairPosteriorOnly] = useState(false)
   const [hairPoseReactionOnly, setHairPoseReactionOnly] = useState(false)
@@ -130,9 +137,11 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
         <fieldset className="v6-export-video-settings" disabled={busy || active}><legend>Vídeo</legend><div className="v6-export-grid">
           <label>Do início (s)<input type="number" min={0} step={1 / 30} value={seconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
           <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={seconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
-          <label>Resolução<select value={options.height} onChange={(event) => setOptions({ ...options, height: Number(event.target.value), width: Number(event.target.value) * 16 / 9 })}><option value={1080}>1080p · 1920 × 1080</option><option value={720}>720p · 1280 × 720</option></select></label>
+          <label>Resolução<select disabled={options.forceTurbo1080} value={options.height} onChange={(event) => setOptions({ ...options, height: Number(event.target.value), width: Number(event.target.value) * 16 / 9 })}><option value={1080}>1080p · 1920 × 1080</option><option value={720}>720p · 1280 × 720</option></select></label>
           <label>Codificação<select value={options.encoder} onChange={(event) => setOptions({ ...options, encoder: event.target.value as EditorV6ExportOptions['encoder'] })}>{EDITOR_V6_ENCODER_CHOICES.map((choice) => <option value={choice.value} key={choice.value}>{choice.label}</option>)}</select></label>
-        </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small><label className="v6-export-check"><input type="checkbox" checked={options.turbo} onChange={(event) => setOptions({ ...options, turbo: event.target.checked })} />Turbo 2× · duas partes paralelas, com recuperação pelo modo seguro</label>
+        </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small><label className="v6-export-check"><input type="checkbox" disabled={options.forceTurbo1080} checked={options.turbo} onChange={(event) => setOptions({ ...options, turbo: event.target.checked })} />{options.forceTurbo1080 ? 'Turbo 2× · duas partes paralelas' : 'Turbo 2× · duas partes paralelas, com recuperação pelo modo seguro'}</label>
+          <label className="v6-export-check"><input type="checkbox" checked={options.forceTurbo1080 ?? false} onChange={(event) => setOptions({ ...options, forceTurbo1080: event.target.checked, ...(event.target.checked ? { turbo: true, width: 1920, height: 1080 } : {}) })} />Forçar Turbo em 1080p, sem modo seguro</label>
+          <small>Se o Turbo falhar, a exportação será interrompida e mostrará o erro.</small>
           <label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoop: true, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
           <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem. Ela não altera o restante da imagem.</small></fieldset>
         <fieldset className="v6-export-hair-settings" disabled={busy || active}><legend>Animação de cabelo <span>EXPERIMENTAL</span></legend>

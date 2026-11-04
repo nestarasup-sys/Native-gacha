@@ -26,6 +26,13 @@ describe('planejamento de exportação do Editor V6', () => {
     }
   })
 
+  it('exige 1080p e duas partes no Turbo obrigatório', () => {
+    expect(planEditorV6Export({ ...options, forceTurbo1080: true }, 100)).toHaveLength(2)
+    for (const update of [{ turbo: false }, { width: 1280, height: 720 }, { startFrame: 5, endFrame: 6 }]) {
+      expect(() => planEditorV6Export({ ...options, ...update, forceTurbo1080: true }, 100)).toThrow('Turbo obrigatório')
+    }
+  })
+
   it('divide intervalos ímpares sem repetir nem omitir quadros', () => {
     expect(planEditorV6Export(options, 100)).toEqual([{ index: 0, startFrame: 5, endFrame: 45 }, { index: 1, startFrame: 45, endFrame: 86 }])
     for (const count of [1, 2, 3, 29, 30, 31, 18000]) {

@@ -7,7 +7,7 @@ export type EditorV6ExportAudio = {
   libraryVideoId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Keep the UI encoder selector aligned with the validated IPC contract. */
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
@@ -32,6 +32,8 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (!Number.isSafeInteger(durationFrames) || durationFrames < 1) throw Error('A duração do documento é inválida.')
   if (!Number.isInteger(options.startFrame) || !Number.isInteger(options.endFrame) || options.startFrame < 0 || options.endFrame > durationFrames || options.endFrame <= options.startFrame) throw Error('Escolha um intervalo válido de quadros para exportar.')
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 320 || options.height < 180 || options.width > 1920 || options.height > 1080 || options.width % 2 || options.height % 2 || options.width * 9 !== options.height * 16) throw Error('A resolução precisa ser 16:9, com dimensões pares, entre 320×180 e 1920×1080.')
+  if (options.forceTurbo1080 !== undefined && typeof options.forceTurbo1080 !== 'boolean') throw Error('Configuração de Turbo obrigatório inválida.')
+  if (options.forceTurbo1080 && (!options.turbo || options.width !== 1920 || options.height !== 1080 || options.endFrame - options.startFrame < 2)) throw Error('Turbo obrigatório exige 1080p e ao menos dois quadros.')
   if (options.encoder !== 'auto' && options.encoder !== 'cpu') throw Error('Codificador inválido.')
   if (options.mouthLoop !== undefined && typeof options.mouthLoop !== 'boolean') throw Error('Configuração de animação da boca inválida.')
   if (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
