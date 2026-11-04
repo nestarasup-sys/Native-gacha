@@ -1047,11 +1047,13 @@ app.whenReady().then(async () => {
       if (hairPresetSlot !== null && !process.env.GACHA_VIDEO_STRESS_OFFSCREEN) throw Error('O preparo real de cabelo requer um perfil Electron isolado.')
       const cacheProbe = process.env.GACHA_EDITOR_V6_STRESS_CACHE_PROBE === '1'
       const singleMotionRun = process.env.GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN === '1'
+      const hairPreparationOnly = process.env.GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY === '1'
+      if (hairPreparationOnly && hairPresetSlot === null) throw Error('O perfil de preparação de cabelo exige um preset válido.')
       const motionConcurrencyValue = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
       const motionConcurrency = motionConcurrencyValue === '1' ? 1 : motionConcurrencyValue === '2' || motionConcurrencyValue === undefined ? 2 : null
       if (motionConcurrency === null) throw Error('A concorrência de bakes do benchmark precisa ser 1 ou 2.')
       // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
-      const modes = hairPresetSlot !== null ? [true, true, true] : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
+      const modes = hairPreparationOnly ? [true] : hairPresetSlot !== null ? [true, true, true] : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
       let hairHarnessWindow: BrowserWindow | null = null
       const processPeakByRunRole = new Map<string, { run: number; role: string; samples: number; peakWorkingSetBytes: number; peakPrivateBytes: number; peakCpuPercent: number | null }>()
       const processSampleCountByRun = new Map<number, number>()
@@ -1069,6 +1071,7 @@ app.whenReady().then(async () => {
         motionTransitionsPrepared: number; motionCache: unknown; motionCacheDelta: EditorV6MotionCacheStats
         mainProcessMemory: unknown; partTiming: unknown[]; processSampleCount: number; processPeaks: unknown[]
       }> = []
+      let hairPreparationProfile: Record<string, unknown> | null = null
       const runs: Array<{ run: number; workers: number; motionConcurrency: number; motionConcurrentPeak: number; milliseconds: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
       try {
         if (hairPresetSlot !== null) {
@@ -1153,6 +1156,27 @@ app.whenReady().then(async () => {
             hairBundleBytes = prepared.bundleBytes
             hairPresetFingerprint = prepared.presetFingerprint
             if (prepared.presetSlot !== hairPresetSlot || !hairAnimation.rigs.length) throw Error('O preparo não carregou o preset esperado ou não produziu rigs de cabelo.')
+            if (hairPreparationOnly) {
+              if (sampleTimer) { clearInterval(sampleTimer); sampleTimer = null }
+              if (sampleInFlight) await sampleInFlight
+              await sampleProcesses()
+              const stages = prepared.preparationStages as Record<string, { samples: number; totalMs: number; maxMs: number }>
+              const preparedTransitions = hairAnimation.motionTransitions?.length ?? 0
+              hairPreparationProfile = {
+                passed: preparedTransitions > 0 && Object.values(stages).every(stage => Number.isFinite(stage.totalMs)),
+                benchmarkKind: 'real-project-hair-preparation', projectId, projectUpdatedAt: project.updatedAt,
+                projectTitle: 'Editor V6 06', durationFrames: frameCount, durationSeconds: frameCount / 30,
+                width: 1920, height: 1080, fps: '30/1', hairPresetSlot,
+                hairPresetFingerprint, preparationWallMs: hairPreparationWallMs,
+                preparationRendererMs: hairPreparationRendererMs, preparationStages: stages,
+                bundleSerializationMs: hairBundleSerializationMs, bundleBytes: hairBundleBytes,
+                rigCount: hairAnimation.rigs.length, preparedTransitions,
+                bakeSamples: stages.bakeHairlessMotionTransition?.samples ?? 0,
+                processSampleCount: processSampleCountByRun.get(index + 1) ?? 0,
+                processPeaks: [...processPeakByRunRole.values()].filter(sample => sample.run === index + 1)
+              }
+              break
+            }
           }
           console.log(`[V6 isolated export] Rodada ${index + 1}/${modes.length}: ${turbo ? 'dois' : 'um'} workers, ${frameCount} quadros 1920×1080${hairPresetSlot === null ? ', sem cabelo experimental' : `, cabelo Preset ${hairPresetSlot} ativo`}.`)
           const cacheBeforeExport = editorV6MotionService!.getCacheStats()
@@ -1194,7 +1218,12 @@ app.whenReady().then(async () => {
           }
         }
         const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
-        if (hairPresetSlot !== null) {
+        if (hairPreparationOnly) {
+          if (!hairPreparationProfile) throw Error('O perfil rápido não produziu uma medição de preparação.')
+          await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(hairPreparationProfile, null, 2), 'utf8')
+          hairStressCompleted = hairPreparationProfile.passed === true
+          console.log(JSON.stringify(hairPreparationProfile, null, 2))
+        } else if (hairPresetSlot !== null) {
           const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: 'Editor V6 06', durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), runs: hairRuns }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           hairStressCompleted = summary.passed
