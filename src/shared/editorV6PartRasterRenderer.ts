@@ -29,10 +29,14 @@ const assertActive = (signal?: AbortSignal) => {
   if (signal?.aborted) throw new Error('R37: composition cancelled')
 }
 const validFrame = (frame: EditorV6ExperimentalPartFrame) =>
+  Number.isFinite(frame.progress) && frame.progress >= 0 && frame.progress <= 1 &&
   Number.isSafeInteger(frame.width) && Number.isSafeInteger(frame.height) && frame.width > 0 && frame.height > 0
 const validPart = (part: EditorV6ExperimentalPartFrame['parts'][number]) =>
-  !!part.id && !!part.sourceDataUrl && [part.x, part.y, part.width, part.height, part.rotation].every(Number.isFinite)
-  && part.width > 0 && part.height > 0
+  typeof part.id === 'string' && part.id.length > 0 &&
+  typeof part.sourceDataUrl === 'string' && part.sourceDataUrl.length > 0 &&
+  typeof part.visible === 'boolean' && Number.isSafeInteger(part.order) && part.order >= 0 &&
+  [part.x, part.y, part.width, part.height, part.rotation].every(Number.isFinite) &&
+  part.width > 0 && part.height > 0
 
 /**
  * Predecodes unique visible sources before touching the target. Failed decodes
@@ -84,7 +88,9 @@ export function createEditorV6PartRasterRenderer(
     cachedSources: () => images.size,
     async render(frame, canvas, signal) {
       assertActive(signal)
-      if (!validFrame(frame) || !Array.isArray(frame.parts) || !frame.parts.every(validPart)) {
+      if (!validFrame(frame) || !Array.isArray(frame.parts) || !frame.parts.every(validPart) ||
+        new Set(frame.parts.map(part => part.id)).size !== frame.parts.length ||
+        new Set(frame.parts.map(part => part.order)).size !== frame.parts.length) {
         throw new Error('R37: invalid frame geometry')
       }
       if (canvas.width !== frame.width || canvas.height !== frame.height) {
@@ -104,10 +110,13 @@ export function createEditorV6PartRasterRenderer(
         if (wasCached || result.reused) reusedImages++
         else decodedImages++
       }
+      // Cancellation is checked immediately before the first canvas mutation.
+      // Once drawing starts it must finish synchronously: aborting between
+      // clearRect and the last part would leave a partially composed frame.
+      // A later render can observe cancellation before its own mutation.
       assertActive(signal)
       context.clearRect(0, 0, canvas.width, canvas.height)
       for (const part of visible) {
-        assertActive(signal)
         context.save()
         try {
           context.translate(part.x + part.width / 2, part.y + part.height / 2)
