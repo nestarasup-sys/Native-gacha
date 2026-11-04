@@ -89,8 +89,7 @@ export function createEditorV6PartRasterRenderer(
     async render(frame, canvas, signal) {
       assertActive(signal)
       if (!validFrame(frame) || !Array.isArray(frame.parts) || !frame.parts.every(validPart) ||
-        new Set(frame.parts.map(part => part.id)).size !== frame.parts.length ||
-        new Set(frame.parts.map(part => part.order)).size !== frame.parts.length) {
+        new Set(frame.parts.map(part => part.id)).size !== frame.parts.length) {
         throw new Error('R37: invalid frame geometry')
       }
       if (canvas.width !== frame.width || canvas.height !== frame.height) {
