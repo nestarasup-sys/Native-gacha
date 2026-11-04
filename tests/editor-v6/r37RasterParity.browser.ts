@@ -55,8 +55,9 @@ export async function runR37RasterParity() {
   let rasterMilliseconds = 0
   let referenceMilliseconds = 0
   const captures: { first?: string; last?: string } = {}
-  for (let i = 0; i < 30; i++) {
-    const frame = compiler.frame(i / 29)
+  const totalFrames = 309
+  for (let i = 0; i < totalFrames; i++) {
+    const frame = compiler.frame(i / (totalFrames - 1))
     const rasterStart = performance.now()
     await renderer.render(frame, {
       width: actual.width, height: actual.height,
@@ -78,7 +79,7 @@ export async function runR37RasterParity() {
     referenceMilliseconds += performance.now() - referenceStart
     if (!equalPixels(pixels(actual), pixels(expected))) throw Error('R37: pixel mismatch at frame ' + i)
     if (i === 0) captures.first = actual.toDataURL('image/png')
-    if (i === 29) captures.last = actual.toDataURL('image/png')
+    if (i === totalFrames - 1) captures.last = actual.toDataURL('image/png')
     samples++
   }
   if (decodes !== 1 || compiler.exportReady !== false) throw Error('R37: unexpected decode reuse or export activation')
