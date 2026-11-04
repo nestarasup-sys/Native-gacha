@@ -58,15 +58,16 @@ export function createEditorV6PartRasterRenderer(
       images.set(source, cached)
       return { image: cached, reused: true }
     }
+    const version = generation
     let task = pending.get(source)
     if (!task) {
       task = decode(source, signal)
       pending.set(source, task)
     }
-    const version = generation
     try {
       const image = await task
       assertActive(signal)
+      if (version !== generation) throw new Error('R37: source cache invalidated during decode')
       if (version === generation) {
         images.delete(source)
         images.set(source, image)
