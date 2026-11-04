@@ -49,13 +49,18 @@ export async function runR37RasterParity() {
   const actual = canvas(), expected = canvas()
   const context = expected.getContext('2d')!
   let samples = 0
+  let rasterMilliseconds = 0
+  let referenceMilliseconds = 0
   const captures: { first?: string; last?: string } = {}
   for (let i = 0; i < 30; i++) {
     const frame = compiler.frame(i / 29)
+    const rasterStart = performance.now()
     await renderer.render(frame, {
       width: actual.width, height: actual.height,
       getContext: () => actual.getContext('2d')!
     })
+    rasterMilliseconds += performance.now() - rasterStart
+    const referenceStart = performance.now()
     context.clearRect(0, 0, expected.width, expected.height)
     // Independent reference drawing, matching the existing characterLayerRenderer
     // transform sequence for the plain-piece subset only.
@@ -70,11 +75,15 @@ export async function runR37RasterParity() {
       context.drawImage(img, -p.width / 2, -p.height / 2, p.width, p.height)
       context.restore()
     }
+    referenceMilliseconds += performance.now() - referenceStart
     if (!equalPixels(pixels(actual), pixels(expected))) throw Error('R37: pixel mismatch at frame ' + i)
     if (i === 0) captures.first = actual.toDataURL('image/png')
     if (i === 29) captures.last = actual.toDataURL('image/png')
     samples++
   }
   if (decodes !== 1 || compiler.exportReady !== false) throw Error('R37: unexpected decode reuse or export activation')
-  return { passed: true, frames: samples, decodedImages: decodes, scope: 'plain-parts-only', exportReady: false, captures }
+  return { passed: true, frames: samples, decodedImages: decodes, scope: 'plain-parts-only', exportReady: false,
+    rasterMilliseconds: Math.round(rasterMilliseconds * 1000) / 1000,
+    referenceMilliseconds: Math.round(referenceMilliseconds * 1000) / 1000,
+    captures }
 }
