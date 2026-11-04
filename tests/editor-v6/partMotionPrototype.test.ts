@@ -42,6 +42,16 @@ describe('R31 experimental per-part draw-list (NOT wired to MP4)', () => {
     expect(frames[0].parts.find(p => p.id === 'head')!.visible).toBe(false)
     expect(frames[29].parts.find(p => p.id === 'head')!.visible).toBe(true)
   })
+  it('is repeatable and retains source identity while geometry changes', () => {
+    const prototype = compileEditorV6PartMotionPrototype(from, to)
+    const first = prototype.frame(0.5)
+    expect(prototype.frame(0.5)).toEqual(first)
+    expect(first.parts.map(part => part.sourceDataUrl)).toEqual([from.parts[1].dataUrl, from.parts[0].dataUrl])
+    expect(first.parts.map(part => part.order)).toEqual([0, 1])
+    expect(prototype.exportReady).toBe(false)
+    expect(prototype.unimplementedVisualOperators).toContain('joint-bridges')
+    expect(prototype.unimplementedVisualOperators).toContain('wardrobe-and-accessory-layering')
+  })
   it('rejects impossible rigs and invalid frame values without touching saved poses', () => {
     const before = JSON.stringify([from,to])
     expect(() => compileEditorV6PartMotionPrototype(from, {...to,width:121})).toThrow(/mesmo rig/)
