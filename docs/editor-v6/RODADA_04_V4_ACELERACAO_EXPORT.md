@@ -55,6 +55,14 @@ Arquivos:
 
 **Atenção à paridade:** pixel tests sintéticos verificam os bytes da operação direta; ainda é necessário comparar capturas **reais** de Electron/Chromium/FFmpeg no mesmo projeto. Se houver alteração de bytes, perfil de cor, channel order ou geometria por conta da implementação nativa de `crop`, corrigir ou reverter a otimização.
 
+### 3.3 Opção de CPU H.264: corrigir contrato entre painel e Main
+
+O seletor do `EditorV6ExportPanel.tsx` oferecia `value="libx264"`, mas `planEditorV6Export` só aceita `encoder: 'auto' | 'cpu'`. Selecionar CPU podia impedir a exportação **antes de iniciar a renderização**. O painel agora usa `EDITOR_V6_ENCODER_CHOICES` do contrato compartilhado, com `cpu` como valor aceito e label `CPU · H.264`. `tests/editor-v6/editorV6Export.test.ts` verifica a lista e a validação. Não trocar o encoder do usuário automaticamente para acelerar; a opção de CPU continua explícita.
+
+### 3.4 Cronometragem: preparação de cabelo antes do job
+
+Em `EditorV6ExportPanel.tsx`, o clique chama `runEditorV6ExportCommand`, que aguarda `prepareEditorV6HairMotionBundle` **antes** de iniciar o job via IPC. A interface inicia `exportStartedAt` no clique, mas o relatório de `runEditorV6Export` no Main começa posteriormente. Portanto, benchmarks que usam apenas `report.milliseconds` **podem subestimar** a espera real percebida pelo usuário. A Rodada 05 deve reportar `click-to-MP4` e `preparoHairAntesDoJobMs` separadamente, sem incluir espera humana pelo diálogo de salvar como custo de CPU.
+
 ## 4. O que NÃO foi feito
 
 - Não foi executada exportação real do projeto **Editor V6 06**. O GitHub não permite acessar automaticamente o perfil local e o preset 2 do usuário.
