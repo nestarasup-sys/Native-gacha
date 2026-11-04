@@ -174,7 +174,7 @@ export async function prepareEditorV6HairMotionBundle(
   const materialCache: GachaReusableMaterialCache = new Map()
   const currentExportReuse = createEditorV6HairPreparationReuse()
   const rawSources = createEditorV6HairSourceBatch(window.desktop.fabricator)
-  const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
+  const [{ prepareSavedCharacterRenderer, createPreparedGachaWardrobePair }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])
   for (const [groupKey, group] of groups) {
@@ -196,7 +196,10 @@ export async function prepareEditorV6HairMotionBundle(
     if (!sourceHeadPart || !targetHeadPart) throw Error(`O modelo de ${character.name} não tem uma cabeça disponível para animar o cabelo.`)
 
     const hairless: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
-    const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache }
+    // Paint the wardrobe only once for the normal and hairless renderers
+    // of THIS pose. Both compose their own character body buffers.
+    const wardrobePair = createPreparedGachaWardrobePair()
+    const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache, wardrobePair }
     stageStarted = performance.now()
     const [originalRenderer, hairlessRenderer] = await Promise.all([
       prepareSavedCharacterRenderer(character, renderSource),
@@ -309,7 +312,7 @@ export async function prepareEditorV6HairMotionBundle(
           layers: descriptors
         })
       }
-    } finally { originalRenderer.dispose(); hairlessRenderer.dispose() }
+    } finally { originalRenderer.dispose(); hairlessRenderer.dispose(); wardrobePair.clear() }
   }
   materialCache.clear()
   currentExportReuse.clear()

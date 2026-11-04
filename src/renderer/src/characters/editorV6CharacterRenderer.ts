@@ -17,6 +17,7 @@ import type { GachaReusableMaterialCache, GachaReusableMaterials } from './prepa
 import { createClosedEyeAssetResolver, isRightFaceAsset as resolveIsRightFaceAsset } from './characterFaceCatalogSupport'
 import type { ClosedEyeAssetResolver } from './characterFaceCatalogSupport'
 import { createCharacterCanvas } from './canvasSurface'
+import { createGachaPairedResource, type GachaPairedResource } from './pairedCharacterPreparation'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
 import { loadStandardExpressionEffects, type StandardExpressionEffects } from './standardExpressionEffects'
 export { loadCachedImage } from './editorV6CharacterImageMemos'
@@ -62,6 +63,11 @@ export const wardrobeComponentsForGroup = characterWardrobeRenderer.wardrobeComp
 export const renderWardrobeOverlayCanvases = characterWardrobeRenderer.renderWardrobeOverlayCanvases
 export const renderWardrobeOverlay = characterWardrobeRenderer.renderWardrobeOverlay
 
+export type GachaPreparedWardrobePair = GachaPairedResource<Awaited<ReturnType<typeof renderWardrobeOverlayCanvases>>>
+export function createPreparedGachaWardrobePair(): GachaPreparedWardrobePair {
+  return createGachaPairedResource<Awaited<ReturnType<typeof renderWardrobeOverlayCanvases>>>()
+}
+
 export function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>, mouthLayer: FaceCatalogMouthLayer = 'all'): Promise<void> {
   return characterFaceCatalogRenderer.drawFaceCatalogOverlay(context, artwork, source, items, appearance, skinTone, studioFaceTransforms, expressionEffects, studioFaceMode, resolveClosedEye, headOverrides, highlightedHeadId, assetProvider, wardrobePalettes, mouthLayer)
 }
@@ -91,7 +97,7 @@ export async function materialsForPreparedCharacter(
   return loadPreparedCharacterMaterials(character, slot, assetProvider, loadHairAppearanceLayers, cache)
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderToCanvasWithLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number; layers: PreparedGachaLayerFrame }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache; wardrobePair?: GachaPreparedWardrobePair }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderToCanvasWithLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number; layers: PreparedGachaLayerFrame }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -108,8 +114,13 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   await renderArtworkWithHair(artwork, appearanceSource, backStyles, Math.max(artwork.width, artwork.height), skinTone, hairAppearance, baseContext, character.customization.partOverrides)
 
   const groups = (character.customization.wardrobeGroups ?? []).filter((group) => group.modelSlot === modelSlot)
-  const wardrobe = await renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone,
+  // Both renderers of the SAME character+pose (normal and hairless) draw the
+  // same clothes. Share the original, immutable wardrobe paintings just until
+  // both rigs have composed their own static body layers; never share the
+  // mutable output character canvases or any asset between exports.
+  const prepareWardrobe = () => renderWardrobeOverlayCanvases(groups, materials.wardrobeDetails, artwork, modelSlot, appearanceSource, skinTone,
     undefined, undefined, character.customization.shoesBehindShinClothing === true)
+  const wardrobe = await (renderSource?.wardrobePair ? renderSource.wardrobePair.load(prepareWardrobe) : prepareWardrobe())
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
