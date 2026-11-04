@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState,
   hairMotionLoopOffsets, prewarmHairMotionState, advanceHairMotionToFrame,
+  hairMotionPosteriorOnlyPreset, FIRST_HAIR_MOTION_PRESET,
   type HairMotionSettings
 } from '../../src/shared/hairMotionEngine'
 import { planEditorV6Export } from '../../src/shared/editorV6Export'
@@ -11,6 +12,14 @@ const settings: HairMotionSettings = {
   damping: 52, responsiveness: 55, anchor: 14, enabled: true
 }
 describe('V6 experimental numerical hair loop', () => {
+  it('creates an export-only preset with rear hair enabled and front layers disabled', () => {
+    const preset = structuredClone(FIRST_HAIR_MOTION_PRESET)
+    const result = hairMotionPosteriorOnlyPreset(preset)
+    expect(result.enabled).toEqual({ back: true, front: false, fringe: false })
+    expect(result.physics).toEqual(preset.physics)
+    expect(result.intensity).toEqual(preset.intensity)
+    expect(preset.enabled).toEqual({ back: true, front: true, fringe: true })
+  })
   it('requires preset and 90 or 120 frames without changing legacy options', () => {
     const base = { startFrame: 0, endFrame: 300, width: 1920, height: 1080, turbo: true, encoder: 'auto' as const }
     expect(planEditorV6Export(base, 300)).toHaveLength(2)

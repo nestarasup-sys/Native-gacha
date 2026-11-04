@@ -1,4 +1,4 @@
-import { current, isDraft } from 'immer'
+import { current, isDraft, type Draft } from 'immer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { planEditorV6Export, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
@@ -8,7 +8,7 @@ type ExportJob = EditorV6ExportStatus
 
 /** Export preparation crosses several awaits; never retain an Immer draft past the event/update that created it. */
 function detachedSnapshot<T>(value: T): T {
-  return structuredClone(isDraft(value) ? current(value) : value)
+  return structuredClone(isDraft(value) ? current(value as Draft<T>) : value)
 }
 
 export async function runEditorV6ExportCommand(input: {

@@ -52,6 +52,11 @@ export function normalizeHairMotionPreset(value: unknown): HairMotionPreset | nu
   return { physics, enabled, intensity }
 }
 
+/** Create an export-only preset that animates the rear hair layer alone. */
+export function hairMotionPosteriorOnlyPreset(preset: HairMotionPreset): HairMotionPreset {
+  return { ...preset, enabled: { ...preset.enabled, back: true, front: false, fringe: false } }
+}
+
 export function parseHairMotionPresets(text: string | null): Array<HairMotionPreset | null> {
   if (text === null) return [structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null]
   let value: unknown
