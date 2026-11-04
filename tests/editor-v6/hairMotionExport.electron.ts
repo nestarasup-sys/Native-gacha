@@ -716,6 +716,15 @@ async function main() {
         const diff = differentPixels(stationary.bitmap, reaction.bitmap)
         if (frame === 40) assert(diff > 0, 'O cabelo POSTERIOR não reagiu após a transição.')
         else assert(diff === 0, 'O modo posterior modificou peças ou um quadro em repouso: ' + frame + ' (' + diff + ' pixels).')
+        if (frame === 0) {
+          const next = await reactionWorker.frame(1)
+          const sameResolvedElements = JSON.stringify(resolveEditorV6SceneAtFrame(project, 0).elements)
+            === JSON.stringify(resolveEditorV6SceneAtFrame(project, 1).elements)
+          if (sameResolvedElements) {
+            assert(next.reused === true, 'R28: um quadro idêntico em repouso não foi reaproveitado.')
+            assert(next.bitmap && reaction.bitmap.equals(next.bitmap), 'R28: a captura reutilizada mudou o RGBA do repouso.')
+          }
+        }
       }
     } finally {
       canonicalWorker.close()
@@ -751,13 +760,26 @@ async function main() {
       return runEditorV6Export(exportProject, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1, ...(exportHairAnimation.loopFrames ? { hairAnimationLoopFrames: exportHairAnimation.loopFrames } : {}) }, {
         ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, `${name}.report.json`), signal: new AbortController().signal,
         getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
+        ...(exportHairAnimation.preparationProfile ? { hairPreparation: exportHairAnimation.preparationProfile } : {}),
         createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation: exportHairAnimation }, signal),
         audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'), progress: () => {}
       })
     }
     const outputPath = join(folder, 'hair-motion.mp4')
-    const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4')
+    const samplePreparationProfile = {
+      totalMilliseconds: 18.25,
+      stages: [{ name: 'prepareCharacterRenderers', samples: 2, totalMilliseconds: 10, maxMilliseconds: 6 }],
+      counts: { surfaces: 6, textures: 2, rigs: 2, motionTransitions: 1, encodedCharacters: 512 }
+    }
+    const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4',
+      project, { ...hairAnimation, preparationProfile: samplePreparationProfile })
     assert(report.state === 'completed' && !report.fallback && report.attempts[0]?.parts.length === 2, 'A exportação MP4 com animação de cabelo não concluiu em dois trechos Turbo.')
+    assert(report.hairPreparation?.totalMilliseconds === samplePreparationProfile.totalMilliseconds,
+      'R27: o relatório principal perdeu o tempo medido antes de iniciar o MP4.')
+    const exportedReport = JSON.parse(await readFile(join(folder, 'hair-motion.mp4.report.json'), 'utf8')) as typeof report
+    assert(exportedReport.hairPreparation?.stages[0]?.name === 'prepareCharacterRenderers'
+      && exportedReport.hairPreparation.counts.encodedCharacters === 512,
+      'R27: o arquivo JSON não persistiu corretamente os diagnósticos do preparo de cabelo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0) > 0, 'O relatório não mediu o custo do pré-aquecimento da física do cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameMetrics?.hairRasterFrames ?? 0), 0) === 61, 'O relatório não contabilizou uma superfície rasterizada de cabelo por quadro exportado.')
