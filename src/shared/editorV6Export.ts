@@ -8,6 +8,11 @@ export type EditorV6ExportAudio = {
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
 export type EditorV6ExportOptions = { startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number }
+/** Keep the UI encoder selector aligned with the validated IPC contract. */
+export const EDITOR_V6_ENCODER_CHOICES = [
+  { value: 'auto', label: 'Automática · GPU se disponível' },
+  { value: 'cpu', label: 'CPU · H.264' }
+] as const satisfies ReadonlyArray<{ value: EditorV6ExportOptions['encoder']; label: string }>
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
   frames: number; totalFrames: number; message: string; fallback: boolean; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
