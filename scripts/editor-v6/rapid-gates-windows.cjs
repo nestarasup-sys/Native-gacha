@@ -22,6 +22,7 @@ const TESTS = {
   hair: [
     'tests/editor-v6/preparedMaterialsReuse.test.ts',
     'tests/editor-v6/pairedCharacterPreparation.test.ts',
+    'tests/editor-v6/partMotionPrototype.test.ts',
     'tests/editor-v6/hairPreparationReuse.test.ts',
     'tests/editor-v6/hairSourceBatch.test.ts',
     'tests/editor-v6/hairTargetsExportRange.test.ts',
