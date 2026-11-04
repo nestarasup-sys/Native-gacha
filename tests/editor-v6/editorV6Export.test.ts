@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { EDITOR_V6_ENCODER_CHOICES, planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from '../../src/shared/editorV6Export'
+import { EDITOR_V6_ENCODER_CHOICES, editorV6BenchmarkAudioMatchesExport, planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from '../../src/shared/editorV6Export'
 import { editorV6ExportAudioSchema } from '../../src/shared/editorV6Schema'
 const options = { startFrame: 5, endFrame: 86, width: 1920, height: 1080, turbo: true, encoder: 'cpu' as const }
 describe('planejamento de exportação do Editor V6', () => {
@@ -11,6 +11,15 @@ describe('planejamento de exportação do Editor V6', () => {
     expect(() => planEditorV6Export({ ...options, encoder: 'libx264' as 'cpu' }, 100)).toThrow('Codificador inválido.')
   })
 
+  it('valida projetos reais com cabelo e som, sem exigir um vídeo silencioso', () => {
+    expect(editorV6BenchmarkAudioMatchesExport(0, false)).toBe(true)
+    expect(editorV6BenchmarkAudioMatchesExport(1, true)).toBe(true)
+    expect(editorV6BenchmarkAudioMatchesExport(12, true)).toBe(true)
+    expect(editorV6BenchmarkAudioMatchesExport(0, true)).toBe(false)
+    expect(editorV6BenchmarkAudioMatchesExport(3, false)).toBe(false)
+    expect(editorV6BenchmarkAudioMatchesExport(-1, false)).toBe(false)
+    expect(editorV6BenchmarkAudioMatchesExport(1.2, true)).toBe(false)
+  })
   it('rejeita durações inválidas ou inseguras antes de planejar quadros', () => {
     for (const duration of [0, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1]) {
       expect(() => planEditorV6Export({ ...options, endFrame: 1 }, duration)).toThrow('A duração do documento é inválida.')
