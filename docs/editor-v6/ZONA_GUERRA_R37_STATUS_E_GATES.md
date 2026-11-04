@@ -1,5 +1,7 @@
 # R37 — estado de implementação e critérios de promoção (2026-11-04)
 
+**Status consolidado:** implementação parcial; não integrada à exportação; CI e equivalência de personagem completo não confirmadas. Consulte o [painel de pendências](ZONA_GUERRA_PENDENCIAS.md) para a lista de aceitação atualizada.
+
 ## Descoberta
 O protótipo **já existia** em `src/shared/editorV6PartMotionPrototype.ts` (R31); não foi necessário criar um segundo compilador concorrente. Ele produz uma draw-list geométrica determinística de peças interpoladas, mas declara `exportReady: false`. O caminho de produção continua usando os atlas tradicionais.
 
@@ -8,7 +10,7 @@ O protótipo **já existia** em `src/shared/editorV6PartMotionPrototype.ts` (R31
 2. Testes do protótipo reforçados: repetibilidade, ordem, identidade da fonte e operadores visuais ainda ausentes.
 3. Teste do protótipo incluído como gate obrigatório no laboratório Windows; relatório em Markdown e JSON para cada execução.
 
-## Próximos gates técnicos
+## Gates ainda não concluídos
 - Implementar operadores em módulos isolados, primeiro tint de pele/contorno e pontes de juntas; não usar como exportador.
 - Compor roupas, rosto, boca, olhos e cabelo em ordem de camadas idêntica ao renderer de referência.
 - A/B pixel a pixel BGRA/RGBA de 7 amostras e 30 quadros, incluindo flipX, transparência e pivôs.
@@ -19,7 +21,7 @@ O protótipo **já existia** em `src/shared/editorV6PartMotionPrototype.ts` (R31
 ## Limites
 A CI GitHub usa Windows Server 2025 e fixtures sintéticas. Ainda não há evidência de equivalência RGBA para R37 nem benchmark real pós-R35. O trabalho desta sessão **não** afirma ganhos de desempenho nem aprova o novo compositor para produção.
 
-## Ciclo de implementação — compositor raster isolado
+## Implementação já versionada — compositor raster isolado
 
 - `src/shared/editorV6PartRasterRenderer.ts`: backend de desenho por peça em Canvas 2D, com pré-decodificação de imagens visíveis, cache LRU de até 32 fontes por instância, `clear()`, validação geométrica e cancelamento. **Não** implementa tint, bridges, wardrobe, face ou cabelo e **não** é chamado pelo exportador.
 - `tests/editor-v6/partRasterRenderer.test.ts`: valida ordem, rotação, partes ocultas, cache, eviction, falha de decode e cancelamento.
