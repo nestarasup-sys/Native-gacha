@@ -10,7 +10,7 @@ import { resolveSavedCharacterSource } from '../../characters/characterSourceRes
 import { measureFaceModeCrop } from './faceModeAssets'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
-import { createEditorV6HairPreparationReuse } from './motion/hairPreparationReuse'
+import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 
 type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
@@ -201,6 +201,9 @@ export async function prepareEditorV6HairMotionBundle(
       const poseSurfaceKey = JSON.stringify([groupKey, character.updatedAt, appearance?.modelSlot, appearance?.parts, character.customization.partOverrides])
       let baseSurfaceId: string | undefined, overlaySurfaceId: string | null | undefined
       const cropByFace = new Map<string, { left: number; top: number; width: number; height: number }>()
+      // Only immutable encoded face PNGs are reusable within this pose.
+      const faceSurfacesByInput = new Map<string, string>()
+      let preparedGeometry: Pick<EditorV6HairMotionRig, 'artworkWidth' | 'artworkHeight' | 'outputWidth' | 'outputHeight' | 'shapeScaleX' | 'shapeScaleY'> | undefined
       for (const target of group.targets) {
         if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
         const state = target.state
@@ -210,11 +213,13 @@ export async function prepareEditorV6HairMotionBundle(
         const mode = target.faceMode
         const hideMouthForExportLoop = Boolean(exportOptions.mouthLoop && (mode === 'talk' || mode === 'talk-blink') && hairlessRenderer.canIsolateMouth(currentAppearance))
         const faceKey = JSON.stringify([currentAppearance, faceTransforms, effects])
+        const faceRenderKey = editorV6HairFaceSurfaceKey(faceKey, mode, hideMouthForExportLoop)
+        const existingFaceSurfaceId = faceSurfacesByInput.get(faceRenderKey)
         let sourceCrop = cropByFace.get(faceKey)
         stageStarted = performance.now()
         const [originalFrame, splitFrame] = await Promise.all([
           sourceCrop ? Promise.resolve(null) : originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
-          hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
+          existingFaceSurfaceId ? Promise.resolve(null) : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
         ])
         reportStage('renderHairlessFaceTarget', stageStarted)
         if (!sourceCrop) {
@@ -227,18 +232,30 @@ export async function prepareEditorV6HairMotionBundle(
           reportStage('measureFaceModeCrop', cropStarted)
         }
         const poseKey = JSON.stringify([poseSurfaceKey, state.poseSlot, sourceHeadPart.width, sourceHeadPart.height, targetHeadPart.x, targetHeadPart.y, targetHeadPart.width, targetHeadPart.height])
-        baseSurfaceId ??= addSurface(`${poseKey}:base`, canvasDataUrl(splitFrame.behindFace))
-        overlaySurfaceId ??= splitFrame.inFrontOfFace ? addSurface(`${poseKey}:overlay`, canvasDataUrl(splitFrame.inFrontOfFace)) : null
-        stageStarted = performance.now()
-        const faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, canvasDataUrl(splitFrame.face))
-        reportStage('serializeFaceSurface', stageStarted)
+        if (splitFrame) {
+          preparedGeometry ??= {
+            artworkWidth: splitFrame.width, artworkHeight: splitFrame.height,
+            outputWidth: splitFrame.outputWidth, outputHeight: splitFrame.outputHeight,
+            shapeScaleX: splitFrame.shapeScaleX, shapeScaleY: splitFrame.shapeScaleY
+          }
+          baseSurfaceId ??= addSurface(`${poseKey}:base`, canvasDataUrl(splitFrame.behindFace))
+          if (overlaySurfaceId === undefined) overlaySurfaceId = splitFrame.inFrontOfFace
+            ? addSurface(`${poseKey}:overlay`, canvasDataUrl(splitFrame.inFrontOfFace)) : null
+        }
+        if (!baseSurfaceId || !preparedGeometry) throw Error('A camada estática do personagem não foi preparada.')
+        let faceSurfaceId = existingFaceSurfaceId
+        if (!faceSurfaceId) {
+          if (!splitFrame) throw Error('A camada do rosto não foi preparada.')
+          stageStarted = performance.now()
+          faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, canvasDataUrl(splitFrame.face))
+          faceSurfacesByInput.set(faceRenderKey, faceSurfaceId)
+          reportStage('serializeFaceSurface', stageStarted)
+        }
         rigs.push({
           elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
           poseSlot: character.customization.poseSlot ?? null,
           baseSurfaceId, faceSurfaceId, overlaySurfaceId,
-          artworkWidth: splitFrame.width, artworkHeight: splitFrame.height,
-          outputWidth: splitFrame.outputWidth, outputHeight: splitFrame.outputHeight,
-          shapeScaleX: splitFrame.shapeScaleX, shapeScaleY: splitFrame.shapeScaleY,
+          ...preparedGeometry,
           sourceCrop, sourceHead: { width: sourceHeadPart.width, height: sourceHeadPart.height },
           targetHead: { x: targetHeadPart.x, y: targetHeadPart.y, width: targetHeadPart.width, height: targetHeadPart.height, rotation: targetHeadPart.rotation },
           layers: descriptors
