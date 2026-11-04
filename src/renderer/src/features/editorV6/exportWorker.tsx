@@ -14,6 +14,7 @@ import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
+import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
 import { createEditorV6FrameAssetRegistry } from './exportFrameAssets'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
@@ -100,10 +101,12 @@ async function initialize() {
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
   }
-  const transitionForFrame = (elementId: string, frame: number) => hairMotionTransitions.find(transition => transition.elementId === elementId
-    && transition.atlas && transition.from && transition.to && frame > transition.startFrame && frame < transition.endFrame
-    && transition.atlas.frames.some(sample => transition.endFrame + sample.offset === frame))
-  const transitionSampleForFrame = (transition: NonNullable<ReturnType<typeof transitionForFrame>>, frame: number) => transition.atlas!.frames.find(sample => transition.endFrame + sample.offset === frame)
+  // The worker owns one immutable export document. Pre-index only prepared interior
+  // frames, keeping the first eligible transition when authored ranges overlap.
+  const hairTransitionIndex = createExportHairTransitionFrameIndex(hairMotionTransitions)
+  const transitionForFrame = (elementId: string, frame: number) => hairTransitionIndex.get(elementId, frame)?.transition
+  let resolvedFrame = -1
+  let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const hairMotionStates = new Map<string, HairMotionState>()
   const hairMotionInstancePhases = new Map([...new Set((hairAnimation?.rigs ?? []).map(rig => rig.elementId))].map(elementId => [elementId, editorV6HairMotionInstancePhase(elementId)]))
   const hairWarpCanvases = new Map<string, HTMLCanvasElement>()
@@ -121,10 +124,11 @@ async function initialize() {
   const hairRigAtFrame = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number): ResolvedHairRig | undefined => {
     const elementId = element.id
     if (element.motionSprite) {
-      const transition = transitionForFrame(elementId, frame)
+      const indexed = hairTransitionIndex.get(elementId, frame)
+      const transition = indexed?.transition
       if (transition?.from && transition.to) {
-        const sample = transition.samples.find(candidate => transition.endFrame + candidate.offset === frame)
-        const hairlessFrame = transitionSampleForFrame(transition, frame)
+        const sample = indexed?.poseSample
+        const hairlessFrame = indexed?.atlasFrame
         if (sample && hairlessFrame) {
           return {
             rig: interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(sample.progress)),
@@ -163,7 +167,10 @@ async function initialize() {
       headPathCapacity = capacity
     }
     for (let frame = headPathFrame + 1; frame <= targetFrame; frame += 1) {
-      const resolved = resolveEditorV6SceneAtFrame(project, frame)
+      // Reuse the raw scene already resolved for this exported frame; mouth
+      // overlays must not change the physical rig used by head-path inertia.
+      const resolved = frame === resolvedFrame && resolvedRawScene
+        ? resolvedRawScene : resolveEditorV6SceneAtFrame(project, frame)
       const elements = new Map(resolved.elements.filter(element => element.kind === 'character').map(element => [element.id, element]))
       for (const elementId of animatedElementIds) {
         const path = headPaths.get(elementId)!
@@ -173,8 +180,9 @@ async function initialize() {
           continue
         }
         const previous = headPathPrevious.get(elementId)
-        const transition = transitionForFrame(elementId, frame)
-        const transitionSample = transition?.samples.find(sample => transition.endFrame + sample.offset === frame)
+        const indexed = hairTransitionIndex.get(elementId, frame)
+        const transition = indexed?.transition
+        const transitionSample = indexed?.poseSample
         const pathPoint = transition && transitionSample && transition.physicsFrom && transition.physicsTo
           ? interpolateEditorV6HairMotionHeadPathPoint(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo, motionEase(transitionSample.progress))
           : (() => {
@@ -316,7 +324,7 @@ async function initialize() {
     element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number],
     frame: number,
     transition: NonNullable<ReturnType<typeof transitionForFrame>>,
-    sample: NonNullable<ReturnType<typeof transitionSampleForFrame>>,
+    sample: EditorV6HairMotionTransition['frames'][number],
     timings: EditorV6FrameTimings,
     metrics: EditorV6FrameMetrics
   ): HTMLCanvasElement => {
@@ -381,7 +389,13 @@ async function initialize() {
     const timings: EditorV6FrameTimings = {}
     const metrics: EditorV6FrameMetrics = {}
     const resolutionStarted = performance.now()
-    const scene = applyMouthLoop(resolveEditorV6SceneAtFrame(project, frame), frame)
+    // Two layered captures of the same frame share one immutable raw timeline
+    // resolution. Head-path preparation consumes this same scene where possible.
+    if (resolvedFrame !== frame || !resolvedRawScene) {
+      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame)
+      resolvedFrame = frame
+    }
+    const scene = applyMouthLoop(resolvedRawScene, frame)
     const activeLayer = layeredVideo ? layer ?? 'background' : undefined
     const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
       element.motionSprite
@@ -425,9 +439,10 @@ async function initialize() {
         const original = originalElements.get(element.id)
         if (!original) { animatedElements.push(element); continue }
         if (original.motionSprite) {
-          const transition = transitionForFrame(original.id, frame)
-          const transitionFrame = transition ? transitionSampleForFrame(transition, frame) : undefined
-          const poseSample = transition?.samples.find(sample => transition.endFrame + sample.offset === frame)
+          const indexed = hairTransitionIndex.get(original.id, frame)
+          const transition = indexed?.transition
+          const transitionFrame = indexed?.atlasFrame
+          const poseSample = indexed?.poseSample
           if (!transition?.from || !transition.to || !transitionFrame || !poseSample || !transition.atlas) { animatedElements.push(element); continue }
           const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
           rasterCanvases.set(element.id, composeMotionHairFrame(element.id, rig, original, frame, transition, transitionFrame, timings, metrics))
