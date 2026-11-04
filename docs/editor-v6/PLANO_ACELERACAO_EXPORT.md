@@ -3,6 +3,17 @@
 Data: 30/10/2026. Base inicial de análise: branch `Dev-V2`, commit `b79aaaf`.
 Estado: em andamento. A preparação de movimentos recebeu concorrência limitada a duas tarefas. A reutilização de um frame idêntico da boca reduziu as medianas em 6,5% no total e 9,4% na renderização com um bake simultâneo; com dois bakes, reduziu 6,4% e 7,3%. Todos os seis exports de cada comparação passaram a validação. O RSS do processo principal variou bastante; com dois bakes, a mediana foi 13,8% maior no candidato, mas o maior pico medido foi menor (1,341 GB contra 1,507 GB no baseline), então ainda não há evidência para atribuir essa diferença à mudança. O restante do plano continua aberto.
 
+## Retomada: Rodadas 05/06 — 2026-11-03
+
+**A medição local da meta 10–15 s ainda é pendente.** Após a tentativa anterior do Codex, foram concluídas duas rodadas de código na `Dev-V2`:
+
+- **[Rodada 05](RODADA_05_V4_RETOMADA_BENCHMARK.md):** consertou o harness do `Editor V6 06`, que exigia saída silenciosa apesar de permitir áudio real no documento. Os testes de benchmark agora aceitam MP4 com áudio válido e conferem uma cópia correta de 300 quadros sem adulterar o projeto.
+- **[Rodada 06](RODADA_06_V4_MALHA_CABELO_GPU.md):** otimizou o hot path da malha com buffer `Float32` reutilizado, deslocamento vertical por linha (33 cálculos em vez de 825 por peça/quadro) e leitura única das capacidades de WebGL por contexto, com golden numérico que deve preservar exatamente os vértices.
+
+Essas mudanças não reduzem o número de quadros, a resolução ou a qualidade solicitada. **A diferença em segundos não foi medida neste ambiente**; a próxima ação é obter a linha de base do projeto real, cache frio/quente e Preset 2, confirmar os testes MP4 da CI e investigar a etapa crítica demonstrada. Não estimar 4×–6× de ganho a partir de reduções em funções internas.
+
+---
+
 ## Atualização da Rodada 04 — referência de 2026-11-03
 
 O usuário relatou cerca de **65 s para exportar 10 s** do projeto **Editor V6 06**, dois personagens e animação de cabelo experimental **Preset 2**. A nova meta de trabalho é **≤15 s**, idealmente **≤10 s**, conservando 300 quadros/30 FPS, resolução e qualidade, inclusive preparação, captura, áudio e validação. Este é um **alvo pendente, não um benchmark confirmado**. Ver [Rodada 04 — primeira otimização de readback](RODADA_04_V4_ACELERACAO_EXPORT.md) e [Codex — Rodada 05 no projeto real](CODEX_RODADA_05_V4_EXPORT_10_15S.md).
