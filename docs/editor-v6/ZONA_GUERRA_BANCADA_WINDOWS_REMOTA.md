@@ -5,10 +5,10 @@ Executar testes sintéticos de renderização e exportação sem usar dados priv
 
 ## Como usar
 1. GitHub > Actions > **Zona de Guerra - Windows export lab** > Run workflow.
-2. Escolher `dev-v2-zona-de-guerra` e 1, 2 ou 3 rodadas. Push de arquivos relevantes na branch também dispara automaticamente 2 rodadas.
-3. Abrir o run e baixar o artifact `zona-guerra-lab-<run_id>`: `summary.json`, `summary.md`, logs por rodada, métricas e PNGs sintéticos de R37 (`first.png` e `last.png`), além de outros arquivos produzidos no diretório isolado.
+2. Escolher `dev-v2-zona-de-guerra` e 1, 2 ou 3 rodadas. Push de arquivos relevantes na branch também dispara automaticamente 3 rodadas.
+3. Abrir o run e baixar o artifact `zona-guerra-lab-<run_id>`: `summary.json`, `summary.md`, `benchmark.json` (min/mediana/máximo de duração por teste), logs por rodada, métricas e PNGs sintéticos de R37 (`first.png` e `last.png`), além de outros arquivos produzidos no diretório isolado.
 
-Antes das rodadas, o job executa auditoria de arquitetura, TypeScript, regressões de preparação de motion e testes do protótipo/raster R37. Cada rodada executa (a) teste de motion no Electron, (b) comparação de 30 quadros RGBA sintéticos do raster R37, (c) serviço de motion com rigs e (d) paridade de MP4 Turbo real usando FFmpeg verificado. O job falha se qualquer teste falhar. Medições em `summary.json` são durações dos comandos, **não** benchmark equivalente aos 309 quadros reais.
+Antes das rodadas, o job executa auditoria de arquitetura, TypeScript, regressões de preparação de motion e testes do protótipo/raster R37. Cada rodada executa (a) teste de motion no Electron, (b) comparação de 309 quadros RGBA sintéticos 96×96 do raster R37, (c) probe de sete quadros offscreen R36 `paint` versus `capturePage`, (d) serviço de motion com rigs e (e) paridade de MP4 Turbo real usando FFmpeg verificado. O job falha se qualquer teste falhar. Medições em `summary.json` e `benchmark.json` são durações dos comandos, **não** benchmark equivalente aos 309 quadros reais.
 
 ## Estado da execução
 
