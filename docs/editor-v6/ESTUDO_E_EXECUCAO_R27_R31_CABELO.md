@@ -36,3 +36,23 @@ Acelerar **a primeira exportação real** de 300 quadros / 1920×1080 / 30fps no
 - Reações pós-pose são a prioridade atual. Alterações dos modos físico contínuo e loop devem permanecer isoladas.
 - Uma ideia que falhar os gates deve ficar como experimento documentado, **não** substituir o renderizador de produção.
 - Atualizar o estado de cada rodada nos commits seguintes, com resultados realmente observados no CI/Windows, sem promessas de atingir 10–15 segundos antes da medição.
+
+## Estado de implementação neste ciclo
+
+| Rodada | Estado do código | Prova existente / limite |
+| --- | --- | --- |
+| **R27** | **Integrada**: diagnóstico da preparação pré-IPC no relatório JSON do MP4; métricas de 10 estágios e quantidades. | Teste sintético de persistência no relatório; tempo real AMD ainda não medido. |
+| **R28** | **Integrada com guarda**: permite reutilizar quadro em repouso somente quando o elemento visual é idêntico; dentro das reações continua recompondo. | Teste unitário dos 29 quadros por evento; teste Electron offscreen de reuse + igualdade de bitmap. |
+| **R29** | **Integrada**: superfície estática imutável de cada textura padding somente durante o worker; não contamina malha dinâmica. | Testes de seleção estático/dinâmico e suite de exportação com alpha, espelhamento e Turbo. |
+| **R30** | **Parcialmente integrada, segura**: roupas compartilhadas na preparação dos renderizadores original e sem cabelo para uma mesma pose; composições do personagem continuam independentes. | Testes de Promise, paridade offscreen de export; **a remoção completa do segundo renderer não foi aprovada sem RGBA de projeto real**. |
+| **R31** | **Protótipo isolado, não integrado**: IR por partes com posição, pivôs, ordem e visibilidade; explicitamente `exportReady:false`. | Sete amostras geométricas e 30 quadros diferentes; falta compor roupas/face/cabelo e obter RGBA 7/7, 30/30 para poder competir com o atlas normal. |
+
+**Evidência de desempenho:** ainda **não há** três benchmarks atuais no Windows 11 x64/AMD com o Preset 2 em cópia isolada. As alterações de produção são pequenas e têm fallback implícito por meio dos caminhos originais; ganhos em segundos não devem ser apresentados como fato até G4. R30 e R31 estruturais não devem ser declaradas concluídas na sua versão completa sem testes de paridade.
+
+## Arquivos das implementações
+
+- [R27 — relatório do preparo](RODADA_27_PROFILING_PREPARO_CABELO.md)
+- [R28 — repouso sob demanda](RODADA_28_REACAO_SOB_DEMANDA.md)
+- [R29 — cabelo estático do worker](RODADA_29_CABELO_ESTATICO_WORKER.md)
+- [R30 — pintura de roupas compartilhada](RODADA_30_ROUPAS_COMPARTILHADAS_PERSONAGEM.md)
+- [R31 — compilador experimental de poses](RODADA_31_PROTOTIPO_TRANSICOES_POR_PARTES.md)
