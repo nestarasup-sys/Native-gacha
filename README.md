@@ -68,8 +68,14 @@ A estrutura final deve evoluir **por domínio** e não por movimentação massiv
 - [ADR 001 — Electron modular](docs/architecture/ADR-001-modular-electron.md)
 - [ADR 002 — fluxo de personagens](docs/architecture/ADR-002-fluxo-personagens.md)
 - [Relatório da evolução 22/10/2026](docs/architecture/RELATORIO_EVOLUCAO_2026-10-22.md)
-- [Plano de trabalho e GitHub](docs/architecture/PLANO_GITHUB_E_PROXIMOS_PASSOS.md)
+- [Índice do Editor V6 e Zona de Guerra](docs/editor-v6/README.md)
+- [Painel de pendências R32–R37](docs/editor-v6/ZONA_GUERRA_PENDENCIAS.md)
+- [Bancada remota Windows para renderização e MP4](docs/editor-v6/ZONA_GUERRA_BANCADA_WINDOWS_REMOTA.md)
 - [README histórico, com referências legadas](docs/architecture/README_LEGADO_2026-10-22.md)
+
+## Branch experimental de renderização (Zona de Guerra)
+
+A branch `dev-v2-zona-de-guerra` concentra os experimentos de renderização e exportação Editor V6; **não é a branch de atualização dos BATs de desenvolvimento**. A `Dev-V2` é a base estável de comparação deste experimento e não recebe automaticamente mudanças desta branch. Para conferir o que ainda não está completo, use o [painel de pendências](docs/editor-v6/ZONA_GUERRA_PENDENCIAS.md). A bancada Windows do GitHub usa fixtures sintéticas e não equivale a um benchmark no Windows 11 local.
 
 ## Segurança e publicação
 
