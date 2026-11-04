@@ -6,6 +6,18 @@
 
 **Regra de produto inegociável:** a animação dinâmica experimental de cabelo fica **exclusivamente na exportação MP4**, habilitada manualmente. A prévia, viewport, seek e reprodução normal do Editor V6 não devem ganhar cabelo animado. A prévia de animação do **Fabricador DEV** permanece.
 
+## Retomada após o Codex — execução de duas rodadas na Dev-V2
+
+**Rodada 05 — benchmark real:** o script isolado para o `Editor V6 06` foi corrigido para **não rejeitar exportações com cabelo e áudio**. O benchmark agora valida coerência entre clipes planejados e trilha MP4, além de verificar que o projeto copiado é o título esperado e tem pelo menos 300 quadros. Testes cobrem exportação com/sem áudio. [Relatório da Rodada 05](RODADA_05_V4_RETOMADA_BENCHMARK.md).
+
+**Rodada 06 — custo da malha WebGL:** reduziu de 825 para 33 as chamadas de `hairMotionOffset` por peça/quadro (cálculo vertical por linha), removeu alocação de 1.650 floats por desenho do renderizador de exportação e passou a consultar limites da GPU uma só vez por contexto. Testes comparam todos os valores `Float32` com a fórmula anterior. [Relatório da Rodada 06](RODADA_06_V4_MALHA_CABELO_GPU.md).
+
+**Resultado esperado, ainda não medido no computador:** menor CPU/alocação/overhead WebGL e benchmark do projeto real destravado. **A meta ≤15 s para 300 quadros ainda não foi comprovada**. A CI e as exportações MP4 hospedadas precisam ser confirmadas no HEAD final; a qualidade visual em personagens reais e o tempo de clique→MP4 só podem ser aceitos com dados locais autorizados.
+
+Próxima prioridade: obter A/B real com Preset 2 e 1920×1080, inspecionar os maiores componentes de tempo, e atuar na renderização/recaptura de camadas e no FFmpeg **somente** quando medições provarem custo recuperável. Preserve cabelo exclusivamente no MP4.
+
+---
+
 ## Novo foco da V4 — velocidade real do MP4 (Rodadas 04/05)
 
 O usuário mudou a prioridade para **exportar 10 s do projeto Editor V6 06 em ≤15 s, idealmente ≤10 s**, com **dois personagens, cabelo ativo no Preset 2**, sem rebaixar resolução, 30 FPS ou qualidade. Referência **relatada**: ~65 s. Não considerar a estimativa inicial equivalente a benchmark reproduzido.
