@@ -1,7 +1,7 @@
 'use strict'
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { parseArgs, compareRgba, benchmark } = require('../../scripts/editor-v6/spike-native-compositor.cjs')
+const { parseArgs, compareRgba, buildDynamicFixture, benchmark } = require('../../scripts/editor-v6/spike-native-compositor.cjs')
 
 test('rejects unsafe or incomplete spike arguments', () => {
   assert.throws(() => parseArgs(['--background=/tmp/bg.png']))
@@ -9,6 +9,16 @@ test('rejects unsafe or incomplete spike arguments', () => {
   assert.throws(() => parseArgs(['--strict']))
   assert.throws(() => parseArgs(['--width=10000']))
   assert.equal(parseArgs(['--frames=8', '--width=96', '--height=64']).frames, 8)
+  assert.equal(parseArgs(['--canvas-parity', '--strict']).canvasParity, true)
+  assert.throws(() => parseArgs(['--canvas-parity', '--foreground=x', '--background=y']))
+})
+
+test('dynamic compositor fixture produces distinct alpha hair frames', () => {
+  const fixture = buildDynamicFixture(160, 120, 30)
+  const frames = new Set(fixture.frames.map(({ pixels }) => require('node:crypto').createHash('sha256').update(pixels).digest('hex')))
+  assert.equal(fixture.frames.length, 30)
+  assert.equal(frames.size, 30)
+  assert.ok(fixture.frames.every(({ pixels }) => pixels.some((value, index) => index % 4 === 3 && value > 0)))
 })
 test('compares complete RGBA channels without losing alpha differences', () => {
   const left = Buffer.from([0, 10, 20, 30, 100, 120, 140, 160])
