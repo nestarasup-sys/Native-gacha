@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { BaseVideoCategory, BaseVideoDetails } from '../../../../shared/baseVideos'
+import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import { formatSimpleVideoExport, selectSimpleExportEntries } from './baseVideoSimpleExport'
 
@@ -15,12 +16,27 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
   const [categoryId, setCategoryId] = useState<string | 'all' | 'uncategorized'>('all')
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
+  const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([])
+  const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
+  const [charactersLoading, setCharactersLoading] = useState(true)
+  const [characterLoadError, setCharacterLoadError] = useState<string | null>(null)
   const categoryById = useMemo(() => new Map(categories.map((category) => [category.id, category])), [categories])
   const entries = useMemo(() => selectSimpleExportEntries(items.map((item) => ({
     item,
     details: detailsById[item.id] ?? { videoId: item.id, description: '', timeline: 'unspecified' },
     category: categoryById.get(detailsById[item.id]?.categoryId ?? '')
   })), categoryId), [items, detailsById, categoryById, categoryId])
+
+  useEffect(() => {
+    let cancelled = false
+    void window.desktop.customizer.listCustomizerCharacters().then((loaded) => {
+      if (!cancelled) setCharacters(loaded)
+    }).catch((reason) => {
+      if (!cancelled) setCharacterLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os personagens do Customizador.')
+    }).finally(() => { if (!cancelled) setCharactersLoading(false) })
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape' && !exporting) onClose() }
@@ -32,7 +48,11 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
     if (exporting || !entries.length) return
     setExporting(true); setError(null)
     try {
-      await onExport(formatSimpleVideoExport(entries))
+      const selectedCharacters = selectedCharacterIds.flatMap((id) => {
+        const character = characters.find((item) => item.id === id)
+        return character ? [character] : []
+      })
+      await onExport(formatSimpleVideoExport(entries, selectedCharacters))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível exportar os dados simples.')
     } finally { setExporting(false) }
@@ -45,6 +65,15 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
         <div className="base-videos-export-controls">
           <span className="base-videos-export-section-label">TIPO DE EXPORTAÇÃO</span>
           <button className="base-videos-export-type active" type="button"><span className="base-videos-export-type-icon">TXT</span><span><strong>Dados simples</strong><small>Descrição, tempos, categoria e contexto</small></span><i>✓</i></button>
+          <button className="base-videos-export-characters-button" type="button" disabled={charactersLoading || Boolean(characterLoadError) || exporting} aria-expanded={characterPickerOpen} onClick={() => setCharacterPickerOpen((open) => !open)}>
+            <span><strong>Selecionar personagens</strong><small>{selectedCharacterIds.length} selecionado{selectedCharacterIds.length === 1 ? '' : 's'}</small></span><i>{characterPickerOpen ? '−' : '+'}</i>
+          </button>
+          {characterPickerOpen && <div className="base-videos-export-character-list" aria-label="Personagens do Customizador">
+            {charactersLoading ? <p>Carregando personagens…</p> : characterLoadError ? <p role="alert">{characterLoadError}</p> : characters.length ? characters.map((character) => {
+              const checked = selectedCharacterIds.includes(character.id)
+              return <label key={character.id} className="base-videos-export-character-option"><input type="checkbox" checked={checked} disabled={exporting} onChange={() => setSelectedCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} /><span><strong>{character.name}</strong><small>Sem ficha — será exportado com campos vazios</small></span></label>
+            }) : <p>O Customizador ainda não tem personagens.</p>}
+          </div>}
           <label className="base-videos-export-category"><span>Vídeos para exportar</span><select value={categoryId} disabled={exporting} onChange={(event) => setCategoryId(event.target.value)}>
             <option value="all">Todos os vídeos</option>
             <option value="uncategorized">Sem categoria</option>

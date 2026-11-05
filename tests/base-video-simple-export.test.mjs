@@ -30,3 +30,11 @@ test('formato TXT conserva os campos atuais e não inventa contagens de falas', 
   assert.doesNotMatch(text, /QUANTIDADE DE FALAS/)
   assert.doesNotMatch(text, /Contagem de falas/)
 })
+
+test('export simples acrescenta personagens selecionados com ficha vazia e numeração estável', () => {
+  const character = (id, name) => ({ id, name, hair: '#000000', outfit: '#000000', skin: '#000000', customization: { modelSlot: null, poseSlot: null, partOverrides: {}, layerOrder: [] }, createdAt: '', updatedAt: '' })
+  const text = formatSimpleVideoExport([], [character('a', 'Íris Falcão'), character('b', 'Noah Barros')])
+  assert.match(text, /PERSONAGEM 1\nNOME: Íris Falcão\nFICHA:\n\{[\s\S]*"personality": ""[\s\S]*"relationships": \[\][\s\S]*"additionalRules": ""[\s\S]*\}/)
+  assert.match(text, /PERSONAGEM 2\nNOME: Noah Barros\nFICHA:/)
+  assert.equal((text.match(/PERSONAGEM \d+/g) ?? []).length, 2)
+})
