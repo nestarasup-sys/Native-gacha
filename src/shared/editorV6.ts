@@ -349,6 +349,7 @@ export type EditorV6DesktopApi = {
   deleteEditorV6Project: (id: string) => Promise<void>
   getEditorV6Folder: () => Promise<string>
   importEditorV6Image: (category: EditorV6Asset['category']) => Promise<EditorV6Asset | null>
+  linkEditorV6LibraryBackground: (backgroundId: string) => Promise<EditorV6Asset>
   saveEditorV6Print: (editorV6Id: string, dataUrl: string) => Promise<string | null>
   openEditorV6Prints: (editorV6Id: string) => Promise<void>
   getEditorV6ExportFolder: () => Promise<string | null>
