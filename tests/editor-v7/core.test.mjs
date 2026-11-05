@@ -32,6 +32,27 @@ test('hidden layers are excluded and draw order has a stable tie-breaker', () =>
   assert.deepEqual(resolveEditorV7Scene(document, 0).layers.map(({ id }) => id), ['layer-a', 'layer-c'])
 })
 
+test('transform keyframes interpolate by absolute tick and hold the final state', () => {
+  const document = fixture()
+  const half = editorV7FrameToTick(15, document.frameRate)
+  document.layers[0].keyframes = [
+    { tick: 0, transform: { ...document.layers[0].transform, x: 50 } },
+    { tick: half, transform: { ...document.layers[0].transform, x: 150, opacity: 0.5 } }
+  ]
+  assert.equal(resolveEditorV7Scene(document, editorV7FrameToTick(7, document.frameRate)).layers[0].transform.x, 96.66666666666666)
+  assert.equal(resolveEditorV7Scene(document, half).layers[0].transform.opacity, 0.5)
+  assert.equal(resolveEditorV7Scene(document, editorV7FrameToTick(29, document.frameRate)).layers[0].transform.x, 150)
+})
+
+test('document validation rejects unordered or out-of-range keyframes', () => {
+  const document = fixture()
+  document.layers[0].keyframes = [
+    { tick: editorV7FrameToTick(5, document.frameRate), transform: document.layers[0].transform },
+    { tick: editorV7FrameToTick(4, document.frameRate), transform: document.layers[0].transform }
+  ]
+  assert.throws(() => parseEditorV7Document(document))
+})
+
 test('document validation rejects missing assets, duplicate IDs, and malformed image data', () => {
   const document = fixture()
   const missing = structuredClone(document)
@@ -43,6 +64,9 @@ test('document validation rejects missing assets, duplicate IDs, and malformed i
   const badData = structuredClone(document)
   badData.assets[0].dataUrl = 'https://example.test/image.png'
   assert.throws(() => parseEditorV7Document(badData))
+  const unsafeData = structuredClone(document)
+  unsafeData.assets[0].dataUrl += '" onload="alert(1)'
+  assert.throws(() => parseEditorV7Document(unsafeData))
 })
 
 test('frame conversion and scene resolution reject invalid time', () => {

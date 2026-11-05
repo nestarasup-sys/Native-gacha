@@ -16,6 +16,7 @@ import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { registerEditorV6ExportHandlers } from './domains/editorV6/exportIpc'
+import { registerEditorV7ExportHandlers } from './domains/editorV7/exportIpc'
 import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './domains/mediaLibrary/videoLibraryStore'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
@@ -177,6 +178,7 @@ let fabricatorDesignSettingsIpc: ReturnType<typeof registerFabricatorDesignSetti
 let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
+let editorV7ExportService: ReturnType<typeof registerEditorV7ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 let rendererWritesFlushedForShutdown = false
 
@@ -1053,6 +1055,7 @@ app.whenReady().then(async () => {
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal),
     getMotionCacheStats: () => editorV6MotionService!.getCacheStats() })
+  editorV7ExportService = registerEditorV7ExportHandlers({ ipcMain, assertTrustedSender, toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools') })
   if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
     void (async () => {
       const projectId = process.env.GACHA_EDITOR_V6_STRESS_PROJECT_ID ?? ''
@@ -1309,11 +1312,13 @@ app.on('before-quit', createPersistenceShutdownHandler({
     ...(dataBackupIpc?.getActiveTasks() ?? []),
     ...(roteiroExportIpc ? [roteiroExportIpc.drain()] : []),
     ...(editorV6ExportService ? [editorV6ExportService.drain()] : []),
+    ...(editorV7ExportService ? [editorV7ExportService.drain()] : []),
     ...(editorV6MotionService ? [editorV6MotionService.drain()] : [])
   ],
   drainIpc: () => ipcMain.drain(),
   cancelExports: () => {
     editorV6ExportService?.cancelAll()
+    editorV7ExportService?.cancelAll()
     editorV6MotionService?.cancelAll()
   },
   resumeAfterFailedShutdown: () => {

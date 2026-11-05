@@ -9,6 +9,7 @@ import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../src/shared/studio'
 import type { EditorV6DesktopApi } from '../src/shared/editorV6'
+import { editorV7IpcChannels, type EditorV7DesktopApi, type EditorV7ExportStatus } from '../src/shared/editorV7'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
@@ -132,6 +133,18 @@ const editorV6Api: EditorV6DesktopApi = {
   cancelEditorV6Motion: (id) => invokeEditorV6('cancelEditorV6Motion', id)
 }
 
+const editorV7Api: EditorV7DesktopApi = {
+  startExport: (document) => ipcRenderer.invoke(editorV7IpcChannels.startExport, document),
+  getExportStatus: (id) => ipcRenderer.invoke(editorV7IpcChannels.getExportStatus, id),
+  cancelExport: (id) => ipcRenderer.invoke(editorV7IpcChannels.cancelExport, id),
+  revealExport: (id) => ipcRenderer.invoke(editorV7IpcChannels.revealExport, id),
+  onExportProgress: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, status: EditorV7ExportStatus) => callback(status)
+    ipcRenderer.on(editorV7IpcChannels.progress, listener)
+    return () => ipcRenderer.removeListener(editorV7IpcChannels.progress, listener)
+  }
+}
+
 const mediaLibraryApi: MediaLibraryDesktopApi = {
   list: () => ipcRenderer.invoke('video-library:list'),
   import: () => ipcRenderer.invoke('video-library:import'),
@@ -232,6 +245,7 @@ contextBridge.exposeInMainWorld('desktop', {
   customizer: customizerApi,
   studio: studioApi,
   editorV6: editorV6Api,
+  editorV7: editorV7Api,
   roteiros: roteirosApi,
   mediaLibrary: mediaLibraryApi,
   videoBackgrounds: videoBackgroundsApi,

@@ -1,6 +1,6 @@
 # Editor V7 — pesquisa, arquitetura e execução
 
-**Estado:** descoberta arquitetural iniciada — 05/11/2026  
+**Estado:** export V7 inicial comprovado; evolução do editor segue em aberto — 05/11/2026
 **Responsável técnico:** Codex  
 **Relação com o V6:** iniciativa paralela. O V7 não substitui, migra nem altera projetos V6 até haver compatibilidade e critérios de aceitação demonstrados.
 
@@ -33,18 +33,19 @@ Este é o documento vivo de pesquisa e engenharia do V7. Registrar aqui hipótes
 ### Hipóteses de tecnologia — ainda não aprovadas para produção
 
 1. **Núcleo em TypeScript puro:** documento versionado, tempo em ticks inteiros, operações e resolução determinística de cena sem Electron, React, DOM ou filesystem. Isso facilita testes, undo, migração e renderers alternativos.
-2. **Renderer em WebGPU (candidato principal):** testar disponibilidade real na versão Electron empacotada, diferenças por GPU/driver, readback e imagens de referência. Deve haver fallback WebGL/Canvas ou estratégia explícita se a cobertura não for aceitável.
-3. **Exportador em worker:** avaliar `VideoFrame`/`VideoEncoder` (WebCodecs) e medir transferência/cópias; manter FFmpeg como alternativa de codificação/mux e referência de compatibilidade. Nenhuma escolha de encoder é final.
-4. **Composição sem volta desnecessária à CPU:** avaliar render-targets e transferência direta; a textura compartilhada offscreen do Electron é experimental e depende de ciclo de vida rigoroso. Não se presume zero-copy apenas pelo nome da API.
+2. **Renderer escolhido para o primeiro corte: Sharp/libvips no processo principal:** já é dependência do app, rasteriza um SVG canônico sem janela de captura e evita round-trip de renderer por frame. WebGPU fica como candidato de comparação posterior, não dependência da primeira exportação.
+3. **Exportador do primeiro corte: FFmpeg por stdin raw RGBA:** seleciona encoder H.264 por capability probe, transmite um frame por vez com backpressure e valida contagem, tamanho, taxa e codec via ffprobe. WebCodecs continua como hipótese alternativa para benchmark posterior, sem bloquear export.
+4. **Composição sem captura/readback de Chromium:** o primeiro backend entrega diretamente um buffer RGBA do libvips ao encoder. Textura compartilhada offscreen do Electron segue fora do caminho crítico e é experimental; não será adotada sem benchmark que prove benefício líquido.
 5. **UI independente do backend:** timeline e comandos operam sobre contratos do domínio. Preview e export devem compartilhar a mesma avaliação de cena e a mesma semântica de frame.
 
 ## Pesquisa técnica inicial
 
 | Opção | Vantagem potencial | Limite/risco | Experimento necessário |
 |---|---|---|---|
-| Canvas 2D | Simples, previsível e boa compatibilidade | CPU e upload/readback podem limitar cenas grandes | baseline com cena determinística e custo por etapa |
-| WebGL2 | Amplo suporte e caminho conhecido | Estado implícito, custo de CPU e complexidade de batching | comparar draw calls, upload, readback e fidelidade |
-| WebGPU | API moderna, compute e pipelines explícitos | suporte depende de runtime/driver; recuperação e compatibilidade ainda precisam ser validadas | capability matrix + renderer de referência no Electron instalado |
+| Canvas 2D | Simples, previsível e boa compatibilidade | Precisa de runtime browser e readback no caminho de export | comparar draw calls, transferência e fidelidade |
+| WebGL2 | Amplo suporte e caminho conhecido | Estado implícito, custo de CPU e complexidade de batching | benchmark de composição vs libvips |
+| WebGPU | API moderna, compute e pipelines explícitos | suporte depende de runtime/driver; recuperação e compatibilidade ainda precisam ser validadas | spike só se libvips ou CPU aparecer como gargalo mensurável |
+| Sharp/libvips (corte atual) | Nativo no processo principal; API já instalada; entrada/saída de bytes e raster SVG | CPU; SVG complexo e composição de muitos assets podem dominar | medir tempo de render por frame, perfis de cenas e fidelidade no V7 real |
 | `VideoEncoder` / WebCodecs | Encoder configurável em worker e potencial aceleração por hardware | não define container MP4; codecs disponíveis variam por dispositivo | medir `isConfigSupported`, saída, timestamp e mux com trilha de áudio |
 | FFmpeg | Formatos e mux maduros; mantém caminho conhecido de áudio/vídeo | processo/cópias e disponibilidade de encoder hardware | usar como baseline e comparar entrada por pipe/memória |
 | Electron offscreen/shared texture | integração direta com Chromium e potencial para compartilhar GPU | shared texture experimental; recursos limitados e liberação obrigatória | spike isolado com contagem de cópias, perdas e ciclo de vida |
@@ -104,12 +105,12 @@ Diretrizes para o desenho, sujeitas à investigação:
 | V7-002 | próximo | Inventariar modelo de documento, tempo, comandos, undo e assets de V6; separar contratos reutilizáveis dos legados | Matriz de propriedade e proposta de schema V7 |
 | V7-003 | pendente | Registrar runtime local (Electron/Chromium, GPU, encoders) e construir capability probe isolado | Relatório JSON reprodutível, sem exportar projeto real |
 | V7-004 | concluído | Criar contrato puro V7, schema v1, conversão frame/tick e avaliador absoluto da cena | `src/shared/editorV7.ts`; 5 testes determinísticos |
-| V7-005 | pendente | Criar benchmark sintético de Canvas/WebGL/WebGPU e export worker | A/B por fase, SSIM e memória; não integrar UI ainda |
-| V7-006 | pendente | Escolher renderer/encoder e validar mux de áudio | ADR com evidências de compatibilidade, fidelidade e velocidade |
-| V7-007 | pendente | Integrar fluxo de documento e interface V7 isolados | Rota nova, persistência versionada e testes de ciclo de vida |
-| V7-008 | pendente | Gate funcional no projeto autorizado e decisão de convivência/migração | 20 s → 40 s → timeline completa; sem alterar V6 automaticamente |
+| V7-005 | concluído (primeira fatia) | Implementar compositor nativo por SVG/libvips + stream FFmpeg com backpressure e validação ffprobe | Export real 1080p H.264 do projeto autorizado; sem `WebContents` ou IPC por frame |
+| V7-006 | parcial | Escolher renderer/encoder inicial; áudio e comparação WebGPU/WebCodecs continuam pendentes | H.264 AMF passou capability probe; MP4 validado por ffprobe; sem trilha de áudio nesta versão |
+| V7-007 | parcial | Integrar rota, preview SVG, camadas, keyframes de transformação e painel de exportação V7 | `/editor-v7` compõe/exporta; salvar/reabrir projetos e importar timeline ainda pendentes |
+| V7-008 | em andamento | Ampliar importação do documento V6 autorizado, movimento e mídia; medir duração e qualidade em vídeo | Primeiro gate real de 1 s passou; próximos gates: 20 s, 40 s, timeline completa |
 
-**Próxima ação concreta:** implementar `renderEditorV7Frame` em backend independente do DOM usando Sharp/libvips já presente no projeto, transmitir frames raw com backpressure para FFmpeg e montar o primeiro MP4 sem chamar o renderer por frame.
+**Próxima ação concreta:** converter o documento inteiro (timeline, mídia e estados visuais) do projeto autorizado em camadas/keyframes V7, incluir composição de fala/áudio e então repetir os gates de 20 s, 40 s e timeline integral. O export atual é uma cena estática derivada do estado inicial do projeto e não demonstra ainda continuidade de cabelo.
 
 ## Registro de alterações e evidências
 
@@ -122,10 +123,20 @@ Diretrizes para o desenho, sujeitas à investigação:
 - Verificação executada: leitura do estado do Git e inspeção estática dos contratos/caminhos citados. Testes de produto não se aplicam a esta primeira nota documental.
 - Commit documental criado: `3d33f594` (`docs(editor-v7): start architecture research notebook`).
 
-### 05/11/2026 — núcleo de cena v1
+### 05/11/2026 — núcleo e primeira fatia de exportação
 
 - Criado `src/shared/editorV7.ts`: schema versionado, assets validados, intervalos half-open, frame-rate racional e resolução absoluta por tick. Nenhuma API de UI, Electron ou filesystem foi importada pelo núcleo.
 - Adicionado `tests/editor-v7/core.test.mjs` e comando `npm run test:editor-v7:core`.
-- Resultado: 5/5 testes do core; `npm run typecheck` aprovado; `npm run audit:architecture` aprovado (700 arquivos examinados, zero imports ausentes e zero violações de boundary).
-- Esse corte ainda não exporta mídia; a etapa seguinte implementa composição nativa com libvips/Sharp e encode por FFmpeg.
-- Commits: `3d33f594` (caderno) e `0930a8c3` (registro do caderno); o código desta etapa será registrado após o commit.
+- Criada cena SVG canônica em `src/shared/editorV7Svg.ts`; preview e compositor consomem a mesma resolução absoluta e composição de layers.
+- Criado backend de rasterização com Sharp/libvips e runner que faz capability probe H.264, envia RGBA diretamente ao stdin do FFmpeg com backpressure e valida todos os frames/resolução/FPS/codec usando ffprobe.
+- Integrada rota `/editor-v7`, navegação, contrato de preload/IPC com validação do remetente, cancelamento, progresso, destino via diálogo e participação no encerramento seguro do aplicativo.
+- Adicionados keyframes de transformação interpolados por tick no core e controles para adicionar/editar keyframes no V7.
+- Resultado: 7/7 testes do core; 2/2 testes do renderer; `npm run typecheck`, `npm run build`, `npm run audit:architecture` e teste de modelo de rotas (2/2) passaram. O audit examinou 705 arquivos sem violações.
+- Export V7 real do projeto autorizado, via `npm run export:editor-v7:authorized`: backup com `verified=true` e 285 hashes de arquivo verificados; cena de 4 imagens/4 assets; 30/30 frames; 1920×1080 a 30 FPS; H.264 AMF; `ffprobe` validou codec, dimensões, taxa e contagem.
+- Primeira versão de rasterizador SVG por quadro (data URL inline) levou 5,34 s ponta a ponta para 30 frames. A implementação otimizada decodifica/pré-rasteriza overlays, mantém cache LRU de até 96 MiB e transmite só o recorte visível das camadas; a última execução fechou em 2,31 s ponta a ponta (1,90 s no runner), 57% abaixo da primeira amostra. Render: 1,50 s; backpressure FFmpeg: 208 ms. Essa execução coincidiu com o build e teve disputa de CPU; tempos incluem início do encoder, mas não seleção humana do destino. Não extrapolar para o projeto completo.
+- O primeiro MP4 foi inspecionado visualmente: personagens e fundo aparecem sem distorção evidente. Essa inspeção não substitui comparação SSIM com o V6 nem valida animação/cabelo.
+- Saída verificada com H.264 High, BT.709 e `video_track_timescale=30000`: `out/editor-v7-stress/runs/2026-11-05T11-43-14-136Z-10152/authorized-project-v7.mp4`; SHA-256 `0e75a64604ba0a16499de88e6e7d62dd26cc4f1033dd38e75e10aec7c54ce5bf`; 322.076 bytes. O relatório `authorized-project-v7-report.json` acompanha encoder, hashes, fases, frames e bytes.
+- Limitações conhecidas: essa conversão inicial carrega as quatro imagens da cena base e repete o quadro por 1 s; não importa ainda timeline, cabelo, texto/falas, áudio ou vídeo. A interface permite importar imagens, posicionar/tamanho/rotação/opacidade, criar keyframes e exportar MP4; ainda não salva documentos entre sessões.
+- A primeira fatia de export está comprovada; V7 não está pronto para substituir V6 e a evolução continua.
+- Verificações finais desta fatia: 7 testes de core, 2 de renderer, 2 de rotas; `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram. Export autorizado final validado por `ffprobe`; inspeção visual do frame exportado confirmou a composição de quatro personagens e fundo.
+- Commit de implementação e primeira exportação: pendente após revisão do diff.

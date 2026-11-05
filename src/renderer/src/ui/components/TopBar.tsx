@@ -8,6 +8,7 @@ import { APPLICATION_ROUTES } from '../../../../shared/applicationRoutes'
 const sections = [
   { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
   { label: 'EDITOR V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
+  { label: 'EDITOR V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
   { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
   { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
   { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },

@@ -20,6 +20,10 @@ export const routePerformanceScenarios = [
     settledCondition: "!document.body.innerText.includes('Carregando projetos…')"
   },
   {
+    id: 'editor-v7', route: APPLICATION_ROUTES.editorV7, selector: 'main.editor-v7-page',
+    settledCondition: '!document.body.innerText.includes("Carregando")'
+  },
+  {
     id: 'roteiros', route: APPLICATION_ROUTES.roteiro, selector: '.roteiros-sidebar-empty',
     settledCondition: "!document.body.innerText.includes('Carregando roteiros…') && !document.body.innerText.includes('Carregando seus roteiros…')"
   },

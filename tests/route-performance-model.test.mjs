@@ -9,6 +9,7 @@ test('a captura de latência cobre todas as rotas canônicas principais sem dupl
     APPLICATION_ROUTES.fabricatorDev,
     APPLICATION_ROUTES.studio,
     APPLICATION_ROUTES.editorV6,
+    APPLICATION_ROUTES.editorV7,
     APPLICATION_ROUTES.roteiro,
     APPLICATION_ROUTES.baseVideos,
     APPLICATION_ROUTES.logsDev
@@ -39,6 +40,7 @@ test('resume min, mediana e max por rota sem esconder amostras individuais', () 
   assert.equal(summary.find((item) => item.id === 'studio')?.medianLongTaskCount, 0)
   assert.equal(summary.find((item) => item.id === 'studio')?.maxLongTaskMs, 55)
   assert.equal(summary.find((item) => item.id === 'editor-v6')?.medianLongTaskCount, null)
+  assert.equal(summary.find((item) => item.id === 'editor-v7')?.sampleCount, 0)
   assert.deepEqual(summary.find((item) => item.id === 'base-videos'), {
     id: 'base-videos', route: APPLICATION_ROUTES.baseVideos,
     sampleCount: 0, minMs: null, medianMs: null, maxMs: null, medianShellMs: null,
