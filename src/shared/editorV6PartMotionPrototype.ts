@@ -35,30 +35,40 @@ export type EditorV6ExperimentalPartFrame = Readonly<{
  * even one real motion atlas. Never silently use this in MP4 export.
  */
 export function compileEditorV6PartMotionPrototype(from: Artwork, to: Artwork) {
-  // Fail-fast with the exact authoritative rig-compatibility rules, including
-  // unique part identity, pivot and texture selection at progress=0.
+  // Keep the authoritative interpolation and pivot math unchanged. Only
+  // precompile immutable ID/order/visibility metadata, which otherwise costs
+  // repeated Map/Set creation and linear includes() scans on every frame.
   interpolateEditorV6Pose(from, to, 0)
+  const partIndexes = new Map(from.parts.map((part, index) => [part.id, index]))
+  const targetIds = new Set(to.parts.map(part => part.id))
+  if (partIndexes.size !== from.parts.length || targetIds.size !== to.parts.length) {
+    throw Error('R37: o rig contém IDs de peças duplicados.')
+  }
+  const orderFor = (artwork: Artwork): number[] => {
+    const ordered = new Set<string>()
+    for (const id of artwork.layerOrder ?? []) if (partIndexes.has(id)) ordered.add(id)
+    for (const part of from.parts) ordered.add(part.id)
+    return [...ordered].map(id => partIndexes.get(id)!)
+  }
+  const fromOrder = orderFor(from), toOrder = orderFor(to)
+  const fromHidden = new Set(from.hiddenPartIds ?? [])
+  const toHidden = new Set(to.hiddenPartIds ?? [])
   const frame = (progress: number): EditorV6ExperimentalPartFrame => {
     if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso de pose inválido para o protótipo.')
     const eased = motionEase(progress)
     const pose = interpolateEditorV6Pose(from, to, eased)
-    // Exact layer algorithm from characterLayerRenderer: authored, unique,
-    // existing IDs first, followed by any unlisted source parts.
-    const partIds = new Set(pose.parts.map(part => part.id))
-    const order = (pose.layerOrder ?? []).filter((id, i, all) => all.indexOf(id) === i && partIds.has(id))
-    for (const part of pose.parts) if (!order.includes(part.id)) order.push(part.id)
-    const parts = new Map(pose.parts.map(part => [part.id, part]))
-    const hidden = new Set(pose.hiddenPartIds ?? [])
+    const order = eased < 0.5 ? fromOrder : toOrder
+    const hidden = eased < 0.5 ? fromHidden : toHidden
     return {
       progress: eased,
       width: pose.width,
       height: pose.height,
-      parts: order.map((id, index) => {
-        const part = parts.get(id)!
+      parts: order.map((partIndex, index) => {
+        const part = pose.parts[partIndex]
         return {
-          id,
+          id: part.id,
           sourceDataUrl: part.dataUrl,
-          visible: !hidden.has(id),
+          visible: !hidden.has(part.id),
           order: index,
           x: part.x,
           y: part.y,
