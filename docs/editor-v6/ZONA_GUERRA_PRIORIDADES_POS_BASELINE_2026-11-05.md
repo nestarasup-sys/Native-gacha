@@ -58,3 +58,5 @@ O projeto histórico foi alterado e **não** pode mais ser comparado com este; m
 - Relatório Main passa a informar versão do Electron/Node, arquitetura e Windows. O commit SHA só aparece se o processo receber `NATIVE_GACHA_BUILD_SHA`; sem ele, a versão exata ainda precisa ser confirmada na instalação local.
 
 **Essas mudanças são código submetido à validação, não tempos do novo projeto medidos nem meta atingida.**
+
+- P3 (boca): preparação das fontes agrupada por personagem, com até duas requisições concorrentes, resultados reconstruídos na ordem original da timeline, orçamentos de atlas sem relaxamento e abort compartilhado. Regressões novas cobrem simultaneidade, ordem e cancelamento. O número de workers Electron físicos permanece limitado a dois; resultado de tempo real ainda não medido.

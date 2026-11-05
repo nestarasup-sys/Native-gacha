@@ -165,4 +165,62 @@ describe('preparação dos loops de boca do Editor V6', () => {
     const project = linkSpeech({ id: randomUUID(), elements: [actor], assets: [], timeline: { durationFrames: 60, knownElementIds: [elementId], tracks: [{ id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false, blocks: [{ id: randomUUID(), elementId, label: 'Estado', startFrame: 0, durationFrames: 60, state: actor }] }] } } as unknown as EditorV6Document)
     await expect(prepareExportMouthLoops(project, 0, 60, 30, { signal: new AbortController().signal, characters: [{ id: 'character', updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter], progress: () => {}, bake: async () => { throw Error('falha sintética do preparador') } })).rejects.toThrow('falha sintética do preparador')
   })
+  it('prepara no máximo duas bocas simultâneas, agrupando fonte mas preservando ordem da timeline', async () => {
+    const ids = ['b', 'a', 'b', 'a']
+    const actors = ids.map((characterId, index) => ({
+      id: randomUUID(), kind: 'character' as const, characterId, assetId: randomUUID(),
+      text: 'Estado ' + index, x: index, y: 0, width: 20, height: 40, rotation: 0, zIndex: index
+    }))
+    const project = {
+      id: randomUUID(), elements: actors, assets: [],
+      timeline: { durationFrames: 60, knownElementIds: actors.map(actor => actor.id), tracks: [
+        { id: randomUUID(), kind: 'character', name: 'Estados', muted: false, locked: false, blocks: actors.map(actor =>
+          ({ id: randomUUID(), elementId: actor.id, label: actor.text, startFrame: 0, durationFrames: 60, state: actor })) },
+        ...['a','b'].map(characterId => ({ id: randomUUID(), kind: 'speech', name: 'Fala', muted: false, locked: false, blocks: [
+          { id: randomUUID(), characterId, startFrame: 0, durationFrames: 60, label: 'Fala' }
+        ] }))
+      ] }
+    } as unknown as EditorV6Document
+    const characters = ['a','b'].map(id => ({ id, updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter))
+    let active = 0, peak = 0
+    const order: string[] = []
+    const prepared = await prepareExportMouthLoops(project, 0, 60, 30, {
+      signal: new AbortController().signal, characters, progress: () => {},
+      bake: async request => {
+        order.push(request.character.id)
+        active++; peak = Math.max(peak, active)
+        // Deterministic interleaving: finish the later request first.
+        await Promise.resolve(); await Promise.resolve()
+        active--
+        const assetId = randomUUID()
+        return { asset: { id: assetId, category: 'character', name: 'Loop', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+          motion: { version: 1, key: request.plan.key, assetId, frames: fakePatchFrames(request) },
+          metrics: { milliseconds: 1, preparedRigs: 1, samples: 3, atlasPixels: 1 } } satisfies EditorV6MotionBakeResult
+      }
+    })
+    expect(peak).toBe(2)
+    expect(order).toEqual(['a','a','b','b'])
+    expect(prepared.mouthLoops.states.map(state => state.elementId)).toEqual(actors.map(actor => actor.id))
+    expect(prepared.project.assets).toHaveLength(4)
+  })
+
+  it('cancela trabalho em andamento sem anexar atlas parcial ao projeto', async () => {
+    const actor: EditorV6Element = { id: randomUUID(), kind: 'character', characterId: 'character', assetId: randomUUID(), text: 'Teste', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 0 }
+    const project = linkSpeech({ id: randomUUID(), elements: [actor], assets: [],
+      timeline: { durationFrames: 60, knownElementIds: [actor.id], tracks: [
+        { id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false,
+          blocks: [{ id: randomUUID(), elementId: actor.id, label: 'Estado', startFrame: 0, durationFrames: 60, state: actor }] }
+      ] } } as unknown as EditorV6Document)
+    const controller = new AbortController()
+    const prepared = prepareExportMouthLoops(project, 0, 60, 30, {
+      signal: controller.signal, characters: [{ id: 'character', updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter],
+      progress: () => {}, bake: async (_request, signal) => new Promise<EditorV6MotionBakeResult>((_resolve, reject) => {
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    })
+    controller.abort(Error('Cancelamento de teste'))
+    await expect(prepared).rejects.toThrow('Cancelamento de teste')
+    expect(project.assets).toEqual([])
+  })
+
 })
