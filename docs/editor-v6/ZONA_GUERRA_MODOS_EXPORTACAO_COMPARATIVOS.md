@@ -39,3 +39,7 @@ Acrescente quantos `--candidate` forem necessários, inclusive dos outros modos.
 ## Resultado visível no app
 
 Após concluir, o painel informa o **modo efetivamente usado** e o tempo aproximado da exportação **incluindo a preparação do cabelo**, além de mostrar o MP4 e relatório. Ao usar pasta fixa, o nome do arquivo contém o identificador do modo (`- captura-8 - <job-id>.mp4`, por exemplo). Sem modo selecionado nos chamadores históricos, a nomenclatura anterior permanece.
+
+### Gate de equivalência física
+
+O fixture de overlays agora produz **dois MP4s Turbo reais** na CI Windows: Controle (16 ms) e Captura 8 ms, com os mesmos 60 quadros e três vídeos sobrepostos. Os 60 quadros decodificados em RGB devem ser **idênticos byte a byte**, além de exigir que o relatório confirme `testMode: captura-8`, captura segura e dois workers. Isso verifica a opção 04 no caminho de produção sem precisar de mídia privada.

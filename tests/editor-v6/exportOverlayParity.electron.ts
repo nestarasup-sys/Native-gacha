@@ -130,6 +130,33 @@ async function main() {
     assert(observed.slice(50).every(value => value === 'red'), 'Underlying clip was not restored.')
     const report = JSON.parse(await readFile(join(folder, 'overlay.report.json'), 'utf8'))
     assert(report.state === 'completed', 'Export report did not finish.')
+    // Real end-to-end A/B: the selectable 8 ms capture mode MUST retain
+    // every decoded pixel, not just the MP4 frame count or successful exit.
+    const fastOutput = join(folder, 'overlay-captura-8.mp4')
+    const fastMode = await runEditorV6Export(document, {
+      startFrame: 0, endFrame: frames, width, height, turbo: true, encoder: 'cpu', testMode: 'captura-8'
+    }, {
+      ffmpeg, ffprobe, tempRoot: folder, reportPath: join(folder, 'overlay-captura-8.report.json'),
+      outputPath: fastOutput, id: randomUUID(),
+      createWorker: (project, _part, signal, layeredVideo, mouthLoops) =>
+        factory.create({ project, width, height, layeredVideo, testMode: 'captura-8',
+          ...(mouthLoops ? { mouthLoops } : {}) }, signal),
+      getCharacters: async () => [],
+      bakeMotion: async () => { throw Error('Unexpected motion preparation in video-only test.') },
+      audioPath: () => { throw Error('Unexpected audio in synthetic videos.') },
+      mediaPath: (_projectId, filename) => join(mediaFolder, filename),
+      signal: new AbortController().signal, progress: () => {}
+    })
+    assert(fastMode.state === 'completed' && !fastMode.fallback, 'Selectable 8ms mode failed a real Turbo MP4.')
+    assert(fastMode.options.testMode === 'captura-8' && fastMode.exportTestSettings?.captureRetryMilliseconds === 8,
+      'The selectable capture mode did not reach the real exporter or report.')
+    assert(fastMode.attempts.length === 1 && fastMode.attempts[0].parts.length === 2,
+      'The alternate mode lost Turbo two-worker composition.')
+    const fastRgb = run(ffmpeg, ['-i', fastOutput, '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])
+    assert(fastRgb.equals(rgb), 'Selectable 8ms mode changed real MP4 decoded pixels or frame order.')
+    const fastReport = JSON.parse(await readFile(join(folder, 'overlay-captura-8.report.json'), 'utf8'))
+    assert(fastReport.exportTestSettings?.captureRetryMilliseconds === 8 && fastReport.options.testMode === 'captura-8',
+      'The saved MP4 report omitted the selected capture strategy.')
     const summary = { passed: true, frames, turboParts: 2, mediaInputs: result.videoInputs,
       seamFrames: [29, 30], segments: ['red:0-19', 'green:20-36', 'blue:37-49', 'red:50-59'] }
     await writeFile(join(folder, 'result.json'), JSON.stringify(summary, null, 2))
