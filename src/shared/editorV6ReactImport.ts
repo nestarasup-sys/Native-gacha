@@ -126,14 +126,17 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     return matches[0]
   }
   const rng = random(source.seed)
+  const tvX = source.videos[0]?.layout?.x ?? 0
   const cast: ReactImportCast[] = source.cast.map((item) => {
     const character = resolveCharacter(item.character)
-    return { ...item, characterId: character.id, name: character.name, modelSlot: character.customization.modelSlot ?? 1 }
+    return { ...item, flipX: item.flipX ?? item.x > tvX, characterId: character.id, name: character.name, modelSlot: character.customization.modelSlot ?? 1 }
   })
   if (new Set(cast.map((item) => item.characterId)).size !== cast.length) throw new Error('O elenco contém um personagem repetido.')
   const castById = new Map(cast.map((item) => [item.characterId, item]))
-  const tvX=source.videos[0]?.layout?.x??0
-  const frontGaze=(actor:ReactImportCast):'left'|'right'=>actor.gaze??(actor.x>tvX?'left':'right')
+  // Directions in the JSON refer to the stage; facial gaze is relative to the
+  // unmirrored portrait. The normal portrait looks right before mirroring.
+  const localGaze=(actor:ReactImportCast, direction:'left'|'right'):'left'|'right'=>actor.flipX ? (direction==='left'?'right':'left') : direction
+  const frontGaze=(actor:ReactImportCast):'left'|'right'=>actor.gaze ? localGaze(actor,actor.gaze) : 'right'
   const resolveCast = (name: string): ReactImportCast => {
     const character = resolveCharacter(name)
     const selected = castById.get(character.id)
@@ -217,7 +220,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     const actor = resolveCast(item.character)
     if(item.expression&&!byId.get(actor.characterId)?.customization.faceAppearance)throw new Error(actor.name+' não possui rosto configurado para a expressão especificada.')
     if (item.poseSlot !== undefined && item.poseSlot !== null && !(available.posesByCharacter.get(actor.characterId) ?? []).includes(item.poseSlot)) throw new Error('Pose ' + item.poseSlot + ' não encontrada para ' + actor.name)
-    events.push({ characterId:actor.characterId,startFrame:secondsToFrame(item.startSeconds),...(item.poseSlot !== undefined ? {poseSlot:item.poseSlot}:{}),...(item.expression ? {expression:resolvedExpression(actor,item.expression)}:{}),...(item.gaze ? {gaze:item.gaze}:{}),priority:4,sequence:i })
+    events.push({ characterId:actor.characterId,startFrame:secondsToFrame(item.startSeconds),...(item.poseSlot !== undefined ? {poseSlot:item.poseSlot}:{}),...(item.expression ? {expression:resolvedExpression(actor,item.expression)}:{}),...(item.gaze ? {gaze:localGaze(actor,item.gaze)}:{}),priority:4,sequence:i })
   })
   const estimatedEnd = Math.max(1, ...videos.map((v) => v.startFrame+v.durationFrames), ...lines.map((v) => v.startFrame+v.durationFrames), ...events.map((v) => v.startFrame))
   const durationFrames = Math.max(estimatedEnd, source.durationSeconds !== undefined ? secondsToFrame(source.durationSeconds): estimatedEnd)
@@ -253,7 +256,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
         })
         const speaker=active.at(-1)
         const speakerPosition=speaker?castById.get(speaker.characterId):undefined
-        const looking:'left'|'right'=speakerPosition?(speakerPosition.x<listener.x?'left':'right'):frontGaze(listener)
+        const looking:'left'|'right'=speakerPosition?localGaze(listener,speakerPosition.x<listener.x?'left':'right'):frontGaze(listener)
         if(looking!==previous){
           events.push({characterId:listener.characterId,startFrame:frame,gaze:looking,priority:3,sequence:frame})
           previous=looking

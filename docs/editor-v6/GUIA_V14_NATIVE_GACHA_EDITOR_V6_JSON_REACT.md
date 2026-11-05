@@ -69,6 +69,8 @@ A IA **não deve escolher** nomes de expressão como no exemplo sem ter o catál
 
 Cada item possui character (UUID real ou nome único do Customizador), x, y, scale opcional, flipX opcional, poseSlot opcional, expression opcional e gaze opcional (left/right). O palco usa percentuais **centrados**: (0,0) no centro, x negativo esquerda, positivo direita. Não usar pixels do Gacha Editor V4. Usar somente poseSlot existente e expression com ID/nome real do Expressão Dev. Presets pertencem ao modelo do personagem.
 
+Para olhar normalmente em direção à TV, personagens à esquerda usam `flipX: false` e personagens à direita usam `flipX: true`; na ausência de `flipX`, o importador escolhe conforme o lado da primeira TV. Não use `gaze` para compensar o espelhamento. Um `flipX` explícito é respeitado. As direções `gaze: left/right` são absolutas no palco e o importador as converte para o rosto local após o espelhamento.
+
 Especificar a pose e expressão iniciais **individualmente** para garantir direção coerente. O fallback do importador é determinístico, mas não conhece a psicologia do personagem.
 
 ### videos[]
@@ -92,6 +94,8 @@ A fala speech liga TALK automaticamente ao personagem pelo characterId durante o
 
 Cada beat tem character, startSeconds e um ou mais campos poseSlot, expression, gaze. Campos não citados **persistem do beat anterior**. O compilador gera estados visuais completos por bloco, com imagens reais idle/blink/talk/talk-blink. Não colocar toda a atuação nas falas: mudar expressão e pose pela lista beats.
 
+As trocas de pose e expressão usam as transições padrão do Editor V6, indicadas em amarelo na timeline e preparadas pelo próprio editor. Os tempos dos beats permanecem nos quadros especificados.
+
 No V6, PT é activeExpressionGaze left/right, **não** um preset com nome textual do tipo pt assustada. A expressão emocional permanece ao virar.
 
 ## 4. Regras criativas V13.1 que continuam obrigatórias
@@ -104,7 +108,7 @@ No V6, PT é activeExpressionGaze left/right, **não** um preset com nome textua
 4. Personagens do lado oposto da TV não viram em massa. Pensamentos não disparam PT em terceiros.
 5. PT pode ser mantido em falas sucessivas para evitar movimentos artificiais. Falas sobrepostas devem ter direção estável.
 6. Exceções narrativas, por exemplo responder diretamente alguém do lado oposto, devem ser expressas por beats explícitos.
-7. O olhar normal aponta para o centro da TV (x do primeiro vídeo ou x=0): à esquerda, right; à direita, left. Olhar atrás, conforme a posição relativa do falante, pode usar left ou right — nunca interpretar left como emoção.
+7. O olhar normal aponta para o centro da TV (x do primeiro vídeo ou x=0), usando espelhamento horizontal para o elenco à direita. Para olhar atrás, `gaze` usa a direção absoluta no palco (`left` ou `right`); nunca interpretar direção como emoção.
 
 ### Reações
 

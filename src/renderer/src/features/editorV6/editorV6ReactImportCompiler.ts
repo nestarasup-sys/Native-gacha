@@ -160,7 +160,7 @@ export async function compileEditorV6ReactImport(
       }
       const next=actorBeats[i+1]?.startFrame??plan.durationFrames
       if(next<=beat.startFrame)continue
-      lane.blocks.push({id:uuid(),elementId:id,state,label:actor.name,startFrame:beat.startFrame,durationFrames:next-beat.startFrame,motionEnabled:false})
+      lane.blocks.push({id:uuid(),elementId:id,state,label:actor.name,startFrame:beat.startFrame,durationFrames:next-beat.startFrame})
       if(!i)document.elements.push(state)
     }
     if(!lane.blocks.length)throw new Error('Personagem sem imagens visuais: '+actor.name)

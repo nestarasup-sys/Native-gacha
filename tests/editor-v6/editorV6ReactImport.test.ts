@@ -65,6 +65,17 @@ describe('JSON portátil do Editor V6',()=>{
     const beats=planEditorV6ReactImport(opposite,references()).beats
     expect(beats.some((beat)=>beat.characterId===idB&&beat.startFrame===180&&beat.gaze==='left')).toBe(false)
   })
+  it('espelha o elenco à direita e usa PT apenas para olhar para trás',()=>{
+    const source=sample()
+    const plan=planEditorV6ReactImport({...source,cast:[{...source.cast[0],x:30},{...source.cast[1],x:10}]},references())
+    expect(plan.cast.map((actor)=>actor.flipX)).toEqual([true,true])
+    const gaze=plan.beats.filter((beat)=>beat.characterId===idB&&beat.gaze!==undefined)
+    expect(gaze.find((beat)=>beat.startFrame===0)?.gaze).toBe('right')
+    expect(gaze.find((beat)=>beat.startFrame===180)?.gaze).toBe('left')
+    expect(gaze.find((beat)=>beat.startFrame===270)?.gaze).toBe('right')
+    const explicit=planEditorV6ReactImport({...source,cast:[{...source.cast[0],x:30,flipX:false},source.cast[1]]},references())
+    expect(explicit.cast[0].flipX).toBe(false)
+  })
   it('preserva direção manual no mesmo frame de PT automático',()=>{
     const source=sample()
     const beats=planEditorV6ReactImport({...source,beats:[...source.beats,{character:'Luka',startSeconds:6,gaze:'right' as const}]},references()).beats
