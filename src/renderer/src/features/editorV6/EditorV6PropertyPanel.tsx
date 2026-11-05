@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6LibraryMediaItem, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import { editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { Icon } from '../../ui/components/Icon'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
@@ -31,6 +31,7 @@ type EditorV6PropertyPanelProps = {
   balloonOffsetY: number
   selectedBackgroundAsset: EditorV6Asset | null
   sharedBackgrounds: VideoBackgroundLibraryItem[]
+  sharedObjects: EditorV6LibraryMediaItem[]
   selectedVideoBlock: EditorV6TimelineBlock | null
   selectedVideo: EditorV6MediaAsset | null
   control: EditorV6NumericControl
@@ -38,6 +39,7 @@ type EditorV6PropertyPanelProps = {
   onImportImage: (category: 'background' | 'object') => void
   onSelectBackground: (asset: EditorV6Asset) => void
   onLinkSharedBackground: (item: VideoBackgroundLibraryItem) => void
+  onLinkSharedObject: (item: EditorV6LibraryMediaItem) => void
   onAddObject: (asset: EditorV6Asset) => void
   onUpdateElement: (id: string, values: Partial<EditorV6Element>, record?: boolean) => void
   onUpdateCharacterNameColor: (characterId: string, color: string) => void
@@ -60,6 +62,7 @@ export function EditorV6PropertyPanel({
   balloonOffsetY,
   selectedBackgroundAsset,
   sharedBackgrounds,
+  sharedObjects,
   selectedVideoBlock,
   selectedVideo,
   control,
@@ -67,6 +70,7 @@ export function EditorV6PropertyPanel({
   onImportImage,
   onSelectBackground,
   onLinkSharedBackground,
+  onLinkSharedObject,
   onAddObject,
   onUpdateElement,
   onUpdateCharacterNameColor,
@@ -79,11 +83,11 @@ export function EditorV6PropertyPanel({
   if (!project) return null
 
   if (activeTool === 'background') return <div className="studio-side-content">
-    <h2>Fundos</h2><p>Escolha um fundo salvo ou adicione uma imagem.</p>
+    <h2>Fundos</h2><p>Os fundos vêm da Biblioteca V6 e são vinculados pelo ID.</p>
     <label className="studio-color-control">Cor sólida<input type="color" value={background.backgroundColor} onChange={(event) => onBackgroundChange({ backgroundColor: event.target.value })} /></label>
     <button className="studio-side-primary" type="button" onClick={() => onImportImage('background')}><Icon name="plus" />Adicionar imagem</button>
     <div className="studio-asset-grid">{project.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${background.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => onSelectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
-    {sharedBackgrounds.some((item) => item.available && !project.assets.some((asset) => asset.libraryBackgroundId === item.id)) && <><h3>Fundos compartilhados</h3><div className="studio-asset-grid">{sharedBackgrounds.filter((item) => item.available && !project.assets.some((asset) => asset.libraryBackgroundId === item.id)).map((item) => <button key={item.id} className="studio-asset-card" type="button" onClick={() => onLinkSharedBackground(item)}><span aria-hidden="true">▧</span><span>{item.name}</span></button>)}</div></>}
+    {sharedBackgrounds.some((item) => item.available && !project.assets.some((asset) => asset.libraryAssetId === item.id || asset.libraryBackgroundId === item.id)) && <><h3>Fundos compartilhados</h3><div className="studio-asset-grid">{sharedBackgrounds.filter((item) => item.available && !project.assets.some((asset) => asset.libraryAssetId === item.id || asset.libraryBackgroundId === item.id)).map((item) => <button key={item.id} className="studio-asset-card" type="button" onClick={() => onLinkSharedBackground(item)}><img src={`gacha-background://library/${item.id}`} alt="" /><span>{item.name}</span></button>)}</div></>}
     {selectedBackgroundAsset && selectedElementId === 'background' && <>
       <BackgroundTransformControls background={background} control={control} onChange={onBackgroundChange} />
       <button className="studio-side-danger" type="button" onClick={onDeleteSelected}><Icon name="trash" />Remover fundo da cena</button>
@@ -91,9 +95,10 @@ export function EditorV6PropertyPanel({
   </div>
 
   if (activeTool === 'objects') return <div className="studio-side-content">
-    <h2>Objetos</h2><p>Imagens importadas ficam disponíveis neste Studio.</p>
+    <h2>Objetos</h2><p>Objetos da Biblioteca V6 são compartilhados entre roteiros e vinculados pelo ID.</p>
     <button className="studio-side-primary" type="button" onClick={() => onImportImage('object')}><Icon name="plus" />Importar imagem</button>
     <div className="studio-asset-grid">{project.assets.filter((asset) => asset.category === 'object').map((asset) => <button key={asset.id} className="studio-asset-card" type="button" onClick={() => onAddObject(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
+    {sharedObjects.some((item) => item.available && !project.assets.some((asset) => asset.libraryAssetId === item.id)) && <><h3>Objetos compartilhados</h3><div className="studio-asset-grid">{sharedObjects.filter((item) => item.available && !project.assets.some((asset) => asset.libraryAssetId === item.id)).map((item) => <button key={item.id} className="studio-asset-card" type="button" onClick={() => onLinkSharedObject(item)}><img src={item.previewUrl} alt="" /><span>{item.name}</span></button>)}</div></>}
     {selectedElementId && selectedElement && <SceneElementControls element={selectedElement} update={(values, record) => onUpdateElement(selectedElement.id, values, record)} remove={onDeleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />}
   </div>
 

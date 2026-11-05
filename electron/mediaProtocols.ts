@@ -18,6 +18,8 @@ type MediaProtocolDependencies = {
   readFile: (path: string) => Promise<Buffer>
   editorV6Path: (id: string) => string
   readEditorV6Manifest: (id: string) => Promise<unknown>
+  resolveEditorV6LibraryAsset: (id: string) => Promise<{ path: string; mimeType: string }>
+  resolveEditorV6LibraryAudio: (id: string) => Promise<{ path: string; mimeType: string }>
 }
 
 /** Aceita somente um UUID na origem e na rota de asset usadas pelas bibliotecas do app. */
@@ -42,7 +44,9 @@ export function registerMediaProtocols({
   fileSystem,
   readFile,
   editorV6Path,
-  readEditorV6Manifest
+  readEditorV6Manifest,
+  resolveEditorV6LibraryAsset,
+  resolveEditorV6LibraryAudio
 }: MediaProtocolDependencies): void {
   protocol.handle('gacha-video', async (request) => {
     try {
@@ -62,7 +66,9 @@ export function registerMediaProtocols({
     resolveLibraryMedia: async (id) => {
       const media = await videoLibrary.resolveMedia(id)
       return { path: await fileSystem.resolvePhysicalPath(media.path) ?? media.path, mimeType: media.mimeType }
-    }
+    },
+    resolveLibraryAsset: resolveEditorV6LibraryAsset,
+    resolveLibraryAudio: resolveEditorV6LibraryAudio
   }))
 
   protocol.handle('gacha-background', async (request) => {

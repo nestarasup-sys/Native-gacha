@@ -42,6 +42,9 @@ export type RegisterRoteirosIpcDependencies = {
   assertNoVideoReferences: (id: string) => Promise<void>
   assertLibraryVideoReferencesAvailable: (ids: readonly string[]) => Promise<void>
   assertLibraryBackgroundReferencesAvailable: (ids: readonly string[]) => Promise<void>
+  assertEditorV6BackgroundUnreferenced: (id: string) => Promise<void>
+  listEditorV6BackgroundReferences: (id: string) => Promise<Array<{ id: string; title: string }>>
+  coordinateBackgroundReferenceChange: <T>(operation: () => Promise<T> | T) => Promise<T>
   assertLibraryUiGifReferencesAvailable: (ids: readonly string[]) => Promise<void>
 }
 
@@ -60,6 +63,9 @@ export function registerRoteirosIpc(deps: RegisterRoteirosIpcDependencies): Rote
     openImportDialog: () => deps.openImportFile('background'),
     library: deps.videoBackgroundLibrary,
     assertRoteiroUnreferenced: createRoteiroBackgroundReferenceGuard(deps.getDatabase),
+    assertEditorV6Unreferenced: deps.assertEditorV6BackgroundUnreferenced,
+    editorV6References: deps.listEditorV6BackgroundReferences,
+    coordinateReferenceChange: (operation) => deps.coordinateBackgroundReferenceChange(operation),
     enqueueWrite: deps.enqueueWrite
   })
   registerBackgroundLibraryHandlers({ ipcMain: deps.ipcMain, assertTrustedSender: deps.assertTrustedSender, service: backgroundLibraryService })

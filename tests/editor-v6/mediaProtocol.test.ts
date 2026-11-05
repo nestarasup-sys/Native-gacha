@@ -16,7 +16,9 @@ afterAll(async () => { await rm(folder, { recursive: true, force: true }) })
 function fixture(manifest: unknown = { id: projectId, media: [{ id: mediaId, fileName: `${mediaId}.mp4`, mimeType: 'video/mp4' }, { libraryVideoId: mediaId }] }) {
   const readManifest = vi.fn(async () => manifest)
   const resolveLibraryMedia = vi.fn(async () => ({ path: join(folder, 'media', `${mediaId}.mp4`), mimeType: 'video/mp4' }))
-  return { handler: createEditorV6MediaHandler({ projectPath: () => folder, readManifest, resolveLibraryMedia }), readManifest, resolveLibraryMedia }
+  const resolveLibraryAsset = vi.fn(async () => ({ path: join(folder, 'media', `${mediaId}.mp4`), mimeType: 'image/png' }))
+  const resolveLibraryAudio = vi.fn(async () => ({ path: join(folder, 'media', `${mediaId}.mp4`), mimeType: 'audio/mpeg' }))
+  return { handler: createEditorV6MediaHandler({ projectPath: () => folder, readManifest, resolveLibraryMedia, resolveLibraryAsset, resolveLibraryAudio }), readManifest, resolveLibraryMedia, resolveLibraryAsset, resolveLibraryAudio }
 }
 const request = (host = 'project', file = `${mediaId}.mp4`) => new Request(`gacha-editor-media://${host}/${projectId}/${file}`, { headers: { range: 'bytes=2-4' } })
 

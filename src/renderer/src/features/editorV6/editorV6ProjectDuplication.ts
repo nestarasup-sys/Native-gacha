@@ -1,6 +1,6 @@
 import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { timelineClips } from '../../../../shared/editorV6TimelineCore'
-import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
+import { editorV6LibraryAssetUrl, type EditorV6Document, type EditorV6Element } from '../../../../shared/editorV6'
 
 export type EditorV6DuplicateIdentity = Pick<EditorV6Document, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt'>
 
@@ -8,7 +8,9 @@ export function duplicateEditorV6ProjectDocument(source: EditorV6Document, ident
   const duplicate: EditorV6Document = {
     ...source,
     ...identity,
-    assets: source.assets.map((asset) => ({ ...asset, id: createId() })),
+    assets: source.assets.map((asset) => asset.libraryAssetId
+      ? { ...asset, id: asset.libraryAssetId, dataUrl: editorV6LibraryAssetUrl(identity.id, asset.libraryAssetId) }
+      : { ...asset, id: createId() }),
     elements: source.elements.map((element) => ({
       ...element,
       id: createId(),

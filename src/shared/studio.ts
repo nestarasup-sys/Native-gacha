@@ -113,6 +113,7 @@ export type VideoBackgroundLibraryItem = {
   createdAt: string
   available: boolean
   studios: Array<{ id: string; title: string }>
+  editorV6Projects?: Array<{ id: string; title: string }>
 }
 
 export type StudioDesktopApi = {
@@ -130,5 +131,6 @@ export type StudioDesktopApi = {
 export type VideoBackgroundLibraryDesktopApi = {
   listVideoBackgroundLibrary: () => Promise<VideoBackgroundLibraryItem[]>
   importVideoBackground: () => Promise<VideoBackgroundLibraryItem | null>
+  renameVideoBackground: (id: string, name: string) => Promise<void>
   deleteVideoBackground: (id: string) => Promise<void>
 }

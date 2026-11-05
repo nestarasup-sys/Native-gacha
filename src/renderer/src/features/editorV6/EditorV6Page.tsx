@@ -5,6 +5,7 @@ import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
+import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ReactImportDialog } from './EditorV6ReactImportDialog'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
@@ -51,7 +52,7 @@ import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnaps
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
@@ -95,17 +96,20 @@ export function EditorV6Page() {
   } = useEditorV6CharacterSources(activeEditorV6Id, setError)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [sharedBackgrounds, setSharedBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
+  const [sharedObjects, setSharedObjects] = useState<EditorV6LibraryMediaItem[]>([])
   const refreshBackgroundLibrary = async () => {
     const items = await window.desktop.videoBackgrounds.listVideoBackgroundLibrary()
     setSharedBackgrounds(items)
   }
+  const refreshObjectLibrary = async () => setSharedObjects(await window.desktop.editorV6MediaLibrary.list('object'))
   useEffect(() => {
-    if (activeTool !== 'background') return
-    void refreshBackgroundLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os fundos compartilhados.'))
+    if (activeTool === 'background') void refreshBackgroundLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os fundos compartilhados.'))
+    if (activeTool === 'objects') void refreshObjectLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de objetos.'))
   }, [activeTool, activeEditorV6Id])
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [videoPickerOpen, setVideoPickerOpen] = useState(false)
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false)
   const [reactImportOpen, setReactImportOpen] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
@@ -384,12 +388,14 @@ export function EditorV6Page() {
     })
   }
 
-  const { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground, linkSharedBackground } = createEditorV6MediaCommands({
+  const { importImage, importTimelineMedia, linkVideoLibraryItem, linkAudioLibraryItem, selectBackground, linkSharedBackground, linkSharedObject } = createEditorV6MediaCommands({
     activeProject: activeEditorV6,
     trackOperation: trackEditorV6Operation,
     bridge: window.desktop.editorV6,
     backgroundLibrary: window.desktop.videoBackgrounds,
+    mediaLibrary: window.desktop.editorV6MediaLibrary,
     refreshBackgroundLibrary,
+    refreshObjectLibrary,
     importImageToProject: importEditorV6ImageToProject,
     importMediaToTimeline: importEditorV6MediaToTimeline,
     addImageAsset: addEditorV6ImageAsset,
@@ -403,6 +409,7 @@ export function EditorV6Page() {
     persistImportedDocument: persistImportedEditorV6Document,
     setError,
     setVideoPickerOpen,
+    setAudioPickerOpen,
     setSelectedElementId,
     setSelectedTimelineBlockId,
     setActiveTool,
@@ -795,6 +802,7 @@ export function EditorV6Page() {
     balloonOffsetY={activeEditorV6?.balloonOffsetY ?? 0}
     selectedBackgroundAsset={selectedBackgroundAsset}
     sharedBackgrounds={sharedBackgrounds}
+    sharedObjects={sharedObjects}
     selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
     selectedVideo={selectedTimelineVideo ?? null}
     control={control}
@@ -802,6 +810,7 @@ export function EditorV6Page() {
     onImportImage={importImage}
     onSelectBackground={selectBackground}
     onLinkSharedBackground={linkSharedBackground}
+    onLinkSharedObject={linkSharedObject}
     onAddObject={addObjectAsset}
     onUpdateElement={updateElement}
     onUpdateCharacterNameColor={updateCharacterNameColor}
@@ -878,7 +887,7 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => addTextElement('speech')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar fala a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => addTextElement('thought')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar pensamento a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
-            <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Importar áudio</span></button>
+            <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Selecionar áudio</span></button>
             <span className="studio-tool-separator" />
             <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
             <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
@@ -926,6 +935,7 @@ export function EditorV6Page() {
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
         <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onChange={(update) => patchStudio(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
+        {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
       </main>
     )

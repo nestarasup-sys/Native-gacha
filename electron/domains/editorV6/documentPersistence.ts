@@ -1,7 +1,7 @@
 /** Persistência dos documentos e mídias do EditorV6 Principal. */
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
-import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
+import { createEditorV6Timeline, editorV6LibraryAssetUrl, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
 import { normalizeEditorV6CharacterPositions } from '../../../src/shared/editorV6TimelineEdits'
@@ -9,6 +9,7 @@ import { invalidateIncompleteEditorV6Motions } from '../../../src/shared/editorV
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6TimelineCore'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 import { collectEditorV6VideoReferenceIds } from './videoReferences.ts'
+import { collectEditorV6LibraryReferenceIds } from './mediaReferences.ts'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
 
@@ -18,6 +19,9 @@ export function createEditorV6DocumentPersistence(deps: {
   editorV6LibraryPath: () => string
   validate: (document: unknown) => document is EditorV6Document
   assertLibraryVideoReferencesAvailable: (videoIds: readonly string[]) => Promise<void>
+  assertLibraryBackgroundReferencesAvailable: (ids: readonly string[]) => Promise<void>
+  assertLibraryMediaReferencesAvailable: (category: 'object' | 'audio', ids: readonly string[]) => Promise<void>
+  coordinateLibraryReferenceChange: <T>(operation: () => Promise<T>) => Promise<T>
   decodeImage: (dataUrl: string) => Buffer
   normalizeImage: (bytes: Buffer) => Promise<{ bytes: Buffer }>
 }) {
@@ -52,8 +56,10 @@ export function createEditorV6DocumentPersistence(deps: {
         ? { balloonOffsetY: value.balloonOffsetY }
         : {}),
       ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
-      assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
-      ...(Array.isArray(value.media) ? { media: value.media as EditorV6Document['media'] } : {}),
+      assets: Array.isArray(value.assets) ? (value.assets as EditorV6Asset[]).map((asset) => asset.libraryAssetId
+        ? { ...asset, dataUrl: editorV6LibraryAssetUrl(id, asset.libraryAssetId) }
+        : asset) : [],
+      ...(Array.isArray(value.media) ? { media: (value.media as NonNullable<EditorV6Document['media']>).map((item) => ({ ...item, ...(item.libraryVideoId || item.libraryAudioId ? { fileName: `${item.libraryVideoId ?? item.libraryAudioId}.${item.fileName.split('.').at(-1)}` } : {}) })) } : {}),
       elements,
       ...(Array.isArray(value.exportAudio) ? { exportAudio: value.exportAudio as EditorV6Document['exportAudio'] } : {}),
       timeline,
@@ -74,6 +80,10 @@ export function createEditorV6DocumentPersistence(deps: {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
           || !['background', 'object', 'character'].includes(asset.category)
           || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do EditorV6 inválida.')
+        if (asset.libraryAssetId) {
+          if (asset.category === 'character' || asset.id !== asset.libraryAssetId) throw new Error('Referência de imagem compartilhada inválida.')
+          return { ...asset, dataUrl: editorV6LibraryAssetUrl(id, asset.libraryAssetId) }
+        }
         const extension = asset.mimeType === 'image/jpeg' ? 'jpg' : asset.mimeType.slice('image/'.length)
         const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
         try {
@@ -85,7 +95,7 @@ export function createEditorV6DocumentPersistence(deps: {
         }
       }))
       const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
-      await Promise.all(media.filter((item) => !item.libraryVideoId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
+      await Promise.all(media.filter((item) => !item.libraryVideoId && !item.libraryAudioId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
       const document = invalidateIncompleteEditorV6Motions({ ...normalized, assets: assets.filter(asset => asset !== null), media })
       if (!deps.validate(document)) throw new Error(`Os dados do EditorV6 ${id} estão inválidos.`)
       return document
@@ -162,6 +172,12 @@ export function createEditorV6DocumentPersistence(deps: {
     const assetManifest: Array<Omit<EditorV6Asset, 'dataUrl'>> = []
     const assetWrites: Array<{ relativePath: string; bytes: Buffer }> = []
     for (const asset of editorV6.assets) {
+      if (asset.libraryAssetId) {
+        if (asset.category === 'character' || asset.id !== asset.libraryAssetId) throw new Error('Referência de imagem compartilhada inválida.')
+        const { dataUrl: _dataUrl, ...metadata } = asset
+        assetManifest.push(metadata)
+        continue
+      }
       const sourceBytes = deps.decodeImage(asset.dataUrl)
       const canonical = asset.mimeType === 'image/png' ? { bytes: sourceBytes } : await deps.normalizeImage(sourceBytes)
       const categoryFolder = asset.category === 'background' ? 'backgrounds' : asset.category === 'character' ? 'characters' : 'objects'
@@ -170,9 +186,22 @@ export function createEditorV6DocumentPersistence(deps: {
       assetManifest.push({ ...metadata, mimeType: 'image/png' })
     }
     const { assets: _assets, ...metadata } = editorV6
-    await publishEditorV6AssetsAndManifest({
+    const previousBackgroundIds = collectEditorV6LibraryReferenceIds(previousManifest, 'background')
+    const previousObjectIds = collectEditorV6LibraryReferenceIds(previousManifest, 'object')
+    const previousAudioIds = collectEditorV6LibraryReferenceIds(previousManifest, 'audio')
+    const addedBackgroundIds = [...collectEditorV6LibraryReferenceIds(editorV6, 'background')].filter((id) => !previousBackgroundIds.has(id))
+    const addedObjectIds = [...collectEditorV6LibraryReferenceIds(editorV6, 'object')].filter((id) => !previousObjectIds.has(id))
+    const addedAudioIds = [...collectEditorV6LibraryReferenceIds(editorV6, 'audio')].filter((id) => !previousAudioIds.has(id))
+    await deps.coordinateLibraryReferenceChange(async () => {
+      await Promise.all([
+        deps.assertLibraryBackgroundReferencesAvailable(addedBackgroundIds),
+        deps.assertLibraryMediaReferencesAvailable('object', addedObjectIds),
+        deps.assertLibraryMediaReferencesAvailable('audio', addedAudioIds)
+      ])
+      await publishEditorV6AssetsAndManifest({
       files: deps.files, folder, assets: assetWrites,
       manifestValue: { ...metadata, title: editorV6.title.trim(), assets: assetManifest },
+      })
     })
   }
 

@@ -171,6 +171,17 @@ export class VideoBackgroundLibraryStore {
       await this.migrate(catalog, [])
     })
   }
+  async rename(id: string, name: string): Promise<void> {
+    requireId(id)
+    const normalized = name.trim()
+    if (!normalized || normalized.length > 255 || /[\\/\0]/.test(normalized)) throw new Error('O nome deve ter de 1 a 255 caracteres e não pode conter barras.')
+    return this.run(async () => {
+      const catalog = await this.readCatalog(), item = catalog.items.find((entry) => entry.id === id)
+      if (!item) throw new Error('Fundo não encontrado na biblioteca.')
+      item.name = normalized
+      await this.writeCatalog(catalog)
+    })
+  }
   async attach(studioId: string, id: string): Promise<StudioAsset> {
     requireId(studioId); requireId(id)
     return this.run(async () => {

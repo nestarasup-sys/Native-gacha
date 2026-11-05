@@ -46,7 +46,9 @@ test('registra e serve vídeos, fundos e GIFs pelas bibliotecas autorizadas', as
     readEditorV6Manifest: async (id) => {
       calls.manifest.push(id)
       return { id, media: [{ libraryVideoId: videoId, mimeType: 'video/mp4' }] }
-    }
+    },
+    resolveEditorV6LibraryAsset: async () => ({ path: mediaPath, mimeType: 'image/png' }),
+    resolveEditorV6LibraryAudio: async () => ({ path: mediaPath, mimeType: 'audio/mpeg' })
   })
 
   assert.deepEqual([...handlers.keys()], ['gacha-video', 'gacha-editor-media', 'gacha-background', 'gacha-gif'])

@@ -35,6 +35,8 @@ type EditorV6ExportIpcDependencies = {
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
+  resolveLibraryAudio: (id: string) => Promise<{ path: string; name: string; mimeType: string; extension: string; size: number }>
+  resolveLibraryAsset: (id: string) => Promise<{ path: string; mimeType: string }>
 }
 type EditorV6ExportIpcLifecycle = {
   cancelAll: () => void
@@ -58,7 +60,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     await publishJsonManifest({ files: fs, target: folderPreference, temporary: `${folderPreference}.${randomUUID()}.tmp`, value: { folder } })
   }
   const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
-  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath })
+  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = new Map<string, Job>()
   const pendingFileWrites = createPendingOperationTracker()
@@ -97,9 +99,19 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     })
     return current
   }
-  const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryVideoId
-    ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
-    : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
+  const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryAudioId
+    ? (await deps.resolveLibraryAudio(clip.libraryAudioId)).path
+    : clip.libraryVideoId ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
+      : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
+  const inspectLibraryAudio = async (audioId: string) => {
+    const source = await deps.resolveLibraryAudio(audioId)
+    const probe = await probeExportMedia(ffprobe, source.path, new AbortController().signal)
+    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
+    const duration = Number(probe.format.duration ?? audio?.duration ?? 0)
+    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    if (!audio || !Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('O áudio da biblioteca não passou pela validação de duração e faixa de áudio.')
+    return { source, sourceFrames }
+  }
   const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2, hairAnimation, onFfmpegProcessStarted) => {
     const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
@@ -236,7 +248,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     const folder = join(deps.projectPath(targetId), 'export-audio')
     return pendingFileWrites.track(async () => {
       await mkdir(folder, { recursive: true })
-      for (const clip of clips) await copyFile(await audioPath(sourceId, clip), join(folder, clip.fileName))
+      for (const clip of clips) if (!clip.libraryAudioId) await copyFile(await audioPath(sourceId, clip), join(folder, clip.fileName))
     })
   })
   deps.ipcMain.handle(editorV6IpcChannels.importEditorV6Media, async (event, projectId: string, rawKind: unknown): Promise<EditorV6MediaAsset | null> => {
@@ -272,13 +284,25 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       return media
     })
   })
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryAudio, async (event, projectId: string, rawAudioId: unknown): Promise<EditorV6MediaAsset> => {
+    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
+    const audioId = uuid.parse(rawAudioId)
+    const { source, sourceFrames } = await inspectLibraryAudio(audioId)
+    return editorV6MediaAssetSchema.parse({ id: audioId, libraryAudioId: audioId, name: source.name, fileName: `${audioId}.${source.extension}`, kind: 'audio', mimeType: source.mimeType, sourceFrames, hasAudio: true, sizeBytes: source.size })
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryExportAudio, async (event, projectId: string, rawAudioId: unknown): Promise<EditorV6ExportAudio> => {
+    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
+    const audioId = uuid.parse(rawAudioId)
+    const { source, sourceFrames } = await inspectLibraryAudio(audioId)
+    return editorV6ExportAudioSchema.parse({ id: randomUUID(), libraryAudioId: audioId, name: source.name, fileName: `${audioId}.${source.extension}`, sourceFrames, startFrame: 0, sourceInFrame: 0, durationFrames: sourceFrames, gain: 1, muted: false })
+  })
   deps.ipcMain.handle(editorV6IpcChannels.cloneEditorV6Media, async (event, sourceId: string, targetId: string, rawMedia: unknown) => {
     deps.assertTrustedSender(event); assertAvailable(); uuid.parse(sourceId); uuid.parse(targetId)
     const media = z.array(editorV6MediaAssetSchema).max(500).parse(rawMedia)
     const sourceFolder = join(deps.projectPath(sourceId), 'media'), targetFolder = join(deps.projectPath(targetId), 'media')
     return pendingFileWrites.track(async () => {
       await mkdir(targetFolder, { recursive: true })
-      for (const item of media) if (!item.libraryVideoId) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
+      for (const item of media) if (!item.libraryVideoId && !item.libraryAudioId) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
     })
   })
   deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryVideo, async (event, projectId: string, rawLibraryVideoId: unknown): Promise<EditorV6MediaAsset> => {

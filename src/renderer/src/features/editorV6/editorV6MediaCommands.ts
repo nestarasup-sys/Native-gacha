@@ -1,6 +1,6 @@
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { VideoBackgroundLibraryDesktopApi, VideoBackgroundLibraryItem } from '../../../../shared/studio'
-import type { EditorV6Asset, EditorV6Document, EditorV6DesktopApi } from '../../../../shared/editorV6'
+import type { EditorV6Asset, EditorV6Document, EditorV6DesktopApi, EditorV6LibraryMediaItem, EditorV6MediaLibraryDesktopApi } from '../../../../shared/editorV6'
 import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import type { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import type { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
@@ -11,7 +11,7 @@ type ActiveTool = 'background' | 'objects' | null
 type TrackOperation = <T>(operation: () => Promise<T>) => Promise<T>
 type EditorV6MediaBridge = Pick<EditorV6DesktopApi,
   'importEditorV6Image' | 'importEditorV6Media' | 'linkEditorV6LibraryVideo'
-  | 'linkEditorV6LibraryBackground'
+  | 'linkEditorV6LibraryBackground' | 'linkEditorV6LibraryAsset' | 'linkEditorV6LibraryAudio'
 >
 
 export type EditorV6MediaCommandDependencies = {
@@ -19,6 +19,8 @@ export type EditorV6MediaCommandDependencies = {
   trackOperation: TrackOperation
   bridge: EditorV6MediaBridge
   backgroundLibrary: Pick<VideoBackgroundLibraryDesktopApi, 'importVideoBackground'>
+  mediaLibrary: Pick<EditorV6MediaLibraryDesktopApi, 'import'>
+  refreshObjectLibrary: () => Promise<void>
   refreshBackgroundLibrary: () => Promise<void>
   importImageToProject: typeof importEditorV6ImageToProject
   importMediaToTimeline: typeof importEditorV6MediaToTimeline
@@ -33,6 +35,7 @@ export type EditorV6MediaCommandDependencies = {
   persistImportedDocument: (source: EditorV6Document, next: EditorV6Document) => Promise<boolean>
   setError: (message: string | null) => void
   setVideoPickerOpen: (open: boolean) => void
+  setAudioPickerOpen: (open: boolean) => void
   setSelectedElementId: (elementId: string | null) => void
   setSelectedTimelineBlockId: (blockId: string | null) => void
   setActiveTool: (tool: ActiveTool) => void
@@ -64,11 +67,15 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
         category,
         frame: getFrame(),
         importAsset: async (assetCategory) => {
-          if (assetCategory !== 'background') return dependencies.bridge.importEditorV6Image(assetCategory)
-          const item = await dependencies.backgroundLibrary.importVideoBackground()
-          if (!item) return null
-          await dependencies.refreshBackgroundLibrary()
-          return dependencies.bridge.linkEditorV6LibraryBackground(item.id)
+          if (assetCategory === 'background') {
+            const item = await dependencies.backgroundLibrary.importVideoBackground()
+            if (!item) return null
+            await dependencies.refreshBackgroundLibrary()
+            return dependencies.bridge.linkEditorV6LibraryBackground(projectId, item.id)
+          }
+          const item = await dependencies.mediaLibrary.import('object')
+          if (item) await dependencies.refreshObjectLibrary()
+          return item ? dependencies.bridge.linkEditorV6LibraryAsset(projectId, 'object', item.id) : null
         },
         loadProject: () => dependencies.loadLatestProject(projectId),
         persistDocument: dependencies.persistImportedDocument,
@@ -99,23 +106,26 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
       dependencies.setVideoPickerOpen(true)
       return
     }
-    const track = activeProject.timeline.tracks.find((item) => item.kind === kind)
+    const track = activeProject.timeline.tracks.find((item) => item.kind === 'audio')
     if (track?.locked) {
       dependencies.setError('Desbloqueie a faixa Áudio para importar mídia.')
       return
     }
     dependencies.pausePlayback()
-    const projectId = activeProject.id
-    const frameAtImport = getFrame()
+    dependencies.setAudioPickerOpen(true)
+  })
+
+  const linkAudioLibraryItem = (item: EditorV6LibraryMediaItem) => dependencies.trackOperation(async () => {
+    const project = dependencies.activeProject
+    if (!project) return
+    const track = project.timeline.tracks.find((entry) => entry.kind === 'audio')
+    if (track?.locked) throw Error('Desbloqueie a faixa Áudio antes de adicionar um áudio.')
+    const projectId = project.id
+    dependencies.pausePlayback()
     try {
-      const result = await dependencies.importMediaToTimeline({
-        frame: frameAtImport,
-        requestMedia: () => dependencies.bridge.importEditorV6Media(projectId, kind),
-        loadProject: () => dependencies.loadLatestProject(projectId),
-        persistDocument: dependencies.persistImportedDocument,
-        createId,
-        addTimelineMedia: dependencies.addTimelineMedia
-      })
+      const result = await dependencies.importMediaToTimeline({ frame: getFrame(), requestMedia: () => dependencies.bridge.linkEditorV6LibraryAudio(projectId, item.id),
+        loadProject: () => dependencies.loadLatestProject(projectId), persistDocument: dependencies.persistImportedDocument,
+        createId, addTimelineMedia: dependencies.addTimelineMedia })
       if (!result) return
       dependencies.publishPlayheadFrame(result.startFrame)
       dependencies.setSelectedTimelineBlockId(result.blockId)
@@ -123,9 +133,8 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
       dependencies.setActiveTool(null)
       dependencies.setInspectorOpen(true)
       dependencies.setInspectorTab('editor')
-    } catch (reason) {
-      dependencies.setError(reason instanceof Error ? reason.message : 'Não foi possível importar o áudio.')
-    }
+      dependencies.setAudioPickerOpen(false)
+    } catch (reason) { dependencies.setError(reason instanceof Error ? reason.message : 'Não foi possível vincular o áudio da biblioteca.') }
   })
 
   const linkVideoLibraryItem = (item: VideoLibraryItem) => dependencies.trackOperation(async () => {
@@ -176,7 +185,7 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
   const linkSharedBackground = (item: VideoBackgroundLibraryItem) => dependencies.trackOperation(async () => {
     const project = dependencies.activeProject
     if (!project) return
-    const existing = project.assets.find((asset) => asset.libraryBackgroundId === item.id)
+    const existing = project.assets.find((asset) => asset.libraryAssetId === item.id || asset.libraryBackgroundId === item.id)
     if (existing) {
       selectBackground(existing)
       return
@@ -185,7 +194,7 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
     try {
       const result = await dependencies.importImageToProject({
         category: 'background', frame: getFrame(),
-        importAsset: async () => ({ ...await dependencies.bridge.linkEditorV6LibraryBackground(item.id), libraryBackgroundId: item.id }),
+        importAsset: () => dependencies.bridge.linkEditorV6LibraryBackground(projectId, item.id),
         loadProject: () => dependencies.loadLatestProject(projectId),
         persistDocument: dependencies.persistImportedDocument,
         createId, addImageAsset: dependencies.addImageAsset, findClipAtFrame: dependencies.findClipAtFrame
@@ -201,5 +210,26 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
     }
   })
 
-  return { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground, linkSharedBackground }
+  const linkSharedObject = (item: EditorV6LibraryMediaItem) => dependencies.trackOperation(async () => {
+    const project = dependencies.activeProject
+    if (!project) return
+    if (project.timeline.tracks.some((track) => track.kind === 'object' && track.locked)) throw Error('Desbloqueie a faixa Objetos antes de adicionar uma imagem.')
+    const existing = project.assets.find((asset) => asset.libraryAssetId === item.id)
+    if (existing) return
+    const projectId = project.id
+    try {
+      const asset = await dependencies.bridge.linkEditorV6LibraryAsset(projectId, 'object', item.id)
+      const result = await dependencies.importImageToProject({ category: 'object', frame: getFrame(), importAsset: async () => asset,
+        loadProject: () => dependencies.loadLatestProject(projectId), persistDocument: dependencies.persistImportedDocument,
+        createId, addImageAsset: dependencies.addImageAsset, findClipAtFrame: dependencies.findClipAtFrame })
+      if (!result) return
+      dependencies.setSelectedElementId(result.selectedElementId)
+      dependencies.setSelectedTimelineBlockId(result.selectedTimelineBlockId ?? null)
+      dependencies.setActiveTool('objects')
+      dependencies.setInspectorOpen(true)
+      dependencies.setInspectorTab('editor')
+    } catch (reason) { dependencies.setError(reason instanceof Error ? reason.message : 'Não foi possível vincular o objeto compartilhado.') }
+  })
+
+  return { importImage, importTimelineMedia, linkVideoLibraryItem, linkAudioLibraryItem, selectBackground, linkSharedBackground, linkSharedObject }
 }

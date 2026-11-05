@@ -4,6 +4,7 @@ export const APPLICATION_ROUTES = {
   customizer: '/customizar',
   studio: '/estudio',
   editorV6: '/editor-v6',
+  editorV6Library: '/editor-v6/library',
   editorV7: '/editor-v7',
   roteiro: '/roteiros',
   baseVideos: '/base-videos',

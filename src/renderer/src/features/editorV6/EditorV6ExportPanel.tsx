@@ -8,6 +8,8 @@ import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
 import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
 import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
 import { EditorV6ExportActivity } from './EditorV6ExportActivity'
+import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
+import type { EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
 
 // Perfil padrão de exportação do Editor V6. As melhorias futuras devem evoluir este caminho.
 const DEFAULT_EXPORT_SETTINGS = { width: 1920, height: 1080, turbo: true, forceTurbo1080: true, encoder: 'cpu', mouthLoop: true, mouthLoopCycleFrames: 30, hairPoseReactionOnly: true, hairPosteriorOnly: true } as const
@@ -33,6 +35,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [startingExport, setStartingExport] = useState(false)
   const [exportStartedAt, setExportStartedAt] = useState<number | null>(null)
   const [busy, setBusy] = useState(false)
+  const [audioPickerOpen, setAudioPickerOpen] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !finished(job))
   useEffect(() => {
@@ -65,9 +68,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     return () => { stopped = true; clearTimeout(timer) }
   }, [job?.id, active])
   const updateAudio = (id: string, values: Partial<EditorV6ExportAudio>) => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.map((clip) => clip.id === id ? { ...clip, ...values } : clip), updatedAt: new Date().toISOString() }))
-  const importAudio = async () => {
+  const linkAudio = async (item: EditorV6LibraryMediaItem) => {
     setBusy(true); setError('')
-    try { await trackOperation(async () => { const clip = await window.desktop.editorV6.importEditorV6ExportAudio(project.id); if (clip) onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }) }
+    try { await trackOperation(async () => { const clip = await window.desktop.editorV6.linkEditorV6LibraryExportAudio(project.id, item.id); onChange((document) => ({ ...document, exportAudio: [...(document.exportAudio ?? []), clip], updatedAt: new Date().toISOString() })) }); setAudioPickerOpen(false) }
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
@@ -163,7 +166,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
           <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem.</small>
         </fieldset>
-        <fieldset className="v6-export-audio-settings" disabled={busy || active}><legend>Opções adicionais · trilha sonora</legend><p>Os arquivos são copiados para o projeto. A mixagem é aplicada uma única vez ao vídeo final.</p>
+        <fieldset className="v6-export-audio-settings" disabled={busy || active}><legend>Opções adicionais · trilha sonora</legend><p>Os áudios são referenciados por ID na Biblioteca V6. A mixagem é aplicada uma única vez ao vídeo final.</p>
           {(project.exportAudio?.length ?? 0) > 0 ? <div className="v6-export-audio-list">{(project.exportAudio ?? []).map((clip) => <div className="v6-export-audio" key={clip.id}>
             <strong title={clip.name}>{clip.name}</strong>
             <label>Começa na edição (s)<input type="number" min={0} step={1 / 30} value={seconds(clip.startFrame)} onChange={(event) => updateAudio(clip.id, { startFrame: frames(event.target.value) })} /></label>
@@ -173,7 +176,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
             <label className="v6-export-check"><input type="checkbox" checked={clip.muted} onChange={(event) => updateAudio(clip.id, { muted: event.target.checked })} />Silenciar</label>
             <button type="button" onClick={() => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.filter((item) => item.id !== clip.id), updatedAt: new Date().toISOString() }))}>Remover</button>
           </div>)}</div> : <div className="v6-export-audio-empty"><span aria-hidden="true">♫</span><div><strong>Nenhuma trilha adicionada</strong><small>Adicione áudio para mixar no arquivo final.</small></div></div>}
-          <button className="v6-export-add-audio" type="button" disabled={(project.exportAudio?.length ?? 0) >= 32} onClick={() => void importAudio()}>＋ Adicionar áudio</button>
+          <button className="v6-export-add-audio" type="button" disabled={(project.exportAudio?.length ?? 0) >= 32} onClick={() => setAudioPickerOpen(true)}>＋ Selecionar da biblioteca</button>
         </fieldset>
       </div>
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
@@ -181,5 +184,6 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {error && <p role="alert" className="v6-export-error">{error}</p>}
       <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <><button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(true)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO'}</button><button className="v6-export-without-hair" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(false)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR SEM ANIMAÇÃO DE CABELO'}</button></>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
+    {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudio} />}
   </div>
 }

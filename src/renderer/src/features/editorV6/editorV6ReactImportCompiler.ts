@@ -61,7 +61,7 @@ export async function compileEditorV6ReactImport(
   const plan=planEditorV6ReactImport(source,{
     characters:sources.characters,posesByCharacter:sources.poseSlots,presetsByModel:sources.presets,media
   })
-  const importedBackground=source.backgroundLibraryId ? await window.desktop.editorV6.linkEditorV6LibraryBackground(source.backgroundLibraryId) : null
+  const importedBackground=source.backgroundLibraryId ? await window.desktop.editorV6.linkEditorV6LibraryBackground(projectId,source.backgroundLibraryId) : null
   if(plan.lines.length+plan.cast.length>1000)throw new Error('O V6 permite no máximo 1000 camadas; reduza a quantidade de balões.')
   if(plan.beats.length>1000)throw new Error('O projeto contém estados visuais demais para esta importação.')
   const now=utc()

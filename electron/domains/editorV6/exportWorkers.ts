@@ -32,7 +32,7 @@ async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, w
   throw Error('Tempo limite: o compositor não apresentou o quadro solicitado para exportação.')
 }
 
-export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
+export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   const activeWorkers = new Set<() => void>()
   const retiredWorkers = new Set<number>()
@@ -55,10 +55,17 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
       webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
     const mediaList = payload.project.media, mediaPath = deps.mediaPath
-    if (mediaPath && mediaList?.length) window.webContents.session.protocol.handle('gacha-editor-media', async (request) => {
+    const sharedAssets = payload.project.assets.filter((asset) => asset.libraryAssetId)
+    if ((mediaPath && mediaList?.length) || (deps.resolveLibraryAsset && sharedAssets.length)) window.webContents.session.protocol.handle('gacha-editor-media', async (request) => {
       try {
         const url = new URL(request.url), parts = url.pathname.split('/').filter(Boolean)
-        if (!['project', 'library'].includes(url.hostname) || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
+        if (!['project', 'library', 'asset'].includes(url.hostname) || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
+        if (url.hostname === 'asset') {
+          if (parts.length !== 2 || !deps.resolveLibraryAsset || !sharedAssets.some((asset) => asset.id === parts[1] && asset.libraryAssetId === parts[1])) return new Response('Not found', { status: 404 })
+          const resolved = await deps.resolveLibraryAsset(parts[1])
+          return await createMediaFileResponse(request, resolved.path, resolved.mimeType)
+        }
+        if (!mediaPath || !mediaList?.length) return new Response('Not found', { status: 404 })
         const media = url.hostname === 'library' ? mediaList.find((item) => item.libraryVideoId === parts[1]) : mediaList.find((item) => item.fileName === parts[1])
         if (!media || !/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(media.fileName)) return new Response('Not found', { status: 404 })
         const path = await mediaPath(payload.project.id, media.fileName, media.libraryVideoId)
@@ -74,7 +81,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     restrictRendererResources(window.webContents.session, {
       html: deps.html,
       devUrl: deps.devUrl,
-      allowedSchemes: mediaPath && mediaList?.length ? ['gacha-editor-media'] : []
+      allowedSchemes: ((mediaPath && mediaList?.length) || (deps.resolveLibraryAsset && sharedAssets.length)) ? ['gacha-editor-media'] : []
     })
     let resolveReady!: () => void, rejectReady!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })

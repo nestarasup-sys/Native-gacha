@@ -30,7 +30,7 @@ export function EditorV6PlaybackAudio({ project, playing }: { project: EditorV6D
         for (const block of track.blocks) {
           const media = block.mediaId ? mediaById.get(block.mediaId) : undefined
           if (!media || (track.kind === 'video' && (media.kind !== 'video' || !media.hasAudio))) continue
-          const audio = previous.get(block.id) ?? new Audio(editorV6MediaUrl(project.id, media.fileName, media.kind === 'video' ? media.libraryVideoId : undefined))
+          const audio = previous.get(block.id) ?? new Audio(editorV6MediaUrl(project.id, media.fileName, media.libraryVideoId, media.libraryAudioId))
           audio.preload = 'auto'
           audio.volume = Math.max(0, Math.min(1, block.gain ?? 1))
           next.set(block.id, audio)

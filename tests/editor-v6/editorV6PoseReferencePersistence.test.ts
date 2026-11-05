@@ -14,6 +14,50 @@ afterEach(async () => {
 })
 
 describe('inventário leve de poses do Editor V6', () => {
+  it('grava fundos, objetos e áudios compartilhados só como IDs e resolve os IDs ao reabrir', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-v6-library-refs-'))
+    roots.push(root)
+    const backgroundId = '22345678-1234-4abc-8abc-123456789abc'
+    const objectId = '32345678-1234-4abc-8abc-123456789abc'
+    const audioId = '42345678-1234-4abc-8abc-123456789abc'
+    const document = {
+      schemaVersion: 1 as const, id: projectId, title: 'Bibliotecas', color: '#d7b5cd',
+      createdAt: '2026-11-05T00:00:00.000Z', updatedAt: '2026-11-05T00:00:00.000Z',
+      backgroundColor: '#ffffff', backgroundAssetId: backgroundId, backgroundX: 0, backgroundY: 0,
+      backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
+      assets: [
+        { id: backgroundId, category: 'background' as const, name: 'Cenário', mimeType: 'image/png' as const, dataUrl: `gacha-editor-media://asset/${projectId}/${backgroundId}`, libraryAssetId: backgroundId },
+        { id: objectId, category: 'object' as const, name: 'Objeto', mimeType: 'image/png' as const, dataUrl: `gacha-editor-media://asset/${projectId}/${objectId}`, libraryAssetId: objectId }
+      ], elements: [],
+      media: [{ id: audioId, libraryAudioId: audioId, name: 'Trilha', fileName: `${audioId}.mp3`, kind: 'audio' as const, mimeType: 'audio/mpeg', sourceFrames: 90, hasAudio: true, sizeBytes: 4096 }],
+      timeline: createEditorV6Timeline([])
+    }
+    const checked: Array<[string, string[]]> = []
+    const persistence = createEditorV6DocumentPersistence({
+      files: fs, editorV6Path: (id) => join(root, `editorV6-${id}`), editorV6LibraryPath: () => root,
+      validate: () => true, assertLibraryVideoReferencesAvailable: async () => undefined,
+      assertLibraryBackgroundReferencesAvailable: async (ids) => { checked.push(['background', [...ids]]) },
+      assertLibraryMediaReferencesAvailable: async (category, ids) => { checked.push([category, [...ids]]) },
+      coordinateLibraryReferenceChange: (operation) => operation(),
+      decodeImage: (url) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'), normalizeImage: async (bytes) => ({ bytes })
+    })
+
+    await persistence.writeEditorV6(document)
+    const manifest = JSON.parse(await fs.readFile(join(root, `editorV6-${projectId}`, 'editorV6.json'), 'utf8'))
+    expect(manifest.assets.map((asset: { id: string; libraryAssetId?: string; dataUrl?: string }) => ({ id: asset.id, libraryAssetId: asset.libraryAssetId, hasDataUrl: Boolean(asset.dataUrl) }))).toEqual([
+      { id: backgroundId, libraryAssetId: backgroundId, hasDataUrl: false },
+      { id: objectId, libraryAssetId: objectId, hasDataUrl: false }
+    ])
+    expect(manifest.media[0].libraryAudioId).toBe(audioId)
+    await expect(fs.access(join(root, `editorV6-${projectId}`, 'assets', 'backgrounds', `${backgroundId}.png`))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(fs.access(join(root, `editorV6-${projectId}`, 'media', `${audioId}.mp3`))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(checked).toEqual([['background', [backgroundId]], ['object', [objectId]], ['audio', [audioId]]])
+    await expect(persistence.readEditorV6(projectId)).resolves.toMatchObject({
+      assets: [{ libraryAssetId: backgroundId, dataUrl: `gacha-editor-media://asset/${projectId}/${backgroundId}` }, { libraryAssetId: objectId, dataUrl: `gacha-editor-media://asset/${projectId}/${objectId}` }],
+      media: [{ libraryAudioId: audioId }]
+    })
+  })
+
   it('preserva ajustes de balões e cores de nome ao reabrir um roteiro', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-v6-settings-'))
     roots.push(root)

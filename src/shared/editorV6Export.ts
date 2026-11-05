@@ -6,6 +6,7 @@ import { isEditorV6ExportTestMode, type EditorV6ExportTestMode } from './editorV
 export type EditorV6ExportAudio = {
   id: string; name: string; fileName: string; sourceFrames: number
   libraryVideoId?: string
+  libraryAudioId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
 export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }

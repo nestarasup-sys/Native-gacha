@@ -20,6 +20,9 @@ import { registerEditorV7ExportHandlers } from './domains/editorV7/exportIpc'
 import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
 import { VideoLibraryStore, configureVideoLibraryStorage } from './domains/mediaLibrary/videoLibraryStore'
 import { VideoBackgroundLibraryStore, configureBackgroundLibraryStorage } from './backgroundLibrary'
+import { EditorV6MediaLibraryStore, configureEditorV6MediaLibraryStorage } from './domains/editorV6/mediaLibrary'
+import { registerEditorV6MediaLibraryHandlers } from './domains/editorV6/mediaLibraryIpc'
+import { createEditorV6MediaReferenceIndex } from './domains/editorV6/mediaReferences'
 import { RoteiroUiGifLibraryStore, configureRoteiroUiGifStorage } from './roteiroUiGifLibrary'
 import { DataPlatform, getAppDataUsage } from './dataPlatform.cjs'
 import { DomainFileSystem } from './domainFileSystem.cjs'
@@ -152,6 +155,7 @@ const dataPlatform = new DataPlatform(configuredAppDataRoot ?? dirname(app.getPa
 const dataFileSystem = new DomainFileSystem(dataPlatform, app.getPath('userData'))
 configureVideoLibraryStorage(dataFileSystem)
 configureBackgroundLibraryStorage(dataFileSystem)
+configureEditorV6MediaLibraryStorage(dataFileSystem)
 configureRoteiroUiGifStorage(dataFileSystem)
 configureAssetImageStorage(dataFileSystem)
 const mkdir = dataFileSystem.mkdir.bind(dataFileSystem) as typeof nativeMkdir
@@ -217,6 +221,8 @@ const assertLibraryVideoReferencesAvailable = async (videoIds: readonly string[]
   }
 }
 const videoBackgroundLibrary = new VideoBackgroundLibraryStore(() => studioLibraryPath('video'))
+const coordinateBackgroundReferenceChange = coordinateVideoReferenceChange
+let editorV6MediaLibrary!: EditorV6MediaLibraryStore
 const roteiroUiGifLibrary = new RoteiroUiGifLibraryStore(() => studioLibraryPath('video'))
 const getRoteiroUiGifDefaultPath = () => {
   const roots = [join(app.getAppPath(), 'src', 'renderer', 'public', 'assets', 'ui', 'loading.gif'), join(app.getAppPath(), 'out', 'renderer', 'assets', 'ui', 'loading.gif')]
@@ -458,6 +464,11 @@ const { readEditorV6, readEditorV6Summary, readEditorV6PoseReferences, writeEdit
   editorV6LibraryPath,
   validate: isEditorV6Document,
   assertLibraryVideoReferencesAvailable,
+  assertLibraryBackgroundReferencesAvailable,
+  assertLibraryMediaReferencesAvailable: async (category, ids) => {
+    if (ids.length) await Promise.all(ids.map((id) => editorV6MediaLibrary.resolve(category, id)))
+  },
+  coordinateLibraryReferenceChange: (operation) => coordinateBackgroundReferenceChange(operation),
   decodeImage: importedImageDataUrlBuffer,
   normalizeImage: normalizeImageBuffer
 })
@@ -468,6 +479,16 @@ const { listEditorV6s, listEditorV6PoseReferenceDocuments } = createEditorV6Libr
   readEditorV6Summary,
   readEditorV6PoseReferences
 })
+
+const editorV6MediaReferences = createEditorV6MediaReferenceIndex({
+  listProjects: listEditorV6s,
+  readManifest: async (projectId) => JSON.parse(await readFile(join(editorV6Path(projectId), 'editorV6.json'), 'utf8'))
+})
+editorV6MediaLibrary = new EditorV6MediaLibraryStore(
+  () => editorV6LibraryPath(),
+  (category, id) => editorV6MediaReferences.references(category, id),
+  (category, ids) => editorV6MediaReferences.referencesForIds(category, ids)
+)
 
 const assertNoVideoReferences = createVideoReferenceGuard([
   createRoteirosVideoReferenceLookup(() => dataPlatform.database),
@@ -645,9 +666,17 @@ async function registerFabricatorHandlers(): Promise<void> {
       if (!listed) throw new Error('Fundo não encontrado na biblioteca.')
       return { ...asset, name: listed.name }
     },
+    resolveObject: async (id) => editorV6MediaLibrary.resolve('object', id),
     files: { stat, readFile, mkdir, writeFile },
     normalizeImage: normalizeImageBuffer, dataUrlBuffer, createId: randomUUID,
     openPath: (path) => shell.openPath(path)
+  })
+  registerEditorV6MediaLibraryHandlers({
+    ipcMain, assertTrustedSender,
+    showOpenDialog: (options) => dialog.showOpenDialog(options),
+    library: editorV6MediaLibrary,
+    assertUnreferenced: (category, id) => editorV6MediaReferences.assertUnreferenced(category, id),
+    coordinateReferenceChange: (operation) => coordinateBackgroundReferenceChange(operation)
   })
 
   roteiroExportIpc = registerRoteirosIpc({
@@ -683,9 +712,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     enqueueWrite: enqueueRoteirosWrite,
     waitForPendingWrites: waitForRoteirosWrites,
     coordinateVideoReferenceChange,
+    coordinateBackgroundReferenceChange,
     assertNoVideoReferences,
     assertLibraryVideoReferencesAvailable,
     assertLibraryBackgroundReferencesAvailable,
+    assertEditorV6BackgroundUnreferenced: (id) => editorV6MediaReferences.assertUnreferenced('background', id),
+    listEditorV6BackgroundReferences: async (id) => (await editorV6MediaReferences.references('background', id)).map((item) => ({ id: item.projectId, title: item.title })),
     assertLibraryUiGifReferencesAvailable
   })
   // Módulo Base de Vídeos: IPC → casos de uso → repositório SQLite.
@@ -1043,7 +1075,20 @@ app.whenReady().then(async () => {
   registerMediaProtocols({
     protocol, videoLibrary, backgroundLibrary: videoBackgroundLibrary, gifLibrary: roteiroUiGifLibrary,
     fileSystem: dataFileSystem, readFile, editorV6Path,
-    readEditorV6Manifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8'))
+    readEditorV6Manifest: async (id) => JSON.parse(await nativeReadFile(join(editorV6Path(id), 'editorV6.json'), 'utf8')),
+    resolveEditorV6LibraryAsset: async (id) => {
+      try {
+        const background = await videoBackgroundLibrary.resolve(id)
+        return { path: await dataFileSystem.resolvePhysicalPath(background.path) ?? background.path, mimeType: background.mimeType }
+      } catch {
+        const object = await editorV6MediaLibrary.resolve('object', id)
+        return { path: await dataFileSystem.resolvePhysicalPath(object.path) ?? object.path, mimeType: object.mimeType }
+      }
+    },
+    resolveEditorV6LibraryAudio: async (id) => {
+      const item = await editorV6MediaLibrary.resolve('audio', id)
+      return { path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path, mimeType: item.mimeType }
+    }
   })
   await registerFabricatorHandlers()
   editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: rendererHtmlPath, preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: devRendererUrl, cacheDirectory: join(app.getPath('userData'), 'cache', 'editor-v6-motion-v2'), concurrency: 2 })
@@ -1053,6 +1098,11 @@ app.whenReady().then(async () => {
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
+    resolveLibraryAudio: async (id) => { const item = await editorV6MediaLibrary.resolve('audio', id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
+    resolveLibraryAsset: async (id) => {
+      try { const item = await videoBackgroundLibrary.resolve(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } }
+      catch { const item = await editorV6MediaLibrary.resolve('object', id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } }
+    },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal),
     getMotionCacheStats: () => editorV6MotionService!.getCacheStats() })
   editorV7ExportService = registerEditorV7ExportHandlers({ ipcMain, assertTrustedSender, toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools') })

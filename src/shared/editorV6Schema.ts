@@ -4,17 +4,25 @@ import { isValidCustomizerFaceAppearance } from './customizerValidation'
 import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from './editorV6'
 import type { EditorV6MotionBakeRequest } from './editorV6Motion'
 
-const uuid = z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i)
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
+const uuid = z.string().regex(UUID_PATTERN)
 const finite = z.number().finite()
 const EDITOR_V6_MAX_ASSETS = 5_000
 export const editorV6ExportAudioSchema = z.object({
   id: uuid, name: z.string().min(1).max(255),
   fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp3|wav|m4a|aac|ogg|flac|opus|webm)$/i),
+  libraryAudioId: uuid.optional(),
+  libraryVideoId: uuid.optional(),
   sourceFrames: z.number().int().min(1).max(1_000_000),
   startFrame: z.number().int().min(0).max(1_000_000),
   sourceInFrame: z.number().int().min(0).max(1_000_000),
   durationFrames: z.number().int().min(1).max(1_000_000), gain: z.number().finite().min(0).max(2), muted: z.boolean()
-}).refine((clip) => clip.sourceInFrame + clip.durationFrames <= clip.sourceFrames, 'O trecho de áudio ultrapassa o arquivo de origem.')
+}).superRefine((clip, context) => {
+  if (clip.sourceInFrame + clip.durationFrames > clip.sourceFrames) context.addIssue({ code: 'custom', path: ['durationFrames'], message: 'O trecho de áudio ultrapassa o arquivo de origem.' })
+  if (clip.libraryAudioId && clip.fileName.split('.')[0].toLowerCase() !== clip.libraryAudioId.toLowerCase()) context.addIssue({ code: 'custom', path: ['libraryAudioId'], message: 'O nome do arquivo precisa corresponder ao ID do áudio na biblioteca.' })
+  if (clip.libraryAudioId && clip.libraryVideoId) context.addIssue({ code: 'custom', path: ['libraryAudioId'], message: 'Um clipe não pode usar duas referências de biblioteca.' })
+})
 
 export const editorV6AssetSchema = z.object({
   id: uuid,
@@ -23,10 +31,12 @@ export const editorV6AssetSchema = z.object({
   mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
   dataUrl: z.string().max(70_000_000),
   timelineSnapshot: z.boolean().optional(),
-  libraryBackgroundId: uuid.optional()
+  libraryBackgroundId: uuid.optional(),
+  libraryAssetId: uuid.optional()
 }).superRefine((asset, context) => {
   if (asset.libraryBackgroundId && asset.category !== 'background') context.addIssue({ code: 'custom', path: ['libraryBackgroundId'], message: 'A referência da biblioteca só pode ser usada por fundos.' })
-  if (!asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`)) {
+  if (asset.libraryAssetId && (!['background', 'object'].includes(asset.category) || asset.id !== asset.libraryAssetId || !new RegExp(`^gacha-editor-media://asset/${UUID_SOURCE}/${UUID_SOURCE}$`, 'i').test(asset.dataUrl) || !asset.dataUrl.endsWith(`/${asset.libraryAssetId}`))) context.addIssue({ code: 'custom', path: ['libraryAssetId'], message: 'A referência de mídia precisa ser um asset compartilhado do Editor V6.' })
+  if (!asset.libraryAssetId && !asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`)) {
     context.addIssue({ code: 'custom', path: ['dataUrl'], message: 'O conteúdo da imagem não corresponde ao formato declarado.' })
   }
 })
@@ -36,6 +46,7 @@ export const editorV6MediaAssetSchema = z.object({
   name: z.string().min(1).max(255),
   fileName: z.string().regex(/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i),
   libraryVideoId: uuid.optional(),
+  libraryAudioId: uuid.optional(),
   kind: z.enum(['video', 'audio']),
   mimeType: z.enum(['video/mp4', 'video/webm', 'video/quicktime', 'video/x-m4v', 'audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/aac', 'audio/ogg', 'audio/flac', 'audio/opus', 'audio/webm']),
   sourceFrames: z.number().int().min(1).max(1_000_000),
@@ -46,6 +57,8 @@ export const editorV6MediaAssetSchema = z.object({
 }).superRefine((media, context) => {
   if (media.fileName.split('.')[0].toLowerCase() !== media.id.toLowerCase()) context.addIssue({ code: 'custom', path: ['fileName'], message: 'O nome seguro do arquivo precisa corresponder ao ID da mídia.' })
   if (media.libraryVideoId && (media.kind !== 'video' || media.id !== media.libraryVideoId || !media.mimeType.startsWith('video/'))) context.addIssue({ code: 'custom', path: ['libraryVideoId'], message: 'A referência da Base de vídeos precisa identificar um vídeo compatível.' })
+  if (media.libraryAudioId && (media.kind !== 'audio' || media.id !== media.libraryAudioId || !media.mimeType.startsWith('audio/'))) context.addIssue({ code: 'custom', path: ['libraryAudioId'], message: 'A referência à biblioteca precisa identificar um áudio compatível.' })
+  if (media.libraryVideoId && media.libraryAudioId) context.addIssue({ code: 'custom', path: ['libraryAudioId'], message: 'Uma mídia não pode apontar para duas bibliotecas.' })
   if (media.kind === 'video' && !media.mimeType.startsWith('video/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao vídeo.' })
   if (media.kind === 'audio' && !media.mimeType.startsWith('audio/')) context.addIssue({ code: 'custom', path: ['mimeType'], message: 'O tipo de mídia não corresponde ao áudio.' })
 })

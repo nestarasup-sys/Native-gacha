@@ -8,7 +8,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '../src/shared/fabricator'
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../src/shared/studio'
-import type { EditorV6DesktopApi } from '../src/shared/editorV6'
+import type { EditorV6DesktopApi, EditorV6MediaLibraryDesktopApi } from '../src/shared/editorV6'
 import { editorV7IpcChannels } from '../src/shared/editorV7IpcChannels'
 import type { EditorV7DesktopApi, EditorV7ExportStatus } from '../src/shared/editorV7'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
@@ -114,7 +114,10 @@ const editorV6Api: EditorV6DesktopApi = {
   deleteEditorV6Project: (id) => invokeEditorV6('deleteEditorV6Project', id),
   getEditorV6Folder: () => invokeEditorV6('getEditorV6Folder'),
   importEditorV6Image: (category) => invokeEditorV6('importEditorV6Image', category),
-  linkEditorV6LibraryBackground: (id) => invokeEditorV6('linkEditorV6LibraryBackground', id),
+  linkEditorV6LibraryBackground: (projectId, id) => invokeEditorV6('linkEditorV6LibraryBackground', projectId, id),
+  linkEditorV6LibraryAsset: (projectId, category, id) => invokeEditorV6('linkEditorV6LibraryAsset', projectId, category, id),
+  linkEditorV6LibraryAudio: (projectId, id) => invokeEditorV6('linkEditorV6LibraryAudio', projectId, id),
+  linkEditorV6LibraryExportAudio: (projectId, id) => invokeEditorV6('linkEditorV6LibraryExportAudio', projectId, id),
   saveEditorV6Print: (id, dataUrl) => invokeEditorV6('saveEditorV6Print', id, dataUrl),
   openEditorV6Prints: (id) => invokeEditorV6('openEditorV6Prints', id),
   getEditorV6ExportFolder: () => invokeEditorV6('getEditorV6ExportFolder'),
@@ -157,7 +160,15 @@ const mediaLibraryApi: MediaLibraryDesktopApi = {
 const videoBackgroundsApi: VideoBackgroundLibraryDesktopApi = {
   listVideoBackgroundLibrary: () => ipcRenderer.invoke('background-library:list'),
   importVideoBackground: () => ipcRenderer.invoke('background-library:import'),
+  renameVideoBackground: (id, name) => ipcRenderer.invoke('background-library:rename', id, name),
   deleteVideoBackground: (id) => ipcRenderer.invoke('background-library:delete', id)
+}
+
+const editorV6MediaLibraryApi: EditorV6MediaLibraryDesktopApi = {
+  list: (category) => ipcRenderer.invoke('editor-v6-library:list', category),
+  import: (category) => ipcRenderer.invoke('editor-v6-library:import', category),
+  rename: (category, id, name) => ipcRenderer.invoke('editor-v6-library:rename', category, id, name),
+  delete: (category, id) => ipcRenderer.invoke('editor-v6-library:delete', category, id)
 }
 
 const baseVideosApi: BaseVideosDesktopApi = {
@@ -250,5 +261,6 @@ contextBridge.exposeInMainWorld('desktop', {
   roteiros: roteirosApi,
   mediaLibrary: mediaLibraryApi,
   videoBackgrounds: videoBackgroundsApi,
+  editorV6MediaLibrary: editorV6MediaLibraryApi,
   baseVideos: baseVideosApi,
 })

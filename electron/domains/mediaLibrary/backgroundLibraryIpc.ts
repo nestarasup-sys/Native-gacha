@@ -8,6 +8,7 @@ export function registerBackgroundLibraryHandlers(deps: {
   service: {
     list: () => Promise<VideoBackgroundLibraryItem[]>
     import: () => Promise<VideoBackgroundLibraryItem | null>
+    rename: (id: unknown, name: unknown) => Promise<void>
     delete: (id: unknown) => Promise<void>
   }
 }): void {
@@ -22,5 +23,9 @@ export function registerBackgroundLibraryHandlers(deps: {
   deps.ipcMain.handle('background-library:delete', async (event, id: unknown): Promise<void> => {
     deps.assertTrustedSender(event)
     await deps.service.delete(id)
+  })
+  deps.ipcMain.handle('background-library:rename', async (event, id: unknown, name: unknown): Promise<void> => {
+    deps.assertTrustedSender(event)
+    await deps.service.rename(id, name)
   })
 }

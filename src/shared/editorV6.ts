@@ -15,6 +15,8 @@ export type EditorV6Asset = {
   timelineSnapshot?: boolean
   /** Shared background library source; the image bytes remain a project-local snapshot. */
   libraryBackgroundId?: string
+  /** Canonical ID of a shared V6 background or object image. */
+  libraryAssetId?: string
 }
 export type EditorV6MediaAsset = {
   id: string
@@ -22,6 +24,8 @@ export type EditorV6MediaAsset = {
   fileName: string
   /** Existing video from the shared Base Videos catalog; never copied into this project. */
   libraryVideoId?: string
+  /** Canonical ID of a shared audio library item. */
+  libraryAudioId?: string
   kind: 'video' | 'audio'
   mimeType: string
   sourceFrames: number
@@ -30,9 +34,26 @@ export type EditorV6MediaAsset = {
   height?: number
   sizeBytes: number
 }
-export function editorV6MediaUrl(projectId: string, fileName: string, libraryVideoId?: string): string {
-  if (libraryVideoId) return `gacha-editor-media://library/${projectId}/${libraryVideoId}`
+export function editorV6MediaUrl(projectId: string, fileName: string, libraryVideoId?: string, libraryAudioId?: string): string {
+  if (libraryVideoId || libraryAudioId) return `gacha-editor-media://library/${projectId}/${libraryVideoId ?? libraryAudioId}`
   return `gacha-editor-media://project/${projectId}/${fileName}`
+}
+
+export function editorV6LibraryAssetUrl(projectId: string, assetId: string): string {
+  return `gacha-editor-media://asset/${projectId}/${assetId}`
+}
+
+export type EditorV6LibraryMediaItem = {
+  id: string
+  category: 'object' | 'audio'
+  name: string
+  mimeType: string
+  extension: string
+  size: number
+  createdAt: string
+  available: boolean
+  references: Array<{ projectId: string; title: string }>
+  previewUrl?: string
 }
 
 /** EditorV6-local adjustment shared by a facial category and its variant frames. */
@@ -355,7 +376,10 @@ export type EditorV6DesktopApi = {
   deleteEditorV6Project: (id: string) => Promise<void>
   getEditorV6Folder: () => Promise<string>
   importEditorV6Image: (category: EditorV6Asset['category']) => Promise<EditorV6Asset | null>
-  linkEditorV6LibraryBackground: (backgroundId: string) => Promise<EditorV6Asset>
+  linkEditorV6LibraryBackground: (projectId: string, backgroundId: string) => Promise<EditorV6Asset>
+  linkEditorV6LibraryAsset: (projectId: string, category: 'object', assetId: string) => Promise<EditorV6Asset>
+  linkEditorV6LibraryAudio: (projectId: string, audioId: string) => Promise<EditorV6MediaAsset>
+  linkEditorV6LibraryExportAudio: (projectId: string, audioId: string) => Promise<EditorV6ExportAudio>
   saveEditorV6Print: (editorV6Id: string, dataUrl: string) => Promise<string | null>
   openEditorV6Prints: (editorV6Id: string) => Promise<void>
   getEditorV6ExportFolder: () => Promise<string | null>
@@ -373,5 +397,12 @@ export type EditorV6DesktopApi = {
   bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
   prepareEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<void>
   cancelEditorV6Motion: (requestId: string) => Promise<void>
+}
+
+export type EditorV6MediaLibraryDesktopApi = {
+  list: (category: 'object' | 'audio') => Promise<EditorV6LibraryMediaItem[]>
+  import: (category: 'object' | 'audio') => Promise<EditorV6LibraryMediaItem | null>
+  rename: (category: 'object' | 'audio', id: string, name: string) => Promise<void>
+  delete: (category: 'object' | 'audio', id: string) => Promise<void>
 }
 

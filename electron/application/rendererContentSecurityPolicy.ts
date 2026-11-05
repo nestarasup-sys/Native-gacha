@@ -34,7 +34,7 @@ export function createRendererContentSecurityPolicy(devWebSocketUrl?: string): s
     "default-src 'self'",
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob: gacha-background: gacha-gif:",
+    "img-src 'self' data: blob: gacha-background: gacha-gif: gacha-editor-media:",
     "media-src 'self' data: blob: gacha-video: gacha-editor-media:",
     "font-src 'self' data:",
     `connect-src 'self' data:${hmrOrigin ? ` ${hmrOrigin}` : ''}`,

@@ -1,7 +1,7 @@
 import type { FabricatorDesktopApi } from '../../shared/fabricator'
 import type { CustomizerDesktopApi } from '../../shared/customizer'
 import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../../shared/studio'
-import type { EditorV6DesktopApi } from '../../shared/editorV6'
+import type { EditorV6DesktopApi, EditorV6MediaLibraryDesktopApi } from '../../shared/editorV6'
 import type { EditorV7DesktopApi } from '../../shared/editorV7'
 import type { RoteirosDesktopApi } from '../../shared/roteiros'
 import type { BaseVideosDesktopApi } from '../../shared/baseVideos'
@@ -22,6 +22,7 @@ declare global {
       customizer: CustomizerDesktopApi
       studio: StudioDesktopApi
       editorV6: EditorV6DesktopApi
+      editorV6MediaLibrary: EditorV6MediaLibraryDesktopApi
       editorV7: EditorV7DesktopApi
       roteiros: RoteirosDesktopApi
       baseVideos: BaseVideosDesktopApi

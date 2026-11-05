@@ -1,6 +1,6 @@
 import type { IpcMain, IpcMainInvokeEvent, OpenDialogOptions, OpenDialogReturnValue } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
-import type { EditorV6Asset } from '../../../src/shared/editorV6'
+import { editorV6LibraryAssetUrl, type EditorV6Asset } from '../../../src/shared/editorV6'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels.ts'
 
 const UUID_V4 = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
@@ -13,6 +13,7 @@ type EditorV6FileIpcDependencies = {
   libraryPath: () => string
   projectPath: (id: string) => string
   resolveBackground: (id: string) => Promise<{ path: string; mimeType: string; name: string }>
+  resolveObject: (id: string) => Promise<{ path: string; mimeType: string; name: string }>
   files: {
     stat: (path: string) => Promise<{ size: number }>
     readFile: (path: string) => Promise<Buffer>
@@ -52,13 +53,17 @@ export function registerEditorV6FileHandlers(deps: EditorV6FileIpcDependencies):
     const canonical = await deps.normalizeImage(await deps.files.readFile(path))
     return { id: deps.createId(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
   })
-  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryBackground, async (event, id: string): Promise<EditorV6Asset> => {
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryBackground, async (event, projectId: string, id: string): Promise<EditorV6Asset> => {
     deps.assertTrustedSender(event)
-    if (typeof id !== 'string' || !UUID_V4.test(id)) throw new Error('Identificador de fundo inválido.')
+    if (typeof projectId !== 'string' || !UUID_V4.test(projectId) || typeof id !== 'string' || !UUID_V4.test(id)) throw new Error('Identificador de fundo inválido.')
     const background = await deps.resolveBackground(id)
-    if ((await deps.files.stat(background.path)).size > MAX_IMAGE_BYTES) throw new Error('O fundo excede o limite de 50 MB.')
-    const canonical = await deps.normalizeImage(await deps.files.readFile(background.path))
-    return { id: deps.createId(), category: 'background', name: background.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,' + canonical.bytes.toString('base64'), libraryBackgroundId: id }
+    return { id, category: 'background', name: background.name, mimeType: background.mimeType as EditorV6Asset['mimeType'], dataUrl: editorV6LibraryAssetUrl(projectId, id), libraryAssetId: id }
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryAsset, async (event, projectId: string, rawCategory: unknown, id: string): Promise<EditorV6Asset> => {
+    deps.assertTrustedSender(event)
+    if (typeof projectId !== 'string' || !UUID_V4.test(projectId) || rawCategory !== 'object' || typeof id !== 'string' || !UUID_V4.test(id)) throw new Error('Identificador de objeto inválido.')
+    const asset = await deps.resolveObject(id)
+    return { id, category: 'object', name: asset.name, mimeType: asset.mimeType as EditorV6Asset['mimeType'], dataUrl: editorV6LibraryAssetUrl(projectId, id), libraryAssetId: id }
   })
   deps.ipcMain.handle(editorV6IpcChannels.saveEditorV6Print, async (event, id: string, dataUrl: string): Promise<string | null> => {
     deps.assertTrustedSender(event)

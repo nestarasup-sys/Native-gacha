@@ -17,8 +17,9 @@ function fixture() {
   const run = (operation) => operation()
   const background = createBackgroundLibraryService({
     openImportDialog: async () => null,
-    library: { list: async () => [], importFile: async () => { throw new Error('unused') }, delete: async (id) => deleted.push(`background:${id}`) },
+    library: { list: async () => [], importFile: async () => { throw new Error('unused') }, rename: async () => {}, delete: async (id) => deleted.push(`background:${id}`) },
     assertRoteiroUnreferenced: createRoteiroBackgroundReferenceGuard(() => database),
+    assertEditorV6Unreferenced: async () => {}, editorV6References: async () => [], coordinateReferenceChange: run,
     enqueueWrite: run
   })
   const gifs = createRoteiroUiGifsService({
@@ -64,8 +65,9 @@ test('biblioteca não apaga assets se o catálogo ainda não estiver disponível
   const assertUnreferenced = createRoteiroBackgroundReferenceGuard(() => null)
   const library = createBackgroundLibraryService({
     openImportDialog: async () => null,
-    library: { list: async () => [], importFile: async () => { throw new Error('unused') }, delete: async (id) => deleted.push(id) },
+    library: { list: async () => [], importFile: async () => { throw new Error('unused') }, rename: async () => {}, delete: async (id) => deleted.push(id) },
     assertRoteiroUnreferenced: assertUnreferenced,
+    assertEditorV6Unreferenced: async () => {}, editorV6References: async () => [], coordinateReferenceChange: (operation) => operation(),
     enqueueWrite: (operation) => operation()
   })
   await assert.rejects(library.delete(BACKGROUND_ID), /Catálogo de dados não inicializado/)
