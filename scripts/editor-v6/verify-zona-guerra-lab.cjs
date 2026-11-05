@@ -32,7 +32,10 @@ else {
     const r36 = path.join(folder, 'editor-v6-r36-paint', 'result.json')
     try {
       const value = JSON.parse(fs.readFileSync(r37, 'utf8'))
-      if (value.frames !== 309 || value.exportReady !== false || value.passed !== true || value.scope !== 'plain-parts-only') {
+      if (value.frames !== 309 || value.exportReady !== false || value.passed !== true || value.scope !== 'plain-parts-only' ||
+        value.layered?.passed !== true || value.layered?.frames !== 30 ||
+        value.layered?.decodedSources !== 5 || value.layered?.scope !== 'precomposed-layers-only' ||
+        value.layered?.exportReady !== false) {
         problems.push(`R37: incomplete or misleading result in round ${round}`)
       }
       for (const capture of ['first.png', 'last.png']) {

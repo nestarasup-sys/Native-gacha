@@ -1,6 +1,7 @@
 import { createEditorV6PartRasterRenderer } from '../../src/shared/editorV6PartRasterRenderer'
 import { compileEditorV6PartMotionPrototype } from '../../src/shared/editorV6PartMotionPrototype'
 import { interpolateEditorV6Pose, motionEase } from '../../src/shared/editorV6MotionInterpolation'
+import { runR37LayeredParity } from './r37LayeredParity.browser'
 import type { FabricatorProject, ModelPart } from '../../src/shared/fabricator'
 
 const part = (id: string, x: number, rotation = 0): ModelPart => ({
@@ -93,7 +94,12 @@ export async function runR37RasterParity() {
     samples++
   }
   if (decodes !== 1 || compiler.exportReady !== false) throw Error('R37: unexpected decode reuse or export activation')
+  const layered = await runR37LayeredParity()
+  if (!layered.passed || layered.frames !== 30 || layered.decodedSources !== 5 || layered.exportReady !== false) {
+    throw Error('R37: precomposed layered parity gate failed')
+  }
   return { passed: true, frames: samples, decodedImages: decodes, scope: 'plain-parts-only', exportReady: false,
+    layered,
     rasterMilliseconds: Math.round(rasterMilliseconds * 1000) / 1000,
     referenceMilliseconds: Math.round(referenceMilliseconds * 1000) / 1000,
     timingScope: 'synthetic-96x96-predecoded-reference-not-full-export',
