@@ -131,6 +131,10 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
+  const stressWorkerOverride = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS : undefined
+  if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
+    throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
+  }
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
@@ -188,7 +192,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     const publishMouthStats = () => {
       report.mouthAnimation = { stateAtlases: mouthStats.states, characters: mouthStats.characterIds.size, isolatedStates: mouthStats.isolatedStates, legacyPatchStates: mouthStats.legacyPatchStates, skippedStates: mouthStats.skipped, staleStates: mouthStats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouthStats.atlasBytes, atlasPixels: mouthStats.atlasPixels, preparationMilliseconds: mouthStats.preparationMilliseconds, details: [...mouthStats.details].slice(0, 3) }
     }
-    deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism === 2 ? 'Renderizando até dois trechos em paralelo…' : 'Renderizando um trecho por vez…', fallback: report.fallback })
+    deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism > 1 ? `Renderizando até ${parallelism} trechos em paralelo…` : 'Renderizando um trecho por vez…', fallback: report.fallback })
     const renderPart = async (part: EditorV6ExportPart): Promise<PartReport> => {
       controller.signal.throwIfAborted()
       let renderProject = project
@@ -198,7 +202,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
           const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
             signal: controller.signal, characters, bake: deps.bakeMotion,
             progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: done, motionProgress: undefined, message: `Preparando boca · trecho ${part.index + 1}/${parts.length} · estado ${Math.min(completed + 1, total)}/${total} · ${name}…` })
-          }, options.startFrame, parallelism as 1 | 2, testSettings.mouthConcurrency)
+          }, options.startFrame, Math.min(2, parallelism) as 1 | 2, testSettings.mouthConcurrency)
           renderProject = mouth.project
           mouthLoops = mouth.mouthLoops
           mouthStats.states += mouth.stats.states
@@ -420,7 +424,8 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       finally { addPhaseTime(report, 'finalization', finalizationStarted) }
     }
     try {
-      report.validation = await finishMeasured(await renderAttempt(planned, encoder, options.turbo ? 2 : 1))
+      const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo ? 2 : 1
+      report.validation = await finishMeasured(await renderAttempt(planned, encoder, turboParallelism))
     } catch (error) {
       deps.signal.throwIfAborted()
       const attempt = report.attempts.at(-1)
