@@ -8,7 +8,10 @@
 | --- | --- |
 | [README do produto](../../README.md) | Instalação, produto, branches e comandos |
 | [Painel de pendências da Zona de Guerra](ZONA_GUERRA_PENDENCIAS.md) | O que está implementado, o que falta validar e o que não começou |
-| [Diagnóstico de 309 quadros](ZONA_GUERRA_RELATORIO_309_QUADROS_E_PLANO.md) | Linha de base real e plano de benchmark |
+| [Baseline ativa — projeto novo (05/11)](baselines/native_gacha_nova_baseline_2026-11-05.md) | Medição do projeto novo, separado do cenário anterior alterado |
+| [Baseline ativa — dados JSON](baselines/native_gacha_nova_baseline_2026-11-05.json) | Números estruturados e sanitizados para A/B |
+| [Prioridades pós-baseline](ZONA_GUERRA_PRIORIDADES_POS_BASELINE_2026-11-05.md) | Próximas mudanças, hipóteses, métricas e gates |
+| [Diagnóstico histórico de 309 quadros](ZONA_GUERRA_RELATORIO_309_QUADROS_E_PLANO.md) | Projeto antigo, não comparar contra a nova linha de base |
 | [Bancada Windows remota](ZONA_GUERRA_BANCADA_WINDOWS_REMOTA.md) | CI, resultados sintéticos e limitações |
 | [R37 — estado e gates](ZONA_GUERRA_R37_STATUS_E_GATES.md) | Protótipo de peças, raster experimental e paridade pendente |
 
@@ -19,7 +22,7 @@
 | R32 | [Rigs de extremidade](ZONA_GUERRA_R32_ENDPOINT_RIGS.md) | Implementação experimental; A/B real pendente |
 | R33 | [Agrupamento de bakes](ZONA_GUERRA_R33_AGRUPAMENTO_BAKES.md) | Implementação experimental; ganho real não medido |
 | R34 | [Reuso de poses intermediárias](ZONA_GUERRA_R34_POSES_INTERMEDIARIAS_REUTILIZADAS.md) | Implementação experimental; equivalência de projeto real pendente |
-| R35 | [Métricas de reuso](ZONA_GUERRA_R35_METRICAS_REUSO_RIGS.md) | Instrumentação implementada; coleta real pós-R35 pendente |
+| R35 | [Métricas de reuso](ZONA_GUERRA_R35_METRICAS_REUSO_RIGS.md) | Instrumentação com leitura real pós-R35: 141 rigs preparados, 0 reutilizados; ganho ainda não comprovado |
 | R36 | [Painel de pendências](ZONA_GUERRA_PENDENCIAS.md#r36--captura-direta-do-paint) | Proposta de avaliação, não implementação validada |
 | R37 | [Compositor por peças](ZONA_GUERRA_R37_STATUS_E_GATES.md) | Protótipo e raster parcial implementados; não integrado ao exportador |
 
