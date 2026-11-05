@@ -13,8 +13,8 @@ const actors=[
 const video:EditorV6MediaAsset={id:videoId,libraryVideoId:videoId,name:'TikTok 01',fileName:videoId+'.mp4',kind:'video',mimeType:'video/mp4',sourceFrames:180,hasAudio:true,width:1080,height:1920,sizeBytes:20000}
 const sample=()=>parseEditorV6ReactImport({
   format:EDITOR_V6_REACT_IMPORT_FORMAT,title:'React sem reescrita',seed:7,
-  cast:[{character:'Chloé',x:-30,y:15},{character:'Luka',x:30,y:15}],
-  videos:[{videoId,startSeconds:0}],
+  cast:[{character:'Chloé',x:-30,y:15},{character:'Luka',x:-10,y:15}],
+  videos:[{videoId,startSeconds:0}],durationSeconds:31,
   lines:[
     {character:'Chloé',kind:'speech',text:'Texto exato!\nSegunda linha.',startSeconds:6,durationSeconds:3},
     {character:'Luka',kind:'thought',text:'Isso é segredo.',startSeconds:10,durationSeconds:2}
@@ -49,11 +49,17 @@ describe('JSON portátil do Editor V6',()=>{
     expect(gaze.some((b)=>b.startFrame===270&&b.gaze==='right')).toBe(true)
     expect(gaze.some((b)=>b.startFrame===300&&b.gaze==='left')).toBe(false)
   })
+  it('não vira quem está no lado oposto da TV',()=>{
+    const parsed=sample()
+    const opposite={...parsed,cast:[parsed.cast[0],{...parsed.cast[1],x:30}]}
+    const beats=planEditorV6ReactImport(opposite,references()).beats
+    expect(beats.some((beat)=>beat.characterId===idB&&beat.startFrame===180&&beat.gaze==='left')).toBe(false)
+  })
   it('escolhe poses iniciais distintas quando disponíveis e só uma troca por intervalo',()=>{
     const plan=planEditorV6ReactImport(sample(),references())
     const initials=plan.beats.filter((b)=>b.startFrame===0)
     expect(new Set(initials.map((item)=>item.poseSlot)).size).toBe(2)
-    expect(plan.beats.filter((b)=>b.startFrame===450&&b.poseSlot!==undefined).length).toBeLessThanOrEqual(1)
+    expect(plan.beats.filter((b)=>b.startFrame===450&&b.poseSlot!==undefined).length).toBe(1)
     expect(plan.beats.every((b)=>b.startFrame>=0&&b.startFrame<plan.durationFrames)).toBe(true)
   })
   it('reconhece personagens sem acento e rejeita referências ausentes ou repetidas',()=>{
