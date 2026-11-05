@@ -28,8 +28,9 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     throw Error(`A aparência salva de ${state.text || character.name} está desatualizada em relação ao Customizador. Aguarde a atualização automática no Editor V6 antes de exportar novamente.`)
   }
 
+  const plans = editorV6MotionPlans(project)
   const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame).map((plan) => plan.blockId))
-  const missing = editorV6MotionPlans(project).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
+  const missing = plans.filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
     && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
   const groups = new Map<string, typeof missing>()
   for (const plan of missing) {
@@ -44,7 +45,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     if (!motion || !editorV6MotionHasAvailableAssets(motion, assets)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)
   }
-  const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))
+  const plansByBlock = new Map(plans.map((plan) => [plan.blockId, plan]))
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const groupedPlans = [...groups.values()]
   // Group work per character so each warm Electron worker can reuse its
@@ -53,7 +54,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const schedule = editorV6MotionBakeGroupOrder(groupedPlans)
   const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
   const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2
-  let nextGroup = 0, completed = 0, baked = 0, preparedRigs = 0, reusedRigs = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
+  let nextGroup = 0, completed = 0, baked = 0, preparedRigs = 0, reusedRigs = 0, rigKeyLookups = 0, rigRebuilds = 0, rigBuildMilliseconds = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
   const controller = new AbortController()
   const abortWithParent = () => controller.abort(deps.signal.reason ?? Error('Preparação de transições cancelada.'))
   deps.signal.addEventListener('abort', abortWithParent, { once: true })
@@ -88,6 +89,9 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
             const bakedResult = await deps.bake({ id: randomUUID(), plan, character, ...(facialMotion ? { mouthScaleSamples: facialMotion } : {}) }, controller.signal)
             preparedRigs += bakedResult.metrics.preparedRigs
             reusedRigs += bakedResult.metrics.reusedRigs ?? 0
+            rigKeyLookups += bakedResult.metrics.rigKeyLookups ?? 0
+            rigRebuilds += bakedResult.metrics.rigRebuilds ?? 0
+            rigBuildMilliseconds += bakedResult.metrics.rigBuildMilliseconds ?? 0
             result = bakedResult
           } finally { activeBakes-- }
         }
@@ -138,5 +142,5 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
       }
     }
   }
-  return { project, stats: { total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked, preparedRigs, reusedRigs, maxConcurrentBakes, milliseconds: performance.now() - began, requestMilliseconds: timings } }
+  return { project, stats: { total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked, preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, maxConcurrentBakes, milliseconds: performance.now() - began, requestMilliseconds: timings } }
 }

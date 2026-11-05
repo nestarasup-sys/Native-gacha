@@ -87,7 +87,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   signal: AbortSignal; characters: Character[]
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
-}, phaseStartFrame = startFrame, concurrentParts: 1 | 2 = 1) {
+}, phaseStartFrame = startFrame, concurrentParts: 1 | 2 = 1, maxInFlight: 1 | 2 = 2) {
   const began = performance.now()
   const { candidates, skippedStale } = candidatesFor(project, deps.characters, startFrame, endFrame)
   if (skippedStale) throw Error('A animação da boca não pode usar um personagem alterado no Customizador depois de entrar no Editor V6. Atualize o personagem no projeto e tente exportar de novo.')
@@ -98,16 +98,61 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   }
 
   const states: EditorV6ExportMouthLoopState[] = []
-  let atlasBytes = 0, atlasPixels = 0, isolatedStates = 0, legacyPatchStates = 0, projectWithAssets = project
+  let atlasBytes = 0, atlasPixels = 0, isolatedStates = 0, legacyPatchStates = 0
+  // Append in one operation. Thousands of distinct mouth states used to copy
+  // the growing array of encoded atlas references after every state.
+  const appendedAssets: EditorV6Document['assets'] = []
   const errors: string[] = []
   const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length / concurrentParts))
   const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length / concurrentParts)
   if (statePixelBudget < 1 || stateByteBudget < 1) throw Error(`A camada facial de ${candidates.length} personagens falando excede o orçamento seguro de memória. Reduza o número de personagens simultâneos neste trecho.`)
+  // Schedule by source character (like the transition baker) while retaining
+  // timeline output order. Two jobs maximum: the service already caps physical
+  // Electron lanes to two, even when Turbo parts request mouths concurrently.
+  const schedule = candidates.map((_, index) => index).sort((a, b) =>
+    candidates[a].character.id.localeCompare(candidates[b].character.id) || a - b)
+  const baked: Array<EditorV6MotionBakeResult | undefined> = Array(candidates.length)
+  const controller = new AbortController()
+  const onAbort = () => controller.abort(deps.signal.reason ?? Error('Preparação de bocas cancelada.'))
+  deps.signal.addEventListener('abort', onAbort, { once: true })
+  if (deps.signal.aborted) onAbort()
+  let nextJob = 0, completed = 0, failure: unknown
+  async function prepareNext() {
+    while (!controller.signal.aborted) {
+      const scheduled = nextJob++
+      if (scheduled >= schedule.length) return
+      const index = schedule[scheduled], candidate = candidates[index]
+      deps.progress(completed, candidates.length, candidate.state.text || 'Personagem')
+      try {
+        const result = await deps.bake(requestFor(candidate, statePixelBudget), controller.signal)
+        controller.signal.throwIfAborted()
+        if (result.motion.frames.length !== EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length || result.motion.frames.some((frame) => !frame.facePatch))
+          throw Error('A preparação da boca não produziu todas as amostras faciais solicitadas.')
+        const additional = result.mouthlessBaseAssets ?? []
+        const bytes = result.asset.dataUrl.length + additional.reduce((sum, entry) => sum + entry.asset.dataUrl.length, 0)
+        if (result.metrics.atlasPixels > statePixelBudget || bytes > stateByteBudget)
+          throw Error('A camada facial excede o orçamento seguro em resolução nativa.')
+        baked[index] = result
+        completed++
+      } catch (error) {
+        if (failure === undefined) failure = error
+        controller.abort(error)
+        throw error
+      }
+    }
+  }
+  try {
+    const workers = await Promise.allSettled(Array.from({ length: Math.min(maxInFlight, candidates.length) }, () => prepareNext()))
+    if (failure !== undefined) throw failure
+    const rejected = workers.find(worker => worker.status === 'rejected')
+    if (rejected?.status === 'rejected') throw rejected.reason
+    deps.signal.throwIfAborted()
+  } finally {
+    deps.signal.removeEventListener('abort', onAbort)
+  }
   for (const [index, candidate] of candidates.entries()) {
-    deps.signal.throwIfAborted()
-    deps.progress(index, candidates.length, candidate.state.text || 'Personagem')
-    const result = await deps.bake(requestFor(candidate, statePixelBudget), deps.signal)
-    deps.signal.throwIfAborted()
+    const result = baked[index]
+    if (!result) throw Error('A preparação de boca não concluiu todos os estados solicitados.')
     if (result.motion.frames.length !== EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length || result.motion.frames.some((frame) => !frame.facePatch)) throw Error(`A preparação facial de ${candidate.state.text || candidate.character.id} não produziu os três recortes completos da boca.`)
     const additionalAssets = result.mouthlessBaseAssets ?? []
     const additionalAssetBytes = additionalAssets.reduce((total, entry) => total + entry.asset.dataUrl.length, 0)
@@ -119,13 +164,13 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
     if (result.mouthIsolationMode === 'isolated-piece') isolatedStates++
     else legacyPatchStates++
     if (atlasBytes > MAX_ATLAS_BYTES || atlasPixels > MAX_ATLAS_PIXELS) throw Error('As camadas faciais excedem o limite seguro de memória; reduza o número de personagens simultâneos neste trecho.')
-    projectWithAssets = { ...projectWithAssets, assets: [...projectWithAssets.assets, result.asset, ...additionalAssets.map((entry) => entry.asset)] }
+    appendedAssets.push(result.asset, ...additionalAssets.map((entry) => entry.asset))
     const baseAssetIds = additionalAssets.length ? Object.fromEntries(additionalAssets.map((entry) => [entry.faceMode, entry.asset.id])) as NonNullable<EditorV6ExportMouthLoopState['baseAssetIds']> : undefined
     states.push({ elementId: candidate.state.id, characterId: candidate.character.id, blockIds: candidate.blockIds, assetId: result.asset.id, sourceAssetId: candidate.state.assetId, ...(baseAssetIds ? { baseAssetIds } : {}), frames: result.motion.frames })
   }
   deps.progress(candidates.length, candidates.length, 'Animação da boca pronta')
   return {
-    project: projectWithAssets,
+    project: { ...project, assets: [...project.assets, ...appendedAssets] },
     mouthLoops: { startFrame: phaseStartFrame, cycleFrames, states } satisfies EditorV6ExportMouthLoops,
     stats: { states: states.length, characters: new Set(states.map((state) => state.characterId)).size, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates, legacyPatchStates, atlasBytes, atlasPixels, errors, milliseconds: performance.now() - began }
   }

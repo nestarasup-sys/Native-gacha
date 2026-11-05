@@ -212,16 +212,26 @@ export type EditorV6BakeSession = {
   provider: CharacterRenderAssetProvider
   materials: GachaReusableMaterialCache
   endpointRenderers: Map<string, Renderer>
+  /** Bounded history distinguishes a genuinely new rig from a rig evicted earlier. */
+  hasSeenPose(key: string): boolean
+  rememberPose(key: string): void
   trim(): void
   dispose(): void
 }
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
   const endpointRenderers = new Map<string, Renderer>()
+  const poseHistory = new Set<string>()
   const materials: GachaReusableMaterialCache = new Map()
   return {
     provider: cachedProvider(provider, true),
     materials,
     endpointRenderers,
+    hasSeenPose(key) { return poseHistory.has(key) },
+    rememberPose(key) {
+      if (poseHistory.has(key)) poseHistory.delete(key)
+      poseHistory.add(key)
+      while (poseHistory.size > 48) poseHistory.delete(poseHistory.values().next().value!)
+    },
     trim() {
       // Bounded worker-local pool, based on a conservative estimate of five
       // Canvas RGBA surfaces per rig. Two independent workers can run in Turbo.
@@ -238,6 +248,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
     dispose() {
       for (const renderer of endpointRenderers.values()) renderer.dispose()
       endpointRenderers.clear()
+      poseHistory.clear()
       materials.clear()
     }
   }
@@ -256,6 +267,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
+  const rigCharacterKey = session ? JSON.stringify([request.character, source.updatedAt]) : ''
+  let rigKeyLookups = 0, rigRebuilds = 0, rigBuildMilliseconds = 0
   let preparedRigs = 0, reusedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
   let behindFaceAtlas: HTMLCanvasElement | undefined, faceLayerAtlas: HTMLCanvasElement | undefined, inFrontOfFaceAtlas: HTMLCanvasElement | null | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
@@ -265,10 +278,11 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     // No hash: exact character+model+interpolated pose identity. A one-byte
     // change or minute pivot variation refuses reuse, preserving RGBA.
     // Dynamic facial elements are still repainted on every requested frame.
-    const key = session
-      ? JSON.stringify([request.character, source.updatedAt, artwork])
-      : undefined
+    // Serialize the full character once per bake, not for every canonical sample.
+    // Keep the exact artwork bytes (not a fuzzy hash) to preserve pixel identity.
+    const key = session ? JSON.stringify([rigCharacterKey, artwork]) : undefined
     if (key) {
+      rigKeyLookups++
       const cached = session!.endpointRenderers.get(key)
       if (cached) {
         session!.endpointRenderers.delete(key)
@@ -278,9 +292,15 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         return cached
       }
     }
+    const beganRig = performance.now()
     const renderer = await prepareSavedCharacterRenderer(request.character, { source, artwork, assetProvider: provider, materialCache: materials })
+    rigBuildMilliseconds += performance.now() - beganRig
     preparedRigs++
-    if (key) session!.endpointRenderers.set(key, renderer)
+    if (key) {
+      if (session!.hasSeenPose(key)) rigRebuilds++
+      session!.rememberPose(key)
+      session!.endpointRenderers.set(key, renderer)
+    }
     if (samePose) reusable = renderer
     return renderer
   }
@@ -393,7 +413,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
             asset: { id: assetId, category: 'character', name: 'Atlas isolado da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true },
             assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
             motion: { version: 1, key: request.plan.key, assetId, frames },
-            metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels }
+            metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, samples: count, atlasPixels }
           }
         } finally {
           isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })

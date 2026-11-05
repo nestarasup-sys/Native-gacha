@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { EDITOR_V6_ENCODER_CHOICES, editorV6BenchmarkAudioMatchesExport, planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from '../../src/shared/editorV6Export'
 import { editorV6ExportAudioSchema } from '../../src/shared/editorV6Schema'
+import { EDITOR_V6_EXPORT_TEST_MODES, editorV6ExportTestSettings, editorV6ExportModeFileSuffix } from '../../src/shared/editorV6ExportTestModes'
 const options = { startFrame: 5, endFrame: 86, width: 1920, height: 1080, turbo: true, encoder: 'cpu' as const }
 describe('planejamento de exportação do Editor V6', () => {
   it('expõe apenas codificadores aceitos pelo contrato de exportação', () => {
@@ -9,6 +10,21 @@ describe('planejamento de exportação do Editor V6', () => {
       expect(() => planEditorV6Export({ ...options, encoder: choice.value }, 100)).not.toThrow()
     }
     expect(() => planEditorV6Export({ ...options, encoder: 'libx264' as 'cpu' }, 100)).toThrow('Codificador inválido.')
+  })
+
+  it('permite somente os modos de exportação com parâmetros reais e preserva planejamento de quadros', () => {
+    expect(EDITOR_V6_EXPORT_TEST_MODES).toHaveLength(6)
+    expect(editorV6ExportModeFileSuffix()).toBe('')
+    for (const mode of EDITOR_V6_EXPORT_TEST_MODES) expect(editorV6ExportModeFileSuffix(mode.id)).toBe(' - ' + mode.id)
+    expect(editorV6ExportTestSettings('controle')).toEqual({ motionConcurrency: 2, mouthConcurrency: 2, captureRetryMilliseconds: 16, encodeFaceCropPng: false })
+    expect(editorV6ExportTestSettings('movimentos-1').motionConcurrency).toBe(1)
+    expect(editorV6ExportTestSettings('boca-1').mouthConcurrency).toBe(1)
+    expect(editorV6ExportTestSettings('captura-8').captureRetryMilliseconds).toBe(8)
+    expect(editorV6ExportTestSettings('rosto-legado').encodeFaceCropPng).toBe(true)
+    for (const mode of EDITOR_V6_EXPORT_TEST_MODES) {
+      expect(planEditorV6Export({ ...options, testMode: mode.id }, 100)).toEqual(planEditorV6Export(options, 100))
+    }
+    expect(() => planEditorV6Export({ ...options, testMode: 'sem-validacao' as 'controle' }, 100)).toThrow('Modo de teste')
   })
 
   it('valida projetos reais com cabelo e som, sem exigir um vídeo silencioso', () => {

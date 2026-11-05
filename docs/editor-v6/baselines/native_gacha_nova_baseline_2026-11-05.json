@@ -1,0 +1,73 @@
+{
+  "schema": "native-gacha-performance-baseline-v1",
+  "date_local": "2026-11-05",
+  "source": "relatorio de exportacao enviado pelo usuario; dados pessoais e caminhos omitidos",
+  "reference_project": "novo projeto de referencia (substitui o anterior alterado)",
+  "status": "completed",
+  "validated": true,
+  "fallback": false,
+  "configuration": {
+    "start_frame": 0,
+    "end_frame": 309,
+    "total_frames": 309,
+    "fps": 30,
+    "resolution": [
+      1920,
+      1080
+    ],
+    "encoder_requested": "cpu",
+    "encoder_actual": "libopenh264",
+    "turbo": true,
+    "workers": 2,
+    "mouth_cycle_frames": 30,
+    "hair_reaction_only": true,
+    "hair_posterior_only": true,
+    "hair_preset_slot": 2,
+    "audio_clips": 0,
+    "video_inputs": 0
+  },
+  "times_seconds": {
+    "export_main": 44.2128,
+    "pre_job_hair_preparation": 10.503,
+    "estimated_total_preparation_to_output": 54.7158,
+    "motion_preparation": 23.7045,
+    "rendering": 17.7905,
+    "encoder_probe": 1.4124,
+    "finalization": 1.2871,
+    "mouth_atlas_preparation_subphase": 8.5964,
+    "capture_sum_across_parallel_workers_not_wall_time": 16.3693,
+    "frame_roundtrip_sum_across_parallel_workers_not_wall_time": 21.9324
+  },
+  "motion": {
+    "transitions_required": 21,
+    "transitions_prepared": 21,
+    "unique_bakes": 21,
+    "reused_bakes": 0,
+    "prepared_rigs": 141,
+    "reused_rigs": 0,
+    "concurrency_peak": 2
+  },
+  "cache": {
+    "memory_hits": 0,
+    "disk_hits": 0,
+    "misses": 21
+  },
+  "rendered_frames": 292,
+  "reused_frames": 17,
+  "verified_output_frames": 309,
+  "verified_duration_seconds": 10.3,
+  "seams": [
+    154
+  ],
+  "main_process_peak_rss_mib": 655.2,
+  "limits": [
+    "Uma exportacao; nao e mediana nem comparacao A/B",
+    "Referencia valida apenas para o mesmo novo projeto e configuracoes",
+    "A duracao total soma o preparo de cabelo previo ao job principal",
+    "Tempos de captura e da boca sao subetapas e nao devem ser somados ao total",
+    "Memoria medida apenas para o processo Main",
+    "Nenhum conteudo pessoal nem caminho absoluto foi transferido ao resumo",
+    "A versão pública sanitizada não contém o hash do ID original; o comparador requer o relatório original local via --reference-report para confirmar identidade do projeto"
+  ],
+  "project_id_sha256": null
+}
