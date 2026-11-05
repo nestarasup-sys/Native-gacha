@@ -112,6 +112,19 @@ function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
     return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
   }))
 }
+function audioDecodeFailureSource(error: unknown, audio: ReturnType<typeof planEditorV6Audio>) {
+  const details = message(error)
+  const stream = /aist#(\d+):\d+\/([a-z0-9_]+)/i.exec(details)
+  const clip = stream ? audio[Number(stream[1]) - 1]?.clip : undefined
+  return { clip, codec: stream?.[2]?.toUpperCase() }
+}
+function isAudioDecodeRateFailure(error: unknown) {
+  const details = message(error)
+  return /FFmpeg\/FFprobe terminou com c[oó]digo 69:/i.test(details) && /Decode error rate .* exceeds maximum/i.test(details)
+}
+function isAudioPacketDecodeFailure(error: unknown) {
+  return /(?:Error submitting packet to decoder|Invalid data found when processing input|Input buffer exhausted before END element found|Decode error rate .* exceeds maximum)/i.test(message(error))
+}
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
   const testSettings = editorV6ExportTestSettings(options.testMode)
@@ -348,8 +361,32 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       report.audioClips = audio.length
       const filters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
       if (audio.length) filters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)
+      const recoveryFilters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=PTS-STARTPTS,aresample=48000:async=48000:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
+      if (audio.length) recoveryFilters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)
       const audioPaths = await Promise.all(audio.map((item) => deps.audioPath(item.clip)))
-      await runExportCommand(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', filters.join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(totalFrames / 30), '-movflags', '+faststart', candidate], deps.signal, folder)
+      const joinArgs = (recoverAudio = false) => ['-v', 'error', '-y', ...(recoverAudio ? ['-max_error_rate', '1'] : []), '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', (recoverAudio ? recoveryFilters : filters).join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(totalFrames / 30), '-movflags', '+faststart', candidate]
+      try {
+        await runExportCommand(deps.ffmpeg, joinArgs(), deps.signal, folder)
+      } catch (error) {
+        deps.signal.throwIfAborted()
+        if (!audio.length) throw error
+        const source = audioDecodeFailureSource(error, audio)
+        const sourceName = source.clip ? `“${source.clip.name}” (${source.clip.fileName})` : 'uma das fontes de áudio'
+        const codec = source.codec ?? 'áudio'
+        if (!isAudioDecodeRateFailure(error)) {
+          if (source.clip && isAudioPacketDecodeFailure(error)) throw Error(`A fonte ${sourceName} contém dados ${codec} inválidos e não há quadros decodificáveis suficientes. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(error)}`, { cause: error })
+          throw error
+        }
+        deps.progress({ state: 'joining', message: `Recuperando quadros decodificáveis de ${sourceName}…` })
+        try {
+          // FFmpeg's default max_error_rate is 2/3 and returns code 69 above it.
+          // Retry only after that failure; valid sources keep the strict, unchanged path.
+          await runExportCommand(deps.ffmpeg, joinArgs(true), deps.signal, folder)
+        } catch (recoveryError) {
+          throw Error(`A fonte ${sourceName} tem erros demais para recuperar o ${codec}. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(recoveryError)}`, { cause: recoveryError })
+        }
+        report.deliveryWarning = `O MP4 foi exportado e validado, mas a fonte ${sourceName} contém quadros ${codec} inválidos. O FFmpeg recuperou os quadros decodificáveis; os trechos danificados podem estar ausentes ou silenciosos. Substitua ou reimporte essa mídia para preservar o áudio completo.`
+      }
       deps.progress({ state: 'validating', message: 'Conferindo quadros, duração e emendas do MP4…' })
       const seams = parts.slice(1).map((part) => part.startFrame - options.startFrame)
       const validateSeams = async () => {
@@ -407,7 +444,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     try { publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id) }
     finally { addPhaseTime(report, 'publication', publicationStarted) }
     report.outputPath = publication.outputPath
-    report.deliveryWarning = publication.warning
+    report.deliveryWarning = [report.deliveryWarning, publication.warning].filter(Boolean).join(' ') || undefined
     published = true
     report.state = 'completed'
     report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started

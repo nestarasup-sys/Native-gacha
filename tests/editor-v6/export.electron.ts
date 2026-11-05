@@ -262,6 +262,55 @@ async function main() {
   let mediaRms = 0
   for (let index = 0; index < 1000; index++) mediaRms += mediaSound.readFloatLE(index * 4) ** 2
   assert(Math.sqrt(mediaRms / 1000) > .02, 'O áudio dos vídeos/áudios importados não foi mixado no MP4.')
+  const damagedAacPath = join(folder, 'damaged-audio.aac')
+  run(['-i', audio, '-c:a', 'aac', '-b:a', '192k', '-f', 'adts', damagedAacPath])
+  const damagedAac = await readFile(damagedAacPath)
+  let aacOffset = 0, aacFrames = 0
+  while (aacOffset + 7 <= damagedAac.length) {
+    if (damagedAac[aacOffset] !== 0xff || (damagedAac[aacOffset + 1] & 0xf0) !== 0xf0) { aacOffset++; continue }
+    const frameLength = ((damagedAac[aacOffset + 3] & 3) << 11) | (damagedAac[aacOffset + 4] << 3) | (damagedAac[aacOffset + 5] >> 5)
+    const headerLength = (damagedAac[aacOffset + 1] & 1) === 1 ? 7 : 9
+    if (frameLength < headerLength || aacOffset + frameLength > damagedAac.length) break
+    if (aacFrames % 10 !== 0) damagedAac.fill(0, aacOffset + headerLength, aacOffset + frameLength)
+    aacFrames++
+    aacOffset += frameLength
+  }
+  assert(aacFrames >= 100, `O fixture AAC inválido não contém quadros suficientes (${aacFrames}).`)
+  const damagedAacFileName = `${randomUUID()}.aac`
+  await writeFile(join(folder, 'media', damagedAacFileName), damagedAac)
+  const damagedAudioProject: EditorV6Document = { ...silent, id: randomUUID(), exportAudio: [{ id: randomUUID(), name: 'Fixture AAC com erros', fileName: damagedAacFileName, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }] }
+  const recoveredAudioOutput = join(folder, 'recovered-aac.mp4')
+  const recoveredAudio = await runEditorV6Export(damagedAudioProject, options, { ...base, id: randomUUID(), outputPath: recoveredAudioOutput, reportPath: join(folder, 'recovered-aac.report.json'), audioPath: () => join(folder, 'media', damagedAacFileName) })
+  assert(recoveredAudio.state === 'completed' && !recoveredAudio.fallback && recoveredAudio.audioClips === 1, 'O Turbo não recuperou a mixagem AAC após o limite de erro do FFmpeg.')
+  assert(recoveredAudio.deliveryWarning?.includes('Fixture AAC com erros') && recoveredAudio.deliveryWarning.includes('AAC inválidos') && recoveredAudio.deliveryWarning.includes('trechos danificados'), 'A recuperação AAC não informou o nome da fonte e a possível perda nos trechos corrompidos.')
+  const recoveredAudioProbe = await probeExportMedia(ffprobe, recoveredAudioOutput, new AbortController().signal, true)
+  const recoveredAudioStream = recoveredAudioProbe.streams.find((stream) => stream.codec_type === 'audio')
+  assert(recoveredAudioStream && Math.abs(Number(recoveredAudioStream.duration) - 81 / 30) <= .05, 'A recuperação não manteve a faixa de áudio até o fim do intervalo exportado.')
+  const recoveredAudioPcm = run(['-i', recoveredAudioOutput, '-vn', '-ac', '1', '-ar', '48000', '-f', 'f32le', 'pipe:1'])
+  let recoveredAudioEnergy = 0
+  for (let index = 0; index < recoveredAudioPcm.length / 4; index++) recoveredAudioEnergy += recoveredAudioPcm.readFloatLE(index * 4) ** 2
+  assert(recoveredAudioEnergy > .001, 'A recuperação AAC publicou somente silêncio, sem pacotes decodificáveis.')
+  const unrecoverableAacFileName = `${randomUUID()}.aac`, unrecoverableAac = Buffer.from(damagedAac)
+  aacOffset = 0
+  while (aacOffset + 7 <= unrecoverableAac.length) {
+    if (unrecoverableAac[aacOffset] !== 0xff || (unrecoverableAac[aacOffset + 1] & 0xf0) !== 0xf0) { aacOffset++; continue }
+    const frameLength = ((unrecoverableAac[aacOffset + 3] & 3) << 11) | (unrecoverableAac[aacOffset + 4] << 3) | (unrecoverableAac[aacOffset + 5] >> 5)
+    const headerLength = (unrecoverableAac[aacOffset + 1] & 1) === 1 ? 7 : 9
+    if (frameLength < headerLength || aacOffset + frameLength > unrecoverableAac.length) break
+    unrecoverableAac.fill(0, aacOffset + headerLength, aacOffset + frameLength)
+    aacOffset += frameLength
+  }
+  await writeFile(join(folder, 'media', unrecoverableAacFileName), unrecoverableAac)
+  const unrecoverableProject: EditorV6Document = { ...silent, id: randomUUID(), exportAudio: [{ id: randomUUID(), name: 'Fixture AAC sem quadros válidos', fileName: unrecoverableAacFileName, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }] }
+  const unrecoverableOutput = join(folder, 'unrecoverable-aac.mp4'), unrecoverableReportPath = join(folder, 'unrecoverable-aac.report.json')
+  let unrecoverableError = ''
+  try {
+    await runEditorV6Export(unrecoverableProject, { ...options, startFrame: 0, endFrame: 4, turbo: false }, { ...base, id: randomUUID(), outputPath: unrecoverableOutput, reportPath: unrecoverableReportPath, audioPath: () => join(folder, 'media', unrecoverableAacFileName) })
+  } catch (error) { unrecoverableError = String(error) }
+  let unrecoverableWasPublished = true
+  try { await stat(unrecoverableOutput) } catch { unrecoverableWasPublished = false }
+  const unrecoverableReport = JSON.parse(await readFile(unrecoverableReportPath, 'utf8'))
+  assert(unrecoverableError.includes('Fixture AAC sem quadros válidos') && unrecoverableError.includes('não foi publicado') && !unrecoverableWasPublished && unrecoverableReport.state === 'failed', 'A exportação publicou silêncio ou não identificou a fonte sem quadros AAC recuperáveis.')
   const libraryFolder = join(folder, 'library')
   await mkdir(libraryFolder, { recursive: true })
   const libraryVideoId = randomUUID(), libraryVideoFileName = `${libraryVideoId}.mp4`
