@@ -20,6 +20,7 @@ export const editorV6ReactImportSchema = z.object({
   title: z.string().trim().min(1).max(100),
   seed: z.number().int().min(0).max(2147483647).default(1),
   backgroundColor: z.string().regex(/^#[\da-f]{6}$/i).default('#d7b5cd'),
+  backgroundLibraryId: z.string().uuid().optional(),
   autoPoseEverySeconds: z.number().int().min(0).max(3600).default(15),
   autoListenerGaze: z.boolean().default(true),
   cast: z.array(placement.extend({
