@@ -1,0 +1,371 @@
+{
+  "format": "NYMI_EDITOR_V6_REACT_V1",
+  "title": "Teste de Importação — Personagens do Pacote",
+  "seed": 20261105,
+  "backgroundColor": "#d7b5cd",
+  "autoPoseEverySeconds": 15,
+  "autoListenerGaze": true,
+  "cast": [
+    {
+      "character": "hino",
+      "x": -40,
+      "y": 17,
+      "scale": 82,
+      "poseSlot": 1,
+      "expression": "normal"
+    },
+    {
+      "character": "test",
+      "x": -20,
+      "y": 17,
+      "scale": 82,
+      "poseSlot": 1,
+      "expression": "Desconfiada"
+    },
+    {
+      "character": "La ele",
+      "x": 20,
+      "y": 17,
+      "scale": 82,
+      "poseSlot": 1,
+      "expression": "Confusa"
+    },
+    {
+      "character": "oooul",
+      "x": 40,
+      "y": 17,
+      "scale": 82,
+      "poseSlot": 1,
+      "expression": "Animada"
+    }
+  ],
+  "videos": [
+    {
+      "videoId": "602e251c-e3c3-4b93-a555-dfeb57e2b97a",
+      "startSeconds": 0,
+      "durationSeconds": 16.1,
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 27,
+        "height": 86,
+        "rotation": 0
+      }
+    },
+    {
+      "videoId": "73caf325-f64b-4a89-8545-3a6520266277",
+      "startSeconds": 17.1,
+      "durationSeconds": 20.85,
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 27,
+        "height": 86,
+        "rotation": 0
+      }
+    },
+    {
+      "videoId": "3ef98009-7655-4c5c-a44b-31d55c0a639a",
+      "startSeconds": 38.3,
+      "durationSeconds": 17.33,
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 27,
+        "height": 86,
+        "rotation": 0
+      }
+    },
+    {
+      "videoId": "33227daa-05b4-487a-80d0-5f487a6ab717",
+      "startSeconds": 56.3,
+      "durationSeconds": 18.3,
+      "layout": {
+        "x": 0,
+        "y": 0,
+        "width": 27,
+        "height": 86,
+        "rotation": 0
+      }
+    }
+  ],
+  "lines": [
+    {
+      "character": "hino",
+      "kind": "thought",
+      "text": "Ela parece muito mais confiante nessa versão.",
+      "startSeconds": 5,
+      "durationSeconds": 3.6
+    },
+    {
+      "character": "test",
+      "kind": "speech",
+      "text": "A mudança é bem clara.",
+      "startSeconds": 8.9,
+      "durationSeconds": 3.2
+    },
+    {
+      "character": "La ele",
+      "kind": "thought",
+      "text": "Então o futuro realmente mudou alguma coisa nela.",
+      "startSeconds": 12.4,
+      "durationSeconds": 4.3
+    },
+    {
+      "character": "oooul",
+      "kind": "speech",
+      "text": "Os guardas obedeceram na mesma hora.",
+      "startSeconds": 26.1,
+      "durationSeconds": 3.2
+    },
+    {
+      "character": "hino",
+      "kind": "thought",
+      "text": "Parece que ela ganhou bastante autoridade.",
+      "startSeconds": 29.6,
+      "durationSeconds": 3.6
+    },
+    {
+      "character": "test",
+      "kind": "thought",
+      "text": "Quero saber o que esse homem fez antes disso.",
+      "startSeconds": 33.5,
+      "durationSeconds": 4.3
+    },
+    {
+      "character": "La ele",
+      "kind": "speech",
+      "text": "Eles se esbarraram e ficaram se olhando.",
+      "startSeconds": 45.3,
+      "durationSeconds": 3.2
+    },
+    {
+      "character": "oooul",
+      "kind": "thought",
+      "text": "Isso parece o começo de alguma coisa.",
+      "startSeconds": 48.8,
+      "durationSeconds": 3.6
+    },
+    {
+      "character": "hino",
+      "kind": "speech",
+      "text": "Agora fiquei curioso para ver o próximo.",
+      "startSeconds": 52.7,
+      "durationSeconds": 3.2
+    },
+    {
+      "character": "test",
+      "kind": "thought",
+      "text": "A edição está deixando esse romance bem óbvio.",
+      "startSeconds": 68.3,
+      "durationSeconds": 4.3
+    },
+    {
+      "character": "La ele",
+      "kind": "speech",
+      "text": "Então aquele encontro realmente tinha importância.",
+      "startSeconds": 72.9,
+      "durationSeconds": 3.2
+    },
+    {
+      "character": "oooul",
+      "kind": "thought",
+      "text": "Pelo menos os dois parecem felizes juntos.",
+      "startSeconds": 76.4,
+      "durationSeconds": 3.6
+    }
+  ],
+  "beats": [
+    {
+      "character": "hino",
+      "startSeconds": 2.7,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 2.7,
+      "expression": "Surpresa"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 2.7,
+      "expression": "Surpresa"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 2.7,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 4.3,
+      "expression": "Sorrindo de canto"
+    },
+    {
+      "character": "test",
+      "startSeconds": 4.3,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 4.3,
+      "expression": "Preocupada"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 4.3,
+      "expression": "Sorrindo de canto"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 12.4,
+      "expression": "Desconfiada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 22.1,
+      "expression": "Preocupada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 22.1,
+      "expression": "Indignada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 22.1,
+      "expression": "Séria"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 22.1,
+      "expression": "Surpresa"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 24.8,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 24.8,
+      "expression": "Desconfiada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 24.8,
+      "expression": "Preocupada"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 24.8,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 33.5,
+      "expression": "Séria"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 41.3,
+      "expression": "Confusa"
+    },
+    {
+      "character": "test",
+      "startSeconds": 41.3,
+      "expression": "Desconfiada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 41.3,
+      "expression": "Surpresa"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 41.3,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 43.8,
+      "expression": "Sorrindo de canto"
+    },
+    {
+      "character": "test",
+      "startSeconds": 43.8,
+      "expression": "Confusa"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 43.8,
+      "expression": "Envergonhada"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 43.8,
+      "expression": "Sorrindo de canto"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 45.3,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 52.7,
+      "expression": "Animada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 60.8,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 60.8,
+      "expression": "Surpresa"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 60.8,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 60.8,
+      "expression": "Apaixonada"
+    },
+    {
+      "character": "hino",
+      "startSeconds": 65.5,
+      "expression": "Sorrindo de canto"
+    },
+    {
+      "character": "test",
+      "startSeconds": 65.5,
+      "expression": "Desconfiada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 65.5,
+      "expression": "Animada"
+    },
+    {
+      "character": "oooul",
+      "startSeconds": 65.5,
+      "expression": "Aliviada"
+    },
+    {
+      "character": "test",
+      "startSeconds": 68.3,
+      "expression": "Impressionada"
+    },
+    {
+      "character": "La ele",
+      "startSeconds": 72.9,
+      "expression": "Impressionada"
+    }
+  ],
+  "durationSeconds": 80.4
+}
