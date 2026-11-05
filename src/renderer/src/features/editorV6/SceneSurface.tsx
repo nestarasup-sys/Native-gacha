@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
+import { editorV6ElementsWithBalloonsOnTop } from './editorV6SceneLayerOrder'
 import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath } from './speechBalloonPath'
 
 export type ScenePointerEvent = ReactPointerEvent<SVGElement>
@@ -177,6 +178,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
 /** Shared scene drawing for the live Chromium preview and sequential frame captures. */
 export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all', onImageLoad, rasterCanvases }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground'; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void; rasterCanvases?: ReadonlyMap<string, HTMLCanvasElement> }) {
   const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
+  const renderElements = useMemo(() => editorV6ElementsWithBalloonsOnTop(scene.elements), [scene.elements])
   const background = scene.background, asset = background.backgroundAssetId ? assetsById.get(background.backgroundAssetId) : undefined
   const width = background.backgroundWidth * 19.2, height = background.backgroundHeight * 10.8
   return <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width={outputWidth} height={outputHeight} className="v6-scene-surface" data-frame={scene.frame} aria-label={`Cena no quadro ${scene.frame}`} style={{ display: 'block', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none', textRendering: 'geometricPrecision', WebkitFontSmoothing: 'antialiased' }}>
@@ -186,7 +188,7 @@ export const SceneSurface = memo(function SceneSurface({ scene, assets, selected
       {selectedId === 'background' && <Selection width={width} height={height} />}
     </g>}
     {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} selectedId={selectedId} interaction={interaction} />}
-    {renderLayer !== 'background' && scene.elements.map((element) => {
+    {renderLayer !== 'background' && renderElements.map((element) => {
       const rasterCanvas = rasterCanvases?.get(element.id)
       return <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} mouthAsset={element.mouthPatch ? assetsById.get(element.mouthPatch.assetId) : undefined} rasterCanvas={rasterCanvas} rasterFrame={rasterCanvas ? scene.frame : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />
     })}
