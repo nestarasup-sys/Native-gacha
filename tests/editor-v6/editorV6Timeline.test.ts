@@ -55,6 +55,22 @@ describe('timeline do Editor V6', () => {
     expect(resolveEditorV6ElementsAtFrame(withThought, 30).find((element) => element.kind === 'character')?.assetId).toBe(actor.assetId)
   })
 
+  it('aplica a escala de balões do projeto a todas as falas e mantém documentos antigos válidos', () => {
+    const document = fixture(), actor = document.elements[0]
+    const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId, attachedCharacterElementId: actor.id, attachmentOriginX: actor.x, attachmentOriginY: actor.y, text: 'Olá', x: actor.x, y: actor.y, width: 28, height: 16, rotation: 0, zIndex: 2 }
+    const thought: EditorV6Element = { ...speech, id: crypto.randomUUID(), kind: 'thought', text: 'Pensando' }
+    const withSpeech = addEditorV6ElementAtFrame(document, speech, 30)
+    const withBoth = addEditorV6ElementAtFrame(withSpeech, thought, 30)
+    withBoth.balloonScalePercent = 145
+
+    const elements = resolveEditorV6ElementsAtFrame(withBoth, 30)
+    expect(elements.find((element) => element.kind === 'speech')).toMatchObject({ balloonScalePercent: 145 })
+    expect(elements.find((element) => element.kind === 'thought')).toMatchObject({ balloonScalePercent: 145 })
+    expect(editorV6DocumentSchema.safeParse(withBoth).success).toBe(true)
+    expect(editorV6DocumentSchema.safeParse({ ...withBoth, balloonScalePercent: 251 }).success).toBe(false)
+    expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
+  })
+
   it('resolve vídeo importado no instante ativo e valida o vínculo do arquivo ao projeto', () => {
     const document = fixture(), videoId = crypto.randomUUID(), fileName = `${videoId}.mp4`
     document.media = [{ id: videoId, name: 'Cena.mp4', fileName, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }]

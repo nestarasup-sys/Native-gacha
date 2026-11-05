@@ -14,13 +14,15 @@ const project = {
   id: 'project-1', assets: [backgroundAsset, objectAsset], elements: []
 } as unknown as EditorV6Document
 
-const control: EditorV6NumericControl = (label) => createElement('span', { 'data-control': label }, label)
+const control: EditorV6NumericControl = (label, value) => createElement('span', { 'data-control': label, 'data-value': value }, label)
 const onAction = vi.fn()
 const baseProps = {
   project,
   background: { backgroundColor: '#ffffff', backgroundAssetId: backgroundAsset.id, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 },
   selectedElementId: null,
   selectedElement: null,
+  characterNameColor: null,
+  balloonScalePercent: 100,
   selectedBackgroundAsset: null,
   selectedVideoBlock: null,
   selectedVideo: null,
@@ -30,6 +32,8 @@ const baseProps = {
   onSelectBackground: onAction,
   onAddObject: onAction,
   onUpdateElement: onAction,
+  onUpdateCharacterNameColor: onAction,
+  onUpdateBalloonScale: onAction,
   onUpdateVideoBlock: onAction,
   onRecordHistory: onAction,
   onDeleteSelected: onAction
@@ -92,5 +96,17 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).toContain('aria-pressed="true"')
     expect(html).toContain('Turquesa')
     expect(html).not.toContain('type="color"')
+  })
+
+  it('mostra o controle de escala geral quando um balão é selecionado', () => {
+    const html = renderPanel({
+      ...baseProps,
+      activeTool: null,
+      balloonScalePercent: 140,
+      selectedElement: { id: 'speech-1', kind: 'speech', characterId: 'alice', text: 'Uma fala', x: 0, y: 0, width: 28, height: 16, rotation: 0, zIndex: 2 } as EditorV6Element
+    })
+    expect(html).toContain('Escala dos balões')
+    expect(html).toContain('Aplica a escala a todas as falas e pensamentos deste projeto.')
+    expect(html).toContain('data-value="140"')
   })
 })

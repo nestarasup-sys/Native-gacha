@@ -71,7 +71,9 @@ const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<
 function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Element[], frame: number): EditorV6SceneElement[] {
   const characters = elements.filter((element) => element.kind === 'character' && element.characterId)
   return elements.map((element): EditorV6SceneElement => {
-    if ((element.kind !== 'speech' && element.kind !== 'thought') || (!element.characterId && !element.attachedCharacterElementId)) return element
+    if (element.kind !== 'speech' && element.kind !== 'thought') return element
+    const balloonScalePercent = document.balloonScalePercent ?? 100
+    if (!element.characterId && !element.attachedCharacterElementId) return { ...element, balloonScalePercent }
     const exactTarget = element.attachedCharacterElementId ? characters.find((character) => character.id === element.attachedCharacterElementId) : undefined
     const linkedTargets = element.characterId ? characters.filter((character) => character.characterId === element.characterId) : []
     const target = exactTarget ?? linkedTargets.reduce<EditorV6Element | undefined>((nearest, character) => {
@@ -80,7 +82,7 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
       const nearestDistance = (nearest.x - element.x) ** 2 + (nearest.y - element.y) ** 2
       return distance < nearestDistance ? character : nearest
     }, undefined)
-    if (!target) return element
+    if (!target) return { ...element, balloonScalePercent }
     const balloonClip = editorV6ClipAtFrame(document.timeline, element.id, frame)
     const attachmentFrame = balloonClip?.block.startFrame ?? frame
     const anchorCharacterState = editorV6ClipAtFrame(document.timeline, target.id, attachmentFrame)?.block.state
@@ -91,6 +93,7 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
     const characterId = target.characterId ?? element.characterId
     return {
       ...element,
+      balloonScalePercent,
       x: element.x + target.x - originX,
       y: element.y + target.y - originY,
       speakerName: target.text.trim() || undefined,

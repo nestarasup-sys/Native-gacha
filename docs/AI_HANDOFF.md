@@ -86,6 +86,8 @@ Validar com fixtures sintéticas e, para export real, somente com o projeto auto
 
 Primeira validação básica sem cabelo dinâmico: quadros 443–922 (480 quadros/16 s), 1920×1080/30 FPS, 11 transições de pose, 2 vídeos, 2 áudios, 1 estado de boca; todos os quadros e o MP4 passaram, export em 22,75 s. Os contatos das trocas `test` (450) e `oooul` (900) mostram interpolações graduais e sem salto vertical evidente nesses eventos. `oooul` troca o preset facial no quadro 765 e fala a partir do 780; há sobreposição temporal, mas a caixa de diálogo cobre a boca no quadro ampliado, impedindo aprovação visual do ciclo. Amostra parcial: o salto em outros eventos não foi descartado. Relatório: `out/editor-v6-stress/runs/actual-project-2026-11-05T13-14-44-476Z-10648/stress-export-validation.json`; recorte ampliado: `out/editor-v6-stress/runs/oooul-speech-face-780.png`.
 
+**Balões do V6:** fundo branco; contorno e nome compartilham a cor escolhida na paleta do personagem. Ao selecionar fala ou pensamento, o Inspector oferece `Escala dos balões` (100%–250%), configurada uma vez no documento e aplicada a todos os balões de fala/pensamento. O campo persistido opcional `balloonScalePercent` mantém projetos anteriores em 100%; a cena resolvida transporta o valor aos renderizadores compartilhados de preview e exportação. O texto é medido numa coluna interna com margem e clip arredondado; quando excede o espaço vertical, a última linha recebe reticências para não atravessar o contorno.
+
 ## Editor V7 — estado e limites
 
 - V7 foi iniciado como arquitetura paralela, com core determinístico em TypeScript, tempo em ticks inteiros, avaliação da cena independente de Electron/React e backend inicial de renderização Sharp/libvips + FFmpeg.

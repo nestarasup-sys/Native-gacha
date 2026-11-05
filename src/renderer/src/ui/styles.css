@@ -158,6 +158,8 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .studio-character-color-swatch.active { box-shadow:0 0 0 2px #3f3540; }
 .studio-character-color-swatch:focus-visible { outline:2px solid #3f3540;outline-offset:2px; }
 .studio-character-color-control small { color:#998d98;font-size:9px;font-variant-numeric:tabular-nums; }
+.studio-balloon-scale-control { display:grid;gap:5px;padding:9px;border:1px solid #eadce5;border-radius:8px;background:#fffafd; }
+.studio-balloon-scale-control>small { color:#877b87;font-size:9px;line-height:1.4; }
 .studio-asset-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px;max-height:36vh;overflow:auto; }
 .studio-asset-card { min-width:0;display:flex;flex-direction:column;gap:4px;overflow:hidden;padding:4px;border:1px solid #eee3eb;border-radius:7px;background:#fff;color:#756976;font-size:8px;text-align:left;cursor:pointer; }
 .studio-asset-card:hover,.studio-asset-card.active { border-color:#e76391;box-shadow:0 0 0 1px #e7639126; }
