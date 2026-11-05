@@ -10,6 +10,7 @@ import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { faceElementOrder } from './characterFaceCatalogSupport'
 import { isModelBodyPart } from './skinTint'
 import { drawEnabledBodyJointBridges } from './bodyJointBridge'
+import { loadCharacterPartImages } from './characterPartDecodeBatch'
 
 export type HairCatalogSide = 'front' | 'back'
 export type HairLayerSide = HairCatalogSide | 'fringe'
@@ -76,11 +77,17 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale, sourceModel)
     context.restore()
 
-    for (const { part } of parts) {
+    // Decode/tint four independent textures at once; commit to the canvas
+    // strictly in original authoring order. A missing image remains skippable.
+    const bodyImages = await loadCharacterPartImages(parts, ({ part }) =>
+      isModelBodyPart(part) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl))
+    for (let index = 0; index < parts.length; index++) {
+      const { part } = parts[index]
+      const image = bodyImages[index]
+      if (!image) continue
       try {
-        const image = isModelBodyPart(part) && (skinTone || outlineColor)
-          ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-          : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
         context.save()
         try {
           context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
@@ -89,9 +96,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         } finally {
           context.restore()
         }
-      } catch {
-        continue
-      }
+      } catch { /* Continue drawing remaining body parts. */ }
     }
 
     if (!trimTransparent) return canvas.toDataURL('image/png')
@@ -179,21 +184,23 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl), scale, source)
     context.restore()
 
-    for (const id of order) {
-      const part = artwork.parts.find((item) => item.id === id)
-      if (!part) continue
-      if (!hidden.has(part.id)) {
+    const visibleParts = order.map((id) => artwork.parts.find((item) => item.id === id))
+      .filter((part): part is CatalogArtwork['parts'][number] => Boolean(part && !hidden.has(part.id)))
+    const visibleImages = await loadCharacterPartImages(visibleParts, (part) =>
+      isModelBodyPart(part) && (skinTone || outlineColor)
+        ? loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
+        : skinTone ? loadSkinTintedImage(part.dataUrl, skinTone) : loadCachedImage(part.dataUrl))
+    for (let index = 0; index < visibleParts.length; index++) {
+      const part = visibleParts[index], image = visibleImages[index]
+      if (!image) continue
+      try {
+        context.save()
         try {
-          const image = isModelBodyPart(part) && (skinTone || outlineColor)
-            ? await loadModelBodyTintedImage(part.dataUrl, skinTone, outlineColor, part.fakeSkinContours)
-            : skinTone ? await loadSkinTintedImage(part.dataUrl, skinTone) : await loadCachedImage(part.dataUrl)
-          context.save()
           context.translate((part.x + part.width / 2) * scale, (part.y + part.height / 2) * scale)
           context.rotate(part.rotation * Math.PI / 180)
           context.drawImage(image, -part.width * scale / 2, -part.height * scale / 2, part.width * scale, part.height * scale)
-          context.restore()
-        } catch { /* Continue rendering the remaining model layers. */ }
-      }
+        } finally { context.restore() }
+      } catch { /* Continue rendering the remaining model layers. */ }
     }
     return targetContext ? null : canvas.toDataURL('image/png')
   }

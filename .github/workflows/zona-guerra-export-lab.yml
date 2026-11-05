@@ -51,7 +51,7 @@ jobs:
           npm run typecheck
       - name: Run motion preparation regression suite
         run: |
-          npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionPreparation.test.ts tests/editor-v6/partMotionPrototype.test.ts tests/editor-v6/partRasterRenderer.test.ts
+          npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionPreparation.test.ts tests/editor-v6/partMotionPrototype.test.ts tests/editor-v6/partRasterRenderer.test.ts tests/editor-v6/characterPartDecodeBatch.test.ts
           node --test tests/editor-v6/r36PaintMetrics.node.test.cjs
       - name: Build application
         run: npm run build
