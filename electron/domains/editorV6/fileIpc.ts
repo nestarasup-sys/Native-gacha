@@ -58,7 +58,7 @@ export function registerEditorV6FileHandlers(deps: EditorV6FileIpcDependencies):
     const background = await deps.resolveBackground(id)
     if ((await deps.files.stat(background.path)).size > MAX_IMAGE_BYTES) throw new Error('O fundo excede o limite de 50 MB.')
     const canonical = await deps.normalizeImage(await deps.files.readFile(background.path))
-    return { id: deps.createId(), category: 'background', name: background.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,' + canonical.bytes.toString('base64') }
+    return { id: deps.createId(), category: 'background', name: background.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,' + canonical.bytes.toString('base64'), libraryBackgroundId: id }
   })
   deps.ipcMain.handle(editorV6IpcChannels.saveEditorV6Print, async (event, id: string, dataUrl: string): Promise<string | null> => {
     deps.assertTrustedSender(event)

@@ -14,6 +14,37 @@ afterEach(async () => {
 })
 
 describe('inventário leve de poses do Editor V6', () => {
+  it('preserva ajustes de balões e cores de nome ao reabrir um roteiro', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-v6-settings-'))
+    roots.push(root)
+    const folder = join(root, `editorV6-${projectId}`)
+    await fs.mkdir(folder, { recursive: true })
+    await fs.writeFile(join(folder, 'editorV6.json'), JSON.stringify({
+      id: projectId,
+      title: 'Balões',
+      elements: [],
+      timeline: createEditorV6Timeline([]),
+      characterNameColors: { 'character-1': '#5277b8' },
+      balloonScalePercent: 145,
+      balloonOffsetY: -18
+    }))
+    const persistence = createEditorV6DocumentPersistence({
+      files: fs,
+      editorV6Path: (id) => join(root, `editorV6-${id}`),
+      editorV6LibraryPath: () => root,
+      validate: () => true,
+      assertLibraryVideoReferencesAvailable: async () => undefined,
+      decodeImage: (url) => Buffer.from(url.slice(url.indexOf(',') + 1), 'base64'),
+      normalizeImage: async (bytes) => ({ bytes })
+    })
+
+    await expect(persistence.readEditorV6(projectId)).resolves.toMatchObject({
+      characterNameColors: { 'character-1': '#5277b8' },
+      balloonScalePercent: 145,
+      balloonOffsetY: -18
+    })
+  })
+
   it('lê poses de cena e timeline sem carregar imagens do projeto', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-pose-references-'))
     roots.push(root)

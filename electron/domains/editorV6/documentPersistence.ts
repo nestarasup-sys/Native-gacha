@@ -42,6 +42,15 @@ export function createEditorV6DocumentPersistence(deps: {
       backgroundWidth: typeof value.backgroundWidth === 'number' && Number.isFinite(value.backgroundWidth) ? value.backgroundWidth : 100,
       backgroundHeight: typeof value.backgroundHeight === 'number' && Number.isFinite(value.backgroundHeight) ? value.backgroundHeight : 100,
       backgroundRotation: typeof value.backgroundRotation === 'number' && Number.isFinite(value.backgroundRotation) ? value.backgroundRotation : 0,
+      ...(value.characterNameColors && typeof value.characterNameColors === 'object' && !Array.isArray(value.characterNameColors)
+        ? { characterNameColors: Object.fromEntries(Object.entries(value.characterNameColors as Record<string, unknown>).filter(([, color]) => typeof color === 'string' && /^#[0-9a-f]{6}$/i.test(color))) as Record<string, string> }
+        : {}),
+      ...(typeof value.balloonScalePercent === 'number' && Number.isFinite(value.balloonScalePercent) && value.balloonScalePercent >= 100 && value.balloonScalePercent <= 250
+        ? { balloonScalePercent: value.balloonScalePercent }
+        : {}),
+      ...(typeof value.balloonOffsetY === 'number' && Number.isFinite(value.balloonOffsetY) && value.balloonOffsetY >= -100 && value.balloonOffsetY <= 100
+        ? { balloonOffsetY: value.balloonOffsetY }
+        : {}),
       ...(typeof value.thumbnailDataUrl === 'string' && /^data:image\/(jpeg|png);base64,/.test(value.thumbnailDataUrl) && value.thumbnailDataUrl.length <= 1_500_000 ? { thumbnailDataUrl: value.thumbnailDataUrl } : {}),
       assets: Array.isArray(value.assets) ? value.assets as EditorV6Asset[] : [],
       ...(Array.isArray(value.media) ? { media: value.media as EditorV6Document['media'] } : {}),

@@ -1,4 +1,5 @@
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
+import type { VideoBackgroundLibraryDesktopApi, VideoBackgroundLibraryItem } from '../../../../shared/studio'
 import type { EditorV6Asset, EditorV6Document, EditorV6DesktopApi } from '../../../../shared/editorV6'
 import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import type { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
@@ -10,12 +11,15 @@ type ActiveTool = 'background' | 'objects' | null
 type TrackOperation = <T>(operation: () => Promise<T>) => Promise<T>
 type EditorV6MediaBridge = Pick<EditorV6DesktopApi,
   'importEditorV6Image' | 'importEditorV6Media' | 'linkEditorV6LibraryVideo'
+  | 'linkEditorV6LibraryBackground'
 >
 
 export type EditorV6MediaCommandDependencies = {
   activeProject: EditorV6Document | null
   trackOperation: TrackOperation
   bridge: EditorV6MediaBridge
+  backgroundLibrary: Pick<VideoBackgroundLibraryDesktopApi, 'importVideoBackground'>
+  refreshBackgroundLibrary: () => Promise<void>
   importImageToProject: typeof importEditorV6ImageToProject
   importMediaToTimeline: typeof importEditorV6MediaToTimeline
   addImageAsset: typeof addEditorV6ImageAsset
@@ -59,7 +63,13 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
       const result = await dependencies.importImageToProject({
         category,
         frame: getFrame(),
-        importAsset: (assetCategory) => dependencies.bridge.importEditorV6Image(assetCategory),
+        importAsset: async (assetCategory) => {
+          if (assetCategory !== 'background') return dependencies.bridge.importEditorV6Image(assetCategory)
+          const item = await dependencies.backgroundLibrary.importVideoBackground()
+          if (!item) return null
+          await dependencies.refreshBackgroundLibrary()
+          return dependencies.bridge.linkEditorV6LibraryBackground(item.id)
+        },
         loadProject: () => dependencies.loadLatestProject(projectId),
         persistDocument: dependencies.persistImportedDocument,
         createId,
@@ -163,5 +173,33 @@ export function createEditorV6MediaCommands(dependencies: EditorV6MediaCommandDe
     dependencies.setInspectorTab('editor')
   }
 
-  return { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground }
+  const linkSharedBackground = (item: VideoBackgroundLibraryItem) => dependencies.trackOperation(async () => {
+    const project = dependencies.activeProject
+    if (!project) return
+    const existing = project.assets.find((asset) => asset.libraryBackgroundId === item.id)
+    if (existing) {
+      selectBackground(existing)
+      return
+    }
+    const projectId = project.id
+    try {
+      const result = await dependencies.importImageToProject({
+        category: 'background', frame: getFrame(),
+        importAsset: async () => ({ ...await dependencies.bridge.linkEditorV6LibraryBackground(item.id), libraryBackgroundId: item.id }),
+        loadProject: () => dependencies.loadLatestProject(projectId),
+        persistDocument: dependencies.persistImportedDocument,
+        createId, addImageAsset: dependencies.addImageAsset, findClipAtFrame: dependencies.findClipAtFrame
+      })
+      if (!result) return
+      dependencies.setSelectedElementId(result.selectedElementId)
+      dependencies.setSelectedTimelineBlockId(null)
+      dependencies.setActiveTool('background')
+      dependencies.setInspectorOpen(true)
+      dependencies.setInspectorTab('editor')
+    } catch (reason) {
+      dependencies.setError(reason instanceof Error ? reason.message : 'Não foi possível vincular o fundo compartilhado.')
+    }
+  })
+
+  return { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground, linkSharedBackground }
 }

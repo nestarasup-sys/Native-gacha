@@ -54,6 +54,7 @@ import { editorV6CharacterStageReference } from './editorV6CharacterStageReferen
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
+import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 const defaultStudioEyeTransform: EditorV6FaceTransform = createDefaultSceneFaceTransform()
@@ -93,6 +94,15 @@ export function EditorV6Page() {
     availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot
   } = useEditorV6CharacterSources(activeEditorV6Id, setError)
   const [activeTool, setActiveTool] = useState<Tool>(null)
+  const [sharedBackgrounds, setSharedBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
+  const refreshBackgroundLibrary = async () => {
+    const items = await window.desktop.videoBackgrounds.listVideoBackgroundLibrary()
+    setSharedBackgrounds(items)
+  }
+  useEffect(() => {
+    if (activeTool !== 'background') return
+    void refreshBackgroundLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os fundos compartilhados.'))
+  }, [activeTool, activeEditorV6Id])
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
   const [videoPickerOpen, setVideoPickerOpen] = useState(false)
@@ -374,10 +384,12 @@ export function EditorV6Page() {
     })
   }
 
-  const { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground } = createEditorV6MediaCommands({
+  const { importImage, importTimelineMedia, linkVideoLibraryItem, selectBackground, linkSharedBackground } = createEditorV6MediaCommands({
     activeProject: activeEditorV6,
     trackOperation: trackEditorV6Operation,
     bridge: window.desktop.editorV6,
+    backgroundLibrary: window.desktop.videoBackgrounds,
+    refreshBackgroundLibrary,
     importImageToProject: importEditorV6ImageToProject,
     importMediaToTimeline: importEditorV6MediaToTimeline,
     addImageAsset: addEditorV6ImageAsset,
@@ -782,12 +794,14 @@ export function EditorV6Page() {
     balloonScalePercent={activeEditorV6?.balloonScalePercent ?? 100}
     balloonOffsetY={activeEditorV6?.balloonOffsetY ?? 0}
     selectedBackgroundAsset={selectedBackgroundAsset}
+    sharedBackgrounds={sharedBackgrounds}
     selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
     selectedVideo={selectedTimelineVideo ?? null}
     control={control}
     onBackgroundChange={updateBackground}
     onImportImage={importImage}
     onSelectBackground={selectBackground}
+    onLinkSharedBackground={linkSharedBackground}
     onAddObject={addObjectAsset}
     onUpdateElement={updateElement}
     onUpdateCharacterNameColor={updateCharacterNameColor}

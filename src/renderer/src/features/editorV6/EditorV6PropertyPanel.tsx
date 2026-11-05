@@ -3,6 +3,7 @@ import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6
 import { editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { Icon } from '../../ui/components/Icon'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
+import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 
 type EditorV6BackgroundValues = Partial<Pick<EditorV6Document,
   'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>
@@ -40,12 +41,14 @@ type EditorV6PropertyPanelProps = {
   balloonScalePercent: number
   balloonOffsetY: number
   selectedBackgroundAsset: EditorV6Asset | null
+  sharedBackgrounds: VideoBackgroundLibraryItem[]
   selectedVideoBlock: EditorV6TimelineBlock | null
   selectedVideo: EditorV6MediaAsset | null
   control: EditorV6NumericControl
   onBackgroundChange: (values: EditorV6BackgroundValues, record?: boolean) => void
   onImportImage: (category: 'background' | 'object') => void
   onSelectBackground: (asset: EditorV6Asset) => void
+  onLinkSharedBackground: (item: VideoBackgroundLibraryItem) => void
   onAddObject: (asset: EditorV6Asset) => void
   onUpdateElement: (id: string, values: Partial<EditorV6Element>, record?: boolean) => void
   onUpdateCharacterNameColor: (characterId: string, color: string) => void
@@ -67,12 +70,14 @@ export function EditorV6PropertyPanel({
   balloonScalePercent,
   balloonOffsetY,
   selectedBackgroundAsset,
+  sharedBackgrounds,
   selectedVideoBlock,
   selectedVideo,
   control,
   onBackgroundChange,
   onImportImage,
   onSelectBackground,
+  onLinkSharedBackground,
   onAddObject,
   onUpdateElement,
   onUpdateCharacterNameColor,
@@ -89,6 +94,7 @@ export function EditorV6PropertyPanel({
     <label className="studio-color-control">Cor sólida<input type="color" value={background.backgroundColor} onChange={(event) => onBackgroundChange({ backgroundColor: event.target.value })} /></label>
     <button className="studio-side-primary" type="button" onClick={() => onImportImage('background')}><Icon name="plus" />Adicionar imagem</button>
     <div className="studio-asset-grid">{project.assets.filter((asset) => asset.category === 'background').map((asset) => <button key={asset.id} className={`studio-asset-card${background.backgroundAssetId === asset.id ? ' active' : ''}`} type="button" onClick={() => onSelectBackground(asset)}><img src={asset.dataUrl} alt="" /><span>{asset.name}</span></button>)}</div>
+    {sharedBackgrounds.some((item) => item.available && !project.assets.some((asset) => asset.libraryBackgroundId === item.id)) && <><h3>Fundos compartilhados</h3><div className="studio-asset-grid">{sharedBackgrounds.filter((item) => item.available && !project.assets.some((asset) => asset.libraryBackgroundId === item.id)).map((item) => <button key={item.id} className="studio-asset-card" type="button" onClick={() => onLinkSharedBackground(item)}><span aria-hidden="true">▧</span><span>{item.name}</span></button>)}</div></>}
     {selectedBackgroundAsset && selectedElementId === 'background' && <>
       <BackgroundTransformControls background={background} control={control} onChange={onBackgroundChange} />
       <button className="studio-side-danger" type="button" onClick={onDeleteSelected}><Icon name="trash" />Remover fundo da cena</button>

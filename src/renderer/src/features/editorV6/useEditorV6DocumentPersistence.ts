@@ -25,7 +25,8 @@ async function makeEditorV6Thumbnail(project: EditorV6Document): Promise<string>
 function editorV6ThumbnailCacheKey(project: EditorV6Document): readonly unknown[] {
   return [project.id, project.assets, project.elements, project.timeline, project.media ?? null,
     project.backgroundColor, project.backgroundAssetId, project.backgroundX, project.backgroundY,
-    project.backgroundWidth, project.backgroundHeight, project.backgroundRotation]
+    project.backgroundWidth, project.backgroundHeight, project.backgroundRotation,
+    project.characterNameColors ?? null, project.balloonScalePercent ?? 100, project.balloonOffsetY ?? 0]
 }
 
 /** Owns Editor V6 document writes, autosave flushing, and operation draining. */

@@ -13,6 +13,8 @@ export type EditorV6Asset = {
   mimeType: 'image/png' | 'image/jpeg' | 'image/webp'
   dataUrl: string
   timelineSnapshot?: boolean
+  /** Shared background library source; the image bytes remain a project-local snapshot. */
+  libraryBackgroundId?: string
 }
 export type EditorV6MediaAsset = {
   id: string

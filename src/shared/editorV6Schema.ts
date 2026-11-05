@@ -22,8 +22,10 @@ export const editorV6AssetSchema = z.object({
   name: z.string().max(255),
   mimeType: z.enum(['image/png', 'image/jpeg', 'image/webp']),
   dataUrl: z.string().max(70_000_000),
-  timelineSnapshot: z.boolean().optional()
+  timelineSnapshot: z.boolean().optional(),
+  libraryBackgroundId: uuid.optional()
 }).superRefine((asset, context) => {
+  if (asset.libraryBackgroundId && asset.category !== 'background') context.addIssue({ code: 'custom', path: ['libraryBackgroundId'], message: 'A referência da biblioteca só pode ser usada por fundos.' })
   if (!asset.dataUrl.startsWith(`data:${asset.mimeType};base64,`)) {
     context.addIssue({ code: 'custom', path: ['dataUrl'], message: 'O conteúdo da imagem não corresponde ao formato declarado.' })
   }
