@@ -15,11 +15,13 @@ const FRAME_CAPTURE_RETRY_MS = 16
 
 async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number) {
   const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
+  let readbacks = 0
   while (Date.now() < deadline) {
     signal.throwIfAborted()
+    readbacks++
     const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: width + PAINT_TOKEN_SIZE, height }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
     const bitmap = captureEditorV6FrameBitmap(image, width, height, token)
-    if (bitmap) return bitmap
+    if (bitmap) return { bitmap, readbacks }
     // Invalidate only after observing a stale readback. This is a bounded
     // readback fence, not a blind wait for any queued paint event: each retry
     // verifies the marker in the exact image that will be exported.
@@ -115,13 +117,15 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         const capture = async () => {
           const started = performance.now()
           const token = nextPaintToken
-          const bitmap = await capturePaintedFrame(window, signal, payload.width, payload.height, token)
+          const { bitmap, readbacks } = await capturePaintedFrame(window, signal, payload.width, payload.height, token)
           await deps.inspectCapture?.({ window, frame, bitmap })
-          return { bitmap, elapsedMs: performance.now() - started }
+          return { bitmap, readbacks, elapsedMs: performance.now() - started }
         }
         if (!layeredVideo) {
           const captured = await capture()
-          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs }, ...(result.metrics ? { metrics: result.metrics } : {}) }
+          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs }, metrics: {
+            ...result.metrics, captureReadbacks: captured.readbacks, captureStaleReadbacks: captured.readbacks - 1
+          } }
         }
         const layerBytes = payload.width * payload.height * 4
         const timings: EditorV6FrameTimings = { ...result.timings }
@@ -134,6 +138,8 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
           if (drawn.layerReused) return
           const captured = await capture()
           timings.captureMs = (timings.captureMs ?? 0) + captured.elapsedMs
+          metrics.captureReadbacks = (metrics.captureReadbacks ?? 0) + captured.readbacks
+          metrics.captureStaleReadbacks = (metrics.captureStaleReadbacks ?? 0) + captured.readbacks - 1
           const timingKey = layer === 'background' ? 'backgroundCaptureMs' : 'foregroundCaptureMs'
           timings[timingKey] = captured.elapsedMs
           if (!layeredBitmap) layeredBitmap = Buffer.allocUnsafe(layerBytes * 2)

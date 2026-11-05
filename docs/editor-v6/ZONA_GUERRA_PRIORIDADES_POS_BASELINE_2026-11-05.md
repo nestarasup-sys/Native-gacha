@@ -48,3 +48,13 @@ O projeto histórico foi alterado e **não** pode mais ser comparado com este; m
 5. Publicar por experimento um par *antes/depois* com SHA, total, preparo, renderização, acertos de cache, qualidade e mediana; jamais declarar a meta de 10–15 s cumprida por um teste sintético.
 
 **Limites conhecidos:** GitHub Actions Windows Server valida testes/MP4 sintéticos, mas não mede a GPU, drivers ou perfil do Windows 11 do usuário. Nenhum ganho foi demonstrado por esta documentação.
+
+## Implementação iniciada após a baseline
+
+- Medição de face: `canvasFaceAlphaBounds` preserva os limites e o limiar de alpha, mas não gera PNG só para determinar coordenadas; testes conferem 4 modos de rosto.
+- Preparador de rigs: identidade de personagem serializada uma vez por bake; sessão de worker limitada a 32 requisições, mantendo pools de rig/fontes limitados; métricas `rigKeyLookups`, `rigRebuilds` e `rigBuildMilliseconds` no relatório.
+- Captura: novas contagens de readback e tentativas obsoletas (`captureReadbacks`, `captureStaleReadbacks`) **sem** mudar a validação do token/bitmap.
+- Comparador local somente leitura: `npm run bench:editor-v6:compare -- --candidate=<caminho-do-relatorio.json> [--candidate=...] [--json]`. Detecta projeto diferente por SHA-256 do ID (não publica o ID), opções, encoder, cache quente, duração/frames e fallback; exige três rodadas para mostrar mediana. O comparador não inspeciona visualmente os pixels.
+- Relatório Main passa a informar versão do Electron/Node, arquitetura e Windows. O commit SHA só aparece se o processo receber `NATIVE_GACHA_BUILD_SHA`; sem ele, a versão exata ainda precisa ser confirmada na instalação local.
+
+**Essas mudanças são código submetido à validação, não tempos do novo projeto medidos nem meta atingida.**

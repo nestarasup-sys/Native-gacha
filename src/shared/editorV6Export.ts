@@ -68,7 +68,7 @@ export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payloa
 export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
 export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
-export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels', number>>
+export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels' | 'captureReadbacks' | 'captureStaleReadbacks', number>>
 /** A real-project export may legitimately contain audio even with animated hair.
  * The benchmark must verify its MP4 output, not assume a silent test scene.
  */

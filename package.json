@@ -67,6 +67,7 @@
     "bench:fabricator:joints": "node --experimental-strip-types scripts/diagnostics/benchmark-fabricator-joint-markers.mjs",
     "bench:animator:garments": "node --experimental-strip-types scripts/diagnostics/benchmark-animator-garment-layers.mjs",
     "bench:editor-v6:motion-preparation": "node --experimental-strip-types scripts/diagnostics/benchmark-editor-v6-motion-preparation.mjs",
+    "bench:editor-v6:compare": "node scripts/editor-v6/compare-real-export.cjs",
     "bench:editor-v6:project": "npm run build && node scripts/editor-v6/benchmark-project-export.cjs",
     "spike:editor-v6:native-composite": "node scripts/editor-v6/spike-native-compositor.cjs",
     "bench:editor-v6:visible-motion": "vitest run --config vitest.editor-v6.config.ts tests/editor-v6/visibleMotionPlans.benchmark.test.ts --silent=false",
