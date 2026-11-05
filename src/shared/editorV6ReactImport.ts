@@ -206,7 +206,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   const minReadingSeconds=(line:ReactImportLine)=>{
     const count=line.text.trim().split(/\s+/).filter(Boolean).length
     const minimum=count<=3?2.6:count<=7?3.2:count<=12?3.9:count<=18?4.9:count<=25?6.2:count<=35?7.6:count<=45?9:count<=60?11:1.3+count*.24
-    return Math.max(minimum,1.3+count*.24)+(line.kind==='thought'?.4:0)
+    return Math.max(minimum,1.3+count*.24)+(line.kind === 'thought' ? 0.4 : 0)
   }
   lines.forEach((line,index)=>{
     const required=secondsToFrame(minReadingSeconds(line))
