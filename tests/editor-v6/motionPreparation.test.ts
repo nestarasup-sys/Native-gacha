@@ -11,7 +11,7 @@ import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame } from '../../src/shared/editorV6Timeline'
 import { editEditorV6DocumentAtBlock } from '../../src/shared/editorV6TimelineEdits'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
-import { editorV6MotionBakeGroupOrder } from '../../electron/domains/editorV6/motionBakeSchedule'
+import { editorV6MotionBakeLaneAssignments } from '../../electron/domains/editorV6/motionBakeSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
 import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
@@ -31,6 +31,17 @@ function fixture() {
   const character: CustomizerCharacter = { id: 'alice', name: 'Alice', createdAt: stamp, updatedAt: stamp, hair: '#000000', outfit: '#000000', skin: '#000000', customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
   const request: EditorV6MotionBakeRequest = { id: crypto.randomUUID(), plan: editorV6MotionPlans(project)[0], character }
   return { project, character, request }
+}
+function addSecondCharacter(project: EditorV6Document, character: CustomizerCharacter): CustomizerCharacter {
+  const bob: CustomizerCharacter = { ...character, id: 'bob', name: 'Bob' }
+  const source = project.elements[0]
+  const actor: EditorV6Element = { ...source, id: crypto.randomUUID(), characterId: bob.id, assetId: crypto.randomUUID(), text: bob.name }
+  project.elements.push(actor)
+  project.assets.push({ id: actor.assetId!, category: 'character', name: bob.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' })
+  const track = project.timeline.tracks.find((item) => item.kind === 'character')!
+  track.blocks.push(...[1, 2].map((poseSlot, index) => ({ id: crypto.randomUUID(), elementId: actor.id, label: 'Pose', startFrame: 181 + index * 29, durationFrames: 29, state: { ...actor, poseSlot } })))
+  project.timeline = { ...project.timeline, tracks: [...project.timeline.tracks] }
+  return bob
 }
 function resultFor(request: EditorV6MotionBakeRequest): EditorV6MotionBakeResult {
   const id = crypto.randomUUID()
@@ -77,19 +88,26 @@ function staticMouthAtlasResultFor(request: EditorV6MotionBakeRequest): EditorV6
 }
 
 describe('transition preparation reuse', () => {
-  it('R33 groups characters to keep motion-bake lane sessions warm without reordering results', () => {
+  it('assigns whole character sequences to stable parallel lanes while preserving order', () => {
     const grouped = [
       [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
       [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
       [{ characterId: 'alpha' }], [{ characterId: 'beta' }]
     ]
     const original = JSON.stringify(grouped)
-    const order = editorV6MotionBakeGroupOrder(grouped)
-    expect(order).toEqual([1, 3, 4, 0, 2, 5])
-    expect(order.map(index => grouped[index][0].characterId)).toEqual(['alpha', 'alpha', 'alpha', 'beta', 'beta', 'beta'])
+    const lanes = editorV6MotionBakeLaneAssignments(grouped, 2)
+    expect(lanes).toEqual([[1, 3, 4], [0, 2, 5]])
+    for (const characterId of ['alpha', 'beta']) {
+      expect(lanes.flatMap(lane => lane.filter(index => grouped[index][0].characterId === characterId)))
+        .toEqual(grouped.map((group, index) => group[0].characterId === characterId ? index : -1).filter(index => index >= 0))
+    }
     expect(JSON.stringify(grouped)).toBe(original)
-    expect(editorV6MotionBakeGroupOrder([])).toEqual([])
-    expect(editorV6MotionBakeGroupOrder([[{ characterId: 'single' }]])).toEqual([0])
+    expect(editorV6MotionBakeLaneAssignments([], 2)).toEqual([[], []])
+    expect(editorV6MotionBakeLaneAssignments([[{ characterId: 'single' }]], 1)).toEqual([[0]])
+    expect(editorV6MotionBakeLaneAssignments([
+      [{ characterId: 'alpha' }], [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
+      [{ characterId: 'gamma' }], [{ characterId: 'alpha' }], [{ characterId: 'beta' }]
+    ], 2)).toEqual([[0, 2, 4], [1, 5, 3]])
   })
   it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
     const { project, character } = fixture()
@@ -353,11 +371,12 @@ describe('transition preparation reuse', () => {
     expect(ready.project.assets).toHaveLength(3)
     expect(ready.project.timeline.tracks.find((track) => track.kind === 'character')!.blocks).toHaveLength(4)
   })
-  it('prepares distinct transitions with the configured concurrency limit', async () => {
+  it('keeps character sequences on stable lanes and runs different characters concurrently', async () => {
     const { project, character } = fixture()
+    const secondCharacter = addSecondCharacter(project, character)
     let active = 0, peak = 0
     const ready = await prepareExportMotions(project, 0, 300, {
-      signal: new AbortController().signal, characters: [character], concurrency: 2,
+      signal: new AbortController().signal, characters: [character, secondCharacter], concurrency: 2,
       bake: async (request) => {
         active++
         peak = Math.max(peak, active)
@@ -405,13 +424,14 @@ describe('transition preparation reuse', () => {
     expect(prepared.project.assets.some((asset) => asset.id === readyTransition.faceAssetId)).toBe(true)
     expect(readyTransition.frames.some((frame) => Boolean(frame.facePatch))).toBe(true)
   })
-  it('cancels and waits for sibling bakes after a transition fails', async () => {
+  it('cancels and waits for a sibling lane after a transition fails', async () => {
     const { project, character } = fixture()
+    const secondCharacter = addSecondCharacter(project, character)
     let calls = 0, siblingCancelled = false
     let startSibling!: () => void
     const siblingStarted = new Promise<void>((resolve) => { startSibling = resolve })
     await expect(prepareExportMotions(project, 0, 300, {
-      signal: new AbortController().signal, characters: [character], concurrency: 2,
+      signal: new AbortController().signal, characters: [character, secondCharacter], concurrency: 2,
       bake: async (_request, signal) => {
         calls++
         if (calls === 1) {

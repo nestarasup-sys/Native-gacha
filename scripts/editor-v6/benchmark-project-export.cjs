@@ -132,7 +132,10 @@ async function main() {
 
   await fs.mkdir(path.dirname(outputFolder), { recursive: true })
   await fs.mkdir(outputFolder, { recursive: false })
-  const dataRoot = path.join(outputFolder, 'isolated-app-data')
+  // Resolve a run-folder junction before Electron's canonical-path check.
+  // This lets stress outputs live on a separate volume when the repository
+  // volume is full while keeping all writes inside the requested run folder.
+  const dataRoot = path.join(await fs.realpath(outputFolder), 'isolated-app-data')
   const profile = path.join(dataRoot, 'runtime', 'profile')
   const projectTarget = path.join(profile, 'studios', 'Editor V6', `editorV6-${manifest.id}`)
   const libraryTarget = path.join(profile, 'studios', 'Editor Gacha', 'media-library')
