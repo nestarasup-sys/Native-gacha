@@ -53,6 +53,28 @@ describe('real hair-preparation geometry, no redundant PNG encodes', () => {
     expect(render).toHaveBeenCalledTimes(4)
     expect(created).toHaveLength(1)
   })
+  it('allows an explicit classic PNG face-crop A/B mode with the same bounds', async () => {
+    const created: FakeCanvas[] = []
+    let encodes = 0
+    vi.stubGlobal('document', { createElement: () => {
+      const c = canvas(4, 4)
+      c.toDataURL = () => { encodes++; return 'data:image/png;base64,AAAA' }
+      created.push(c); return c
+    } })
+    const frames = new Map([
+      ['idle', canvas(4, 4, [[1, 1]])], ['blink', canvas(4, 4, [[2, 1]])],
+      ['talk', canvas(4, 4, [[1, 2]])], ['talk-blink', canvas(4, 4, [[2, 2]])]
+    ])
+    const renderer = { renderToCanvas: async (_a: unknown, _b: unknown, _c: unknown, mode: string) =>
+      ({ canvas: frames.get(mode)!, width: 4, height: 4 }) } as unknown as PreparedEditorV6FaceRenderer
+    const optimized = await measureFaceModeCrop('teste', renderer, undefined, undefined, undefined, 'idle')
+    expect(encodes).toBe(0)
+    const classic = await measureFaceModeCrop('teste', renderer, undefined, undefined, undefined, 'idle', undefined, true)
+    expect(classic).toEqual(optimized)
+    expect(encodes).toBe(1)
+    expect(created).toHaveLength(3)
+  })
+
   it('retains trimmed-image encoding in the public snapshot path', () => {
     const source = canvas(3, 3, [[1, 1]])
     const encoded = canvas(1, 1)

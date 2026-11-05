@@ -87,7 +87,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   signal: AbortSignal; characters: Character[]
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
-}, phaseStartFrame = startFrame, concurrentParts: 1 | 2 = 1) {
+}, phaseStartFrame = startFrame, concurrentParts: 1 | 2 = 1, maxInFlight: 1 | 2 = 2) {
   const began = performance.now()
   const { candidates, skippedStale } = candidatesFor(project, deps.characters, startFrame, endFrame)
   if (skippedStale) throw Error('A animação da boca não pode usar um personagem alterado no Customizador depois de entrar no Editor V6. Atualize o personagem no projeto e tente exportar de novo.')
@@ -142,7 +142,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
     }
   }
   try {
-    const workers = await Promise.allSettled(Array.from({ length: Math.min(2, candidates.length) }, () => prepareNext()))
+    const workers = await Promise.allSettled(Array.from({ length: Math.min(maxInFlight, candidates.length) }, () => prepareNext()))
     if (failure !== undefined) throw failure
     const rejected = workers.find(worker => worker.status === 'rejected')
     if (rejected?.status === 'rejected') throw rejected.reason

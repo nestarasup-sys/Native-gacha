@@ -202,6 +202,22 @@ describe('preparação dos loops de boca do Editor V6', () => {
     })
     expect(peak).toBe(2)
     expect(order).toEqual(['a','a','b','b'])
+    // The selected 'Boca 1×' mode actually serializes the same requests.
+    let activeSerial = 0, serialPeak = 0
+    const serial = await prepareExportMouthLoops(project, 0, 60, 30, {
+      signal: new AbortController().signal, characters, progress: () => {},
+      bake: async request => {
+        activeSerial++; serialPeak = Math.max(serialPeak, activeSerial)
+        await Promise.resolve(); await Promise.resolve()
+        activeSerial--
+        const assetId = randomUUID()
+        return { asset: { id: assetId, category: 'character', name: 'Loop', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+          motion: { version: 1, key: request.plan.key, assetId, frames: fakePatchFrames(request) },
+          metrics: { milliseconds: 1, preparedRigs: 1, samples: 3, atlasPixels: 1 } } satisfies EditorV6MotionBakeResult
+      }
+    }, 0, 2, 1)
+    expect(serialPeak).toBe(1)
+    expect(serial.mouthLoops.states.map(state => state.elementId)).toEqual(actors.map(actor => actor.id))
     expect(prepared.mouthLoops.states.map(state => state.elementId)).toEqual(actors.map(actor => actor.id))
     expect(prepared.project.assets).toHaveLength(4)
   })

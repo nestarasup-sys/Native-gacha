@@ -23,3 +23,5 @@ Estes modos são **hipóteses A/B**, não promessas de aceleração: diminuir a 
 6. Execute três rodadas comparáveis por modo antes de escolher o vencedor; compare a mediana, não o menor tempo isolado.
 
 **Baseline histórica ativa:** [54,716 s](baselines/native_gacha_nova_baseline_2026-11-05.md) de uma exportação fria. Não é média de três rodadas, e não prova o desempenho de qualquer um dos novos modos. Relatórios não devem ser enviados integralmente ao GitHub, pois podem conter caminhos locais. Use o comparador sanitizado ou compartilhe somente os tempos/métricas relevantes.
+
+A opção **03 Boca 1×** passa pela preparação do backend com limite de **um** job concorrente; o comportamento é coberto por regressão com contagem de concorrência 1 versus 2. A opção **05 Rosto clássico** executa o encode PNG só para o teste A/B, preservando o mesmo recorte de alpha da versão otimizada.
