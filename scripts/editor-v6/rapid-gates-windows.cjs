@@ -15,7 +15,9 @@ const ROOT = path.resolve(__dirname, '../..')
 const VALID_GATES = new Set(['doctor', 'unit', 'offscreen', 'integration'])
 const VALID_SCOPES = new Set(['hair', 'character', 'render', 'all'])
 const VITEST = path.join(ROOT, 'node_modules', 'vitest', 'vitest.mjs')
-const TSC = path.join(ROOT, 'node_modules', 'typescript', 'bin', 'tsc')
+// The repository's `tsc` npm shim resolves to @typescript/native. The
+// `typescript` package is a compatibility alias whose bin is named `tsc6`.
+const TSC = path.join(ROOT, 'node_modules', '@typescript', 'native', 'bin', 'tsc')
 const ELECTRON_VITE = path.join(ROOT, 'node_modules', 'electron-vite', 'bin', 'electron-vite.js')
 
 const TESTS = {

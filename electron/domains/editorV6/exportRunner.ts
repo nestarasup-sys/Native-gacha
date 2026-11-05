@@ -26,7 +26,7 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
 type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs'
 type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
 type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
-type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; frameTiming?: FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
+type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 type ExportPhaseTimings = Record<ExportPhase, number>
@@ -222,7 +222,9 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         throw error
       }
       const beganPart = performance.now(), path = join(folder, `attempt-${report.attempts.length}-part-${part.index}.mp4`)
-      const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0 }
+      // All part jobs use this process's monotonic clock, so offsets expose
+      // actual overlap without adding per-frame trace traffic to the renderer.
+      const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - started }
       const timingAccumulators = newTimingAccumulators()
       const frameMetrics: EditorV6FrameMetrics = {}
       let worker: EditorV6FrameWorker | undefined
@@ -276,11 +278,15 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         result.probe = await probeExportMedia(deps.ffprobe, path, controller.signal)
         if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')
         result.milliseconds = performance.now() - beganPart
+        result.finishedAtOffsetMs = performance.now() - started
         result.frameTiming = summarizeTimings(timingAccumulators)
         if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics
         return result
       } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics; controller.abort(error); throw error }
-      finally { worker?.close(); if (process?.child.exitCode === null) process.child.kill(); await process?.done.catch(() => {}) }
+      finally {
+        result.finishedAtOffsetMs ??= performance.now() - started
+        worker?.close(); if (process?.child.exitCode === null) process.child.kill(); await process?.done.catch(() => {})
+      }
     }
     try {
       const results: PartReport[] = []

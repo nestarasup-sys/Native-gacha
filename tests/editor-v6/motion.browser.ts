@@ -16,7 +16,6 @@ import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } f
 import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { editorV6MotionPlan, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
 import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
-import { motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
 import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
@@ -392,13 +391,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     const targetRig = prepared.rigs.find(rig => rig.assetId === exportTarget.assetId)!
     assert(JSON.stringify(baseRig.sourceCrop) === JSON.stringify({ left: expectedBaseCrop.left, top: expectedBaseCrop.top, width: expectedBaseCrop.width, height: expectedBaseCrop.height }), 'The prepared hair rig did not use the saved face-mode union')
     assert(JSON.stringify(targetRig.sourceCrop) === JSON.stringify({ left: expectedTargetCrop.left, top: expectedTargetCrop.top, width: expectedTargetCrop.width, height: expectedTargetCrop.height }), 'The expression rig did not use the saved face-mode union')
-    const transition = prepared.motionTransitions?.[0]
-    assert(transition?.frames.length === 7, 'The actual hair preparer did not build the expression transition')
-    for (const [index, frame] of transition!.frames.entries()) {
-      const t = motionEase(hairPlan.samples[index].progress)
-      const expectedHeight = frame.crop.height * (exportBase.height / expectedBaseCrop.height * (1 - t) + exportTarget.height / expectedTargetCrop.height * t)
-      assert(Math.abs(frame.height - expectedHeight) < 1e-7, 'The hairless transition changed the vertical scale of the original character')
-    }
+    assert(!prepared.motionTransitions?.length, 'An expression-only change unnecessarily baked a hairless body transition')
   } finally {
     if (previousDesktop) Object.defineProperty(window, 'desktop', previousDesktop)
     else delete (window as unknown as { desktop?: unknown }).desktop

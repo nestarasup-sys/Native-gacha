@@ -239,7 +239,9 @@ describe('transition preparation reuse', () => {
     try {
       const persistence = createEditorV6DocumentPersistence({ files, editorV6Path: id => join(root, `editorV6-${id}`), editorV6LibraryPath: () => root,
         validate: (value): value is EditorV6Document => editorV6DocumentSchema.safeParse(value).success,
-        assertLibraryVideoReferencesAvailable: async () => {}, decodeImage: url => Buffer.from(url.split(',')[1], 'base64'), normalizeImage: async bytes => ({ bytes }) })
+        assertLibraryVideoReferencesAvailable: async () => {}, assertLibraryBackgroundReferencesAvailable: async () => {},
+        assertLibraryMediaReferencesAvailable: async () => {}, coordinateLibraryReferenceChange: operation => operation(),
+        decodeImage: url => Buffer.from(url.split(',')[1], 'base64'), normalizeImage: async bytes => ({ bytes }) })
       await persistence.writeEditorV6(ready)
       await rm(join(root, `editorV6-${ready.id}`, 'assets', 'characters', `${faceId}.png`))
       const reloaded = await persistence.readEditorV6(ready.id)

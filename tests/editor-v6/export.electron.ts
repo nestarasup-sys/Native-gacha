@@ -91,6 +91,8 @@ async function main() {
   const setupReport = JSON.parse(await readFile(join(folder, 'setup-failure.report.json'), 'utf8'))
   assert(setupFailed && setupReport.state === 'failed' && setupReport.error && setupReport.phaseMilliseconds.temporarySetup > 0, 'Falha ao criar a pasta temporária não gerou um relatório de diagnóstico.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
+  assert(report.attempts[0].parts.every((part) => Number.isFinite(part.startedAtOffsetMs) && Number.isFinite(part.finishedAtOffsetMs) && part.finishedAtOffsetMs! >= part.startedAtOffsetMs), 'O relatório não registrou intervalos monotônicos das partes.')
+  assert(Math.max(...report.attempts[0].parts.map((part) => part.startedAtOffsetMs)) < Math.min(...report.attempts[0].parts.map((part) => part.finishedAtOffsetMs!)), 'Os intervalos do relatório não refletem a sobreposição real das partes paralelas.')
   assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0 && (part.frameTiming?.capturePageMs?.samples ?? 0) > 0 && (part.frameTiming?.captureBitmapMs?.samples ?? 0) > 0), 'O relatório não separou renderização, espera RAF, capturePage e conversão/cópia do bitmap por quadro.')
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
   assert(report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0) > 60, 'Quadros estáticos não foram reaproveitados.')

@@ -27,10 +27,14 @@ const baseProps = {
   selectedBackgroundAsset: null,
   selectedVideoBlock: null,
   selectedVideo: null,
+  sharedBackgrounds: [],
+  sharedObjects: [],
   control,
   onBackgroundChange: onAction,
   onImportImage: onAction,
   onSelectBackground: onAction,
+  onLinkSharedBackground: onAction,
+  onLinkSharedObject: onAction,
   onAddObject: onAction,
   onUpdateElement: onAction,
   onUpdateCharacterNameColor: onAction,
@@ -85,7 +89,7 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).not.toContain('Áudio do vídeo')
   })
 
-  it('oferece cores nomeadas e destaca a cor atual do nome do personagem', () => {
+  it('mantém o seletor livre de cor do nome do personagem', () => {
     const html = renderPanel({
       ...baseProps,
       activeTool: null,
@@ -93,11 +97,8 @@ describe('EditorV6PropertyPanel', () => {
       onUpdateCharacterNameColor: onAction,
       selectedElement: { id: 'actor-1', kind: 'character', characterId: 'alice', text: 'Alice', assetId: 'alice-asset', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 } as EditorV6Element
     })
-    expect(html).toContain('Cor do nome e do contorno')
-    expect(html).toContain('aria-label="Roxo, #7768c8"')
-    expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('Turquesa')
-    expect(html).not.toContain('type="color"')
+    expect(html).toContain('Cor do nome nos balões')
+    expect(html).toContain('type="color" value="#7768c8"')
   })
 
   it('mostra o controle de escala geral quando um balão é selecionado', () => {
