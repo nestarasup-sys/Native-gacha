@@ -25,8 +25,8 @@ Exemplo ilustrativo. Os nomes de presets e o vídeo número 1 **só funcionam se
   "autoPoseEverySeconds": 15,
   "autoListenerGaze": true,
   "cast": [
-    {"character":"Chloé","x":-35,"y":14,"scale":85,"poseSlot":1,"expression":"desconfiada"},
-    {"character":"Luka","x":-14,"y":14,"scale":85,"poseSlot":2,"expression":"sereno"}
+    {"character":"Chloé","x":-35,"y":14,"scale":121,"poseSlot":1,"expression":"desconfiada"},
+    {"character":"Luka","x":-14,"y":14,"scale":121,"poseSlot":2,"expression":"sereno"}
   ],
   "videos": [
     {"videoNumber":1,"startSeconds":8,"layout":{"x":0,"y":-14,"width":40,"height":40,"rotation":0}}
@@ -68,6 +68,8 @@ A IA **não deve escolher** nomes de expressão como no exemplo sem ter o catál
 ### cast[]
 
 Cada item possui character (UUID real ou nome único do Customizador), x, y, scale opcional, flipX opcional, poseSlot opcional, expression opcional e gaze opcional (left/right). O palco usa percentuais **centrados**: (0,0) no centro, x negativo esquerda, positivo direita. Não usar pixels do Gacha Editor V4. Usar somente poseSlot existente e expression com ID/nome real do Expressão Dev. Presets pertencem ao modelo do personagem.
+
+Na importação, a escala inicial de todos os personagens é 121. Omita `scale` ou informe 121; outros valores são substituídos. A escala pode ser ajustada depois no Editor V6.
 
 Para olhar normalmente em direção à TV, personagens à esquerda usam `flipX: false` e personagens à direita usam `flipX: true`; na ausência de `flipX`, o importador escolhe conforme o lado da primeira TV. Não use `gaze` para compensar o espelhamento. Um `flipX` explícito é respeitado. As direções `gaze: left/right` são absolutas no palco e o importador as converte para o rosto local após o espelhamento.
 

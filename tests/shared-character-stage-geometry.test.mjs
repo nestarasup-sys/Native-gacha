@@ -47,3 +47,13 @@ test('Studio e Editor V6 preservam a mesma regra de escala-base para pose neutra
     for (const value of Object.values(expected)) assert.equal(Number.isFinite(value), true)
   }
 })
+
+test('Editor V6 mantém a mesma escala de corpo com uma referência comum e recortes diferentes', () => {
+  const reference = { width: 1000, height: 1000 }
+  const neutralCrop = { width: 300, height: 800 }
+  const first = fitEditorV6CharacterToStage(reference, neutralCrop, reference, { width: 300, height: 800 }, 1920, 1080)
+  const second = fitEditorV6CharacterToStage(reference, neutralCrop, reference, { width: 500, height: 820 }, 1920, 1080)
+  assert.equal(first.characterCanvasWidth, second.characterCanvasWidth)
+  assert.equal(first.width / 300, second.width / 500)
+  assert.equal(first.height / 800, second.height / 820)
+})

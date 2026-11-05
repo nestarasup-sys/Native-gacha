@@ -36,7 +36,6 @@ import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../.
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
-import { trimTransparentImage } from '../../characters/transparentImageTrim'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
@@ -51,6 +50,7 @@ import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSource
 import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
+import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
 import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
@@ -448,9 +448,10 @@ export function EditorV6Page() {
     setSavingCast(true)
     try {
       const castPlan = planEditorV6CastSelection(activeEditorV6.elements, availableCharacters, castSelection)
-      const { prepareSavedCharacterRenderer, renderSavedCharacter } = await import('../../characters/editorV6CharacterRenderer')
+      const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
       const assets: EditorV6Asset[] = []
       const elements: EditorV6Element[] = []
+      const references = new Map<number, Awaited<ReturnType<typeof editorV6CharacterStageReference>>>()
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
       let zIndex = Math.max(0, ...castPlan.retainedElements.map((item) => item.zIndex))
@@ -461,13 +462,11 @@ export function EditorV6Page() {
           const baked = await bakeFaceModeAssets(character.name, renderer, character.customization.faceAppearance, undefined, undefined, 'idle', rendered)
           const imageWidth = baked.crop?.width ?? rendered.width
           const imageHeight = baked.crop?.height ?? rendered.height
-          const referenceCharacter = character.customization.poseSlot === null ? character : { ...character, customization: { ...character.customization, poseSlot: null } }
-          const referenceRendered = referenceCharacter === character ? rendered : await renderSavedCharacter(referenceCharacter, undefined, undefined, 'idle')
-          const referenceCrop = 'dataUrl' in referenceRendered ? await trimTransparentImage(referenceRendered.dataUrl) : baked.crop
-          const referenceWidth = referenceCrop?.width ?? referenceRendered.width
-          const referenceHeight = referenceCrop?.height ?? referenceRendered.height
+          const modelSlot = character.customization.modelSlot ?? 1
+          if (!references.has(modelSlot)) references.set(modelSlot, await editorV6CharacterStageReference(character))
+          const reference = references.get(modelSlot)!
           const asset: EditorV6Asset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl }
-          const { width, height, characterCanvasWidth } = fitEditorV6CharacterToStage(referenceRendered, { width: referenceWidth, height: referenceHeight }, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
+          const { width, height, characterCanvasWidth } = fitEditorV6CharacterToStage(reference.rendered, reference.crop, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
           assets.push(asset, ...baked.extraAssets)
           const poseSlot = character.customization.poseSlot
           const poseSourceRevision = typeof poseSlot === 'number' ? activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' : undefined

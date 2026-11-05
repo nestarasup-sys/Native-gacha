@@ -4,8 +4,9 @@ import type { EditorV6Document, EditorV6Element, EditorV6Asset, EditorV6Timeline
 import { createEditorV6Timeline, editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { parseEditorV6Document } from '../../../../shared/editorV6Schema'
-import { planEditorV6ReactImport, type EditorV6ReactImport, type EditorV6ReactImportPlan } from '../../../../shared/editorV6ReactImport'
+import { EDITOR_V6_REACT_CHARACTER_SCALE, planEditorV6ReactImport, type EditorV6ReactImport, type EditorV6ReactImportPlan } from '../../../../shared/editorV6ReactImport'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
+import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
 import { buildSceneExpressionAppearance, buildSceneExpressionTransforms, appearanceWithPupilsLookingLeft } from '../../characters/sceneExpressionTransforms'
 import type { FaceExpressionPreset } from '../../../../shared/fabricator'
@@ -85,7 +86,7 @@ export async function compileEditorV6ReactImport(
   const characterById=new Map(sources.characters.map((character)=>[character.id,character]))
   const renderCache=new Map<string,{base:EditorV6Asset;extras:EditorV6Asset[];faceModeAssetIds:EditorV6Element['faceModeAssetIds'];width:number;height:number;characterCanvasWidth:number;appearance:EditorV6Element['faceAppearance'];transforms:EditorV6Element['faceTransforms'];effects:EditorV6Element['activeExpressionEffects'];presetUpdatedAt?:string}>()
   const presetCache=new Map<string,FaceExpressionPreset>()
-  const referenceSizes=new Map<string,{width:number;height:number;cropWidth:number;cropHeight:number}>()
+  const referenceSizes=new Map<number,Awaited<ReturnType<typeof editorV6CharacterStageReference>>>()
   const {prepareSavedCharacterRenderer}=await import('../../characters/editorV6CharacterRenderer')
   const loadPreset=async (model:number,id:string)=>{
     const key=model+':'+id
@@ -116,9 +117,9 @@ export async function compileEditorV6ReactImport(
       const rendered=await renderer.renderToCanvas(appearance,transforms,effects,'idle')
       const baked=await bakeFaceModeAssets(actor.name,renderer,appearance,transforms,effects,'idle',rendered)
       const cropWidth=baked.crop?.width??rendered.width,cropHeight=baked.crop?.height??rendered.height
-      if(!referenceSizes.has(actor.characterId))referenceSizes.set(actor.characterId,{width:rendered.width,height:rendered.height,cropWidth,cropHeight})
-      const ref=referenceSizes.get(actor.characterId)!
-      const geometry=fitEditorV6CharacterToStage({width:ref.width,height:ref.height},{width:ref.cropWidth,height:ref.cropHeight},rendered,{width:cropWidth,height:cropHeight},stageWidth,stageHeight)
+      if(!referenceSizes.has(actor.modelSlot))referenceSizes.set(actor.modelSlot,await editorV6CharacterStageReference(character))
+      const ref=referenceSizes.get(actor.modelSlot)!
+      const geometry=fitEditorV6CharacterToStage(ref.rendered,ref.crop,rendered,{width:cropWidth,height:cropHeight},stageWidth,stageHeight)
       const base:EditorV6Asset={id:uuid(),category:'character',name:actor.name+' · '+(expression??'base')+' · '+gaze,mimeType:'image/png',dataUrl:baked.dataUrl,timelineSnapshot:true}
       const data={base,extras:baked.extraAssets,faceModeAssetIds:{...baked.assetIds,idle:base.id},...geometry,appearance,transforms,effects,...(preset?{presetUpdatedAt:preset.updatedAt}:{})}
       renderCache.set(cacheKey,data)
@@ -140,7 +141,7 @@ export async function compileEditorV6ReactImport(
     const baseGeometry={id,kind:'character' as const,characterId:actor.characterId,characterSourceUpdatedAt:character.updatedAt,
       faceRendererVersion:EDITOR_V6_FACE_RENDER_VERSION,activeFaceMode:'idle' as const,
       activeExpressionCollectionId:'standard',text:actor.name,x:actor.x,y:actor.y,rotation:0,zIndex:document.elements.length+1,
-      characterScale:actor.scale??100,characterWidthScale:100,characterHeightScale:100,flipX:actor.flipX??false
+      characterScale:actor.scale??EDITOR_V6_REACT_CHARACTER_SCALE,characterWidthScale:100,characterHeightScale:100,flipX:actor.flipX??false
     }
     for(let i=0;i<actorBeats.length;i++){
       const beat=actorBeats[i]

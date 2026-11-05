@@ -6,6 +6,7 @@ import type { VideoLibraryItem } from './mediaLibrary'
 import type { BaseVideoDetails } from './baseVideos'
 
 export const EDITOR_V6_REACT_IMPORT_FORMAT = 'NYMI_EDITOR_V6_REACT_V1'
+export const EDITOR_V6_REACT_CHARACTER_SCALE = 121
 const seconds = z.number().finite().min(0).max(33_333)
 const characterRef = z.string().trim().min(1).max(120)
 const emotion = z.string().trim().min(1).max(120)
@@ -129,7 +130,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   const tvX = source.videos[0]?.layout?.x ?? 0
   const cast: ReactImportCast[] = source.cast.map((item) => {
     const character = resolveCharacter(item.character)
-    return { ...item, flipX: item.flipX ?? item.x > tvX, characterId: character.id, name: character.name, modelSlot: character.customization.modelSlot ?? 1 }
+    return { ...item, scale: EDITOR_V6_REACT_CHARACTER_SCALE, flipX: item.flipX ?? item.x > tvX, characterId: character.id, name: character.name, modelSlot: character.customization.modelSlot ?? 1 }
   })
   if (new Set(cast.map((item) => item.characterId)).size !== cast.length) throw new Error('O elenco contém um personagem repetido.')
   const castById = new Map(cast.map((item) => [item.characterId, item]))

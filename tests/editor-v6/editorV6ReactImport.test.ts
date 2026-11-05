@@ -45,6 +45,11 @@ describe('JSON portátil do Editor V6',()=>{
     expect(parsed.lines[0].text).toBe('Texto exato!\nSegunda linha.')
     expect(()=>parseEditorV6ReactImport({...parsed,format:'schema_version: 3'})).toThrow()
   })
+  it('define escala 121 para o elenco importado mesmo quando o JSON informa outro valor',()=>{
+    const source=sample()
+    const plan=planEditorV6ReactImport({...source,cast:[{...source.cast[0],scale:85},source.cast[1]]},references())
+    expect(plan.cast.map((actor)=>actor.scale)).toEqual([121,121])
+  })
   it('usa o frame da primeira fala pós-vídeo sem atraso e permite continuidade depois do MP4',()=>{
     const plan=planEditorV6ReactImport(sample(),references())
     expect(plan.videos[0].durationFrames).toBe(180)
