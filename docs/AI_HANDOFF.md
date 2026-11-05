@@ -84,6 +84,8 @@ Focar somente nestes fundamentos do V6:
 
 Validar com fixtures sintéticas e, para export real, somente com o projeto autorizado deste handoff. Inspecionar frames anterior/intermediários/endpoint em resolução original; cobrir uma sobreposição de fala + pose + expressão. Após estabilidade funcional, perseguir export integral ≤30 s sem animação dinâmica de cabelo; o controle sem cabelo dinâmico histórico foi 54,662 s e ainda precisa de baseline atual comparável. Não deixar a missão antiga de cabelo sobrescrever essa orientação mais recente.
 
+Primeira validação básica sem cabelo dinâmico: quadros 443–922 (480 quadros/16 s), 1920×1080/30 FPS, 11 transições de pose, 2 vídeos, 2 áudios, 1 estado de boca; todos os quadros e o MP4 passaram, export em 22,75 s. Os contatos das trocas `test` (450) e `oooul` (900) mostram interpolações graduais e sem salto vertical evidente nesses eventos. Isso é amostra parcial: a animação da boca ainda precisa de inspeção em resolução original e o salto em outros eventos não foi descartado. Relatório: `out/editor-v6-stress/runs/actual-project-2026-11-05T13-14-44-476Z-10648/stress-export-validation.json`.
+
 ## Editor V7 — estado e limites
 
 - V7 foi iniciado como arquitetura paralela, com core determinístico em TypeScript, tempo em ticks inteiros, avaliação da cena independente de Electron/React e backend inicial de renderização Sharp/libvips + FFmpeg.

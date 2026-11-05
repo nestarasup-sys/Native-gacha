@@ -1635,4 +1635,12 @@ Esta orientação mais recente do usuário **substitui a prioridade anterior de 
 
 Mapear no projeto autorizado um segmento com troca de pose, alteração facial e fala; corrigir primeiro a continuidade de pose/escala, depois validar expressão e boca juntas. Registrar uma exportação curta sem animação dinâmica de cabelo. O candidato externo que apenas adiciona métricas de recorte não conta como correção: no teste real seu `transitionCropExcursions` veio vazio.
 
+### Validação básica sem animação dinâmica de cabelo — 05/11/2026
+
+**Trecho:** quadros 443–922 (480 quadros/16 s), export real do projeto autorizado, cabelo dinâmico desativado e penteados estáticos preservados. Inclui as trocas de `test` no quadro 450 e `oooul` no quadro 900, fala de `oooul` nos quadros 780–875 e 11 transições de pose preparadas. Saída: 1920×1080/30 FPS; dois vídeos e dois áudios; um estado de boca isolado; 480/480 quadros validados; MP4 válido. Tempo do export: 22,75 s (renderização 11,23 s; finalização 3,09 s). O Vite do app já estava ativo na porta 5188, então o harness foi atualizado para verificar e reutilizar o servidor existente via `--reuse-renderer-server`; nenhum processo do app foi encerrado.
+
+**Inspeção:** contatos de quadros 443–451 e 893–901 mostram mudanças graduais de pose em `test` e `oooul`; não há salto vertical evidente nesses dois eventos. `hino` continua quase fora de quadro em x=-43%. O estado de boca pertence a `oooul` e foi preparado durante fala, mas a inspeção dos contatos reduzidos não basta para aprovar o ciclo visual da boca nem uma transição simultânea de fala+pose+expressão. O trecho não localizou nem descartou o aumento vertical relatado em outros quadros e não representa a timeline inteira.
+
+**Decisão:** validação parcial dos fundamentos, sem animação dinâmica de cabelo; não é comparação A/B de desempenho nem evidência da meta integral ≤30 s. Próximo passo: localizar um evento de mudança de expressão no mesmo período, inspecionar boca em resolução original e montar uma janela que sobreponha fala, pose e expressão; medir dimensões do personagem em cada amostra. O relatório está em `out/editor-v6-stress/runs/actual-project-2026-11-05T13-14-44-476Z-10648/stress-export-validation.json`.
+
 **Itens explicitamente adiados:** arquitetura, aparência visual e desempenho de animação dinâmica de cabelo; redesenho profundo de pipeline para suportá-la; qualquer migração ou exclusão de dados/presets existentes.

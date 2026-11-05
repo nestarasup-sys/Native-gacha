@@ -26,6 +26,7 @@ const fullTimeline = process.argv.includes('--full-timeline')
 const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
+const reuseRendererServer = process.argv.includes('--reuse-renderer-server')
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
 const inside = (parent, child) => {
   const relative = path.relative(parent, child)
@@ -59,6 +60,23 @@ function serveBuiltRenderer(root, port) {
         server.closeAllConnections?.()
       })
     }))
+  })
+}
+
+function verifyExistingRenderer(origin) {
+  return new Promise((resolve, reject) => {
+    const request = http.get(new URL('/editor-v6-export.html', origin), { timeout: 3000 }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => { if (body.length < 16_000) body += chunk })
+      response.once('end', () => {
+        if (response.statusCode !== 200 || !body.includes('<html') || !body.includes('Editor V6 Export')) {
+          reject(Error(`O renderer existente em ${origin} não serviu a página de exportação V6 esperada.`))
+        } else resolve()
+      })
+    })
+    request.once('timeout', () => request.destroy(Error(`Tempo limite ao verificar o renderer em ${origin}.`)))
+    request.once('error', reject)
   })
 }
 
@@ -133,7 +151,10 @@ async function main() {
     await fs.cp(sessionDataPath, isolatedSessionData, { recursive: true, errorOnExist: true, force: false })
   }
 
-  const rendererServer = await serveBuiltRenderer(root, rendererPort)
+  const rendererOrigin = `http://127.0.0.1:${rendererPort}`
+  const rendererServer = reuseRendererServer
+    ? (await verifyExistingRenderer(rendererOrigin), { origin: rendererOrigin, close: async () => {} })
+    : await serveBuiltRenderer(root, rendererPort)
   const childEnv = { ...process.env, ELECTRON_RENDERER_URL: rendererServer.origin, GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_DATA_ROOT: dataRoot,
     GACHA_EDITOR_V6_STRESS_AUTORUN: '1', GACHA_EDITOR_V6_STRESS_PROJECT_ID: manifest.id,
     ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
