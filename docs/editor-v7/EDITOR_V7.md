@@ -139,4 +139,4 @@ Diretrizes para o desenho, sujeitas à investigação:
 - Limitações conhecidas: essa conversão inicial carrega as quatro imagens da cena base e repete o quadro por 1 s; não importa ainda timeline, cabelo, texto/falas, áudio ou vídeo. A interface permite importar imagens, posicionar/tamanho/rotação/opacidade, criar keyframes e exportar MP4; ainda não salva documentos entre sessões.
 - A primeira fatia de export está comprovada; V7 não está pronto para substituir V6 e a evolução continua.
 - Verificações finais desta fatia: 7 testes de core, 2 de renderer, 2 de rotas; `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram. Export autorizado final validado por `ffprobe`; inspeção visual do frame exportado confirmou a composição de quatro personagens e fundo.
-- Commit de implementação e primeira exportação: pendente após revisão do diff.
+- Commit da implementação e da primeira exportação: `ed3fed15` (`feat(editor-v7): export MP4 through libvips pipeline`).
