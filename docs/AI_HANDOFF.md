@@ -69,8 +69,20 @@ Propriedade de dados: Fabricador é dono do catálogo-fonte; Customizador é don
   - `hino`, pose 3→1, janela 1343–1372: 1/1 transição preparada; MP4 válido; parede 14,30 s. O ator está em x=-43% da cena, quase fora do quadro.
 - O agendador usa 250 ms e sete amostras a 30 FPS. A transição de `test` existe e parece gradual nos quadros extraídos, mas sua curta duração pode ser percebida como abrupta. Não foi confirmada uma falha geral do scheduler.
 - Aumento vertical rápido durante algumas animações: causa **não reproduzida/confirmada**. Nos cinco pares de pose do documento, altura salva varia no máximo ~0,53% entre endpoints; escala do personagem e escala vertical explícita permanecem iguais. O bake usa recortes alfa dos endpoints e recortes das amostras intermediárias. Variação da silhueta é uma hipótese, ainda não evidência causal.
-- Defeitos A/B/C de cabelo e continuidade: inspeção anterior é limitada e não aprova todos os eventos. Validar quadros antes, durante e depois da pose/cabelo, em resolução original, e revisar a timeline integral quando houver correção estrutural.
+- Defeitos A/B/C de animação dinâmica de cabelo: inspeção anterior é limitada, mas esta frente está suspensa pelo usuário. A aparência estática do cabelo continua parte da qualidade visual básica e deve permanecer preservada.
 - Notas e logs: `docs/EDITOR V6 MES 11/texto.md`, especialmente as seções finais sobre protocolo de benchmark e a investigação visual de 05/11/2026.
+
+### Prioridade atual do usuário (05/11/2026)
+
+A prioridade antiga de desenvolver/otimizar **animação dinâmica de cabelo** está suspensa: o usuário considera que a arquitetura atual não justifica esse investimento agora. Não remover código, presets, dados ou formatos legados; manter a aparência estática normal do cabelo dos personagens. Não preparar cabelo dinâmico em novos exports de validação.
+
+Focar somente nestes fundamentos do V6:
+
+1. Transição contínua entre poses do mesmo personagem, sem cortes nem crescimento/encolhimento vertical abrupto.
+2. Transição de expressão facial coerente durante a pose.
+3. Boca abrindo/fechando em sincronia com a fala, preservando pose e expressão simultâneas.
+
+Validar com fixtures sintéticas e, para export real, somente com o projeto autorizado deste handoff. Inspecionar frames anterior/intermediários/endpoint em resolução original; cobrir uma sobreposição de fala + pose + expressão. Após estabilidade funcional, perseguir export integral ≤30 s sem animação dinâmica de cabelo; o controle sem cabelo dinâmico histórico foi 54,662 s e ainda precisa de baseline atual comparável. Não deixar a missão antiga de cabelo sobrescrever essa orientação mais recente.
 
 ## Editor V7 — estado e limites
 

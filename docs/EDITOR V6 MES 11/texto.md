@@ -1611,3 +1611,28 @@ O ZIP foi extraído isoladamente em `out/zip-review-2026-11-05/`, sem sobrescrev
 **Estado Git da retomada:** commit desta alteração `1854a62b0df336b58a86b3c2880d724a816c7fde`; commits prévios da missão `cc27b5f382ef699fa323968b0148578be8f09c98`, `7c1a082950da3173c35110eb37f0e405d5de6b2e`, `a96d6ac1178ee2d38a647baa506f60118733da2d` e `da91080da366dd3f23a020baf9215a66334d09e7`. O perfil, mídias, caches e resultados sob `out/` não foram incluídos.
 
 **Experimentos:** `EXP-E0-001` — gate unitário (aprovado; não comprova export); `EXP-E0-002` — backup/identidade do projeto (aprovado por SHA-256); `EXP-E5-001` — baseline de cabelo (3 exports completos válidos, meta falhou); `EXP-E5-002` — controle sem cabelo (3 exports completos válidos, meta falhou); `EXP-E5-003` — SSIM entre rodadas (paridade temporal alta/repetição exata em aquecidos); `EXP-E5-004` — consultas de perda WebGL por camada (DESCARTAR: nenhum ganho, SSIM igual); `EXP-E5-005` — buffer WebGL grow-only/estado persistente (ADOTAR segmentar: -33,7% no tempo de export e SSIM All=1.000000 no trecho). Próxima decisão: ampliar o candidato a 40 s e perseguir ≤15 s.
+
+## MUDANÇA DE FOCO — V6 BÁSICO PRIMEIRO (05/11/2026)
+
+Esta orientação mais recente do usuário **substitui a prioridade anterior de otimizar animação de cabelo**. O editor não tem atualmente uma arquitetura que justifique continuar investindo nesse sistema. Suspender novas rodadas de pesquisa, correção visual e performance de cabelo dinâmico. Não remover código, formatos, presets ou dados existentes nesta etapa; manter compatibilidade e cabelo estático/visual do personagem normalmente.
+
+### Escopo ativo
+
+1. **Transição entre poses:** verificar que o mesmo personagem interpola continuamente para a pose seguinte, sem cortes perceptíveis nem crescimento/encolhimento vertical abrupto; a causa do salto vertical segue como prioridade de diagnóstico.
+2. **Transição de expressão facial:** interpolar componentes e transforms sem saltos, mantendo rosto ligado ao personagem durante a pose.
+3. **Animação da boca:** abrir/fechar sincronizado à fala, sem eliminar a troca de pose ou a expressão simultânea.
+
+### Aceite da próxima etapa
+
+- Usar fixtures sintéticas para regras puras; para export e reprodução visual usar exclusivamente o projeto autorizado `Teste de Importação — Personagens do Pacote` e seu backup verificado.
+- Validar ao menos um evento de cada tipo e uma sobreposição fala + pose + expressão. Em cada evento inspecionar um quadro anterior, amostras intermediárias e endpoint em resolução original; medir o retângulo desenhado para provar ausência de salto vertical.
+- Preservar 1920×1080, 30 FPS, qualidade, áudio/vídeo e visual completo do cabelo estático. Não preparar nem calcular animação dinâmica de cabelo nesses exports de validação.
+- Executar testes próximos (V6 unit/quick, typecheck e build) e um export segmentar real com relatório de quadros, fala, transições, qualidade e duração.
+- Depois da correção funcional, retomar a meta de ≤30 s para export integral **com os recursos básicos acima e sem animação dinâmica de cabelo**. A mediana antiga do controle sem animação de cabelo foi 54,662 s; ela é baseline histórica, ainda não A/B da implementação atual.
+- Não fazer export integral repetidamente. Ampliar segmentos progressivamente e usar timeline completa somente após regressões segmentares passarem.
+
+### Próxima ação concreta
+
+Mapear no projeto autorizado um segmento com troca de pose, alteração facial e fala; corrigir primeiro a continuidade de pose/escala, depois validar expressão e boca juntas. Registrar uma exportação curta sem animação dinâmica de cabelo. O candidato externo que apenas adiciona métricas de recorte não conta como correção: no teste real seu `transitionCropExcursions` veio vazio.
+
+**Itens explicitamente adiados:** arquitetura, aparência visual e desempenho de animação dinâmica de cabelo; redesenho profundo de pipeline para suportá-la; qualquer migração ou exclusão de dados/presets existentes.
