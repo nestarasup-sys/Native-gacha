@@ -103,13 +103,13 @@ Diretrizes para o desenho, sujeitas à investigação:
 | V7-001 | concluído | Criar espaço de documentação e mapear fronteiras V6 | Este documento; mapa inicial com evidência de código |
 | V7-002 | próximo | Inventariar modelo de documento, tempo, comandos, undo e assets de V6; separar contratos reutilizáveis dos legados | Matriz de propriedade e proposta de schema V7 |
 | V7-003 | pendente | Registrar runtime local (Electron/Chromium, GPU, encoders) e construir capability probe isolado | Relatório JSON reprodutível, sem exportar projeto real |
-| V7-004 | pendente | Especificar core puro e criar protótipo de scene evaluator + tempo em ticks | Testes unitários determinísticos com fixture sintética |
+| V7-004 | concluído | Criar contrato puro V7, schema v1, conversão frame/tick e avaliador absoluto da cena | `src/shared/editorV7.ts`; 5 testes determinísticos |
 | V7-005 | pendente | Criar benchmark sintético de Canvas/WebGL/WebGPU e export worker | A/B por fase, SSIM e memória; não integrar UI ainda |
 | V7-006 | pendente | Escolher renderer/encoder e validar mux de áudio | ADR com evidências de compatibilidade, fidelidade e velocidade |
 | V7-007 | pendente | Integrar fluxo de documento e interface V7 isolados | Rota nova, persistência versionada e testes de ciclo de vida |
 | V7-008 | pendente | Gate funcional no projeto autorizado e decisão de convivência/migração | 20 s → 40 s → timeline completa; sem alterar V6 automaticamente |
 
-**Próxima ação concreta:** concluir V7-002 olhando os tipos e operações do documento V6, contratos das áreas que fornecem personagens/assets e testes de persistência existentes. A partir dessa matriz, definir o primeiro contrato V7 puro antes de criar componentes de interface.
+**Próxima ação concreta:** implementar `renderEditorV7Frame` em backend independente do DOM usando Sharp/libvips já presente no projeto, transmitir frames raw com backpressure para FFmpeg e montar o primeiro MP4 sem chamar o renderer por frame.
 
 ## Registro de alterações e evidências
 
@@ -121,3 +121,11 @@ Diretrizes para o desenho, sujeitas à investigação:
 - Nenhum código de produto, projeto de usuário, dado ou exportação foi alterado nesta etapa.
 - Verificação executada: leitura do estado do Git e inspeção estática dos contratos/caminhos citados. Testes de produto não se aplicam a esta primeira nota documental.
 - Commit documental criado: `3d33f594` (`docs(editor-v7): start architecture research notebook`).
+
+### 05/11/2026 — núcleo de cena v1
+
+- Criado `src/shared/editorV7.ts`: schema versionado, assets validados, intervalos half-open, frame-rate racional e resolução absoluta por tick. Nenhuma API de UI, Electron ou filesystem foi importada pelo núcleo.
+- Adicionado `tests/editor-v7/core.test.mjs` e comando `npm run test:editor-v7:core`.
+- Resultado: 5/5 testes do core; `npm run typecheck` aprovado; `npm run audit:architecture` aprovado (700 arquivos examinados, zero imports ausentes e zero violações de boundary).
+- Esse corte ainda não exporta mídia; a etapa seguinte implementa composição nativa com libvips/Sharp e encode por FFmpeg.
+- Commits: `3d33f594` (caderno) e `0930a8c3` (registro do caderno); o código desta etapa será registrado após o commit.
