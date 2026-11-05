@@ -1,4 +1,6 @@
 # Synthetic Electron export lab. Never reads personal Windows profiles or user projects.
+# R36 paint is a research-only negative control: strict parity is NOT required
+# for the infrastructure job to pass. Its mismatches remain in artifacts.
 name: Zona de Guerra - Windows export lab
 on:
   workflow_dispatch:

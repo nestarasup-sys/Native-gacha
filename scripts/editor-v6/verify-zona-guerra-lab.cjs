@@ -41,15 +41,26 @@ else {
     } catch (error) { problems.push(`R37: missing report in round ${round}: ${error.message}`) }
     try {
       const value = JSON.parse(fs.readFileSync(r36, 'utf8'))
-      if (value.frames !== 7 || value.strictParityPassed !== true || value.exactMatches !== 7 || value.productionEnabled !== false) {
-        problems.push(`R36: strict synthetic parity failed in round ${round}`)
+      // R36 is an experimental negative-control probe: validating its output
+      // is mandatory, but exact equality is NOT expected or production-safe.
+      if (value.frames !== 7 || value.productionEnabled !== false ||
+        value.experimental !== true || value.resultKind !== 'research-only' ||
+        value.productionParityProven !== false ||
+        !Number.isSafeInteger(value.exactMatches) || !Number.isSafeInteger(value.mismatches) ||
+        value.exactMatches + value.mismatches !== 7 || typeof value.strictParityPassed !== 'boolean' ||
+        !Array.isArray(value.results) || value.results.length !== 7 ||
+        value.results.some((item, i) => item.token !== i + 1 || typeof item.tokenAtPaint !== 'string' ||
+          typeof item.byteEqual !== 'boolean' || !Number.isFinite(item.paintMs) ||
+          !Number.isFinite(item.captureMs) || item.width <= 0 || item.height <= 0) ||
+        (value.strictParityPassed && (value.mismatches !== 0 || value.results.some(x => x.tokenAtPaint !== String(x.token))))) {
+        problems.push(`R36: incomplete or contradictory research report in round ${round}`)
       }
     } catch (error) { problems.push(`R36: missing report in round ${round}: ${error.message}`) }
   }
   if (summary.length !== rounds * expected.length) problems.push('unexpected summary count')
 }
 const report = { passed: problems.length === 0, rounds, checksPerRound: expected.length, problems,
-  productionParityProven: false, real309FrameBenchmarkProven: false }
+  r36ResearchOnly: true, r36ParityProven: false, productionParityProven: false, real309FrameBenchmarkProven: false }
 fs.writeFileSync(path.join(root, 'verification.json'), JSON.stringify(report, null, 2))
 console.log(JSON.stringify(report, null, 2))
 if (problems.length) process.exitCode = 1

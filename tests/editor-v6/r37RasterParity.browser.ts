@@ -1,5 +1,6 @@
 import { createEditorV6PartRasterRenderer } from '../../src/shared/editorV6PartRasterRenderer'
 import { compileEditorV6PartMotionPrototype } from '../../src/shared/editorV6PartMotionPrototype'
+import { interpolateEditorV6Pose, motionEase } from '../../src/shared/editorV6MotionInterpolation'
 import type { FabricatorProject, ModelPart } from '../../src/shared/fabricator'
 
 const part = (id: string, x: number, rotation = 0): ModelPart => ({
