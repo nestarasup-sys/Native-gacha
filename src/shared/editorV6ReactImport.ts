@@ -146,8 +146,10 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     if (poseSlot !== null) usedInitialPoses.add(poseSlot)
     selectedPose.set(actor.characterId, poseSlot)
     const presets = available.presetsByModel.get(actor.modelSlot) ?? []
+    const sourceCharacter=byId.get(actor.characterId)!
+    if(actor.expression&&!sourceCharacter.customization.faceAppearance)throw new Error(actor.name+' não possui aparência facial para usar a expressão especificada.')
     let expression = actor.expression ? resolvedExpression(actor, actor.expression) : undefined
-    if (!expression && presets.length) {
+    if (!expression && presets.length && sourceCharacter.customization.faceAppearance) {
       const unused = presets.filter((item) => !usedInitialExpressions.has(item.id))
       const pool = unused.length ? unused : presets
       expression = pool[Math.floor(rng() * pool.length)].id
@@ -181,6 +183,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   const events: Array<ReactImportBeat & { priority: number; sequence: number }> = initial.map((item,i) => ({ ...item, priority:0,sequence:i }))
   source.beats.forEach((item,i) => {
     const actor = resolveCast(item.character)
+    if(item.expression&&!byId.get(actor.characterId)?.customization.faceAppearance)throw new Error(actor.name+' não possui rosto configurado para a expressão especificada.')
     if (item.poseSlot !== undefined && item.poseSlot !== null && !(available.posesByCharacter.get(actor.characterId) ?? []).includes(item.poseSlot)) throw new Error('Pose ' + item.poseSlot + ' não encontrada para ' + actor.name)
     events.push({ characterId:actor.characterId,startFrame:secondsToFrame(item.startSeconds),...(item.poseSlot !== undefined ? {poseSlot:item.poseSlot}:{}),...(item.expression ? {expression:resolvedExpression(actor,item.expression)}:{}),...(item.gaze ? {gaze:item.gaze}:{}),priority:2,sequence:i })
   })
@@ -190,31 +193,34 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   // Exactly one actor can be given a new REAL pose at each interval.
   const intervalFrames = source.autoPoseEverySeconds * 30
   if (intervalFrames) for(let frame=intervalFrames;frame<durationFrames;frame+=intervalFrames){
-    const eligible = cast.filter((actor)=> (available.posesByCharacter.get(actor.characterId)?.length ?? 0)>1)
+    const eligible = cast.filter((actor)=> (available.posesByCharacter.get(actor.characterId)?.length ?? 0)>1 && !events.some((event)=>event.startFrame===frame&&event.characterId===actor.characterId&&event.poseSlot!==undefined))
     if (!eligible.length) break
     const actor = eligible[Math.floor(rng()*eligible.length)]
-    const choices = (available.posesByCharacter.get(actor.characterId) ?? []).filter((slot)=>slot!==selectedPose.get(actor.characterId))
+    const previous=[...events].filter((event)=>event.characterId===actor.characterId&&event.startFrame<=frame&&event.poseSlot!==undefined).sort((a,b)=>b.startFrame-a.startFrame||b.priority-a.priority)[0]?.poseSlot??selectedPose.get(actor.characterId)
+    const choices = (available.posesByCharacter.get(actor.characterId) ?? []).filter((slot)=>slot!==previous)
     if (!choices.length) continue
     const chosen = choices[Math.floor(rng()*choices.length)]
     selectedPose.set(actor.characterId,chosen)
     events.push({characterId:actor.characterId,startFrame:frame,poseSlot:chosen,priority:1,sequence:frame})
   }
-  // A speech (never a private thought) causes listeners to look towards its speaker.
-  // Add restoring beats only if no other speech for that listener is active at the end.
+  // Gaze changes are recomputed at every speech boundary; overlapping speeches
+  // cannot accidentally restore a listener before the current speaker finishes.
   if (source.autoListenerGaze) {
     const speeches=[...lines].filter((line)=>line.kind==='speech').sort((a,b)=>a.startFrame-b.startFrame)
-    speeches.forEach((line,i)=>{
-      const speaker=castById.get(line.characterId)!
-      for(const listener of cast){
-        if(listener.characterId===speaker.characterId)continue
-        const looking: 'left'|'right'=speaker.x<listener.x?'left':'right'
-        events.push({characterId:listener.characterId,startFrame:line.startFrame,gaze:looking,priority:3,sequence:i})
-        const next=speeches.find((later)=>later.startFrame>=line.startFrame+line.durationFrames)
-        if(!next || next.startFrame>line.startFrame+line.durationFrames){
-          events.push({characterId:listener.characterId,startFrame:line.startFrame+line.durationFrames,gaze:listener.gaze??'right',priority:3,sequence:i})
+    const boundaryFrames=[...new Set(speeches.flatMap((line)=>[line.startFrame,line.startFrame+line.durationFrames]))].sort((a,b)=>a-b)
+    for(const listener of cast){
+      let previous=listener.gaze??'right'
+      for(const frame of boundaryFrames){
+        const active=speeches.filter((line)=>line.characterId!==listener.characterId&&line.startFrame<=frame&&frame<line.startFrame+line.durationFrames)
+        const speaker=active.at(-1)
+        const speakerPosition=speaker?castById.get(speaker.characterId):undefined
+        const looking:'left'|'right'=speakerPosition?(speakerPosition.x<listener.x?'left':'right'):(listener.gaze??'right')
+        if(looking!==previous){
+          events.push({characterId:listener.characterId,startFrame:frame,gaze:looking,priority:3,sequence:frame})
+          previous=looking
         }
       }
-    })
+    }
   }
   // Collapse simultaneous changes; preserve pose, expression and gaze independently.
   events.sort((a,b)=>a.startFrame-b.startFrame||a.priority-b.priority||a.sequence-b.sequence)
