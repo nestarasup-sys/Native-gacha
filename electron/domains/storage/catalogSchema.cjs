@@ -1,7 +1,7 @@
 const { sha256 } = require('./storageFiles.cjs')
 const { nextCategoryColor } = require('../../categoryColors.cjs')
 
-const CATALOG_SCHEMA_VERSION = 16
+const CATALOG_SCHEMA_VERSION = 17
 const BUILTIN_DOMAINS = [
   'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
   'fabricator.face-sets', 'fabricator.face-catalog', 'fabricator.face-components',
@@ -144,6 +144,17 @@ function initializeCatalogSchema(database, currentSchema) {
       status TEXT NOT NULL CHECK(status IN ('success', 'error')),
       details TEXT NOT NULL
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS roteiro_character_sheets (
+      character_id TEXT PRIMARY KEY,
+      character_name TEXT NOT NULL,
+      personality TEXT NOT NULL DEFAULT '',
+      backstory TEXT NOT NULL DEFAULT '',
+      fyn_relationship TEXT NOT NULL DEFAULT '',
+      speaking_style TEXT NOT NULL DEFAULT '',
+      relationships_json TEXT NOT NULL DEFAULT '[]',
+      additional_rules TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL
+    ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS roteiro_export_logs_by_parent ON roteiro_export_logs(roteiro_id, created_at DESC, id DESC);
     CREATE TABLE IF NOT EXISTS base_video_sequence (
       sequence_id INTEGER PRIMARY KEY CHECK(sequence_id = 1),
@@ -274,6 +285,8 @@ function initializeCatalogSchema(database, currentSchema) {
     .run(sha256('gacha-base-video-category-colors-schema-v15'), now)
   database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (16, 'roteiro-export-log-persistence', ?, ?)")
     .run(sha256('gacha-roteiro-export-log-persistence-schema-v16'), now)
+  database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (17, 'roteiro-character-sheets', ?, ?)")
+    .run(sha256('gacha-roteiro-character-sheets-schema-v17'), now)
   if (currentSchema < CATALOG_SCHEMA_VERSION) database.pragma(`user_version = ${CATALOG_SCHEMA_VERSION}`)
   const insertDomain = database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
   const registerBuiltins = database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
