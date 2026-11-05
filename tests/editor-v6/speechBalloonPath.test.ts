@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSpeechBalloonPath, createThoughtBalloonPath, speechBalloonFillColor } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
+import { createSpeechBalloonPath, speechBalloonFillColor } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
 
 describe('balão de fala do Editor V6', () => {
   it('desenha caixa arredondada com cauda inferior à esquerda dentro das dimensões do elemento', () => {
@@ -24,17 +24,5 @@ describe('balão de fala do Editor V6', () => {
     expect(speechBalloonFillColor('#000000')).toBe('#e0e0e0')
     expect(speechBalloonFillColor('#7768c8')).toBe('#efedf8')
     expect(speechBalloonFillColor()).toBe('#eceaeb')
-  })
-
-  it('desenha a nuvem de pensamento dentro das dimensões configuradas', () => {
-    const path = createThoughtBalloonPath(512, 450)
-
-    expect(path).toMatch(/^M -138\.24 -144/)
-    expect(path).toContain('Z')
-    expect(path).not.toMatch(/NaN|Infinity/)
-    const coordinates = path.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
-    coordinates.forEach((coordinate, index) => {
-      expect(Math.abs(coordinate)).toBeLessThanOrEqual(index % 2 === 0 ? 256 : 225)
-    })
   })
 })
