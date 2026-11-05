@@ -57,13 +57,14 @@ export async function compileEditorV6ReactImport(
   const plan=planEditorV6ReactImport(source,{
     characters:sources.characters,posesByCharacter:sources.poseSlots,presetsByModel:sources.presets,media
   })
+  const importedBackground=source.backgroundLibraryId ? await window.desktop.editorV6.linkEditorV6LibraryBackground(source.backgroundLibraryId) : null
   if(plan.lines.length+plan.cast.length>1000)throw new Error('O V6 permite no máximo 1000 camadas; reduza a quantidade de balões.')
-  if(plan.beats.length>2000)throw new Error('O projeto contém estados visuais demais para esta importação.')
+  if(plan.beats.length>1000)throw new Error('O projeto contém estados visuais demais para esta importação.')
   const now=utc()
   const document: EditorV6Document={
     schemaVersion:1,id:projectId,title:plan.title,color:'#d7b5cd',createdAt:now,updatedAt:now,
-    backgroundColor:plan.backgroundColor,backgroundAssetId:null,backgroundX:0,backgroundY:0,backgroundWidth:100,backgroundHeight:100,backgroundRotation:0,
-    assets:[],media,elements:[],timeline:createEditorV6Timeline()
+    backgroundColor:plan.backgroundColor,backgroundAssetId:importedBackground?.id??null,backgroundX:0,backgroundY:0,backgroundWidth:100,backgroundHeight:100,backgroundRotation:0,
+    assets:importedBackground?[importedBackground]:[],media,elements:[],timeline:createEditorV6Timeline()
   }
   const videoTrack=document.timeline.tracks.find((item)=>item.kind==='video')!
   const speechTrack=document.timeline.tracks.find((item)=>item.kind==='speech')!
@@ -123,7 +124,6 @@ export async function compileEditorV6ReactImport(
     }finally{renderer.dispose()}
   }
 
-  const visualById=new Map<string,EditorV6ReactImportPlan['beats']>()
   for(const actor of plan.cast){
     const actorBeats=plan.beats.filter((item)=>item.characterId===actor.characterId).sort((a,b)=>a.startFrame-b.startFrame)
     const initial=actorBeats.find((item)=>item.startFrame===0)
