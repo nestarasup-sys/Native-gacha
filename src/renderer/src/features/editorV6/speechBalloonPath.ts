@@ -39,3 +39,26 @@ export function speechBalloonFillColor(speakerColor?: string): string {
   })
   return `#${channels.join('')}`
 }
+
+/** Rounded cloud for thoughts, leaving the lower-left area for its trailing dots. */
+export function createThoughtBalloonPath(width: number, height: number): string {
+  const left = -width / 2
+  const top = -height / 2
+  const x = (fraction: number) => left + width * fraction
+  const y = (fraction: number) => top + height * fraction
+  return [
+    `M ${x(.23)} ${y(.18)}`,
+    `C ${x(.14)} ${y(.20)} ${x(.10)} ${y(.12)} ${x(.16)} ${y(.07)}`,
+    `C ${x(.13)} ${y(.04)} ${x(.28)} ${y(.03)} ${x(.36)} ${y(.08)}`,
+    `C ${x(.42)} ${y(.02)} ${x(.55)} ${y(.03)} ${x(.60)} ${y(.11)}`,
+    `C ${x(.69)} ${y(.02)} ${x(.82)} ${y(.07)} ${x(.81)} ${y(.20)}`,
+    `C ${x(.94)} ${y(.23)} ${x(.94)} ${y(.40)} ${x(.83)} ${y(.46)}`,
+    `C ${x(.95)} ${y(.55)} ${x(.87)} ${y(.70)} ${x(.73)} ${y(.68)}`,
+    `C ${x(.67)} ${y(.80)} ${x(.56)} ${y(.76)} ${x(.52)} ${y(.68)}`,
+    `C ${x(.44)} ${y(.82)} ${x(.31)} ${y(.78)} ${x(.31)} ${y(.68)}`,
+    `C ${x(.20)} ${y(.82)} ${x(.08)} ${y(.72)} ${x(.15)} ${y(.61)}`,
+    `C ${x(.04)} ${y(.58)} ${x(.06)} ${y(.43)} ${x(.16)} ${y(.39)}`,
+    `C ${x(.06)} ${y(.28)} ${x(.12)} ${y(.19)} ${x(.23)} ${y(.18)}`,
+    'Z'
+  ].join(' ')
+}
