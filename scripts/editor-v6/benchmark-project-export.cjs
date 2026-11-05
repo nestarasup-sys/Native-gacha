@@ -16,8 +16,10 @@ const outputFolder = path.resolve(argument('--output=') ?? defaultOutput)
 const cacheProbe = process.argv.includes('--cache-probe')
 const singleMotionRun = process.argv.includes('--single-motion-run')
 const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
+const noHairControl = process.argv.includes('--no-hair-control')
 const motionConcurrency = argument('--motion-bake-concurrency=')
 const hairPresetSlot = argument('--hair-preset-slot=')
+const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
@@ -59,10 +61,11 @@ function serveBuiltRenderer(root, port) {
 async function main() {
   const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
   if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe && !singleMotionRun)
-    && !hairPresetSlot
+    && !hairPresetSlot && !noHairControl
     || singleMotionRun && !['1', '2'].includes(motionConcurrency)
-    || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || process.argv.includes('--compare-workers'))) {
-    throw Error('Uso: npm run bench:editor-v6:project -- --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia dos dados Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2 | --hair-preset-slot=1..5 --session-data=<sessão copiada> [--renderer-port=5189] [--hair-preparation-only])')
+    || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || noHairControl || process.argv.includes('--compare-workers'))
+    || noHairControl && (hairPresetSlot || cacheProbe || singleMotionRun || hairPreparationOnly || process.argv.includes('--compare-workers'))) {
+    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2 | --hair-preset-slot=1..5 --session-data=<sessão copiada> [--hair-preparation-only] | --no-hair-control)')
   }
   if (!Number.isInteger(rendererPort) || rendererPort < 1024 || rendererPort > 65535) throw Error('--renderer-port precisa ser uma porta local válida.')
   if (hairPresetSlot && (!/^\d+$/.test(hairPresetSlot) || Number(hairPresetSlot) < 1 || Number(hairPresetSlot) > 5 || !sessionDataPath)) {
@@ -80,8 +83,8 @@ async function main() {
   }
 
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
-  if (hairPresetSlot && (manifest.title?.trim() !== 'Editor V6 06' || !Number.isInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 300)) {
-    throw Error('O benchmark com cabelo exige uma cópia verificada do Editor V6 06 com pelo menos 300 quadros; nenhum projeto foi modificado.')
+  if ((hairPresetSlot || noHairControl) && (manifest.title?.trim() !== authorizedProjectTitle || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
+    throw Error(`O benchmark com cabelo exige uma cópia verificada do projeto autorizado "${authorizedProjectTitle}" com duração válida; nenhum projeto foi modificado.`)
   }
   await fs.access(path.join(libraryFolder, 'catalog.json'))
   for (const media of manifest.media ?? []) if (media.libraryVideoId) await fs.access(path.join(libraryFolder, 'videos', media.fileName))
@@ -118,6 +121,7 @@ async function main() {
     ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
     ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
+    ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),
     GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT: outputFolder, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
   delete childEnv.ELECTRON_RUN_AS_NODE
@@ -133,12 +137,20 @@ async function main() {
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
   const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'))
   const invalidSummary = hairPreparationOnly
-    ? summary.benchmarkKind !== 'real-project-hair-preparation' || summary.hairPresetSlot !== Number(hairPresetSlot)
+    ? summary.benchmarkKind !== 'real-project-hair-preparation' || summary.projectTitle !== authorizedProjectTitle
+      || summary.durationFrames !== manifest.timeline.durationFrames || summary.hairPresetSlot !== Number(hairPresetSlot)
       || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
+    : noHairControl
+    ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
+      || summary.durationFrames !== manifest.timeline.durationFrames || summary.runs?.length !== 3
+      || summary.runs.some((run) => run.totalFrames !== manifest.timeline.durationFrames || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
+        || !Number.isFinite(run.milliseconds) || run.milliseconds <= 0 || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0
+        || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
-    ? summary.benchmarkKind !== 'real-project-hair-export' || summary.runs?.length !== 3
+    ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
+      || summary.durationFrames !== manifest.timeline.durationFrames || summary.runs?.length !== 3
       || summary.hairPresetSlot !== Number(hairPresetSlot)
-      || summary.runs.some((run) => run.totalFrames !== 300 || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
+      || summary.runs.some((run) => run.totalFrames !== manifest.timeline.durationFrames || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
         || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
     : singleMotionRun

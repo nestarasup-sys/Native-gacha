@@ -51,8 +51,9 @@ function validate(summary) {
   const errors = []
   const warnings = []
   if (summary?.passed !== true || summary?.benchmarkKind !== 'real-project-hair-export') errors.push('Resumo não é um benchmark real de cabelo concluído.')
+  if (summary?.projectTitle !== 'Teste de Importação — Personagens do Pacote') errors.push('O benchmark não pertence ao projeto autorizado.')
   if (!Array.isArray(summary?.runs) || summary.runs.length !== 3) errors.push('São necessárias três execuções completas.')
-  if (summary?.durationFrames !== 300 || summary?.fps !== '30/1') errors.push('O benchmark precisa conter 300 quadros a 30 FPS.')
+  if (!Number.isSafeInteger(summary?.durationFrames) || summary.durationFrames < 1 || summary?.fps !== '30/1') errors.push('A duração do projeto e o FPS do benchmark são inválidos.')
   if (!Number.isSafeInteger(summary?.width) || summary.width < 1 || !Number.isSafeInteger(summary?.height) || summary.height < 1) errors.push('Dimensões inválidas.')
   if (!Number.isInteger(summary?.hairPresetSlot) || summary.hairPresetSlot < 1 || summary.hairPresetSlot > 5) errors.push('Slot de preset inválido.')
   if (Array.isArray(summary?.runs)) {
@@ -61,7 +62,7 @@ function validate(summary) {
     const options = new Set()
     summary.runs.forEach((run, index) => {
       const prefix = `Execução ${index + 1}`
-      if (run.totalFrames !== 300 || run.fps !== '30/1' || run.width !== summary.width || run.height !== summary.height || run.hairPresetSlot !== summary.hairPresetSlot) errors.push(`${prefix}: quadros, FPS, dimensões ou preset inconsistentes.`)
+      if (run.totalFrames !== summary.durationFrames || run.fps !== '30/1' || run.width !== summary.width || run.height !== summary.height || run.hairPresetSlot !== summary.hairPresetSlot) errors.push(`${prefix}: quadros, FPS, dimensões ou preset inconsistentes.`)
       if (!finiteNonnegative(run.hairPreparationWallMs) || !finitePositive(run.mainExportWallMs) || !finitePositive(run.clickToValidatedWallMs)) errors.push(`${prefix}: tempos ponta a ponta ausentes ou inválidos.`)
       else if (Math.abs(run.clickToValidatedWallMs - run.hairPreparationWallMs - run.mainExportWallMs) > 10) warnings.push(`${prefix}: soma dos relógios de preparação e export difere do total.`)
       if (run.audioOutput !== (run.audioClips > 0) || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0) errors.push(`${prefix}: áudio não confere com a saída.`)
@@ -85,7 +86,7 @@ function analyze(summary) {
     run: index + 1,
     cacheState: String(run.cacheState || 'não informado'),
     totalMs: run.clickToValidatedWallMs,
-    fpsEffective: 300000 / run.clickToValidatedWallMs,
+    fpsEffective: summary.durationFrames * 1000 / run.clickToValidatedWallMs,
     preparationMs: run.hairPreparationWallMs,
     exportMs: run.mainExportWallMs,
     phases: PHASES.map(([key, label]) => ({ key, label, milliseconds: getPhaseMs(run, key) })).filter(p => p.milliseconds !== null),
@@ -99,14 +100,14 @@ function analyze(summary) {
   })).sort((a, b) => b.medianMs - a.medianMs)
   return {
     ok: true, warnings, runs, benchmark: {
-      resolution: `${summary.width}x${summary.height}`, frames: 300, preset: summary.hairPresetSlot,
+      resolution: `${summary.width}x${summary.height}`, frames: summary.durationFrames, preset: summary.hairPresetSlot,
       medianAllMs: median(runs.map(run => run.totalMs)),
       medianWarmMs: warm.length >= 2 ? median(warm.map(run => run.totalMs)) : null,
       medianEffectiveFps: median(runs.map(run => run.fpsEffective)),
       fastestMs: Math.min(...runs.map(run => run.totalMs)),
       slowestMs: Math.max(...runs.map(run => run.totalMs)),
-      targetMetAll: runs.every(run => run.totalMs <= 15000),
-      targetMetWarm: warm.length >= 2 ? warm.every(run => run.totalMs <= 15000) : null,
+      targetMetAll: runs.every(run => run.totalMs <= 30000),
+      targetMetWarm: warm.length >= 2 ? warm.every(run => run.totalMs <= 30000) : null,
       rankedByMedian: ranked,
       rankingBasis: warm.length >= 2 ? 'execuções com cache aquecido' : 'todas as execuções (cache não segregado)'
     }
@@ -116,13 +117,13 @@ function format(result) {
   if (!result.ok) return ['Resumo inválido:', ...result.errors.map(msg => `  - ${msg}`)].join('\n')
   const b = result.benchmark
   const lines = [
-    'Editor V6 — Rodada 07 · diagnóstico sanitizado',
-    `300 quadros · 30 FPS · ${b.resolution} · Preset ${b.preset}`,
+    'Editor V6 — diagnóstico sanitizado',
+    `${b.frames} quadros · 30 FPS · ${b.resolution} · Preset ${b.preset}`,
     '',
     ...result.runs.map(r => `Execução ${r.run} (${r.cacheState}): total ${seconds(r.totalMs)}, cabelo ${seconds(r.preparationMs)}, export ${seconds(r.exportMs)}, ${r.fpsEffective.toFixed(2)} FPS efetivos`),
     `Mediana total das três: ${seconds(b.medianAllMs)} · melhor ${seconds(b.fastestMs)} · pior ${seconds(b.slowestMs)}`,
     ...(b.medianWarmMs === null ? [] : [`Mediana aquecida: ${seconds(b.medianWarmMs)}`]),
-    `Meta ≤15 s: ${b.targetMetAll ? 'atingida nas três execuções' : 'não demonstrada nas três execuções'}`,
+    `Meta ≤30 s: ${b.targetMetAll ? 'atingida nas três execuções' : 'não demonstrada nas três execuções'}`,
     '',
     `Fases por mediana (${b.rankingBasis}, tempo de parede por fase):`,
     ...b.rankedByMedian.map((p, index) => `  ${index + 1}. ${p.label}: ${seconds(p.medianMs)}`),

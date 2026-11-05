@@ -2,13 +2,15 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { analyze, format, partMetric, median } = require('../../scripts/editor-v6/analyze-hair-benchmark.cjs')
+const FRAMES = 2394
+const PROJECT_TITLE = 'Teste de Importação — Personagens do Pacote'
 
 function sampleRun(run, cold = false) {
   const hairPreparationWallMs = cold ? 6000 : 2000
   const mainExportWallMs = cold ? 30000 : 13000
   return {
     run, cacheState: cold ? 'cold-motion-cache' : 'warm-motion-cache',
-    totalFrames: 300, width: 1920, height: 1080, fps: '30/1', hairPresetSlot: 2,
+    totalFrames: FRAMES, width: 1920, height: 1080, fps: '30/1', hairPresetSlot: 2,
     selectedEncoder: 'h264_amf', requestedEncoder: 'auto', workers: 2,
     hairPresetFingerprint: 'only-compared-not-printed', hairPreparationWallMs, mainExportWallMs,
     clickToValidatedWallMs: hairPreparationWallMs + mainExportWallMs, audioClips: 2, audioOutput: true,
@@ -21,7 +23,7 @@ function sampleRun(run, cold = false) {
   }
 }
 function sampleSummary() {
-  return { passed: true, benchmarkKind: 'real-project-hair-export', durationFrames: 300, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
+  return { passed: true, benchmarkKind: 'real-project-hair-export', projectTitle: PROJECT_TITLE, durationFrames: FRAMES, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
 }
 test('tempo de parede separa preparo, export e comparação cache frio/quente', () => {
   const report = analyze(sampleSummary())
@@ -31,7 +33,7 @@ test('tempo de parede separa preparo, export e comparação cache frio/quente', 
   assert.equal(report.benchmark.targetMetAll, false)
   assert.equal(report.benchmark.targetMetWarm, true)
   assert.equal(report.benchmark.rankedByMedian[0].key, 'rendering')
-  assert.equal(report.runs[1].fpsEffective, 20)
+  assert.equal(report.runs[1].fpsEffective, FRAMES * 1000 / 15000)
 })
 test('trabalho paralelo mostra máximo da parte e soma agregada separadamente', () => {
   const report = analyze(sampleSummary())
@@ -44,7 +46,8 @@ test('trabalho paralelo mostra máximo da parte e soma agregada separadamente', 
 test('resumo não inclui fingerprint nem IDs de projeto na saída', () => {
   const result = analyze(sampleSummary())
   const output = format(result)
-  assert.match(output, /Rodada 07/)
+  assert.match(output, /2394 quadros/)
+  assert.match(output, /Meta ≤30 s/)
   assert.match(output, /Não some esses totais/)
   assert.doesNotMatch(output, /only-compared-not-printed/)
 })
@@ -58,6 +61,15 @@ test('rejeita benchmark incompleto, áudio inconsistente e preset alterado', () 
   assert.ok(result.errors.some(error => error.includes('áudio')))
   assert.ok(result.errors.some(error => error.includes('Preset diferente')))
   assert.ok(result.errors.some(error => error.includes('quadros')))
+})
+
+test('exige o projeto autorizado e a duração integral em todos os takes', () => {
+  const wrongProject = sampleSummary()
+  wrongProject.projectTitle = 'Outro projeto'
+  assert.ok(analyze(wrongProject).errors.some(error => error.includes('projeto autorizado')))
+  const partial = sampleSummary()
+  partial.durationFrames = 300
+  assert.ok(analyze(partial).errors.some(error => error.includes('quadros')))
 })
 test('avisa sobre encoder variável e ausência de amostragem sem inventar medições', () => {
   const summary = sampleSummary()
