@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSpeechBalloonPath, speechBalloonFillColor } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
+import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath, speechBalloonFillColor } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
 
 describe('balão de fala do Editor V6', () => {
   it('desenha caixa arredondada com cauda inferior à esquerda dentro das dimensões do elemento', () => {
@@ -24,5 +24,21 @@ describe('balão de fala do Editor V6', () => {
     expect(speechBalloonFillColor('#000000')).toBe('#e0e0e0')
     expect(speechBalloonFillColor('#7768c8')).toBe('#efedf8')
     expect(speechBalloonFillColor()).toBe('#eceaeb')
+  })
+
+  it('desenha o pensamento como oval com ponta inferior esquerda e contorno duplo', () => {
+    const outline = createThoughtBalloonPath(512, 450)
+    const sketch = createThoughtBalloonSketchPath(512, 450)
+
+    expect(outline).toContain('-256 216')
+    expect(outline.endsWith('Z')).toBe(true)
+    expect(sketch.startsWith('M ')).toBe(true)
+    for (const path of [outline, sketch]) {
+      expect(path).not.toMatch(/NaN|Infinity/)
+      const coordinates = path.match(/-?\d+(?:\.\d+)?/g)!.map(Number)
+      coordinates.forEach((coordinate, index) => {
+        expect(Math.abs(coordinate)).toBeLessThanOrEqual(index % 2 === 0 ? 256 : 225)
+      })
+    }
   })
 })
