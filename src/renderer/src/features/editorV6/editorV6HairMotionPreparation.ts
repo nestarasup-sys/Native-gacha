@@ -8,6 +8,7 @@ import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMot
 import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
+import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
 import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
@@ -98,6 +99,7 @@ export async function prepareEditorV6HairMotionBundle(
 ): Promise<EditorV6HairMotionBundle> {
   if (!Number.isInteger(presetSlot) || presetSlot < 1 || presetSlot > 5) throw Error('Selecione um preset de animação de cabelo válido.')
   const preparationStarted = performance.now()
+  const testSettings = editorV6ExportTestSettings(exportOptions.testMode)
   const stageStats = new Map<string, { samples: number; totalMilliseconds: number; maxMilliseconds: number }>()
   const recordStage = (stage: string, milliseconds: number) => {
     if (!Number.isFinite(milliseconds) || milliseconds < 0) return
@@ -276,7 +278,7 @@ export async function prepareEditorV6HairMotionBundle(
         if (!sourceCrop) {
           // Snapshots use the union of face modes, not the bounds of one frame.
           const cropStarted = performance.now()
-          const crop = await measureFaceModeCrop(character.name, originalRenderer, currentAppearance, faceTransforms, effects, mode, originalFrame!)
+          const crop = await measureFaceModeCrop(character.name, originalRenderer, currentAppearance, faceTransforms, effects, mode, originalFrame!, testSettings.encodeFaceCropPng)
           sourceCrop = crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height }
             : { left: 0, top: 0, width: originalFrame!.width, height: originalFrame!.height }
           cropByFace.set(faceKey, sourceCrop)

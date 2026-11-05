@@ -86,7 +86,8 @@ async function forEachFaceMode(
 export async function measureFaceModeCrop(
   name: string, renderer: PreparedEditorV6FaceRenderer, appearance: CustomizerFaceAppearance | undefined,
   transforms: EditorV6FaceTransforms | undefined, effects: FaceExpressionEffects | undefined,
-  baseMode: EditorV6FaceRenderMode, baseRendered?: { canvas: HTMLCanvasElement; width: number; height: number }
+  baseMode: EditorV6FaceRenderMode, baseRendered?: { canvas: HTMLCanvasElement; width: number; height: number },
+  legacyPngCrop = false
 ): Promise<Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null> {
   let union: HTMLCanvasElement | undefined
   try {
@@ -102,7 +103,7 @@ export async function measureFaceModeCrop(
       context.drawImage(frame, 0, 0)
     })
     // Measuring bounds must not allocate/encode a PNG. The caller only needs geometry.
-    const crop = union ? canvasFaceAlphaBounds(union) : null
+    const crop = union ? (legacyPngCrop ? trimTransparentCanvas(union) : canvasFaceAlphaBounds(union)) : null
     return crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height } : null
   } finally { if (union) union.width = union.height = 1 }
 }

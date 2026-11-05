@@ -116,7 +116,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       ...(hairAnimation?.preparationProfile ? { hairPreparation: hairAnimation.preparationProfile } : {}),
       onFfmpegProcessStarted,
       getMotionCacheStats: deps.getMotionCacheStats,
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
+      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })
   }

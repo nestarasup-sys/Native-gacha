@@ -118,11 +118,24 @@ describe('export worker lifecycle', () => {
     expect(contents.capturePage).toHaveBeenCalledTimes(2)
     expect(contents.invalidate).toHaveBeenCalledTimes(1)
     expect(first.bitmap).toHaveLength(output.length)
+    expect(first.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 1 })
     expect(first.bitmap?.subarray(0, 32)).toEqual(output.subarray(0, 32))
     expect(first.bitmap?.some((byte) => byte !== 127)).toBe(false)
     expect(contents.capturePage).toHaveBeenLastCalledWith({ x: 0, y: 0, width: payload.width + 24, height: payload.height })
     worker.close()
     factory.dispose()
+  })
+
+  it('routes the 8ms readback mode without relaxing the token fence', async () => {
+    const { factory, payload, ready } = fixture()
+    const pending = factory.create({ ...payload, testMode: 'captura-8' }, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const contents = state.windows[0].webContents
+    const frame = await worker.frame(2)
+    expect(frame.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
+    expect(contents.capturePage).toHaveBeenCalledTimes(1)
+    worker.close(); factory.dispose()
   })
 
   it('never returns a stale readback and cancels while waiting for the matching token', async () => {

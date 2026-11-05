@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { EDITOR_V6_EXPORT_TEST_MODES, type EditorV6ExportTestMode } from '../../../../shared/editorV6ExportTestModes'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, hairMotionPosteriorOnlyPreset, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
@@ -24,6 +25,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [job, setJob] = useState(rememberedJob)
   const [exportFolder, setExportFolder] = useState<string | null>(null)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, ...DEFAULT_EXPORT_SETTINGS })
+  const [testMode, setTestMode] = useState<EditorV6ExportTestMode>('controle')
   const [hairPresetSlot, setHairPresetSlot] = useState(2)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
@@ -109,7 +111,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
       project,
-      options: { ...options, ...DEFAULT_EXPORT_SETTINGS, mouthLoopCycleFrames: options.mouthLoopCycleFrames },
+      options: { ...options, ...DEFAULT_EXPORT_SETTINGS, mouthLoopCycleFrames: options.mouthLoopCycleFrames, testMode },
       hairPresetSlot,
       hairPreset: preparedHairPreset,
       prepareHair,
@@ -139,7 +141,16 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   return <div className="v6-export-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section ref={dialog} tabIndex={-1} className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
       <header className="v6-export-header"><div className="v6-export-heading"><span className="v6-export-brand-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 6.5h10.5A2.5 2.5 0 0 1 17 9v9H6.5A2.5 2.5 0 0 1 4 15.5z" /><path d="m17 10 4-2v9l-4-2M7 4v2.5M11 4v2.5M7 18v2" /></svg></span><div><small>EDITOR V6 <i /> ESTÚDIO DE EXPORTAÇÃO</small><h2 id="v6-export-title">Exportar vídeo</h2><p>Configure a saída e acompanhe a renderização em tempo real.</p></div></div><button className="v6-export-close" type="button" onClick={onClose} disabled={busy} aria-label="Fechar exportador">×</button></header>
-      {startingExport || job ? <EditorV6ExportActivity job={startingExport ? null : job} starting={startingExport} preparingHair={preparingHair} startedAt={exportStartedAt} /> : <section className="v6-export-overview" aria-label="Resumo da exportação configurada"><div className="v6-export-overview-art" aria-hidden="true"><svg viewBox="0 0 220 120"><path d="M0 83c18 0 18-46 36-46s18 45 37 45 18-61 37-61 18 77 37 77 18-42 36-42 19 27 37 27" /></svg><span className="v6-export-overview-format">MP4 <i /> 30 FPS</span></div><div className="v6-export-overview-copy"><small>PRONTO PARA RENDERIZAR</small><strong>Seu vídeo, quadro a quadro</strong><p>As configurações abaixo serão usadas para criar e validar o arquivo final.</p><div className="v6-export-overview-stats"><span><small>RESOLUÇÃO</small><b>{options.width} × {options.height}</b></span><span><small>DURAÇÃO</small><b>{frameTimecode(Math.max(0, options.endFrame - options.startFrame))}</b></span><span><small>MODO</small><b>{options.turbo ? 'Turbo 2×' : 'Seguro'}</b></span></div></div></section>}
+      {startingExport || job ? <EditorV6ExportActivity job={startingExport ? null : job} starting={startingExport} preparingHair={preparingHair} startedAt={exportStartedAt} /> : <section className="v6-export-overview" aria-label="Resumo da exportação configurada"><div className="v6-export-overview-art" aria-hidden="true"><svg viewBox="0 0 220 120"><path d="M0 83c18 0 18-46 36-46s18 45 37 45 18-61 37-61 18 77 37 77 18-42 36-42 19 27 37 27" /></svg><span className="v6-export-overview-format">MP4 <i /> 30 FPS</span></div><div className="v6-export-overview-copy"><small>PRONTO PARA RENDERIZAR</small><strong>Seu vídeo, quadro a quadro</strong><p>As configurações abaixo serão usadas para criar e validar o arquivo final.</p><div className="v6-export-overview-stats"><span><small>RESOLUÇÃO</small><b>{options.width} × {options.height}</b></span><span><small>DURAÇÃO</small><b>{frameTimecode(Math.max(0, options.endFrame - options.startFrame))}</b></span><span><small>MODO</small><b>{options.turbo ? 'Turbo 2×' : 'Seguro'} · {testMode}</b></span></div></div></section>}
+      <fieldset className="v6-export-lab-modes" disabled={busy || active}>
+        <legend>Laboratório de exportação · escolha um modo</legend>
+        <p>Todos exportam 1080p/30 FPS com o mesmo conteúdo, preset e verificação do MP4. Os modos são testes de desempenho, não garantias de aceleração.</p>
+        <div className="v6-export-lab-grid" role="group" aria-label="Modos de teste da exportação">
+          {EDITOR_V6_EXPORT_TEST_MODES.map((mode) => <button key={mode.id} type="button" className="v6-export-lab-choice" aria-pressed={testMode === mode.id}
+            onClick={() => setTestMode(mode.id)}><strong>{mode.label}</strong><span>{mode.description}</span></button>)}
+        </div>
+        <small role="status">Selecionado: {EDITOR_V6_EXPORT_TEST_MODES.find((mode) => mode.id === testMode)?.label}. Cada relatório salva o modo utilizado para comparação.</small>
+      </fieldset>
       {characterSourceRefreshRequired && <p className="v6-export-warning" role="status">Atualizando os personagens do Customizador. A exportação ficará disponível quando os snapshots estiverem sincronizados.</p>}
       <div className="v6-export-settings-grid">
         <fieldset className="v6-export-video-settings" disabled={busy || active}><legend>Exportação padrão</legend><div className="v6-export-grid">
@@ -179,7 +190,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
       {job && finished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? 'MP4 e relatório prontos' : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.turbo ? 'EXPORTAR TURBO 2×' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.turbo ? 'EXPORTAR TURBO 2× · ' + testMode : 'EXPORTAR MP4 · ' + testMode}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
   </div>
 }

@@ -6,6 +6,7 @@ import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
 import { captureEditorV6FrameBitmap } from './exportCaptureBitmap'
+import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
@@ -13,7 +14,7 @@ const PAINT_TOKEN_SIZE = 24
 const FRAME_CAPTURE_TIMEOUT_MS = 60000
 const FRAME_CAPTURE_RETRY_MS = 16
 
-async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number) {
+async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number, retryMilliseconds = FRAME_CAPTURE_RETRY_MS) {
   const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
   let readbacks = 0
   while (Date.now() < deadline) {
@@ -26,7 +27,7 @@ async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, w
     // readback fence, not a blind wait for any queued paint event: each retry
     // verifies the marker in the exact image that will be exported.
     window.webContents.invalidate()
-    await waitForExport(new Promise<void>((resolve) => setTimeout(resolve, FRAME_CAPTURE_RETRY_MS)), signal, FRAME_CAPTURE_TIMEOUT_MS, 'sincronizar quadro')
+    await waitForExport(new Promise<void>((resolve) => setTimeout(resolve, retryMilliseconds)), signal, FRAME_CAPTURE_TIMEOUT_MS, 'sincronizar quadro')
   }
   throw Error('Tempo limite: o compositor não apresentou o quadro solicitado para exportação.')
 }
@@ -50,6 +51,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const layeredVideo = payload.layeredVideo
+    const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
     const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
       webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
     const mediaList = payload.project.media, mediaPath = deps.mediaPath
@@ -117,7 +119,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         const capture = async () => {
           const started = performance.now()
           const token = nextPaintToken
-          const { bitmap, readbacks } = await capturePaintedFrame(window, signal, payload.width, payload.height, token)
+          const { bitmap, readbacks } = await capturePaintedFrame(window, signal, payload.width, payload.height, token, captureRetryMilliseconds)
           await deps.inspectCapture?.({ window, frame, bitmap })
           return { bitmap, readbacks, elapsedMs: performance.now() - started }
         }
