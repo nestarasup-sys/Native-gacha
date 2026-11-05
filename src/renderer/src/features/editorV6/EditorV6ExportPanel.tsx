@@ -100,16 +100,16 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       setError(reason instanceof Error ? reason.message : 'Não foi possível salvar o preset.')
     }
   }
-  const start = async () => {
+  const start = async (animateHair = true) => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
-    if (!selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
-    const preparedHairPreset = hairMotionPosteriorOnlyPreset(selectedHairPreset)
+    if (animateHair && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
+    const preparedHairPreset = animateHair && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
     setExportStartedAt(Date.now()); setStartingExport(true)
     setBusy(true); setError('')
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
       project,
-      options: { ...options, ...DEFAULT_EXPORT_SETTINGS, mouthLoopCycleFrames: options.mouthLoopCycleFrames },
+      options: { ...options, ...DEFAULT_EXPORT_SETTINGS, ...(animateHair ? {} : { hairPoseReactionOnly: false, hairPosteriorOnly: false }), mouthLoopCycleFrames: options.mouthLoopCycleFrames },
       hairPresetSlot,
       hairPreset: preparedHairPreset,
       prepareHair,
@@ -179,7 +179,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
       {job && finished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? `MP4 pronto${job.totalExportMilliseconds !== undefined ? ` · ${(job.totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s com preparo` : ''}` : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <><button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(true)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO'}</button><button className="v6-export-without-hair" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(false)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR SEM ANIMAÇÃO DE CABELO'}</button></>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button></footer>
     </section>
   </div>
 }
