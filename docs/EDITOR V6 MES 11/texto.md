@@ -10,7 +10,7 @@
 
 **Tarefas concluídas nesta retomada:** E0-T001 (backup verificado), E0-T002 (runner do projeto autorizado), E0-T003 (baseline cabelo/controle sem cabelo), E5-T001 (perfil do gargalo). **Pendentes:** E4-T001 (validar continuidade/cobertura visual), E5-T002 (otimização estrutural), E5-T003 (alcançar ≤30 s e repetir em 3 exports).
 
-**Último commit da missão:** `da91080da366dd3f23a020baf9215a66334d09e7` (`chore(editor-v6): establish staged export benchmark workflow`). **Branch/HEAD observado após este registro:** `Dev-V2` / `da91080da366dd3f23a020baf9215a66334d09e7` (5 commits locais à frente de `origin/Dev-V2`).
+**Último commit da missão:** `cc27b5f382ef699fa323968b0148578be8f09c98` (`perf(editor-v6): add focused segment export profiling`). **Branch/HEAD observado após este registro:** `Dev-V2` / `cc27b5f382ef699fa323968b0148578be8f09c98` (7 commits locais à frente de `origin/Dev-V2`).
 
 **Gargalo medido:** renderização/captura com cabelo; mediana integral inicial 177,15 s, contra 41,85 s sem cabelo. Na triagem comparável de 20 s, cabelo exportou em 50,24–50,75 s e o controle em 22,26 s. O frame pipeline continua muito acima dos gates locais.
 
@@ -1577,6 +1577,6 @@ O objetivo é o melhor equilíbrio entre velocidade, qualidade, robustez e manut
 
 **Problemas ainda abertos:** missão de ≤30 s não cumprida; bugs visuais do cabelo não reproduzidos/inspecionados adequadamente; comparação histórica de 92 s não tem configuração idêntica; qualidade visual comparativa de hair/no-hair não aprovada; custo de captura, encoder e composição precisa ser isolado. Os seis exports completos anteriores servem como baseline inicial e não devem ser repetidos a cada hipótese.
 
-**Estado Git da retomada:** `Dev-V2`, HEAD anterior `e4c088a0815446802dd484b5bbc0f76f3afc26c2`, 4 commits à frente do upstream. Commit seletivo da missão criado em `da91080da366dd3f23a020baf9215a66334d09e7`; nenhuma mídia, perfil, cache ou saída `out/` foi incluída.
+**Estado Git da retomada:** `Dev-V2`, HEAD anterior `a96d6ac1178ee2d38a647baa506f60118733da2d`, 6 commits à frente do upstream. Commit seletivo desta etapa `cc27b5f382ef699fa323968b0148578be8f09c98`; commits anteriores da missão `da91080da366dd3f23a020baf9215a66334d09e7` e `a96d6ac1178ee2d38a647baa506f60118733da2d`. Nenhuma mídia, perfil, cache ou saída `out/` foi incluída.
 
 **Experimentos:** `EXP-E0-001` — gate unitário (aprovado; não comprova export); `EXP-E0-002` — backup/identidade do projeto (aprovado por SHA-256); `EXP-E5-001` — baseline de cabelo (3 exports completos válidos, meta falhou); `EXP-E5-002` — controle sem cabelo (3 exports completos válidos, meta falhou); `EXP-E5-003` — SSIM entre rodadas (paridade temporal alta/repetição exata em aquecidos). Próxima decisão: `REFINAR` com instrumentação dos subestágios e protótipo dedicado de composição.
