@@ -9,17 +9,6 @@ type EditorV6BackgroundValues = Partial<Pick<EditorV6Document,
   'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>
 type EditorV6VideoValues = Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>
 
-const CHARACTER_NAME_COLOR_OPTIONS = [
-  { name: 'Roxo', color: '#7768c8' },
-  { name: 'Azul', color: '#5277b8' },
-  { name: 'Marrom', color: '#aa8264' },
-  { name: 'Verde', color: '#478f83' },
-  { name: 'Laranja', color: '#b47a43' },
-  { name: 'Rosa', color: '#bd6386' },
-  { name: 'Turquesa', color: '#4b91ad' },
-  { name: 'Lilás', color: '#8b6c9c' }
-] as const
-
 export type EditorV6NumericControl = (
   label: string,
   value: number,
@@ -132,7 +121,7 @@ export function EditorV6PropertyPanel({
   if (selectedElement) return <div className="studio-side-content">
     <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>
     {(selectedElement.kind === 'speech' || selectedElement.kind === 'thought') && <div className="studio-balloon-scale-control"><div className="studio-controls-grid">{control('Escala dos balões', balloonScalePercent, (value) => onUpdateBalloonScale(value), 100, 250, '%')}{control('Posição vertical', balloonOffsetY, (value) => onUpdateBalloonOffsetY(value), -100, 100, '%')}</div><small>Aplica a escala e a posição vertical a todas as falas e pensamentos. Valor negativo sobe; positivo desce.</small></div>}
-    {selectedElement.kind === 'character' && selectedElement.characterId && characterNameColor && <CharacterNameColorPicker color={characterNameColor} onSelect={(color) => onUpdateCharacterNameColor(selectedElement.characterId!, color)} />}
+    {selectedElement.kind === 'character' && selectedElement.characterId && characterNameColor && <label className="studio-color-control">Cor do nome nos balões<input type="color" value={characterNameColor} onPointerDown={onRecordHistory} onKeyDown={(event) => { if (!event.repeat && ['Enter', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) onRecordHistory() }} onChange={(event) => onUpdateCharacterNameColor(selectedElement.characterId!, event.target.value)} /></label>}
     {selectedElement.kind !== 'image' && selectedElement.kind !== 'character' && <label className="studio-text-control">Texto<textarea value={selectedElement.text} onChange={(event) => onUpdateElement(selectedElement.id, { text: event.target.value })} rows={3} /></label>}
     <SceneElementControls element={selectedElement} update={(values, record) => onUpdateElement(selectedElement.id, values, record)} remove={onDeleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />
   </div>
@@ -144,18 +133,6 @@ export function EditorV6PropertyPanel({
   </div>
 
   return <div className="studio-side-content"><h2>Cena</h2><p>Escolha uma ferramenta à esquerda ou selecione um elemento na cena.</p><small>{project.elements.length} elemento(s)</small></div>
-}
-
-function CharacterNameColorPicker({ color, onSelect }: { color: string; onSelect: (color: string) => void }) {
-  const isPreset = CHARACTER_NAME_COLOR_OPTIONS.some((option) => option.color === color.toLowerCase())
-  const options = isPreset ? CHARACTER_NAME_COLOR_OPTIONS : [{ name: 'Cor atual', color }, ...CHARACTER_NAME_COLOR_OPTIONS]
-  return <div className="studio-character-color-control">
-    <span>Cor do nome e do contorno</span>
-    <div className="studio-character-color-options" role="group" aria-label="Escolha a cor do nome e do contorno dos balões">
-      {options.map((option) => <button key={option.color} type="button" className={`studio-character-color-swatch${option.color.toLowerCase() === color.toLowerCase() ? ' active' : ''}`} style={{ backgroundColor: option.color }} title={`${option.name} · ${option.color}`} aria-label={`${option.name}, ${option.color}`} aria-pressed={option.color.toLowerCase() === color.toLowerCase()} onClick={() => onSelect(option.color)} />)}
-    </div>
-    <small>{color.toUpperCase()}</small>
-  </div>
 }
 
 function BackgroundTransformControls({
