@@ -33,6 +33,8 @@ const FRAME_WITHIN_WORKER = [
   ['hairSurfaceComposeMs', 'Cabelo: desenho de superfícies base/rosto'],
   ['hairCanvasClearMs', 'Cabelo: limpeza das superfícies Canvas'],
   ['hairRigInterpolationMs', 'Cabelo: interpolação/expansão do rig'],
+  ['hairMeshContextCheckMs', 'WebGL: consulta de perda do contexto'],
+  ['hairMeshStateSetupMs', 'WebGL: estado/configuração do driver'],
   ['hairMeshPositionMs', 'Cabelo: cálculo das posições da malha'],
   ['hairMeshUploadMs', 'Cabelo: upload de vértices para WebGL'],
   ['hairMeshTextureUploadMs', 'Cabelo: upload inicial de texturas'],

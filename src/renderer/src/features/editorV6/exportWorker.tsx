@@ -288,8 +288,13 @@ async function initialize() {
     timings.hairMeshUploadMs = (timings.hairMeshUploadMs ?? 0) + nextMeshTimings.uploadMs - previousMeshTimings.uploadMs
     timings.hairMeshTextureUploadMs = (timings.hairMeshTextureUploadMs ?? 0) + nextMeshTimings.textureUploadMs - previousMeshTimings.textureUploadMs
     timings.hairMeshDrawMs = (timings.hairMeshDrawMs ?? 0) + nextMeshTimings.drawMs - previousMeshTimings.drawMs
+    timings.hairMeshContextCheckMs = (timings.hairMeshContextCheckMs ?? 0) + nextMeshTimings.contextCheckMs - previousMeshTimings.contextCheckMs
+    timings.hairMeshStateSetupMs = (timings.hairMeshStateSetupMs ?? 0) + nextMeshTimings.stateSetupMs - previousMeshTimings.stateSetupMs
     const blitStarted = performance.now()
-    context.drawImage(mesh, 0, 0, outputWidth, outputHeight)
+    // WebGL's viewport is anchored at the drawing buffer's bottom-left.
+    // Crop that viewport from a grow-only canvas to keep the previous exact
+    // per-texture raster dimensions and avoid rescaling the mesh.
+    context.drawImage(mesh, 0, mesh.height - outputHeight, outputWidth, outputHeight, 0, 0, outputWidth, outputHeight)
     timings.hairCanvasBlitMs = (timings.hairCanvasBlitMs ?? 0) + performance.now() - blitStarted
     return canvas
   }
@@ -522,7 +527,7 @@ async function initialize() {
     const { current: renderAssetsById, resolve: resolveFrameAsset } = createEditorV6FrameAssetRegistry(assetsById, composed.assets)
     let renderScene = composed.scene
     const hairCompositionStarted = performance.now()
-    const hairDetailKeys = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
+    const hairDetailKeys = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
     const hairDetailBefore = Object.fromEntries(hairDetailKeys.map(key => [key, timings[key] ?? 0])) as Record<typeof hairDetailKeys[number], number>
     const rasterCanvases = new Map<string, HTMLCanvasElement>()
     if (activeHair) {
