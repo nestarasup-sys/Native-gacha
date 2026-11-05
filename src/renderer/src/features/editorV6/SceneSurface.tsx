@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
-import { createSpeechBalloonPath } from './speechBalloonPath'
+import { createSpeechBalloonPath, speechBalloonFillColor } from './speechBalloonPath'
 
 export type ScenePointerEvent = ReactPointerEvent<SVGElement>
 export type SceneSurfaceInteraction = {
@@ -126,14 +126,14 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
   const image = element.kind === 'image' || element.kind === 'character'
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
   const speakerName = !image && (element.kind === 'speech' || element.kind === 'thought') ? element.speakerName?.trim() : undefined
-  const speakerFontSize = speakerName ? Math.max(7, fontSize * .58) : 0
+  const speakerFontSize = speakerName ? fontSize : 0
   const speakerMaxChars = speakerName ? Math.max(4, Math.floor((width - 32) / (speakerFontSize * .62))) : 0
   const speakerLabel = speakerName && speakerName.length > speakerMaxChars ? `${speakerName.slice(0, Math.max(1, speakerMaxChars - 1))}…` : speakerName
   const maxTextLines = Math.max(1, Math.floor((height - (speakerName ? speakerFontSize + 28 : 18)) / lineHeight))
   const lines = useMemo(() => image ? [] : wrapSceneText(element.text, Math.max(1, width - 32), fontSize, maxTextLines), [element.text, image, width, fontSize, maxTextLines])
   const clipId = `v6-text-${element.id}`
   const faceReplacementMaskId = `v6-face-replacement-${element.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
-  const fill = element.kind === 'thought' ? '#fffafd' : '#ffffff'
+  const fill = speakerName ? speechBalloonFillColor(element.speakerColor) : element.kind === 'thought' ? '#fffafd' : '#ffffff'
   return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={`${speakerName ? `${speakerName}: ` : ''}${element.text || asset?.name || 'Objeto'}`} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>

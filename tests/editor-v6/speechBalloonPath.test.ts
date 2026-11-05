@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { createSpeechBalloonPath } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
+import { createSpeechBalloonPath, speechBalloonFillColor } from '../../src/renderer/src/features/editorV6/speechBalloonPath'
 
 describe('balão de fala do Editor V6', () => {
   it('desenha caixa arredondada com cauda inferior à esquerda dentro das dimensões do elemento', () => {
@@ -18,5 +18,11 @@ describe('balão de fala do Editor V6', () => {
     expect(path).not.toMatch(/NaN|Infinity/)
     expect(path).toContain('M -33.6 -150')
     expect(path).toContain('H 33.6')
+  })
+
+  it('usa só um tom leve da cor do nome sobre o fundo branco', () => {
+    expect(speechBalloonFillColor('#000000')).toBe('#e0e0e0')
+    expect(speechBalloonFillColor('#7768c8')).toBe('#efedf8')
+    expect(speechBalloonFillColor()).toBe('#eceaeb')
   })
 })
