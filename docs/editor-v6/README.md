@@ -1,6 +1,6 @@
 # Documentação do Native Gacha — índice de navegação
 
-**Escopo:** branch experimental `dev-v2-zona-de-guerra`. Este índice não altera o fluxo histórico de atualização da branch `Main-desenvolvimento`, nem promove alterações à `Dev-V2`.
+**Escopo:** documentação do Editor V6 na `Dev-V2` e histórico de experimentos na `dev-v2-zona-de-guerra`. Os seis modos de exportação foram retirados da interface da `Dev-V2` em 05/11/2026; o exportador padrão permanece ativo.
 
 ## Comece aqui
 
@@ -10,7 +10,8 @@
 | [Painel de pendências da Zona de Guerra](ZONA_GUERRA_PENDENCIAS.md) | O que está implementado, o que falta validar e o que não começou |
 | [Baseline ativa — projeto novo (05/11)](baselines/native_gacha_nova_baseline_2026-11-05.md) | Medição do projeto novo, separado do cenário anterior alterado |
 | [Baseline ativa — dados JSON](baselines/native_gacha_nova_baseline_2026-11-05.json) | Números estruturados e sanitizados para A/B |
-| [Prioridades pós-baseline](ZONA_GUERRA_PRIORIDADES_POS_BASELINE_2026-11-05.md) | Próximas mudanças, hipóteses, métricas e gates |
+| [Redesenho do exportador para salto real](ARQUITETURA_SALTO_REAL_EXPORTADOR_2026-11-05.md) | Alternativas de arquitetura e gates, não ajustes menores |
+| [Prioridades pós-baseline](ZONA_GUERRA_PRIORIDADES_POS_BASELINE_2026-11-05.md) | Histórico de prioridades, hipóteses, métricas e gates |
 | [Diagnóstico histórico de 309 quadros](ZONA_GUERRA_RELATORIO_309_QUADROS_E_PLANO.md) | Projeto antigo, não comparar contra a nova linha de base |
 | [Bancada Windows remota](ZONA_GUERRA_BANCADA_WINDOWS_REMOTA.md) | CI, resultados sintéticos e limitações |
 | [R37 — estado e gates](ZONA_GUERRA_R37_STATUS_E_GATES.md) | Protótipo de peças, raster experimental e paridade pendente |

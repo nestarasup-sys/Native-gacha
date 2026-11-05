@@ -52,6 +52,8 @@ jobs:
         run: npm ci --ignore-scripts
       - name: Verify quick Windows-only gate definitions
         run: node --test tests/editor-v6/rapidWindowsGates.test.cjs
+      - name: Verify the standard export panel has one primary action
+        run: node --test tests/editor-v6/exportSingleButton.test.cjs
       - name: Editor V6 timeline, export and scene tests
         run: npm run test:editor-v6
       - name: Build bundle required by Windows export parity

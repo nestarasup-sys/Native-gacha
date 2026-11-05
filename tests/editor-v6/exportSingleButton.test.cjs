@@ -1,0 +1,21 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { readFileSync } = require('node:fs')
+const { resolve } = require('node:path')
+const panel = readFileSync(resolve(__dirname, '../../src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx'), 'utf8')
+const css = readFileSync(resolve(__dirname, '../../src/renderer/src/ui/styles.css'), 'utf8')
+test('Editor V6 exposes one standard MP4 export action, no experimental mode selector', () => {
+  assert.equal((panel.match(/className="v6-export-primary"/g) || []).length, 1)
+  assert.match(panel, /'EXPORTAR MP4'/)
+  assert.doesNotMatch(panel, /setTestMode|EDITOR_V6_EXPORT_TEST_MODES|aria-pressed=\{testMode|v6-export-lab-modes|testMode\s*\}/)
+  assert.doesNotMatch(css, /\.v6-export-lab-(choice|grid|modes)/)
+})
+test('standard action uses the same 1080p Turbo CPU H264 hair/face/boca profile, without testMode override', () => {
+  assert.match(panel, /width:\s*1920,\s*height:\s*1080,\s*turbo:\s*true,\s*forceTurbo1080:\s*true,\s*encoder:\s*'cpu'/)
+  assert.match(panel, /mouthLoop:\s*true,\s*mouthLoopCycleFrames:\s*30/)
+  assert.match(panel, /hairPoseReactionOnly:\s*true,\s*hairPosteriorOnly:\s*true/)
+  const argument = panel.match(/options:\s*\{\s*\.\.\.options,\s*\.\.\.DEFAULT_EXPORT_SETTINGS,\s*mouthLoopCycleFrames:\s*options\.mouthLoopCycleFrames\s*\}/)
+  assert.ok(argument, 'The UI must send the default preset without experimental testMode.')
+  assert.match(panel, /onClick=\{\(\) => void start\(\)\}/)
+})
