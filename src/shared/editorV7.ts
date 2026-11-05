@@ -1,5 +1,6 @@
 /** Pure, renderer-independent document and scene contract for Editor V7. */
 import { z } from 'zod'
+export { editorV7IpcChannels } from './editorV7IpcChannels'
 
 export const EDITOR_V7_DOCUMENT_VERSION = 1 as const
 export const EDITOR_V7_TICKS_PER_SECOND = 90_000
@@ -35,7 +36,6 @@ export type EditorV7Document = {
 export type EditorV7ResolvedLayer = EditorV7Layer & { asset: EditorV7Asset }
 export type EditorV7Scene = { tick: number; background: string; layers: EditorV7ResolvedLayer[] }
 export type EditorV7ExportStatus = { id: string; state: 'preparing' | 'rendering' | 'completed' | 'cancelled' | 'failed'; frames: number; totalFrames: number; message: string; outputPath?: string; encoder?: string; milliseconds?: number; error?: string }
-export const editorV7IpcChannels = { startExport: 'editor-v7:export:start', getExportStatus: 'editor-v7:export:status', cancelExport: 'editor-v7:export:cancel', progress: 'editor-v7:export:progress', revealExport: 'editor-v7:export:reveal' } as const
 export type EditorV7DesktopApi = {
   startExport: (document: EditorV7Document) => Promise<string | null>
   getExportStatus: (id: string) => Promise<EditorV7ExportStatus>

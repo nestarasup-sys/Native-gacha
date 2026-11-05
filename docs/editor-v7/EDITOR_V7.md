@@ -140,3 +140,11 @@ Diretrizes para o desenho, sujeitas à investigação:
 - A primeira fatia de export está comprovada; V7 não está pronto para substituir V6 e a evolução continua.
 - Verificações finais desta fatia: 7 testes de core, 2 de renderer, 2 de rotas; `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram. Export autorizado final validado por `ffprobe`; inspeção visual do frame exportado confirmou a composição de quatro personagens e fundo.
 - Commit da implementação e da primeira exportação: `ed3fed15` (`feat(editor-v7): export MP4 through libvips pipeline`).
+
+### 05/11/2026 — correção de inicialização do preload
+
+- Ao investigar a tela em branco, o renderer mostrou `window.desktop` indefinido e a primeira exceção ocorreu em `CustomizerPage` ao acessar `window.desktop.customizer`.
+- Causa confirmada no bundle: `electron/preload.ts` importava `editorV7IpcChannels` do módulo `editorV7.ts`, que também importa `zod`; o build externalizava isso como `require("zod")`. Preload sandboxed do Electron não pode carregar essa dependência externa, então falhava antes de chamar `contextBridge.exposeInMainWorld`.
+- Os nomes de canal foram extraídos para `src/shared/editorV7IpcChannels.ts`, sem dependências runtime; o preload importa os canais desse módulo e os tipos do core como type-only.
+- Verificação: `npm run build` passou; o bundle `out/preload/preload.cjs` já não contém `require("zod")` e conserva os cinco canais V7. `npm run typecheck` passou. `npm run dev` abriu sem repetir a exceção `window.desktop` indefinido.
+- A falha do benchmark V6 às 12:16 foi efeito dessa mesma falha de preload; não chegou a preparar cabelo nem exportar quadros, portanto não mede o V6. O benchmark 40 s continua pendente.
