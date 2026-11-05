@@ -54,8 +54,16 @@ else {
         !Array.isArray(value.results) || value.results.length !== 7 ||
         value.results.some((item, i) => item.token !== i + 1 || typeof item.tokenAtPaint !== 'string' ||
           typeof item.byteEqual !== 'boolean' || !Number.isFinite(item.paintMs) ||
-          !Number.isFinite(item.captureMs) || item.width <= 0 || item.height <= 0) ||
-        (value.strictParityPassed && (value.mismatches !== 0 || value.results.some(x => x.tokenAtPaint !== String(x.token))))) {
+          !Number.isFinite(item.captureMs) || item.width <= 0 || item.height <= 0 ||
+          (item.paintBitmapToken !== null && !Number.isSafeInteger(item.paintBitmapToken)) ||
+          (item.captureBitmapToken !== null && !Number.isSafeInteger(item.captureBitmapToken)) ||
+          (item.differentScenePixels !== null && (!Number.isSafeInteger(item.differentScenePixels) ||
+            item.differentScenePixels < 0 || item.differentScenePixels > item.scenePixels)) ||
+          item.scenePixels !== 256 * 256 ||
+          (item.byteEqual !== (item.differentScenePixels === 0))) ||
+        (value.strictParityPassed && (value.mismatches !== 0 || value.results.some(x =>
+          x.tokenAtPaint !== String(x.token) || x.paintBitmapToken !== x.token ||
+          x.captureBitmapToken !== x.token)))) {
         problems.push(`R36: incomplete or contradictory research report in round ${round}`)
       }
     } catch (error) { problems.push(`R36: missing report in round ${round}: ${error.message}`) }

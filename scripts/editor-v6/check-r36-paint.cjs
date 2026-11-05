@@ -8,6 +8,7 @@ const fs = require('node:fs/promises')
 const os = require('node:os')
 const path = require('node:path')
 const { performance } = require('node:perf_hooks')
+const { analyzeR36Readback, compareR36ScenePixels } = require('./r36PaintMetrics.cjs')
 
 async function main() {
   if (!process.versions.electron) {
@@ -27,13 +28,13 @@ async function main() {
   app.setPath('userData', path.join(root, 'profile'))
   await app.whenReady()
   const window = new BrowserWindow({
-    show: false, width: 256, height: 256, useContentSize: true,
+    show: false, width: 280, height: 256, useContentSize: true,
     webPreferences: { offscreen: true, backgroundThrottling: false, sandbox: true, contextIsolation: true, nodeIntegration: false }
   })
   const timer = setTimeout(() => app.exit(1), 60000)
   let captureErrors = 0
   try {
-    await window.loadURL('data:text/html,' + encodeURIComponent('<!doctype html><html><body style="margin:0;background:transparent"><canvas id="c" width="256" height="256"></canvas></body></html>'))
+    await window.loadURL('data:text/html,' + encodeURIComponent('<!doctype html><html><body style="margin:0;background:transparent"><canvas id="c" width="280" height="256"></canvas></body></html>'))
     const results = []
     for (let i = 0; i < 7; i++) {
       // Paint events may be coalesced; subscribe before changing the scene.
@@ -59,6 +60,12 @@ async function main() {
         ctx.fillRect(${10 + i * 7}, 20, 90, 120)
         ctx.fillStyle = 'rgb(220, 40, 120)'
         ctx.fillRect(180, ${i * 13}, 40, 40)
+        // Physical 24-bit bitmap token outside the 256px scene, equivalent
+        // to the export worker's out-of-frame marker protocol.
+        for (let bit = 0; bit < 24; bit++) {
+          ctx.fillStyle = ((${token} >>> bit) & 1) ? '#ff0000' : '#000000'
+          ctx.fillRect(256 + (bit % 6) * 4, Math.floor(bit / 6) * 4, 4, 4)
+        }
         document.body.dataset.frameToken = '${token}'
         return document.body.dataset.frameToken
       })()`)
@@ -68,21 +75,26 @@ async function main() {
       const captureStart = performance.now()
       const captured = await window.webContents.capturePage()
       const captureMs = performance.now() - captureStart
-      const paintSize = image.getSize(), captureSize = captured.getSize()
-      const a = image.toBitmap(), b = captured.toBitmap()
-      const equal = paintSize.width === captureSize.width && paintSize.height === captureSize.height && a.equals(b)
+      const paintReadback = analyzeR36Readback(image, 256, 256)
+      const captureReadback = analyzeR36Readback(captured, 256, 256)
+      const differentScenePixels = compareR36ScenePixels(paintReadback, captureReadback, 256, 256)
+      const equal = differentScenePixels === 0
       if (!equal) captureErrors++
       results.push({ token, tokenAtPaint, paintMs: Math.round((time - start) * 1000) / 1000,
-        captureMs: Math.round(captureMs * 1000) / 1000, width: paintSize.width,
-        height: paintSize.height, byteEqual: equal, sameSize: paintSize.width === captureSize.width && paintSize.height === captureSize.height })
+        captureMs: Math.round(captureMs * 1000) / 1000, width: paintReadback.width,
+        height: paintReadback.height, byteEqual: equal,
+        sameSize: paintReadback.width === captureReadback.width && paintReadback.height === captureReadback.height,
+        paintBitmapToken: paintReadback.token, captureBitmapToken: captureReadback.token,
+        differentScenePixels, scenePixels: 256 * 256 })
     }
     const output = path.resolve(process.env.NATIVE_GACHA_TEST_OUTPUT_DIR || path.join(__dirname, '../../out'))
     await fs.mkdir(path.join(output, 'editor-v6-r36-paint'), { recursive: true })
     const summary = { experimental: true, productionEnabled: false, frames: results.length,
       exactMatches: results.filter(x => x.byteEqual).length, mismatches: captureErrors,
-      strictParityPassed: captureErrors === 0 && results.every(x => x.tokenAtPaint === String(x.token)),
+      strictParityPassed: captureErrors === 0 && results.every(x => x.tokenAtPaint === String(x.token) &&
+        x.paintBitmapToken === x.token && x.captureBitmapToken === x.token),
       resultKind: 'research-only', productionParityProven: false,
-      warning: 'paint event has no atomic frame token; even strict byte equality does not authorize production capture', results }
+      warning: 'research-only physical tokens are measured per bitmap; parity here still does not authorize production paint capture', results }
     await fs.writeFile(path.join(output, 'editor-v6-r36-paint', 'result.json'), JSON.stringify(summary, null, 2))
     console.log(JSON.stringify(summary))
     // This is a research measurement, not a production parity gate. Electron's
