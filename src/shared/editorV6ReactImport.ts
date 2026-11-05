@@ -217,7 +217,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     const actor = resolveCast(item.character)
     if(item.expression&&!byId.get(actor.characterId)?.customization.faceAppearance)throw new Error(actor.name+' não possui rosto configurado para a expressão especificada.')
     if (item.poseSlot !== undefined && item.poseSlot !== null && !(available.posesByCharacter.get(actor.characterId) ?? []).includes(item.poseSlot)) throw new Error('Pose ' + item.poseSlot + ' não encontrada para ' + actor.name)
-    events.push({ characterId:actor.characterId,startFrame:secondsToFrame(item.startSeconds),...(item.poseSlot !== undefined ? {poseSlot:item.poseSlot}:{}),...(item.expression ? {expression:resolvedExpression(actor,item.expression)}:{}),...(item.gaze ? {gaze:item.gaze}:{}),priority:2,sequence:i })
+    events.push({ characterId:actor.characterId,startFrame:secondsToFrame(item.startSeconds),...(item.poseSlot !== undefined ? {poseSlot:item.poseSlot}:{}),...(item.expression ? {expression:resolvedExpression(actor,item.expression)}:{}),...(item.gaze ? {gaze:item.gaze}:{}),priority:4,sequence:i })
   })
   const estimatedEnd = Math.max(1, ...videos.map((v) => v.startFrame+v.durationFrames), ...lines.map((v) => v.startFrame+v.durationFrames), ...events.map((v) => v.startFrame))
   const durationFrames = Math.max(estimatedEnd, source.durationSeconds !== undefined ? secondsToFrame(source.durationSeconds): estimatedEnd)
