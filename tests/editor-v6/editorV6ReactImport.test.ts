@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6MediaAsset } from '../../src/shared/editorV6'
-import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, planEditorV6ReactImport, secondsToFrame } from '../../src/shared/editorV6ReactImport'
+import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, planEditorV6ReactImport, resolveEditorV6ReactVideos, secondsToFrame } from '../../src/shared/editorV6ReactImport'
 
 const idA='123e4567-e89b-42d3-a456-426614174001'
 const idB='123e4567-e89b-42d3-a456-426614174002'
@@ -28,6 +28,16 @@ const references=()=>({
   media:[video]
 })
 describe('JSON portátil do Editor V6',()=>{
+  it('identifica vídeo pelo número ou nome real da Base de Vídeos',()=>{
+    const parsed=sample()
+    const library=[{id:videoId,name:'Clipe Principal.mp4',mimeType:'video/mp4' as const,extension:'mp4' as const,size:20000,durationFrames:180,createdAt:'2026-01-01T00:00:00.000Z',available:true}]
+    const details=[{videoId,videoNumber:7,description:'',timeline:'unspecified' as const}]
+    const numbered={...parsed,videos:[{videoNumber:7,startSeconds:0}]}
+    expect(resolveEditorV6ReactVideos(numbered,library,details).videos[0].videoId).toBe(videoId)
+    const named={...parsed,videos:[{videoName:'Clipe Principal.mp4',startSeconds:0}]}
+    expect(resolveEditorV6ReactVideos(named,library,details).videos[0].videoId).toBe(videoId)
+    expect(()=>resolveEditorV6ReactVideos({...parsed,videos:[{videoNumber:9,startSeconds:0}]},library,details)).toThrow(/não encontrado/)
+  })
   it('valida formato, mantém texto original e aplica os defaults',()=>{
     const parsed=sample()
     expect(parsed.autoPoseEverySeconds).toBe(15)
