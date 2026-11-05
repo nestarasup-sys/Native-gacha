@@ -112,6 +112,8 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   })
   if (new Set(cast.map((item) => item.characterId)).size !== cast.length) throw new Error('O elenco contém um personagem repetido.')
   const castById = new Map(cast.map((item) => [item.characterId, item]))
+  const tvX=source.videos[0]?.layout?.x??0
+  const frontGaze=(actor:ReactImportCast):'left'|'right'=>actor.gaze??(actor.x>tvX?'left':'right')
   const resolveCast = (name: string): ReactImportCast => {
     const character = resolveCharacter(name)
     const selected = castById.get(character.id)
@@ -157,7 +159,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     if (expression) usedInitialExpressions.add(expression)
     else warnings.push(actor.name + ': sem expressão disponível; será usada a aparência facial original.')
     selectedEmotion.set(actor.characterId, expression)
-    return { characterId: actor.characterId, startFrame: 0, poseSlot, ...(expression ? { expression } : {}), gaze: actor.gaze ?? 'right' }
+    return { characterId: actor.characterId, startFrame: 0, poseSlot, ...(expression ? { expression } : {}), gaze: frontGaze(actor) }
   })
   const mediaById = new Map(available.media.map((item) => [item.libraryVideoId ?? item.id, item]))
   const videos = source.videos.map((item) => {
@@ -209,12 +211,18 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     const speeches=[...lines].filter((line)=>line.kind==='speech').sort((a,b)=>a.startFrame-b.startFrame)
     const boundaryFrames=[...new Set(speeches.flatMap((line)=>[line.startFrame,line.startFrame+line.durationFrames]))].sort((a,b)=>a-b)
     for(const listener of cast){
-      let previous=listener.gaze??'right'
+      let previous=frontGaze(listener)
       for(const frame of boundaryFrames){
-        const active=speeches.filter((line)=>line.characterId!==listener.characterId&&line.startFrame<=frame&&frame<line.startFrame+line.durationFrames)
+        const active=speeches.filter((line)=>{
+          if(line.characterId===listener.characterId||line.startFrame>frame||frame>=line.startFrame+line.durationFrames)return false
+          const speaker=castById.get(line.characterId)!
+          const sameSide=(speaker.x-tvX)*(listener.x-tvX)>0
+          const listenerInFront=Math.abs(listener.x-tvX)<Math.abs(speaker.x-tvX)
+          return sameSide&&listenerInFront
+        })
         const speaker=active.at(-1)
         const speakerPosition=speaker?castById.get(speaker.characterId):undefined
-        const looking:'left'|'right'=speakerPosition?(speakerPosition.x<listener.x?'left':'right'):(listener.gaze??'right')
+        const looking:'left'|'right'=speakerPosition?(speakerPosition.x<listener.x?'left':'right'):frontGaze(listener)
         if(looking!==previous){
           events.push({characterId:listener.characterId,startFrame:frame,gaze:looking,priority:3,sequence:frame})
           previous=looking
