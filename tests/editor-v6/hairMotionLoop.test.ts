@@ -63,6 +63,21 @@ describe('V6 experimental numerical hair loop', () => {
     expect(hairMotionLatestPoseEnd(events.get('actor')!, 61)).toBe(29)
     expect(hairMotionLatestPoseEnd(events.get('actor')!, 92)).toBe(90)
   })
+  it('keeps the same post-pose curve when an expression changes 18 frames later', () => {
+    const pose = { elementId: 'actor', endFrame: 1800, fromElement: { poseSlot: 6 }, toElement: { poseSlot: 3 } }
+    const expression = { elementId: 'actor', endFrame: 1818, fromElement: { poseSlot: 3 }, toElement: { poseSlot: 3 } }
+    const poseOnly = hairMotionPoseReactionEndFrames([pose]).get('actor')!
+    const poseAndExpression = hairMotionPoseReactionEndFrames([pose, expression]).get('actor')!
+    expect(poseAndExpression).toEqual(poseOnly)
+
+    for (let frame = 1799; frame <= 1830; frame += 1) {
+      const withoutExpression = new Float32Array(9)
+      const withExpression = new Float32Array(9)
+      sampleHairMotionPoseReaction(withoutExpression, settings, frame, hairMotionLatestPoseEnd(poseOnly, frame), 1.7)
+      sampleHairMotionPoseReaction(withExpression, settings, frame, hairMotionLatestPoseEnd(poseAndExpression, frame), 1.7)
+      expect([...withExpression]).toEqual([...withoutExpression])
+    }
+  })
   it('swings once after the pose and then rests in the exact original position', () => {
     const offsets = new Float32Array(9)
     const tip: number[] = []
