@@ -1579,6 +1579,25 @@ O objetivo é o melhor equilíbrio entre velocidade, qualidade, robustez e manut
 
 **Problemas ainda abertos:** missão de ≤30 s não cumprida; bugs visuais do cabelo não reproduzidos/inspecionados adequadamente; comparação histórica de 92 s não tem configuração idêntica; qualidade visual comparativa de hair/no-hair não aprovada; custo de captura, encoder e composição precisa ser isolado. Os seis exports completos anteriores servem como baseline inicial e não devem ser repetidos a cada hipótese.
 
+### Investigação visual — transições de pose e variação vertical (05/11/2026)
+
+**Relato:** no projeto autorizado, as duas primeiras trocas de pose pareceram estáticas e outras personagens parecem crescer rapidamente na vertical durante a transição.
+
+**Causa ainda não confirmada; sem alteração de runtime nesta investigação.** O plano atual usa transições de 250 ms, amostradas em sete quadros a 30 FPS. As duas primeiras trocas do documento são `test` (pose 1→6 no quadro 450) e `hino` (pose 3→1 no quadro 1350). As revisões de pose diferem entre os endpoints, mas continuam sendo o mesmo personagem, modelo e componentes. O agendador atual gera plano e chave para ambas; a revisão da pose é incluída na chave do cache. Portanto, a hipótese anterior de que a diferença de revisão bloqueasse essas transições foi descartada.
+
+**Reprodução focada no export real, cabelo Preset 1:** foram executados dois trechos isolados de 30 quadros (1 s), sem repetir a timeline inteira:
+
+| Troca | Janela exportada | Resultado técnico | Inspeção visual |
+|---|---:|---|---|
+| `test`, pose 1→6 | quadros 443–472 | export MP4 validado, 1920×1080/30 FPS, áudio e vídeo; 1/1 transição preparada; parede 12,81 s | há quadros de transição no contato extraído; a pose muda gradualmente, mas o movimento é curto e pode parecer abrupto |
+| `hino`, pose 3→1 | quadros 1343–1372 | export MP4 validado, 1920×1080/30 FPS, áudio e vídeo; 1/1 transição preparada; parede 14,30 s | ator está em x=-43% da cena e quase todo fora do enquadramento, reduzindo muito a leitura visual da mudança |
+
+Resultados completos e contatos estão em `out/editor-v6-stress/runs/actual-project-2026-11-05T12-29-47-324Z-8884/` e `out/editor-v6-stress/runs/actual-project-2026-11-05T12-31-53-577Z-8884/` (arquivos ignorados pelo Git). Esses exports curtos confirmam que o pipeline prepara as transições citadas, mas não reproduzem uma falha do agendador. Eles **não aprovam** toda a timeline nem explicam por que o aumento vertical foi percebido.
+
+**Escala dos endpoints:** nos cinco blocos de troca de pose do documento, altura salva varia no máximo ~0,53% entre cada par de endpoints (eixo vertical da timeline); `characterScale` e `characterHeightScale` permanecem iguais. O bake calcula escala de cada endpoint a partir do recorte alfa e escala vertical intermediária a partir das dimensões do recorte de cada amostra. Um recorte intermediário pode variar conforme a silhueta da pose; ainda falta capturar e medir os limites alfa/renderizados ao longo de uma troca que manifeste o salto. Não substituir essa geometria por uma caixa interpolada sem essa medição, pois poderia deformar ou cortar cabelo e membros.
+
+**Próxima ação:** obter o timecode ou personagem/quadro onde o salto vertical é visível e inspecionar os quadros anterior, intermediários e posterior em resolução original; medir caixa alfa e retângulo efetivamente desenhado, identificar se o salto vem do recorte, do conteúdo da pose ou da montagem/exportação e então corrigir no dono da regra. Manter o ciclo curto (uma janela, uma hipótese, uma execução) e validar no mesmo trecho. Nenhuma correção visual foi declarada concluída nesta etapa.
+
 **Estado Git da retomada:** commit desta alteração `1854a62b0df336b58a86b3c2880d724a816c7fde`; commits prévios da missão `cc27b5f382ef699fa323968b0148578be8f09c98`, `7c1a082950da3173c35110eb37f0e405d5de6b2e`, `a96d6ac1178ee2d38a647baa506f60118733da2d` e `da91080da366dd3f23a020baf9215a66334d09e7`. O perfil, mídias, caches e resultados sob `out/` não foram incluídos.
 
 **Experimentos:** `EXP-E0-001` — gate unitário (aprovado; não comprova export); `EXP-E0-002` — backup/identidade do projeto (aprovado por SHA-256); `EXP-E5-001` — baseline de cabelo (3 exports completos válidos, meta falhou); `EXP-E5-002` — controle sem cabelo (3 exports completos válidos, meta falhou); `EXP-E5-003` — SSIM entre rodadas (paridade temporal alta/repetição exata em aquecidos); `EXP-E5-004` — consultas de perda WebGL por camada (DESCARTAR: nenhum ganho, SSIM igual); `EXP-E5-005` — buffer WebGL grow-only/estado persistente (ADOTAR segmentar: -33,7% no tempo de export e SSIM All=1.000000 no trecho). Próxima decisão: ampliar o candidato a 40 s e perseguir ≤15 s.
