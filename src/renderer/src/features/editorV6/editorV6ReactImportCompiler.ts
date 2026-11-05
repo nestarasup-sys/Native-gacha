@@ -49,10 +49,13 @@ export async function compileEditorV6ReactImport(
 ): Promise<EditorV6ReactPrepared> {
   const projectId=uuid()
   const media=[], seen=new Set<string>()
-  for(const video of source.videos) if(!seen.has(video.videoId)){
-    seen.add(video.videoId)
-    onProgress('Verificando mídia ' + seen.size + '/' + new Set(source.videos.map((item)=>item.videoId)).size)
-    media.push(await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId,video.videoId))
+  for(const video of source.videos){
+    const videoId=video.videoId
+    if(!videoId)throw new Error('Os vídeos precisam ser resolvidos para IDs antes da compilação.')
+    if(seen.has(videoId))continue
+    seen.add(videoId)
+    onProgress('Verificando mídia ' + seen.size + '/' + source.videos.length)
+    media.push(await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId,videoId))
   }
   const plan=planEditorV6ReactImport(source,{
     characters:sources.characters,posesByCharacter:sources.poseSlots,presetsByModel:sources.presets,media
