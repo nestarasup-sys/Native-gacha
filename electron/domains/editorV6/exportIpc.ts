@@ -13,6 +13,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 import type { EditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
 import { parseEditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
 import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import { editorV6ExportModeFileSuffix } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6WorkerFactory } from './exportWorkers'
 import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
 import type { EditorV6MotionCacheStats } from './motionCache'
@@ -157,14 +158,15 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     const folder = await readExportFolder()
     const id = randomUUID()
     const name = project.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/g, '').slice(0, 100) || 'Video'
+    const titleWithMode = name + editorV6ExportModeFileSuffix(options.testMode)
     let outputPath: string
     if (folder) {
       const info = await stat(folder).catch(() => null)
       if (!info?.isDirectory()) throw Error('A pasta fixa de exportação não está disponível. Escolha outra pasta no painel.')
-      outputPath = join(folder, `${name} - ${id}.mp4`)
+      outputPath = join(folder, `${titleWithMode} - ${id}.mp4`)
     } else {
       const owner = BrowserWindow.fromWebContents(event.sender)
-      const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: name + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
+      const saveOptions = { title: 'Editor V6: exportar MP4', defaultPath: titleWithMode + '.mp4', filters: [{ name: 'Vídeo MP4', extensions: ['mp4'] }] }
       const destination = owner ? await dialog.showSaveDialog(owner, saveOptions) : await dialog.showSaveDialog(saveOptions)
       if (destination.canceled || !destination.filePath) return null
       outputPath = destination.filePath.toLowerCase().endsWith('.mp4') ? destination.filePath : destination.filePath + '.mp4'
@@ -172,15 +174,18 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     assertAvailable()
     if ([...jobs.values()].some((job) => !terminal(job.status))) throw Error('Outra exportação já foi iniciada.')
     const controller = new AbortController(), reportPath = join(deps.projectPath(project.id), 'exports', `${id}.report.json`)
-    const status: EditorV6ExportStatus = { id, state: 'preparing', frames: 0, totalFrames: options.endFrame - options.startFrame, message: 'Verificando codificador e preparando exportação…', fallback: false, reportPath }
+    const status: EditorV6ExportStatus = { id, state: 'preparing', frames: 0, totalFrames: options.endFrame - options.startFrame, message: 'Verificando codificador e preparando exportação…', fallback: false, reportPath, ...(options.testMode ? { testMode: options.testMode } : {}) }
     const job: Job = { owner: event.sender.id, status, controller, promise: Promise.resolve() }
     jobs.set(id, job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
     job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }, undefined, hairAnimation).then((report) => {
       const mouth = report.mouthAnimation
-      const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
-      job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message }
+      const totalExportMilliseconds = report.milliseconds === undefined ? undefined : report.milliseconds + (report.hairPreparation?.totalMilliseconds ?? 0)
+      const seconds = totalExportMilliseconds === undefined ? 'não medido' : `${(totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s`
+      const modeNote = options.testMode ? ` Modo ${options.testMode} · ${seconds} incluindo preparo.` : ''
+      const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${modeNote}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
+      job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message, ...(totalExportMilliseconds !== undefined ? { totalExportMilliseconds } : {}) }
     }, (error: unknown) => {
       const cancelled = controller.signal.aborted
       job.status = { ...job.status, state: cancelled ? 'cancelled' : 'failed', error: error instanceof Error ? error.message : String(error), message: cancelled ? 'Exportação cancelada.' : 'A exportação falhou. Consulte o relatório.' }

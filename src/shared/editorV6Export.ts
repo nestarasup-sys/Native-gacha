@@ -16,7 +16,7 @@ export const EDITOR_V6_ENCODER_CHOICES = [
 ] as const satisfies ReadonlyArray<{ value: EditorV6ExportOptions['encoder']; label: string }>
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
-  frames: number; totalFrames: number; message: string; fallback: boolean; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
+  frames: number; totalFrames: number; message: string; fallback: boolean; testMode?: EditorV6ExportTestMode; totalExportMilliseconds?: number; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
 }
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
 export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; sourceAssetId?: string; baseAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; frames: EditorV6MotionFrame[] }

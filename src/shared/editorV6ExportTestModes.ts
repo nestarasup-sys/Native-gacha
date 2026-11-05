@@ -38,3 +38,10 @@ export function editorV6ExportTestSettings(mode?: EditorV6ExportTestMode): Edito
   if (mode !== undefined && !isEditorV6ExportTestMode(mode)) throw Error('Modo de teste de exportação inválido.')
   return settings[mode ?? 'controle']
 }
+
+/** A mode suffix is intentionally absent for old, non-laboratory callers. */
+export function editorV6ExportModeFileSuffix(mode?: EditorV6ExportTestMode): string {
+  if (mode === undefined) return ''
+  if (!isEditorV6ExportTestMode(mode)) throw Error('Modo de teste de exportação inválido.')
+  return ' - ' + mode
+}

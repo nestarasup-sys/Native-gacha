@@ -35,3 +35,7 @@ npm run bench:editor-v6:compare -- --reference-report="C:\\...\\baseline-origina
 ```
 
 Acrescente quantos `--candidate` forem necessários, inclusive dos outros modos. O programa não imprime caminhos nem IDs. Ele agrupa mediana por `options.testMode`, exige três execuções por modo para apontar vencedor e recusa resultados sem confirmação do mesmo projeto. Mesmo assim a paridade visual precisa ser inspecionada no MP4.
+
+## Resultado visível no app
+
+Após concluir, o painel informa o **modo efetivamente usado** e o tempo aproximado da exportação **incluindo a preparação do cabelo**, além de mostrar o MP4 e relatório. Ao usar pasta fixa, o nome do arquivo contém o identificador do modo (`- captura-8 - <job-id>.mp4`, por exemplo). Sem modo selecionado nos chamadores históricos, a nomenclatura anterior permanece.
