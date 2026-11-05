@@ -65,6 +65,12 @@ describe('JSON portátil do Editor V6',()=>{
     const beats=planEditorV6ReactImport(opposite,references()).beats
     expect(beats.some((beat)=>beat.characterId===idB&&beat.startFrame===180&&beat.gaze==='left')).toBe(false)
   })
+  it('preserva direção manual no mesmo frame de PT automático',()=>{
+    const source=sample()
+    const beats=planEditorV6ReactImport({...source,beats:[...source.beats,{character:'Luka',startSeconds:6,gaze:'right' as const}]},references()).beats
+    const gaze=beats.find((beat)=>beat.characterId===idB&&beat.startFrame===180)
+    expect(gaze?.gaze).toBe('right')
+  })
   it('escolhe poses iniciais distintas quando disponíveis e só uma troca por intervalo',()=>{
     const plan=planEditorV6ReactImport(sample(),references())
     const initials=plan.beats.filter((b)=>b.startFrame===0)
