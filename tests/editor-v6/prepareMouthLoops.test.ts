@@ -138,6 +138,8 @@ describe('preparação dos loops de boca do Editor V6', () => {
     }, 0, 2)
     expect(prepared.stats.states).toBe(501)
     expect(prepared.project.assets).toHaveLength(501)
+    expect(project.assets).toHaveLength(0)
+    expect(prepared.project.assets.map(asset => asset.id)).toEqual(prepared.mouthLoops.states.map(state => state.assetId))
     expect(bakeCalls).toBe(501)
     expect(firstRequest?.maxAtlasPixels).toBeLessThan(64_000)
     expect(() => parseEditorV6MotionRequest(firstRequest)).not.toThrow()

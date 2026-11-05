@@ -28,8 +28,9 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     throw Error(`A aparência salva de ${state.text || character.name} está desatualizada em relação ao Customizador. Aguarde a atualização automática no Editor V6 antes de exportar novamente.`)
   }
 
+  const plans = editorV6MotionPlans(project)
   const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame).map((plan) => plan.blockId))
-  const missing = editorV6MotionPlans(project).filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
+  const missing = plans.filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
     && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
   const groups = new Map<string, typeof missing>()
   for (const plan of missing) {
@@ -44,7 +45,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     if (!motion || !editorV6MotionHasAvailableAssets(motion, assets)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)
   }
-  const plansByBlock = new Map(editorV6MotionPlans(project).map((plan) => [plan.blockId, plan]))
+  const plansByBlock = new Map(plans.map((plan) => [plan.blockId, plan]))
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const groupedPlans = [...groups.values()]
   // Group work per character so each warm Electron worker can reuse its

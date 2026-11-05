@@ -98,7 +98,10 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   }
 
   const states: EditorV6ExportMouthLoopState[] = []
-  let atlasBytes = 0, atlasPixels = 0, isolatedStates = 0, legacyPatchStates = 0, projectWithAssets = project
+  let atlasBytes = 0, atlasPixels = 0, isolatedStates = 0, legacyPatchStates = 0
+  // Append in one operation. Thousands of distinct mouth states used to copy
+  // the growing array of encoded atlas references after every state.
+  const appendedAssets: EditorV6Document['assets'] = []
   const errors: string[] = []
   const statePixelBudget = Math.min(MAX_SINGLE_ATLAS_PIXELS, Math.floor(MAX_ATLAS_PIXELS / candidates.length / concurrentParts))
   const stateByteBudget = Math.floor(MAX_ATLAS_BYTES / candidates.length / concurrentParts)
@@ -161,13 +164,13 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
     if (result.mouthIsolationMode === 'isolated-piece') isolatedStates++
     else legacyPatchStates++
     if (atlasBytes > MAX_ATLAS_BYTES || atlasPixels > MAX_ATLAS_PIXELS) throw Error('As camadas faciais excedem o limite seguro de memória; reduza o número de personagens simultâneos neste trecho.')
-    projectWithAssets = { ...projectWithAssets, assets: [...projectWithAssets.assets, result.asset, ...additionalAssets.map((entry) => entry.asset)] }
+    appendedAssets.push(result.asset, ...additionalAssets.map((entry) => entry.asset))
     const baseAssetIds = additionalAssets.length ? Object.fromEntries(additionalAssets.map((entry) => [entry.faceMode, entry.asset.id])) as NonNullable<EditorV6ExportMouthLoopState['baseAssetIds']> : undefined
     states.push({ elementId: candidate.state.id, characterId: candidate.character.id, blockIds: candidate.blockIds, assetId: result.asset.id, sourceAssetId: candidate.state.assetId, ...(baseAssetIds ? { baseAssetIds } : {}), frames: result.motion.frames })
   }
   deps.progress(candidates.length, candidates.length, 'Animação da boca pronta')
   return {
-    project: projectWithAssets,
+    project: { ...project, assets: [...project.assets, ...appendedAssets] },
     mouthLoops: { startFrame: phaseStartFrame, cycleFrames, states } satisfies EditorV6ExportMouthLoops,
     stats: { states: states.length, characters: new Set(states.map((state) => state.characterId)).size, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates, legacyPatchStates, atlasBytes, atlasPixels, errors, milliseconds: performance.now() - began }
   }
