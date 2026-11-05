@@ -10,7 +10,7 @@
 
 **Tarefas concluídas nesta retomada:** E0-T001 (backup verificado), E0-T002 (runner do projeto autorizado), E0-T003 (baseline cabelo/controle sem cabelo), E5-T001 (perfil do gargalo). **Pendentes:** E4-T001 (validar continuidade/cobertura visual), E5-T002 (otimização estrutural), E5-T003 (alcançar ≤30 s e repetir em 3 exports).
 
-**Último commit de código da missão:** `cc27b5f382ef699fa323968b0148578be8f09c98` (`perf(editor-v6): add focused segment export profiling`). Registro anterior do Markdown: `7c1a082950da3173c35110eb37f0e405d5de6b2e`. Branch `Dev-V2`; no registro anterior, 8 commits à frente de `origin/Dev-V2`.
+**Último commit de código da missão:** `1854a62b0df336b58a86b3c2880d724a816c7fde` (`perf(editor-v6): retain grow-only hair mesh buffer`). Branch `Dev-V2`; após este commit, 10 commits à frente de `origin/Dev-V2`.
 
 **Resultado segmentar mais recente:** 42,64 s ponta a ponta (9,23 s preparo + 33,41 s export) para 20 s de vídeo; baseline comparável 59,76 s (9,38 + 50,37). SSIM do vídeo resultante contra os baselines: All=1.000000. Ganho neste trecho, não prova ainda a meta de export integral ≤30 s.
 
@@ -1579,6 +1579,6 @@ O objetivo é o melhor equilíbrio entre velocidade, qualidade, robustez e manut
 
 **Problemas ainda abertos:** missão de ≤30 s não cumprida; bugs visuais do cabelo não reproduzidos/inspecionados adequadamente; comparação histórica de 92 s não tem configuração idêntica; qualidade visual comparativa de hair/no-hair não aprovada; custo de captura, encoder e composição precisa ser isolado. Os seis exports completos anteriores servem como baseline inicial e não devem ser repetidos a cada hipótese.
 
-**Estado Git da retomada:** commits seletivos de código/documentação: `cc27b5f382ef699fa323968b0148578be8f09c98`, `7c1a082950da3173c35110eb37f0e405d5de6b2e`, `a96d6ac1178ee2d38a647baa506f60118733da2d` e `da91080da366dd3f23a020baf9215a66334d09e7`. O perfil, mídias, caches e resultados sob `out/` não foram incluídos.
+**Estado Git da retomada:** commit desta alteração `1854a62b0df336b58a86b3c2880d724a816c7fde`; commits prévios da missão `cc27b5f382ef699fa323968b0148578be8f09c98`, `7c1a082950da3173c35110eb37f0e405d5de6b2e`, `a96d6ac1178ee2d38a647baa506f60118733da2d` e `da91080da366dd3f23a020baf9215a66334d09e7`. O perfil, mídias, caches e resultados sob `out/` não foram incluídos.
 
 **Experimentos:** `EXP-E0-001` — gate unitário (aprovado; não comprova export); `EXP-E0-002` — backup/identidade do projeto (aprovado por SHA-256); `EXP-E5-001` — baseline de cabelo (3 exports completos válidos, meta falhou); `EXP-E5-002` — controle sem cabelo (3 exports completos válidos, meta falhou); `EXP-E5-003` — SSIM entre rodadas (paridade temporal alta/repetição exata em aquecidos); `EXP-E5-004` — consultas de perda WebGL por camada (DESCARTAR: nenhum ganho, SSIM igual); `EXP-E5-005` — buffer WebGL grow-only/estado persistente (ADOTAR segmentar: -33,7% no tempo de export e SSIM All=1.000000 no trecho). Próxima decisão: ampliar o candidato a 40 s e perseguir ≤15 s.
