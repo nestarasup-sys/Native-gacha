@@ -12,6 +12,7 @@ type EditorV6FileIpcDependencies = {
   showOpenDialog: (options: OpenDialogOptions) => Promise<OpenDialogReturnValue>
   libraryPath: () => string
   projectPath: (id: string) => string
+  resolveBackground: (id: string) => Promise<{ path: string; mimeType: string; name: string }>
   files: {
     stat: (path: string) => Promise<{ size: number }>
     readFile: (path: string) => Promise<Buffer>
@@ -50,6 +51,14 @@ export function registerEditorV6FileHandlers(deps: EditorV6FileIpcDependencies):
     if ((await deps.files.stat(path)).size > MAX_IMAGE_BYTES) throw new Error('A imagem excede o limite de 50 MB.')
     const canonical = await deps.normalizeImage(await deps.files.readFile(path))
     return { id: deps.createId(), category, name: basename(path), mimeType: 'image/png', dataUrl: `data:image/png;base64,${canonical.bytes.toString('base64')}` }
+  })
+  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryBackground, async (event, id: string): Promise<EditorV6Asset> => {
+    deps.assertTrustedSender(event)
+    if (typeof id !== 'string' || !UUID_V4.test(id)) throw new Error('Identificador de fundo inválido.')
+    const background = await deps.resolveBackground(id)
+    if ((await deps.files.stat(background.path)).size > MAX_IMAGE_BYTES) throw new Error('O fundo excede o limite de 50 MB.')
+    const canonical = await deps.normalizeImage(await deps.files.readFile(background.path))
+    return { id: deps.createId(), category: 'background', name: background.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,' + canonical.bytes.toString('base64') }
   })
   deps.ipcMain.handle(editorV6IpcChannels.saveEditorV6Print, async (event, id: string, dataUrl: string): Promise<string | null> => {
     deps.assertTrustedSender(event)
