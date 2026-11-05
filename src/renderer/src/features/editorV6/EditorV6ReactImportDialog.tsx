@@ -30,14 +30,17 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
       setChecking(true)
       const library=await window.desktop.mediaLibrary.list()
       const ids=new Set(library.filter((item)=>item.available).map((item)=>item.id))
+      const backgrounds=parsed.backgroundLibraryId?await window.desktop.videoBackgrounds.listVideoBackgroundLibrary():[]
+      const missingBackground=parsed.backgroundLibraryId&&!backgrounds.some((item)=>item.id===parsed.backgroundLibraryId&&item.available)
       const missingVideos=[...new Set(parsed.videos.map((item)=>item.videoId))].filter((id)=>!ids.has(id))
       const missingCharacters=parsed.cast.filter((actor)=>{
         const key=actor.character.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
         return !characters.some((item)=>item.id.toLowerCase()===key||item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()===key)
       })
-      if(missingVideos.length||missingCharacters.length){
+      if(missingVideos.length||missingCharacters.length||missingBackground){
         setError([
           ...missingVideos.map((id)=>'Vídeo ausente na Base de Vídeos: '+id),
+          ...(missingBackground?['Fundo ausente na biblioteca: '+parsed.backgroundLibraryId]:[]),
           ...missingCharacters.map((actor)=>'Personagem não encontrado: '+actor.character)
         ].join('\n'))
       }else{
