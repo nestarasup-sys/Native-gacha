@@ -60,3 +60,5 @@ O projeto histórico foi alterado e **não** pode mais ser comparado com este; m
 **Essas mudanças são código submetido à validação, não tempos do novo projeto medidos nem meta atingida.**
 
 - P3 (boca): preparação das fontes agrupada por personagem, com até duas requisições concorrentes, resultados reconstruídos na ordem original da timeline, orçamentos de atlas sem relaxamento e abort compartilhado. Regressões novas cobrem simultaneidade, ordem e cancelamento. O número de workers Electron físicos permanece limitado a dois; resultado de tempo real ainda não medido.
+
+- P0 (rastreabilidade): `electron.vite.config.ts` agora incorpora o SHA do checkout no bundle Main e um indicador de arquivos rastreados modificados no momento do build. O relatório MP4 registra `runtime.buildSha` e `runtime.workingTreeDirty` quando disponíveis, inclusive em executáveis portáteis sem pasta `.git`. Se o app for modificado depois de compilado, é preciso recompilar para a medição representar o código novo.

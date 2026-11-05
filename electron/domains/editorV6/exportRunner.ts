@@ -13,6 +13,9 @@ import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type E
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
+
+declare const __NATIVE_GACHA_BUILD_SHA__: string
+declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
 type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
 export type MediaProbe = { streams: StreamProbe[]; format: { duration?: string } }
 export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count = false): Promise<MediaProbe> {
@@ -26,7 +29,7 @@ type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reus
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 type ExportPhaseTimings = Record<ExportPhase, number>
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
@@ -113,10 +116,12 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
-  const revision = process.env.NATIVE_GACHA_BUILD_SHA
+  const compiledSha = typeof __NATIVE_GACHA_BUILD_SHA__ === 'string' ? __NATIVE_GACHA_BUILD_SHA__ : ''
+  const revision = process.env.NATIVE_GACHA_BUILD_SHA || compiledSha
   const runtime = { platform: process.platform, arch: process.arch, osRelease: osRelease(), node: process.versions.node,
     ...(process.versions.electron ? { electron: process.versions.electron } : {}),
-    ...(revision && /^[0-9a-f]{7,40}$/i.test(revision) ? { buildSha: revision } : {}) }
+    ...(revision && /^[0-9a-f]{7,40}$/i.test(revision) ? { buildSha: revision } : {}),
+    ...(typeof __NATIVE_GACHA_BUILD_DIRTY__ === 'boolean' ? { workingTreeDirty: __NATIVE_GACHA_BUILD_DIRTY__ } : {}) }
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, runtime, videoInputs: new Set(planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
