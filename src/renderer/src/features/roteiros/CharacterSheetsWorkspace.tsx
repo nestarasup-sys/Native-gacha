@@ -30,8 +30,6 @@ export function CharacterSheetsWorkspace({ characters }: { characters: Customize
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const pendingRef = useRef<Promise<void> | null>(null)
   const saveChainRef = useRef<Promise<void>>(Promise.resolve())
-  const sheetsRef = useRef(sheets)
-  sheetsRef.current = sheets
 
   useEffect(() => {
     let cancelled = false
@@ -94,7 +92,7 @@ export function CharacterSheetsWorkspace({ characters }: { characters: Customize
       <div className="character-sheets-list">{visible.map((character) => { const percent = completion(byCharacter.get(character.id) ?? emptySheet(character)); return <button className={selected?.id === character.id ? 'selected' : ''} key={character.id} onClick={() => setSelectedId(character.id)} type="button"><RenderedCharacterPortrait className="character-sheets-avatar" character={character} /><span><strong>{character.name}</strong><small>{percent === 0 ? 'Ficha vazia' : `${percent}% preenchido`}</small></span><i style={{ '--sheet-progress': `${percent}%` } as React.CSSProperties} /></button> })}</div>
     </aside>
     <main className="character-sheets-main">
-      <div className={`character-sheet-save ${loadError || saveState === 'error' ? 'error' : saveState}`} role="status">{loadError ? `Falha ao carregar: ${loadError}` : saveState === 'saving' ? 'Salvando alterações…' : saveState === 'error' ? 'Falha ao salvar · tente editar novamente' : 'Alterações salvas'}</div>
+      <div className={`character-sheet-save ${loadError || saveState === 'error' ? 'error' : saveState}`} role="status">{loadError ? `Falha ao carregar: ${loadError}` : saveState === 'saving' ? 'Salvando alterações…' : saveState === 'error' ? <>Falha ao salvar <button type="button" onClick={() => { void persistLatest().catch(() => undefined) }}>Tentar novamente</button></> : 'Alterações salvas'}</div>
       {loadError ? <div className="character-sheets-empty"><strong>Não foi possível abrir as fichas</strong><span>{loadError}</span><button type="button" onClick={() => { setLoadError(''); setLoaded(false); void window.desktop.roteiros.listCharacterSheets().then((stored) => { setSheets(stored); setLoaded(true) }).catch((error: unknown) => { setLoadError(error instanceof Error ? error.message : 'Não foi possível carregar as fichas.'); setLoaded(true) }) }}>Tentar novamente</button></div> : sheet && selected ? <section className="character-sheet-editor" key={selected.id}>
         <header className="character-sheet-hero"><RenderedCharacterPortrait className="character-sheet-hero-avatar" character={selected} /><div><span>PERSONAGEM DO CUSTOMIZADOR</span><h2>{selected.name}</h2><p>Ficha narrativa local. Nenhum dado foi copiado do projeto legado.</p></div><div className="character-sheet-completion"><strong>{completion(sheet)}%</strong><small>preenchido</small></div></header>
         <div className="character-sheet-fields">{fields.map((field) => <label key={field.key}><span>{field.label}</span><small>{field.hint}</small><textarea rows={field.rows} maxLength={field.limit} placeholder={field.placeholder} value={sheet[field.key]} onChange={(event) => update({ [field.key]: event.target.value })} /></label>)}</div>
