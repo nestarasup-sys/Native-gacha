@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, type EditorV6ReactImport } from '../../../../shared/editorV6ReactImport'
+import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, resolveEditorV6ReactVideos, type EditorV6ReactImport } from '../../../../shared/editorV6ReactImport'
 import { compileEditorV6ReactImport, prepareEditorV6ReactSources } from './editorV6ReactImportCompiler'
 
 type Props={
@@ -26,13 +26,14 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
     if(file.size>2_000_000){setError('O JSON excede o limite de 2 MB.');return}
     try{
       const parsed=parseEditorV6ReactImport(JSON.parse(await file.text()) as unknown)
-      setSource(parsed)
       setChecking(true)
-      const library=await window.desktop.mediaLibrary.list()
+      const [library,details]=await Promise.all([window.desktop.mediaLibrary.list(),window.desktop.baseVideos.listDetails()])
+      const resolved=resolveEditorV6ReactVideos(parsed,library,details)
+      setSource(resolved)
       const ids=new Set(library.filter((item)=>item.available).map((item)=>item.id))
       const backgrounds=parsed.backgroundLibraryId?await window.desktop.videoBackgrounds.listVideoBackgroundLibrary():[]
       const missingBackground=parsed.backgroundLibraryId&&!backgrounds.some((item)=>item.id===parsed.backgroundLibraryId&&item.available)
-      const missingVideos=[...new Set(parsed.videos.map((item)=>item.videoId))].filter((id)=>!ids.has(id))
+      const missingVideos=[...new Set(resolved.videos.map((item)=>item.videoId))].filter((id)=>!id||!ids.has(id))
       const missingCharacters=parsed.cast.filter((actor)=>{
         const key=actor.character.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
         return !characters.some((item)=>item.id.toLowerCase()===key||item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()===key)
