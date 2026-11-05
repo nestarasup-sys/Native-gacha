@@ -120,4 +120,4 @@ Diretrizes para o desenho, sujeitas à investigação:
 - Consultadas documentações primárias do Electron, WebCodecs e FFmpeg; registrado que shared texture é experimental e WebCodecs não muxa MP4.
 - Nenhum código de produto, projeto de usuário, dado ou exportação foi alterado nesta etapa.
 - Verificação executada: leitura do estado do Git e inspeção estática dos contratos/caminhos citados. Testes de produto não se aplicam a esta primeira nota documental.
-- Commit pendente nesta versão de trabalho; registrar o hash após salvar localmente.
+- Commit documental criado: `3d33f594` (`docs(editor-v7): start architecture research notebook`).
