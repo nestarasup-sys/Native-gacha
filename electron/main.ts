@@ -637,6 +637,12 @@ async function registerFabricatorHandlers(): Promise<void> {
     ipcMain, assertTrustedSender,
     showOpenDialog: (options) => dialog.showOpenDialog(options),
     libraryPath: editorV6LibraryPath, projectPath: editorV6Path,
+    resolveBackground: async (id) => {
+      const asset = await videoBackgroundLibrary.resolve(id)
+      const listed = (await videoBackgroundLibrary.list()).find((item) => item.id === id && item.available)
+      if (!listed) throw new Error('Fundo não encontrado na biblioteca.')
+      return { ...asset, name: listed.name }
+    },
     files: { stat, readFile, mkdir, writeFile },
     normalizeImage: normalizeImageBuffer, dataUrlBuffer, createId: randomUUID,
     openPath: (path) => shell.openPath(path)
