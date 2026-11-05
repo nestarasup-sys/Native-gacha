@@ -5,7 +5,7 @@
 > **Branch examinada:** `Dev-V2`  
 > **Commit remoto observado na reanálise:** `f4dae479d3e8be561741d1ad8b59ea38922b3b23` (05/11/2026)  
 > **Natureza da análise:** inspeção estática de arquivos reais e documentação do repositório; **não** houve execução de exportação nem medição local nesta elaboração.  
-> **Estado:** plano revisado com nova medição informada pelo usuário (107 s), dois bugs visuais prioritários e obrigatoriedade de nova baseline no projeto autorizado; execução local ainda pendente de Codex.  
+> **Estado:** execução ativa no Editor V6. Baselines completas ON/OFF reproduzidas no projeto autorizado; resta otimizar, validar resposta do cabelo e fechar gates.
 > **Responsável pela execução:** Codex, que atualizará este arquivo enquanto trabalha.
 
 ---
@@ -245,11 +245,11 @@ Atualizar após cada tarefa relevante, benchmark, mudança de arquitetura ou com
 | **Último tempo informado pelo usuário, com cabelo** | **107 segundos (1min47s), uma exportação; confirmar configuração e reproduzir** |
 | Ganho necessário para 30 s frente aos 107 s observados | **77 s de redução (~72,0%) ou ~3,57× de aceleração**, apenas referência aritmética |
 | Outra observação do usuário | 92 s (histórico separado, não comparável sem metadados) |
-| Referência diagnóstica ON (preset 1) | **159,22 s ponta a ponta**, 1 exportação completa; 2394 quadros; 1920×1080/30; Turbo; 4 áudios; `h264_amf`; cache de movimento frio. O painel usa preset 2 por padrão e esse slot também está configurado; falta uma ON completa com preset 2. |
-| Baseline ON no padrão do painel | **Pendente: uma única exportação completa com preset 2** antes das otimizações de produto. |
-| Baseline local sem cabelo | **81,54 s ponta a ponta**, 1 exportação completa; mesmas fontes/configuração de cena, 2394 quadros, 1920×1080/30; Turbo; 4 áudios; `h264_amf`; cache frio. O build acrescentava apenas instrumentação de cronômetro no harness em relação ao ON. |
-| Diferença inicial preset 1 ON−OFF | **77,68 s** numa amostra por modo; inclui preparo (28,60 s) e custo incremental dentro do job. Não representa o preset padrão 2 nem é mediana/atribuição causal fechada. |
-| Melhor tempo completo validado | **81,54 s sem cabelo** (uma amostra; ON ainda 159,22 s, meta não atingida) |
+| Referência diagnóstica ON (preset 1) | **159,22 s ponta a ponta**, 1 exportação completa; 2394 quadros; 1920×1080/30; Turbo; 4 áudios; `h264_amf`; cache de movimento frio. Referência secundária; o padrão do painel é slot 2. |
+| Baseline ON no padrão do painel | **160,415 s**, 1 exportação completa com preset 2 (slot padrão); antes das otimizações de produto. |
+| Baseline local sem cabelo | **81,538 s ponta a ponta**, 1 exportação completa; mesmas fontes/configuração de cena, 2394 quadros, 1920×1080/30; Turbo; 4 áudios/vídeos; `h264_amf`; cache frio. O build acrescentava apenas instrumentação de cronômetro no harness em relação ao ON. |
+| Diferença observada slot 2 ON−OFF | **78,877 s** numa amostra por modo; inclui preparo (28,064 s) e custo incremental dentro do job. Não é mediana nem atribuição causal fechada. |
+| Melhor tempo completo validado | **81,538 s sem cabelo** (uma amostra; ON slot 2 = 160,415 s, meta não atingida) |
 | Meta | ≤30 s, qualidade preservada |
 | Bug cabelo — reset | Investigação aberta; comparação de segmentos ON/OFF pendente |
 | Bug cabelo — ausência de reação | Em inspeção; imagens amostradas ainda não confirmam ausência nem correção |
@@ -257,8 +257,8 @@ Atualizar após cada tarefa relevante, benchmark, mudança de arquitetura ou com
 | **BUG-VIS-02 — cabelo altera velocidade com expressão simultânea à pose** | Projeto tem expressão 18 quadros após pose (dentro da reação de 30 quadros); falta comparação da curva/pixels controlada |
 | Gargalo medido nesta rodada | Render 98,02 s; preparação de cabelo 28,60 s; preparação de movimentos 18,64 s. Captura 14,03 s acumulados em workers (subfase, não somar às fases de parede). |
 | Etapa ativa | **E0 / E0A: fechar mapa de evidências e reprodução; depois corrigir defeitos e atacar gargalos.** |
-| Próxima tarefa | Fazer uma única baseline ON com preset 2; depois medir visualmente 30 quadros pós-pose e a sobreposição de expressão em 1818. Achatamento adiado conforme o usuário. |
-| Último commit feito POR ESTA MISSÃO | `9074d207` — fixture V6 da biblioteca e tolerância de quantização de face documentada/testada. |
+| Próxima tarefa | Medir visualmente trechos curtos pós-pose e a sobreposição de expressão em 1818; achatamento adiado conforme o usuário. |
+| Último commit feito POR ESTA MISSÃO | `394967a0` — cronômetro ponta a ponta para exportação sem cabelo. |
 | Situação global | **Em andamento; nenhuma meta de performance ou correção visual declarada concluída.** |
 
 **Não substitua um campo pendente por uma estimativa.** Se o projeto local tiver mudado, atualizar as referências e justificar por que números antigos deixam de ser comparáveis.
@@ -310,7 +310,7 @@ A checklist inicial a seguir é suficiente para começar; **o Codex deve expandi
 - [ ] **E0-T004 — Catalogar estratégias V6 já existentes:** Turbo 2×, cache de movimentos, reuso de materiais, 2 renderers de cabelo, R32–R37, reutilização de frames, modos de teste internos. Indicar o que está em produção, protótipo ou desligado.
 - [x] **E0-T005 — Proteger o único projeto autorizado:** backup verificado; todas as entradas do manifesto conferidas por tamanho e SHA-256; ON/OFF executados em pastas de perfil isoladas. Fontes preservadas; não publicar IDs, hashes nem mídia.
 - [ ] **E0-T006 — Fixar o relato mais recente e identidade:** registrar **107 s (1min47s), COM cabelo**, como observação não verificada; conferir se 54,7158 s pertence à mesma cópia mediante relatório original local; preservar 92 s separadamente. Usar como baseline nova somente medições completas realizadas pelo Codex no projeto autorizado e configuração fixada.
-- [~] **E0-T007 — REFazer medição real (P0):** uma OFF completa e uma referência ON no preset 1 já foram feitas. Ambas: 2394 quadros, 1920×1080/30, Turbo, 4 áudios, `h264_amf`; cache frio. ON preset 1: 159,22 s ponta a ponta (28,60 s preparo + 130,62 s export). OFF: 81,54 s ponta a ponta (81,52 s de job). O painel abre no preset 2 e esse slot está configurado na sessão: fazer uma única ON completa com preset 2 para fechar a baseline. Diferença preset1−OFF: 77,68 s, provisória. Não repetir três rodadas; deixar medianas para gates de adoção/aceite. OFF recompilado com instrumentação de benchmark sem alterar o pipeline de produto.
+- [x] **E0-T007 — Refazer medição real (P0):** baseline fechada com o slot 2 (padrão real do painel) ON e OFF, 2394 quadros, 1920×1080/30, Turbo, 4 áudios e vídeos, `h264_amf`, cache frio, uma exportação completa por modo. ON: **160,415 s** de clique à validação do MP4 (preparo 28,064 s + job 132,351 s; render 99,998 s; finalização 13,415 s; 39 transições; pacote ~85,5 MiB). OFF: **81,538 s** de parede (job 81,517 s; render 48,157 s; finalização 12,295 s). Diferença observada: **78,877 s**. É amostra única por modo, não mediana nem ganho atribuído a uma alteração; execução OFF usa instrumentação de cronômetro do harness sem alteração do pipeline de produto. Não repetir três rodadas. O relato do usuário de 107 s e a baseline histórica de 54,7158 s seguem sem equivalência demonstrada.
 - [~] **E0-T008 — Criar snapshots visuais e repro de bugs:** janela 750–795 e 31 quadros 450–480 gerados ON/OFF. Investigar visualmente cabelo pós-pose e a janela de sobreposição em 1800→1818. Achatamento vertical adiado por instrução do usuário.
 - [~] **E0-T009 — Medir recursos completos:** uma amostra ON registrou RSS de Main/benchmark renderer/export renderer/GPU até ~0,93/1,02/0,92/0,92 GiB (working set); FFmpeg ~0,29 GiB e ~325% CPU pico. Readback 14,03 s acumulados/297 capturas. Repetições, GPU driver/uso dedicado e disco/GC ainda pendentes.
 - [ ] **E0-T010 — Criar matriz de paridade:** requisito, módulo dono, caso de teste, evidência, tolerância visual acordada e risco. Especificar a correção desejada do bug do cabelo, não preservar falha como golden.
@@ -680,13 +680,13 @@ Não criar ADR para um ajuste trivial; registrar decisões que alguém precisar�
 
 O Codex deve manter sempre esta seção curta e fiel ao Git real.
 
-**Último estado confirmado:** `Dev-V2`, último commit `9074d207`; mudanças locais em `electron/main.ts`, `scripts/editor-v6/benchmark-project-export.cjs` e este Markdown adicionam apenas cronômetro/validação ao harness. O pipeline de produção não foi alterado.
+**Último estado confirmado:** `Dev-V2`, último commit `394967a0`; harness mede também parede OFF (clique à validação do MP4). O pipeline de produção não foi alterado. Baselines completas ON/OFF do slot 2 padrão foram validadas no projeto autorizado.
 
-**Última ação:** `node scripts/editor-v6/rapid-gates-windows.cjs --gate=offscreen --scope=all` aprovado (110 testes Vitest, 6 Node, 4 nativos e 2 verificações Electron). O gate primeiro apontou uma fixture obsoleta: simulava importação direta de áudio, embora o V6 agora selecione a Biblioteca por ID. Também se explicitou a tolerância de quantização 8-bit já medida na borda da composição de face: diferença máxima de 1 LSB, alpha exato e limite de pixels afetados.
+**Última ação:** baseline ON padrão slot 2 completada em 160,415 s e comparada com OFF em 81,538 s. Gate offscreen aprovado anteriormente (110 testes Vitest, 6 Node, 4 nativos e 2 verificações Electron). As fixtures foram atualizadas para os contratos vigentes; diferença de composição facial limitada por evidência a 1 LSB, alpha exato e ≤0,2% dos pixels.
 
-**Próxima ação:** commitar o cronômetro do harness e fazer a única baseline ON restante com preset 2 (padrão do painel). Depois, analisar os 30 quadros de cabelo pós-pose, em especial a expressão de 1818 durante a reação de 1800, e atacar gargalos com testes curtos. Não investigar achatamento enquanto estiver adiado pelo usuário.
+**Próxima ação:** analisar trechos curtos das cinco trocas de pose para quantificar deslocamento capilar e efeito da expressão em frame 1818 (18 frames após pose em 1800); depois priorizar gargalos por tempo de parede e experimentar otimizações com gates focados. Não investigar achatamento enquanto estiver adiado pelo usuário.
 
-**Medições locais:** referência ON preset 1 = 159,22 s; OFF = 81,54 s; ambos com 2394 quadros, 1920×1080/30, Turbo, 4 áudios, `h264_amf` e 37 bakes frios em cópia verificada. O painel usa preset 2 por padrão; falta uma ON completa no preset 2. Diferença atual de 77,68 s é preliminar (uma amostra por modo). O relato de 107 s e referência de 54,7158 s não têm equivalência demonstrada.
+**Medições locais:** comparação principal ON slot 2 padrão = 160,415 s; OFF = 81,538 s; ambas com 2394 quadros, 1920×1080/30, Turbo, 4 áudios/vídeos, `h264_amf` e cache de movimentos frio. Diferença = 78,877 s, amostra única por modo. Slot 1 ON = 159,220 s é referência secundária, não padrão. O relato de 107 s e a referência de 54,7158 s não têm equivalência demonstrada.
 
 **Limites abertos:** meta ≤30 s não alcançada; falha de reação do cabelo ainda não demonstrada; achatamento vertical adiado pelo usuário; uma amostra por modo na baseline.
 
@@ -695,6 +695,7 @@ O Codex deve manter sempre esta seção curta e fiel ao Git real.
 - A exportação ON terminou e validou em 159,22 s. Preparo do cabelo: 28,60 s; 37 transições; pacote serializado ~85,5 MiB. Fases registradas: preparo de movimentos 18,64 s, renderização 98,02 s, finalização 13,17 s. Captura: 297 readbacks; 14,03 s acumulados e 17,65 s de round-trip acumulado entre workers. Essas subfases podem sobrepor-se e não são aditivas.
 - Recursos ON, em amostra única: working set de Main ~0,93 GiB, benchmark renderer ~1,02 GiB, export renderer ~0,92 GiB, GPU ~0,92 GiB e FFmpeg ~0,29 GiB; FFmpeg atingiu ~325% CPU. Falta verificar repetibilidade, pressão de memória compartilhada, GC e disco.
 - Após corrigir a lacuna do relatório OFF, uma única exportação completa mediu 81,538 s de parede (81,517 s internos do job), 48,157 s de renderização, 12,295 s de finalização, `h264_amf`, 37 bakes em cache frio. O MP4 foi validado em 2394 quadros com áudio. Comparada à ON (159,220 s), a diferença observada foi 77,682 s; uma amostra por modo e OFF usa build com instrumentação de cronômetro apenas.
+- Para remover a diferença entre o slot medido e o valor padrão, executou-se uma ON completa adicional no slot 2 padrão: 160,415 s ponta a ponta, preparo 28,064 s, job 132,351 s, render 99,998 s e finalização 13,415 s; 39 transições preparadas e pacote de cabelo ~85,5 MiB. Frente à OFF pareada por configuração, diferença observada de 78,877 s. Uma amostra por modo; nenhum ganho de otimização alegado.
 - Por orientação do usuário, a investigação de achatamento vertical está suspensa e não é critério ativo nesta execução.
 - `editorV6MotionPlans` encontrou cinco trocas de pose nas frames 450, 900, 1350, 1800 e 2250; expressão isolada na frame 765 e nova expressão em 1818, 18 quadros após a pose em 1800. A amostra visual em 450–480 ON/OFF mostra cabelo longo presente, mas a reação não é óbvia em miniatura; análise de pixels/curva continua pendente.
 - A composição dual de face divergiu em 17 pixels, apenas cor de borda, máximo 1/255 e alpha idêntico. O teste declara limite tight de 1 LSB e 0,2% dos pixels, baseado nesta evidência, sem mascarar diferença geométrica.
@@ -709,7 +710,7 @@ O Codex deve manter sempre esta seção curta e fiel ao Git real.
 
 1. Confirmar que a missão é **somente Editor V6**.
 2. Verificar checkout, `AGENTS.md`, status do Git, scripts e código real.
-3. Executar tarefas da Etapa 0, refazer baseline **com cabelo ON e OFF** no projeto único; atualizar o painel com evidências, incluindo comparação honesta com o **relato de 107 segundos**.
+3. Baseline ON/OFF já concluída; investigar com evidência a divergência do relato de 107 s e avançar tarefas restantes da Etapa 0 sem repetir exportações completas sem justificativa.
 4. **Corrigir BUG-VIS-02 da Etapa 0A:** expressão simultânea/seguida à pose não pode acelerar, reiniciar ou distorcer artificialmente a reação do cabelo. Criar perfis e testes focados; BUG-VIS-01 (achatamento vertical) foi adiado pelo usuário e não bloqueia a missão ativa.
 5. Investigar profundamente as seis frentes: **desacoplamento interno**, **tempo absoluto**, **cache visual**, **pipeline assíncrono**, **encoder/transporte** e **profiling permanente**.
 6. Fazer hipóteses próprias, investigar alternativas atuais, criar ferramentas locais e experimentar sem medo de refatoração grande — mas com paridade, reversibilidade e testes.
