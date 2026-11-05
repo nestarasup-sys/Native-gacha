@@ -8,7 +8,7 @@ import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import { editorV6MotionPlans } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
@@ -103,6 +103,9 @@ async function initialize() {
     // One-shot pose reaction keeps the canonical full-character motion atlas.
     // It needs only the end-of-pose events, not interpolated hairless layers.
     if (hairAnimation?.poseReactionOnly || motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
+    // Face-only plans still animate through their normal motionSprite and face
+    // atlas. Do not let that facial atlas replace an in-flight hair pose atlas.
+    if (!editorV6MotionChangesHairGeometry(plan)) continue
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })

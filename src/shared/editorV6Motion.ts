@@ -83,6 +83,25 @@ export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: Edito
   const key = motionKey(from, to, samples)
   return { blockId: next.id, elementId: from.id, characterId: from.characterId, key, startFrame, endFrame: next.startFrame, from, to, samples }
 }
+
+/** A face-only atlas animates expression/mouth, but does not need a separate
+ * hairless-body transition. Keep hair physics on the previous pose trajectory
+ * unless the authored pose, actor geometry, or source actually changes. */
+export function editorV6MotionChangesHairGeometry(plan: Pick<EditorV6MotionPlan, 'from' | 'to'>): boolean {
+  const signature = (element: EditorV6Element) => JSON.stringify([
+    // assetId identifies the timeline snapshot as well as a pose. It changes
+    // on expression-only blocks in real projects, so it cannot classify hair
+    // geometry by itself.
+    element.poseSlot ?? null,
+    element.x, element.y, element.width, element.height, element.rotation, Boolean(element.flipX),
+    element.characterScale ?? null, element.characterWidthScale ?? null,
+    element.characterHeightScale ?? null, element.characterCanvasWidth ?? null,
+    element.characterSourceUpdatedAt ?? null, element.modelSourceRevision ?? null,
+    element.poseSourceRevision ?? null, element.hairSourceRevision ?? null
+  ])
+  return signature(plan.from) !== signature(plan.to)
+}
+
 const plansCache = new WeakMap<EditorV6Document['timeline'], EditorV6MotionPlan[]>()
 export function editorV6MotionPlans(document: EditorV6Document): EditorV6MotionPlan[] {
   const cached = plansCache.get(document.timeline)

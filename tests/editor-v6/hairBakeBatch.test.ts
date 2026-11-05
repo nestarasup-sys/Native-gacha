@@ -82,4 +82,12 @@ describe('Round 22: hairless transition atlas selection', () => {
       .toEqual(['second-pose'])
     expect(selectEditorV6HairlessTransitionBakes(plans, { startFrame: 60, endFrame: 90 })).toEqual([])
   })
+  it('omits face-only atlases while preserving pose bakes inside the requested range', () => {
+    const mixed = [
+      { id: 'expression', startFrame: 24, endFrame: 30, changesHair: false },
+      { id: 'pose', startFrame: 56, endFrame: 60, changesHair: true }
+    ]
+    expect(selectEditorV6HairlessTransitionBakes(mixed, { startFrame: 20, endFrame: 90 }, plan => plan.changesHair).map(plan => plan.id))
+      .toEqual(['pose'])
+  })
 })

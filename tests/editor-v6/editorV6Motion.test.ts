@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { attachEditorV6Motion, editorV6MotionChangesHairGeometry, editorV6MotionPlan, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
@@ -54,6 +54,27 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(plan.startFrame).toBe(82.5)
     expect(plan.samples.map(s => s.offset)).toEqual([-7,-6,-5,-4,-3,-2,-1])
     expect(plan.samples[0].progress).toBeCloseTo(1 / 15)
+  })
+  it('keeps expression atlases out of hair transitions while retaining pose and geometry changes', () => {
+    const doc = fixture()
+    const track = doc.timeline.tracks.find(item => item.kind === 'character')!
+    const [base, pose] = track.blocks
+    const posePlan = editorV6MotionPlan(track, base, pose)!
+    expect(editorV6MotionChangesHairGeometry(posePlan)).toBe(true)
+
+    const expressionBlock = {
+      ...pose,
+      id: crypto.randomUUID(),
+      startFrame: pose.startFrame + 90,
+      state: { ...pose.state!, assetId: crypto.randomUUID(), activeExpressionPresetId: crypto.randomUUID() }
+    }
+    const expressionPlan = editorV6MotionPlan(track, pose, expressionBlock)!
+    expect(expressionPlan).not.toBeNull()
+    expect(editorV6MotionChangesHairGeometry(expressionPlan)).toBe(false)
+
+    const translatedBlock = { ...expressionBlock, state: { ...expressionBlock.state!, x: expressionBlock.state!.x + 1 } }
+    const translatedPlan = editorV6MotionPlan(track, pose, translatedBlock)!
+    expect(editorV6MotionChangesHairGeometry(translatedPlan)).toBe(true)
   })
   it('invalidates baked transitions when the saved pose changes', () => {
     const doc = fixture(), beforePlan = editorV6MotionPlans(doc)[0]

@@ -38,10 +38,12 @@ export function createEditorV6HairBakeBatch<T>() {
  */
 export function selectEditorV6HairlessTransitionBakes<T extends { startFrame: number; endFrame: number }>(
   plans: readonly T[],
-  options: { startFrame: number; endFrame: number; hairPoseReactionOnly?: boolean }
+  options: { startFrame: number; endFrame: number; hairPoseReactionOnly?: boolean },
+  changesHairGeometry?: (plan: T) => boolean
 ): T[] {
   if (options.hairPoseReactionOnly) return []
-  return plans.filter(plan => plan.startFrame < options.endFrame && plan.endFrame > options.startFrame)
+  return plans.filter(plan => plan.startFrame < options.endFrame && plan.endFrame > options.startFrame
+    && (!changesHairGeometry || changesHairGeometry(plan)))
 }
 
 /** Include the current character snapshot, both prepared rig dimensions/crops,
