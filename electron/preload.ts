@@ -112,6 +112,7 @@ const editorV6Api: EditorV6DesktopApi = {
   deleteEditorV6Project: (id) => invokeEditorV6('deleteEditorV6Project', id),
   getEditorV6Folder: () => invokeEditorV6('getEditorV6Folder'),
   importEditorV6Image: (category) => invokeEditorV6('importEditorV6Image', category),
+  linkEditorV6LibraryBackground: (id) => invokeEditorV6('linkEditorV6LibraryBackground', id),
   saveEditorV6Print: (id, dataUrl) => invokeEditorV6('saveEditorV6Print', id, dataUrl),
   openEditorV6Prints: (id) => invokeEditorV6('openEditorV6Prints', id),
   getEditorV6ExportFolder: () => invokeEditorV6('getEditorV6ExportFolder'),
