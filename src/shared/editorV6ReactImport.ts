@@ -203,6 +203,15 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
     if (startFrame + durationFrames > 1_000_000) throw new Error('Uma fala ultrapassa o limite do Editor V6.')
     return { ...item, characterId: actor.characterId, startFrame, durationFrames }
   })
+  const minReadingSeconds=(line:ReactImportLine)=>{
+    const count=line.text.trim().split(/\s+/).filter(Boolean).length
+    const minimum=count<=3?2.6:count<=7?3.2:count<=12?3.9:count<=18?4.9:count<=25?6.2:count<=35?7.6:count<=45?9:count<=60?11:1.3+count*.24
+    return Math.max(minimum,1.3+count*.24)+(line.kind==='thought'?.4:0)
+  }
+  lines.forEach((line,index)=>{
+    const required=secondsToFrame(minReadingSeconds(line))
+    if(line.durationFrames<required)warnings.push('Bloco '+(index+1)+': '+line.durationFrames+' frames, abaixo da leitura recomendada de '+required+' frames.')
+  })
   const events: Array<ReactImportBeat & { priority: number; sequence: number }> = initial.map((item,i) => ({ ...item, priority:0,sequence:i }))
   source.beats.forEach((item,i) => {
     const actor = resolveCast(item.character)
@@ -216,6 +225,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   // Exactly one actor can be given a new REAL pose at each interval.
   const intervalFrames = source.autoPoseEverySeconds * 30
   if (intervalFrames) for(let frame=intervalFrames;frame<durationFrames;frame+=intervalFrames){
+    if(events.some((event)=>event.startFrame===frame&&event.poseSlot!==undefined))continue
     const eligible = cast.filter((actor)=> (available.posesByCharacter.get(actor.characterId)?.length ?? 0)>1 && !events.some((event)=>event.startFrame===frame&&event.characterId===actor.characterId&&event.poseSlot!==undefined))
     if (!eligible.length) break
     const actor = eligible[Math.floor(rng()*eligible.length)]
