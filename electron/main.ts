@@ -1071,13 +1071,19 @@ app.whenReady().then(async () => {
       const singleMotionRun = process.env.GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN === '1'
       const hairPreparationOnly = process.env.GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY === '1'
       const noHairControl = process.env.GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL === '1'
+      const segmentStartFrame = Number(process.env.GACHA_EDITOR_V6_STRESS_START_FRAME ?? '0')
+      const segmentFrameCount = Number(process.env.GACHA_EDITOR_V6_STRESS_FRAME_COUNT ?? project?.timeline.durationFrames ?? 0)
+      const stressRepeatCount = Number(process.env.GACHA_EDITOR_V6_STRESS_REPEAT ?? '1')
       if (hairPreparationOnly && hairPresetSlot === null) throw Error('O perfil de preparação de cabelo exige um preset válido.')
       if (noHairControl && (hairPresetSlot !== null || !process.env.GACHA_VIDEO_STRESS_OFFSCREEN)) throw Error('O controle sem cabelo exige um perfil offscreen isolado e não aceita preset de cabelo.')
+      if ((hairPresetSlot !== null || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
+        || !Number.isSafeInteger(segmentFrameCount) || segmentFrameCount < 1 || segmentStartFrame + segmentFrameCount > project.timeline.durationFrames
+        || !Number.isInteger(stressRepeatCount) || stressRepeatCount < 1 || stressRepeatCount > 3)) throw Error('Janela ou repetição do benchmark parcial inválida.')
       const motionConcurrencyValue = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
       const motionConcurrency = motionConcurrencyValue === '1' ? 1 : motionConcurrencyValue === '2' || motionConcurrencyValue === undefined ? 2 : null
       if (motionConcurrency === null) throw Error('A concorrência de bakes do benchmark precisa ser 1 ou 2.')
       // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
-      const modes = hairPreparationOnly ? [true] : hairPresetSlot !== null || noHairControl ? [true, true, true] : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
+      const modes = hairPreparationOnly ? [true] : hairPresetSlot !== null || noHairControl ? Array.from({ length: stressRepeatCount }, () => true) : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
       let hairHarnessWindow: BrowserWindow | null = null
       const processPeakByRunRole = new Map<string, { run: number; role: string; samples: number; peakWorkingSetBytes: number; peakPrivateBytes: number; peakCpuPercent: number | null }>()
       const processSampleCountByRun = new Map<number, number>()
@@ -1118,9 +1124,8 @@ app.whenReady().then(async () => {
 
         for (const [index, turbo] of modes.entries()) {
           const id = randomUUID()
-          // Mission benchmarks must exercise the whole authorized timeline;
-          // a 300-frame crop cannot establish full-export performance.
-          const frameCount = project.timeline.durationFrames
+          const startFrame = hairPresetSlot !== null || noHairControl ? segmentStartFrame : 0
+          const frameCount = hairPresetSlot !== null || noHairControl ? segmentFrameCount : project.timeline.durationFrames
           let reportProgressFrame = 0
           let sampleInFlight: Promise<void> | null = null
           const sampleProcesses = () => {
@@ -1165,7 +1170,7 @@ app.whenReady().then(async () => {
             : `run-${index + 1}-workers-${turbo ? 2 : 1}-motion-bakes-${motionConcurrency}`
           const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
           const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
-          const options: EditorV6ExportOptions = { startFrame: 0, endFrame: frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
+          const options: EditorV6ExportOptions = { startFrame, endFrame: startFrame + frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
           let hairAnimation: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle | undefined
           let hairPreparationWallMs = 0
           let hairPreparationRendererMs = 0
@@ -1193,7 +1198,7 @@ app.whenReady().then(async () => {
               hairPreparationProfile = {
                 passed: preparedTransitions > 0 && Object.values(stages).every(stage => Number.isFinite(stage.totalMs)),
                 benchmarkKind: 'real-project-hair-preparation', projectId, projectUpdatedAt: project.updatedAt,
-                projectTitle: project.title, durationFrames: frameCount, durationSeconds: frameCount / 30,
+                projectTitle: project.title, durationFrames: frameCount, timelineDurationFrames: project.timeline.durationFrames, startFrame, endFrame: startFrame + frameCount, durationSeconds: frameCount / 30,
                 width: 1920, height: 1080, fps: '30/1', hairPresetSlot,
                 hairPresetFingerprint, preparationWallMs: hairPreparationWallMs,
                 preparationRendererMs: hairPreparationRendererMs, preparationStages: stages,
@@ -1252,12 +1257,13 @@ app.whenReady().then(async () => {
           hairStressCompleted = hairPreparationProfile.passed === true
           console.log(JSON.stringify(hairPreparationProfile, null, 2))
         } else if (hairPresetSlot !== null) {
-          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: project.title, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), runs: hairRuns }
+          const targetSeconds = segmentFrameCount === 600 ? 10 : segmentFrameCount === 1200 ? 15 : null
+          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, targetSeconds, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), runs: hairRuns }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           hairStressCompleted = summary.passed
           console.log(JSON.stringify(summary, null, 2))
         } else if (noHairControl) {
-          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', projectTitle: project.title, durationFrames: project.timeline.durationFrames, durationSeconds: project.timeline.durationFrames / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, runs }
+          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: segmentFrameCount, durationSeconds: segmentFrameCount / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, runs }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           console.log(JSON.stringify(summary, null, 2))
         } else {

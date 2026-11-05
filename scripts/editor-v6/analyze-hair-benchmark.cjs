@@ -27,6 +27,17 @@ const FRAME_WITHIN_WORKER = [
   ['sceneResolutionMs', 'Resolução da cena'],
   ['faceCompositionMs', 'Composição da face'],
   ['hairCompositionMs', 'Composição do cabelo'],
+  ['hairCompositionOtherMs', 'Cabelo: composição ainda não subdividida'],
+  ['hairMotionStateMs', 'Cabelo: atualização do estado da simulação'],
+  ['hairLayerDrawMs', 'Cabelo: desenho das camadas deformadas'],
+  ['hairSurfaceComposeMs', 'Cabelo: desenho de superfícies base/rosto'],
+  ['hairCanvasClearMs', 'Cabelo: limpeza das superfícies Canvas'],
+  ['hairRigInterpolationMs', 'Cabelo: interpolação/expansão do rig'],
+  ['hairMeshPositionMs', 'Cabelo: cálculo das posições da malha'],
+  ['hairMeshUploadMs', 'Cabelo: upload de vértices para WebGL'],
+  ['hairMeshTextureUploadMs', 'Cabelo: upload inicial de texturas'],
+  ['hairMeshDrawMs', 'Cabelo: draw WebGL'],
+  ['hairCanvasBlitMs', 'Cabelo: cópia WebGL→Canvas2D'],
   ['assetPreparationMs', 'Preparação dos assets'],
   ['reactCommitMs', 'Commit React'],
   ['rafWaitMs', 'Espera de frame RAF']
@@ -52,8 +63,11 @@ function validate(summary) {
   const warnings = []
   if (summary?.passed !== true || summary?.benchmarkKind !== 'real-project-hair-export') errors.push('Resumo não é um benchmark real de cabelo concluído.')
   if (summary?.projectTitle !== 'Teste de Importação — Personagens do Pacote') errors.push('O benchmark não pertence ao projeto autorizado.')
-  if (!Array.isArray(summary?.runs) || summary.runs.length !== 3) errors.push('São necessárias três execuções completas.')
-  if (!Number.isSafeInteger(summary?.durationFrames) || summary.durationFrames < 1 || summary?.fps !== '30/1') errors.push('A duração do projeto e o FPS do benchmark são inválidos.')
+  if (!Array.isArray(summary?.runs) || summary.runs.length < 1 || summary.runs.length > 3) errors.push('O benchmark deve conter de uma a três execuções.')
+  if (!Number.isSafeInteger(summary?.durationFrames) || summary.durationFrames < 1 || summary?.fps !== '30/1'
+    || !Number.isSafeInteger(summary?.startFrame) || summary.startFrame < 0
+    || !Number.isSafeInteger(summary?.timelineDurationFrames) || summary.startFrame + summary.durationFrames > summary.timelineDurationFrames
+    || summary.endFrame !== summary.startFrame + summary.durationFrames) errors.push('A janela de quadros ou o FPS do benchmark são inválidos.')
   if (!Number.isSafeInteger(summary?.width) || summary.width < 1 || !Number.isSafeInteger(summary?.height) || summary.height < 1) errors.push('Dimensões inválidas.')
   if (!Number.isInteger(summary?.hairPresetSlot) || summary.hairPresetSlot < 1 || summary.hairPresetSlot > 5) errors.push('Slot de preset inválido.')
   if (Array.isArray(summary?.runs)) {
@@ -100,14 +114,17 @@ function analyze(summary) {
   })).sort((a, b) => b.medianMs - a.medianMs)
   return {
     ok: true, warnings, runs, benchmark: {
-      resolution: `${summary.width}x${summary.height}`, frames: summary.durationFrames, preset: summary.hairPresetSlot,
+      resolution: `${summary.width}x${summary.height}`, frames: summary.durationFrames, startFrame: summary.startFrame, timelineDurationFrames: summary.timelineDurationFrames, preset: summary.hairPresetSlot,
       medianAllMs: median(runs.map(run => run.totalMs)),
       medianWarmMs: warm.length >= 2 ? median(warm.map(run => run.totalMs)) : null,
       medianEffectiveFps: median(runs.map(run => run.fpsEffective)),
       fastestMs: Math.min(...runs.map(run => run.totalMs)),
       slowestMs: Math.max(...runs.map(run => run.totalMs)),
+      segmentTargetSeconds: summary.targetSeconds ?? null,
+      segmentTargetMetAll: finitePositive(summary.targetSeconds) ? runs.every(run => run.exportMs <= summary.targetSeconds * 1000) : null,
+      segmentTargetMetWarm: finitePositive(summary.targetSeconds) && warm.length ? warm.every(run => run.exportMs <= summary.targetSeconds * 1000) : null,
       targetMetAll: runs.every(run => run.totalMs <= 30000),
-      targetMetWarm: warm.length >= 2 ? warm.every(run => run.totalMs <= 30000) : null,
+      targetMetWarm: warm.length ? warm.every(run => run.totalMs <= 30000) : null,
       rankedByMedian: ranked,
       rankingBasis: warm.length >= 2 ? 'execuções com cache aquecido' : 'todas as execuções (cache não segregado)'
     }
@@ -118,12 +135,14 @@ function format(result) {
   const b = result.benchmark
   const lines = [
     'Editor V6 — diagnóstico sanitizado',
-    `${b.frames} quadros · 30 FPS · ${b.resolution} · Preset ${b.preset}`,
+    `${b.frames} quadros (timeline ${b.timelineDurationFrames}; início ${b.startFrame}) · 30 FPS · ${b.resolution} · Preset ${b.preset}`,
     '',
     ...result.runs.map(r => `Execução ${r.run} (${r.cacheState}): total ${seconds(r.totalMs)}, cabelo ${seconds(r.preparationMs)}, export ${seconds(r.exportMs)}, ${r.fpsEffective.toFixed(2)} FPS efetivos`),
-    `Mediana total das três: ${seconds(b.medianAllMs)} · melhor ${seconds(b.fastestMs)} · pior ${seconds(b.slowestMs)}`,
+    `Mediana ponta a ponta: ${seconds(b.medianAllMs)} · melhor ${seconds(b.fastestMs)} · pior ${seconds(b.slowestMs)}`,
     ...(b.medianWarmMs === null ? [] : [`Mediana aquecida: ${seconds(b.medianWarmMs)}`]),
-    `Meta ≤30 s: ${b.targetMetAll ? 'atingida nas três execuções' : 'não demonstrada nas três execuções'}`,
+    ...(b.segmentTargetSeconds === null ? [] : [`Meta local de exportação ≤${b.segmentTargetSeconds} s: ${b.segmentTargetMetAll ? 'atingida' : 'não atingida'}`]),
+    `Tempo ponta a ponta do recorte ≤30 s: ${b.targetMetAll ? 'atingido' : 'não atingido'} (não prova a meta na timeline completa).`,
+    'O tempo ponta a ponta inclui preparação do cabelo; o gate local mede mainExportWallMs. Isso não comprova a meta final de ≤30 s para a timeline inteira.',
     '',
     `Fases por mediana (${b.rankingBasis}, tempo de parede por fase):`,
     ...b.rankedByMedian.map((p, index) => `  ${index + 1}. ${p.label}: ${seconds(p.medianMs)}`),

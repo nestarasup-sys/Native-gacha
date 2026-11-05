@@ -64,7 +64,7 @@ function addPhaseTime(report: EditorV6ExportReport, phase: ExportPhase, started:
 const TIMING_BUCKET_MS = .1
 const TIMING_BUCKETS = 2001
 function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
-  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
+  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
 }
 function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return

@@ -23,7 +23,7 @@ function sampleRun(run, cold = false) {
   }
 }
 function sampleSummary() {
-  return { passed: true, benchmarkKind: 'real-project-hair-export', projectTitle: PROJECT_TITLE, durationFrames: FRAMES, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
+  return { passed: true, benchmarkKind: 'real-project-hair-export', projectTitle: PROJECT_TITLE, startFrame: 0, endFrame: FRAMES, timelineDurationFrames: FRAMES, durationFrames: FRAMES, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
 }
 test('tempo de parede separa preparo, export e comparação cache frio/quente', () => {
   const report = analyze(sampleSummary())
@@ -47,7 +47,7 @@ test('resumo não inclui fingerprint nem IDs de projeto na saída', () => {
   const result = analyze(sampleSummary())
   const output = format(result)
   assert.match(output, /2394 quadros/)
-  assert.match(output, /Meta ≤30 s/)
+  assert.match(output, /ponta a ponta do recorte ≤30 s/)
   assert.match(output, /Não some esses totais/)
   assert.doesNotMatch(output, /only-compared-not-printed/)
 })
@@ -63,13 +63,25 @@ test('rejeita benchmark incompleto, áudio inconsistente e preset alterado', () 
   assert.ok(result.errors.some(error => error.includes('quadros')))
 })
 
-test('exige o projeto autorizado e a duração integral em todos os takes', () => {
+test('exige o projeto autorizado e valida a janela coberta em todos os takes', () => {
   const wrongProject = sampleSummary()
   wrongProject.projectTitle = 'Outro projeto'
   assert.ok(analyze(wrongProject).errors.some(error => error.includes('projeto autorizado')))
   const partial = sampleSummary()
-  partial.durationFrames = 300
-  assert.ok(analyze(partial).errors.some(error => error.includes('quadros')))
+  partial.startFrame = 450
+  partial.endFrame = 1050
+  partial.durationFrames = 600
+  partial.targetSeconds = 10
+  partial.runs = [sampleRun(1)]
+  partial.runs[0].totalFrames = 600
+  partial.runs[0].mainExportWallMs = 9000
+  partial.runs[0].clickToValidatedWallMs = 11000
+  const partialReport = analyze(partial)
+  assert.equal(partialReport.ok, true)
+  assert.equal(partialReport.benchmark.segmentTargetMetAll, true)
+  assert.match(format(partialReport), /Meta local de exportação ≤10 s: atingida/)
+  partial.endFrame += 1
+  assert.ok(analyze(partial).errors.some(error => error.includes('janela')))
 })
 test('avisa sobre encoder variável e ausência de amostragem sem inventar medições', () => {
   const summary = sampleSummary()

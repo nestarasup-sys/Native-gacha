@@ -247,7 +247,12 @@ async function initialize() {
     ...hairAnimation!.preset.physics,
     enabled: hairAnimation!.preset.enabled[side]
   })
-  const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number): HTMLCanvasElement => {
+  const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number, timings: EditorV6FrameTimings): HTMLCanvasElement => {
+    const clearCanvas = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
+      const started = performance.now()
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - started
+    }
     const imageWidth = image.naturalWidth
     const imageHeight = image.naturalHeight
     const outputWidth = Math.max(1, Math.ceil(imageWidth * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(imageHeight * HAIR_MOTION_MESH_HEIGHT))
@@ -261,7 +266,7 @@ async function initialize() {
       canvas.width = outputWidth; canvas.height = outputHeight
       const context = canvas.getContext('2d')
       if (!context) throw Error('Não foi possível preparar o cabelo estático para a exportação.')
-      context.clearRect(0, 0, canvas.width, canvas.height)
+      clearCanvas(context, canvas)
       context.imageSmoothingEnabled = true
       context.imageSmoothingQuality = 'high'
       context.drawImage(image, 0, 0, imageWidth, imageHeight, imageWidth * .4, imageHeight * .15, imageWidth, imageHeight)
@@ -273,14 +278,23 @@ async function initialize() {
     if (canvas.width !== outputWidth || canvas.height !== outputHeight) { canvas.width = outputWidth; canvas.height = outputHeight }
     const context = canvas.getContext('2d')
     if (!context) throw Error('Não foi possível deformar o cabelo durante a exportação.')
-    context.clearRect(0, 0, canvas.width, canvas.height)
+    clearCanvas(context, canvas)
     context.imageSmoothingEnabled = true
     context.imageSmoothingQuality = 'high'
+    const previousMeshTimings = hairMeshRenderer.getTimings()
     const mesh = hairMeshRenderer.render(image, state, settings, intensity, phase)
+    const nextMeshTimings = hairMeshRenderer.getTimings()
+    timings.hairMeshPositionMs = (timings.hairMeshPositionMs ?? 0) + nextMeshTimings.positionMs - previousMeshTimings.positionMs
+    timings.hairMeshUploadMs = (timings.hairMeshUploadMs ?? 0) + nextMeshTimings.uploadMs - previousMeshTimings.uploadMs
+    timings.hairMeshTextureUploadMs = (timings.hairMeshTextureUploadMs ?? 0) + nextMeshTimings.textureUploadMs - previousMeshTimings.textureUploadMs
+    timings.hairMeshDrawMs = (timings.hairMeshDrawMs ?? 0) + nextMeshTimings.drawMs - previousMeshTimings.drawMs
+    const blitStarted = performance.now()
     context.drawImage(mesh, 0, 0, outputWidth, outputHeight)
+    timings.hairCanvasBlitMs = (timings.hairCanvasBlitMs ?? 0) + performance.now() - blitStarted
     return canvas
   }
   const drawHairPiece = (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number, timings: EditorV6FrameTimings) => {
+    const motionStateStarted = performance.now()
     const texture = hairTextures.get(piece.textureId)
     if (!texture) throw Error('A exportação perdeu uma imagem do cabelo preparado.')
     const settings = motionSettings(piece.side)
@@ -320,8 +334,10 @@ async function initialize() {
       }
       advanceHairMotionToFrame(state, settings, frame, headAtFrame, phase)
     }
+    timings.hairMotionStateMs = (timings.hairMotionStateMs ?? 0) + performance.now() - motionStateStarted
     const intensity = hairAnimation!.preset.intensity[piece.side]
-    const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, phase)
+    const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, phase, timings)
+    const layerDrawStarted = performance.now()
     context.save()
     context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
     context.scale(rig.shapeScaleX, rig.shapeScaleY)
@@ -339,6 +355,7 @@ async function initialize() {
     // Center that original image on the same anchor used by the character renderer.
     context.drawImage(warped, -drawWidth * 0.9, -drawHeight * 0.65, drawWidth * 1.8, drawHeight * 1.3)
     context.restore()
+    timings.hairLayerDrawMs = (timings.hairLayerDrawMs ?? 0) + performance.now() - layerDrawStarted
   }
   const composeHairFrame = (rig: EditorV6HairMotionRig, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number, timings: EditorV6FrameTimings, metrics: EditorV6FrameMetrics): HTMLCanvasElement => {
     const canvasKey = `${element.id}:${rig.assetId}`
@@ -352,16 +369,20 @@ async function initialize() {
       hairFrameCanvases.set(canvasKey, surface)
     }
     const { canvas, context } = surface
+    const clearStarted = performance.now()
     context.clearRect(0, 0, canvas.width, canvas.height)
+    timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
     const drawSurface = (id: string | null) => {
       if (!id) return
       const image = hairSurfaces.get(id)
       if (!image) throw Error('A exportação perdeu uma camada do personagem preparado.')
+      const surfaceStarted = performance.now()
       context.save()
       context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
       context.scale(rig.shapeScaleX, rig.shapeScaleY)
       context.drawImage(image, -rig.artworkWidth / 2, -rig.artworkHeight / 2, rig.artworkWidth, rig.artworkHeight)
       context.restore()
+      timings.hairSurfaceComposeMs = (timings.hairSurfaceComposeMs ?? 0) + performance.now() - surfaceStarted
     }
     for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.baseSurfaceId)
@@ -394,7 +415,9 @@ async function initialize() {
     if (canvas.width !== rig.outputWidth || canvas.height !== rig.outputHeight) {
       canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
     }
+    const clearStarted = performance.now()
     context.clearRect(0, 0, canvas.width, canvas.height)
+    timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
     const drawAtlasSurface = (surfaceId: string | null) => {
       if (!surfaceId) return
       const image = hairSurfaces.get(surfaceId)
@@ -499,6 +522,8 @@ async function initialize() {
     const { current: renderAssetsById, resolve: resolveFrameAsset } = createEditorV6FrameAssetRegistry(assetsById, composed.assets)
     let renderScene = composed.scene
     const hairCompositionStarted = performance.now()
+    const hairDetailKeys = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
+    const hairDetailBefore = Object.fromEntries(hairDetailKeys.map(key => [key, timings[key] ?? 0])) as Record<typeof hairDetailKeys[number], number>
     const rasterCanvases = new Map<string, HTMLCanvasElement>()
     if (activeHair) {
       const animatedElements: typeof composed.scene.elements = []
@@ -512,7 +537,9 @@ async function initialize() {
           const transitionFrame = indexed?.atlasFrame
           const poseSample = indexed?.poseSample
           if (!transition?.from || !transition.to || !transitionFrame || !poseSample || !transition.atlas) { animatedElements.push(element); continue }
+          const rigInterpolationStarted = performance.now()
           const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
+          timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - rigInterpolationStarted
           rasterCanvases.set(element.id, composeMotionHairFrame(element.id, rig, original, frame, transition, transitionFrame, timings, metrics))
           let mouthPatch: typeof element.mouthPatch = undefined
           if (transitionFrame.facePatch && transition.atlas.faceAtlasSurfaceId) {
@@ -533,8 +560,10 @@ async function initialize() {
           // Transition geometry describes the cropped body atlas. Expand it to
           // the complete artwork so hair outside that crop is not clipped.
           const crop = transitionFrame.crop
+          const geometryStarted = performance.now()
           const geometry = expandEditorV6HairCrop({ ...element, ...transitionFrame }, { width: rig.outputWidth, height: rig.outputHeight }, crop)
           if (mouthPatch) mouthPatch = { ...mouthPatch, x: (crop.left + mouthPatch.x * crop.width) / rig.outputWidth, y: (crop.top + mouthPatch.y * crop.height) / rig.outputHeight, width: mouthPatch.width * crop.width / rig.outputWidth, height: mouthPatch.height * crop.height / rig.outputHeight }
+          timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - geometryStarted
           animatedElements.push({ ...element, assetId: undefined, motionSprite: undefined, ...geometry, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch })
           continue
         }
@@ -555,6 +584,8 @@ async function initialize() {
       }
       renderScene = { ...composed.scene, elements: animatedElements }
       timings.hairCompositionMs = performance.now() - hairCompositionStarted
+      const instrumented = hairDetailKeys.reduce((total, key) => total + (timings[key] ?? 0) - hairDetailBefore[key], 0)
+      timings.hairCompositionOtherMs = Math.max(0, timings.hairCompositionMs - instrumented)
     }
     // SceneSurface and the image preloader only need the assets actually
     // referenced by this layer/frame. Previously the whole project catalog was

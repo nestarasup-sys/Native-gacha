@@ -19,6 +19,10 @@ const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
 const noHairControl = process.argv.includes('--no-hair-control')
 const motionConcurrency = argument('--motion-bake-concurrency=')
 const hairPresetSlot = argument('--hair-preset-slot=')
+const segmentStartFrameValue = argument('--start-frame=')
+const segmentDurationSecondsValue = argument('--duration-seconds=')
+const repeatValue = argument('--repeat=')
+const fullTimeline = process.argv.includes('--full-timeline')
 const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
@@ -71,6 +75,16 @@ async function main() {
   if (hairPresetSlot && (!/^\d+$/.test(hairPresetSlot) || Number(hairPresetSlot) < 1 || Number(hairPresetSlot) > 5 || !sessionDataPath)) {
     throw Error('A medição de cabelo requer --hair-preset-slot=1..5 e --session-data apontando para a sessão localStorage copiada.')
   }
+  const segmentStartFrame = segmentStartFrameValue === undefined ? 0 : Number(segmentStartFrameValue)
+  const segmentDurationSeconds = segmentDurationSecondsValue === undefined ? (fullTimeline ? null : 20) : Number(segmentDurationSecondsValue)
+  const repeatCount = repeatValue === undefined ? 1 : Number(repeatValue)
+  if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
+    || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
+    || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
+    || fullTimeline && segmentDurationSecondsValue !== undefined
+    || (segmentStartFrameValue !== undefined || segmentDurationSecondsValue !== undefined || fullTimeline) && hairPreparationOnly)) {
+    throw Error('Benchmark de cabelo aceita --start-frame=, --duration-seconds= e --repeat=1..3; janela e repetição não se aplicam ao perfil somente de preparação.')
+  }
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, ...(hairPresetSlot ? [sessionDataPath] : [])]
   if (!immutableSources.every((source) => inside(verifiedBackupRoot, source))
@@ -85,6 +99,10 @@ async function main() {
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
   if ((hairPresetSlot || noHairControl) && (manifest.title?.trim() !== authorizedProjectTitle || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
     throw Error(`O benchmark com cabelo exige uma cópia verificada do projeto autorizado "${authorizedProjectTitle}" com duração válida; nenhum projeto foi modificado.`)
+  }
+  const segmentFrameCount = segmentDurationSeconds === null ? manifest.timeline?.durationFrames : segmentDurationSeconds * 30
+  if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentFrameCount) || segmentStartFrame + segmentFrameCount > manifest.timeline.durationFrames)) {
+    throw Error('A janela solicitada excede a duração da timeline do projeto autorizado.')
   }
   await fs.access(path.join(libraryFolder, 'catalog.json'))
   for (const media of manifest.media ?? []) if (media.libraryVideoId) await fs.access(path.join(libraryFolder, 'videos', media.fileName))
@@ -123,6 +141,11 @@ async function main() {
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),
+    ...((hairPresetSlot || noHairControl) && !hairPreparationOnly ? {
+      GACHA_EDITOR_V6_STRESS_START_FRAME: String(segmentStartFrame),
+      GACHA_EDITOR_V6_STRESS_FRAME_COUNT: String(segmentFrameCount),
+      GACHA_EDITOR_V6_STRESS_REPEAT: String(repeatCount)
+    } : {}),
     GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT: outputFolder, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
   delete childEnv.ELECTRON_RUN_AS_NODE
   let code
@@ -142,15 +165,15 @@ async function main() {
       || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
     : noHairControl
     ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
-      || summary.durationFrames !== manifest.timeline.durationFrames || summary.runs?.length !== 3
-      || summary.runs.some((run) => run.totalFrames !== manifest.timeline.durationFrames || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
+      || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
+      || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || !Number.isFinite(run.milliseconds) || run.milliseconds <= 0 || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0
         || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
-      || summary.durationFrames !== manifest.timeline.durationFrames || summary.runs?.length !== 3
+      || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
-      || summary.runs.some((run) => run.totalFrames !== manifest.timeline.durationFrames || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
+      || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
         || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
     : singleMotionRun

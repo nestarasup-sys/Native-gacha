@@ -6,15 +6,15 @@
 
 **Qualidade visual:** saída estrutural validada; SSIM alto entre rodadas. Continuidade do cabelo ainda pendente de inspeção. **Etapa ativa:** Etapa 5 (perfil de performance) e investigação da animação.
 
-**Tarefa ativa:** E5-T002 — otimizar por segmentos curtos e representativos; medir cada mudança sem pagar o custo de exportar o projeto inteiro repetidamente.
+**Tarefa ativa:** E5-T002 — reduzir o gargalo confirmado na composição por quadro e na captura; primeiro recorte medido, de 20 s, ainda exporta em ~50 s.
 
 **Tarefas concluídas nesta retomada:** E0-T001 (backup verificado), E0-T002 (runner do projeto autorizado), E0-T003 (baseline cabelo/controle sem cabelo), E5-T001 (perfil do gargalo). **Pendentes:** E4-T001 (validar continuidade/cobertura visual), E5-T002 (otimização estrutural), E5-T003 (alcançar ≤30 s e repetir em 3 exports).
 
 **Último commit da missão:** `da91080da366dd3f23a020baf9215a66334d09e7` (`chore(editor-v6): establish staged export benchmark workflow`). **Branch/HEAD observado após este registro:** `Dev-V2` / `da91080da366dd3f23a020baf9215a66334d09e7` (5 commits locais à frente de `origin/Dev-V2`).
 
-**Gargalo medido:** renderização/captura com cabelo; mediana 177,15 s, contra 41,85 s sem cabelo. A preparação de cabelo acrescenta 26,35 s medianos antes do job; mesmo o controle sem cabelo permanece acima de 30 s.
+**Gargalo medido:** renderização/captura com cabelo; mediana integral inicial 177,15 s, contra 41,85 s sem cabelo. Na triagem comparável de 20 s, cabelo exportou em 50,24–50,75 s e o controle em 22,26 s. O frame pipeline continua muito acima dos gates locais.
 
-**Próxima ação prioritária:** habilitar uma janela de benchmark de 20 s na timeline autorizada, escolher um trecho com transições/cabelo e instrumentar o custo por etapa. Exportações completas passam a ser validações de marco, não o loop de cada experimento.
+**Loop incremental implementado:** runner de cabelo/controle agora usa 20 s e uma execução por padrão; `--start-frame=N`, `--duration-seconds=N`, `--full-timeline` e `--repeat=1..3` permitem escolher recortes e reservar repetição para gates. **Próxima ação prioritária:** explicar os ~68 ms/quadro-worker ainda não atribuídos dentro da composição de cabelo; medir caminho de render/captura e testar uma hipótese isolada.
 
 ---
 
@@ -1535,17 +1535,31 @@ O objetivo é o melhor equilíbrio entre velocidade, qualidade, robustez e manut
 
 # ESTADO ATUAL E INSTRUÇÕES DE RETOMADA — 05/11/2026
 
-**Última atividade executada:** snapshot verificado do projeto permitido; runner atual ainda executa três exports completos para cada benchmark de cabelo/controle; medição inicial revelou alto custo de renderização. O protocolo foi atualizado para exigir janela parcial determinística e reduzir repetição integral. A implementação do recorte no harness ainda está pendente.
+**Última atividade executada:** harness passou a exportar janelas parciais determinísticas (20 s por padrão, um passe) no projeto autorizado; novos subestágios de composição WebGL/Canvas foram instrumentados. Medidos um recorte com cabelo, seu perfil detalhado e um controle sem cabelo no mesmo trecho. Nenhuma otimização visual de produção foi adotada ainda.
 
 **Alterações de runtime pendentes de nova validação após otimização:** nenhuma otimização de produto foi implementada ainda. Esta entrega altera o harness/analisador, não o compositor de produção.
 
-**Tarefa ativa:** E5-T002 — implementar no harness os limites start/end da janela e medir uma janela de 20 s do projeto autorizado. Até essa mudança existir, não usar o runner atual em loop de otimização: ele força três exportações completas.
+**Tarefa ativa:** E5-T002 — isolar o custo de 67–69 ms por quadro por worker dentro de `hairCompositionOtherMs` e diminuir o tempo por exportação com cabelo sem degradar a imagem.
 
-**Próxima ação concreta:** adicionar uma opção de benchmark parcial (20 s, 600 quadros) ao runner, sem persistir mudanças no projeto; validar relatório e áudio/vídeo do trecho; selecionar na timeline uma janela com cabelo e transição. Depois instrumentar subestágios e testar uma hipótese por vez. O parâmetro experimental não reduz a qualidade da exportação final.
+**Próxima ação concreta:** instrumentar chamadas Canvas ainda não cronometradas no loop de `drawHairPiece`/`composeHairFrame` e correlacionar com `capturePage`/uso de GPU. Atacar primeiro a etapa que explicar o tempo; executar um só recorte de 20 s por hipótese e fazer A/B de duas medições apenas se o ganho for pequeno ou o ruído puder inverter a decisão.
 
 **Projeto de teste único:** `Teste de Importação — Personagens do Pacote`; ID `2d6fb9ec-cfea-45ea-91ff-366fbc1abd59`; atualização `2026-11-05T09:22:12.521Z`; 2.394 quadros/79,8 s/30 FPS. Backup verificável: `out/editor-v6-stress/backups/authorized-import-package-2026-11-05T09-54-16-913Z-20828/`; manifesto `backup-manifest.json`; 3.462 arquivos, 862.295.797 bytes; SHA-256 das origens igual ao destino e às origens após a cópia. Os testes executaram somente sobre cópias isoladas deste projeto.
 
 **Configuração efetivamente medida:** 1920×1080, 30 FPS, duração integral, Turbo, dois workers, encoder selecionado `h264_amf`, 4 vídeos e 4 áudios. Slot 2 não estava salvo na sessão copiada; o primeiro benchmark falhou antes de exportar. Slot 1 veio do fallback padrão do app quando não há preset salvo. Portanto o resultado atual não é comparável diretamente à referência histórica de 92 s, cuja configuração não foi registrada.
+
+**Janela de triagem após a adoção do protocolo:** quadros 0–599 (20 s), 1920×1080/30 FPS, Turbo/dois workers, preset 1 do fallback, 8 transições de movimento preparadas, dois segmentos de vídeo e dois áudios presentes. A janela inclui mudanças de pose dos personagens e a troca de vídeo nos quadros 482/510. Nenhuma opção do manifesto persistido foi alterada. Saída validou 600/600 quadros e áudio/vídeo.
+
+**Benchmark segmentar com cabelo:** uma execução, 60,03 s ponta a ponta (9,28 s de preparação + 50,75 s de export); renderização 41,17 s, finalização 4,06 s. A execução anterior de diagnóstico sem os subestágios detalhados levou 59,73 s ponta a ponta/50,24 s de export. A diferença é pequena e não é tratada como ganho: builds, aquecimento e carga do sistema variam.
+
+**Perfil detalhado da mesma janela:** `hairCompositionMs` mediu 21,1–21,3 s somados por worker (p50 69–70 ms, p95 85–89 ms). `hairCompositionOtherMs` permaneceu 20,4–20,5 s por worker (p50 67–68 ms, p95 83–86 ms), portanto quase todo o custo ainda está sem atribuição. Cálculo da malha ~0,08–0,09 s/worker; upload de vértices ~0,025 s; `drawElements` ~0,008–0,009 s; cópia WebGL→Canvas ~0,26 s; limpeza de canvas ~0,03–0,04 s; estado da física ~0,06 s; desenho de camadas ~0,16–0,28 s; superfícies base/rosto ~0,02 s. O gargalo não é o cálculo CPU da malha; não atribuir o restante ao WebGL sem prova.
+
+**Controle sem cabelo no mesmo trecho:** uma execução, 22,26 s total, renderização 11,49 s, finalização 4,00 s, 600/600 quadros e áudio/vídeo válidos. Comparado ao cabelo, o export com cabelo acrescentou ~28,5 s no trecho e ~9,3 s em preparação. A comparação é do mesmo intervalo/configuração, mas ocorreu em processos sequenciais, portanto é evidência indicativa, não A/B alternado controlado.
+
+**Falha de instrumentação registrada:** a primeira execução após introduzir métricas WebGL abortou no retry Turbo→CPU porque `exportRunner` não inicializava acumuladores novos (`recordTiming` recebeu bucket inexistente). A lista de acumuladores foi corrigida; a execução seguinte completou e validou o recorte. Esse erro pertence ao coletor de perfil, não à exportação de produção.
+
+**Experimento `EXP-E5-004` — mover consultas de perda WebGL por quadro:** hipótese: duas chamadas `isContextLost()` por render de camada poderiam sincronizar o renderer; protótipo reduziu as checagens para o começo/fim da composição do quadro. Um único A/B no mesmo recorte, ambos 600 quadros válidos e mesma saída de vídeo (SSIM All=1.000000): baseline instrumentado exportou em 50,42 s; candidato, 54,39 s (+7,9%). Como o candidato não trouxe ganho e relaxa a detecção durante o desenho, a decisão é **DESCARTAR** e manter a validação por chamada. O sistema/ordem de processos não foram alternados, então a diferença não prova causalidade; ela basta para não adotar uma mudança sem benefício demonstrado.
+
+**Limitação ainda em investigação:** as métricas de operações explícitas dentro do cabelo somam menos de 0,5 s por worker, enquanto `hairCompositionOtherMs` fica em ~20,4 s por worker. Suspeita de sincronização/composição GPU/Canvas ou operações de canvas ainda não isoladas; essa formulação é hipótese, não causa comprovada. Próximo experimento deve separar captura `capturePage`, leitura do canvas WebGL e desenho de camadas com medições por operação/contagem, usando só a mesma janela 0–599.
 
 **Baseline completo com cabelo (Preset 1 padrão):** 251,821 s frio; 228,527 s e 206,735 s aquecidos; mediana 228,527 s; melhor 206,735 s. Mediana aquecida de renderização/codificação 177,15 s, preparação de cabelo 26,35 s e finalização 13,17 s. 140 rigs, 39/39 transições, 37 amostras de bake; bundle de 89.661.643 bytes. Saída validou 2.394 quadros, 1920×1080, 30 FPS, áudio e vídeo. SSIM run 1 vs 2: All 1.000000 (Y 1.000000, U 1.000000, V 0.999999). As rodadas 2 e 3 têm MP4 com SHA-256 idêntico.
 
@@ -1555,11 +1569,11 @@ O objetivo é o melhor equilíbrio entre velocidade, qualidade, robustez e manut
 
 **Inspeção visual limitada:** amostras dos frames 450–480 foram verificadas. O vídeo de origem correspondente ao quadro escuro também está preto; isso não é um defeito introduzido pelo export. A inspeção não basta para aprovar continuidade do cabelo. Problemas A/B/C relatados ainda precisam de teste focado nas transições e personagens compatíveis.
 
-**Testes realizados:** `npm run test:editor-v6:quick` — 57 testes/13 arquivos + 6 testes do runner aprovados; `node --test tests/editor-v6/analyzeHairBenchmark.test.cjs` — 7/7; `npm run typecheck` aprovado; `npm run audit:architecture` aprovado; `npm run build` aprovado; exports reais 3/3 em cada modo passaram as validações. Uma primeira chamada via `npm run` falhou antes de iniciar Electron porque aspas de paths com espaços se perderam; chamadas diretas a Node funcionaram. A UI CUA falhou duas vezes ao inicializar e não tocou no app/perfil normal.
+**Testes/verificações desta retomada:** `npm run test:editor-v6:quick` — 57 testes/13 arquivos + 6 gates aprovados; `node --test tests/editor-v6/analyzeHairBenchmark.test.cjs` — 7/7; `npm run typecheck`, `npm run audit:architecture` e `npm run build` aprovados. Runner segmentar de cabelo passou 4 exports de perfil/baseline + 1 candidato A/B; controle sem cabelo passou 1 export; todos validaram quadros, 1080p30, áudio e vídeo. Uma execução instrumentada falhou devido ao coletor, corrigido em seguida. O A/B SSIM confirmou saída idêntica; o candidato foi revertido. Os resultados completos 3+3 anteriores são baseline histórico; não foram repetidos nesta retomada. Uma chamada anterior via `npm run` falhou antes de iniciar Electron por aspas de paths com espaços; comandos diretos a Node funcionaram. A UI CUA falhou duas vezes ao inicializar e não tocou no app/perfil normal.
 
 **Pesquisa externa aplicada:** [Electron webContents](https://www.electronjs.org/docs/latest/api/web-contents), [MDN OffscreenCanvas](https://developer.mozilla.org/en-US/docs/Web/API/OffscreenCanvas/transferToImageBitmap), [MDN WebCodecs](https://developer.mozilla.org/en-US/docs/Web/API/WebCodecs_API/Using_the_WebCodecs_API), [FFmpeg codecs](https://ffmpeg.org/ffmpeg-codecs.html). Servem como candidatas de experimento; ainda não demonstraram paridade nem ganho neste app.
 
-**Arquivos alterados nesta etapa:** `electron/main.ts`, `scripts/editor-v6/benchmark-project-export.cjs`, `scripts/editor-v6/analyze-hair-benchmark.cjs`, `tests/editor-v6/analyzeHairBenchmark.test.cjs`, `scripts/editor-v6/backup-authorized-project.cjs` e este Markdown. Saídas grandes e cópias estão em `out/` ignorado pelo Git; o perfil original não foi modificado.
+**Arquivos alterados nesta etapa:** `electron/main.ts`, `electron/domains/editorV6/exportRunner.ts`, `src/shared/editorV6Export.ts`, `src/renderer/src/features/editorV6/exportHairMeshRenderer.ts`, `src/renderer/src/features/editorV6/exportWorker.tsx`, `scripts/editor-v6/benchmark-project-export.cjs`, `scripts/editor-v6/analyze-hair-benchmark.cjs`, `tests/editor-v6/analyzeHairBenchmark.test.cjs`, `scripts/editor-v6/backup-authorized-project.cjs` e este Markdown. Saídas grandes e cópias estão em `out/` ignorado pelo Git; o perfil original não foi modificado.
 
 **Problemas ainda abertos:** missão de ≤30 s não cumprida; bugs visuais do cabelo não reproduzidos/inspecionados adequadamente; comparação histórica de 92 s não tem configuração idêntica; qualidade visual comparativa de hair/no-hair não aprovada; custo de captura, encoder e composição precisa ser isolado. Os seis exports completos anteriores servem como baseline inicial e não devem ser repetidos a cada hipótese.
 
