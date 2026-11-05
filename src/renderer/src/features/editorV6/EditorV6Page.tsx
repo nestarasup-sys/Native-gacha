@@ -654,6 +654,10 @@ export function EditorV6Page() {
     patchStudio((studio) => ({ ...studio, balloonScalePercent: scalePercent, updatedAt: new Date().toISOString() }), false)
   }
 
+  const updateBalloonOffsetY = (offsetY: number) => {
+    patchStudio((studio) => ({ ...studio, balloonOffsetY: offsetY, updatedAt: new Date().toISOString() }), false)
+  }
+
   const updateVideoBlock = (blockId: string, values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>, record = true) => {
     const update = (studio: EditorV6Document) => ({ ...studio, timeline: normalizeEditorV6Timeline({ ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block) })) }), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
@@ -776,6 +780,7 @@ export function EditorV6Page() {
       ? activeEditorV6?.characterNameColors?.[selectedElement.characterId] ?? videoCharacterTrackColor(selectedElement.characterId)
       : null}
     balloonScalePercent={activeEditorV6?.balloonScalePercent ?? 100}
+    balloonOffsetY={activeEditorV6?.balloonOffsetY ?? 0}
     selectedBackgroundAsset={selectedBackgroundAsset}
     selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
     selectedVideo={selectedTimelineVideo ?? null}
@@ -787,6 +792,7 @@ export function EditorV6Page() {
     onUpdateElement={updateElement}
     onUpdateCharacterNameColor={updateCharacterNameColor}
     onUpdateBalloonScale={updateBalloonScale}
+    onUpdateBalloonOffsetY={updateBalloonOffsetY}
     onUpdateVideoBlock={updateVideoBlock}
     onRecordHistory={() => recordHistory()}
     onDeleteSelected={deleteSelected}

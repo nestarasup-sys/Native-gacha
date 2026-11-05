@@ -62,12 +62,14 @@ describe('timeline do Editor V6', () => {
     const withSpeech = addEditorV6ElementAtFrame(document, speech, 30)
     const withBoth = addEditorV6ElementAtFrame(withSpeech, thought, 30)
     withBoth.balloonScalePercent = 145
+    withBoth.balloonOffsetY = -12
 
     const elements = resolveEditorV6ElementsAtFrame(withBoth, 30)
-    expect(elements.find((element) => element.kind === 'speech')).toMatchObject({ balloonScalePercent: 145 })
-    expect(elements.find((element) => element.kind === 'thought')).toMatchObject({ balloonScalePercent: 145 })
+    expect(elements.find((element) => element.kind === 'speech')).toMatchObject({ balloonScalePercent: 145, balloonOffsetY: -12 })
+    expect(elements.find((element) => element.kind === 'thought')).toMatchObject({ balloonScalePercent: 145, balloonOffsetY: -12 })
     expect(editorV6DocumentSchema.safeParse(withBoth).success).toBe(true)
     expect(editorV6DocumentSchema.safeParse({ ...withBoth, balloonScalePercent: 251 }).success).toBe(false)
+    expect(editorV6DocumentSchema.safeParse({ ...withBoth, balloonOffsetY: 101 }).success).toBe(false)
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 

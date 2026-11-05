@@ -127,6 +127,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
   const width = size.width * 19.2 * balloonScale, height = size.height * 10.8 * balloonScale
   const image = element.kind === 'image' || element.kind === 'character'
   const isBalloon = element.kind === 'speech' || element.kind === 'thought'
+  const displayY = element.y + (isBalloon ? element.balloonOffsetY ?? 0 : 0)
   const fontSize = Math.max(8, Math.min(32, height * .3, width / 2)), lineHeight = fontSize * 1.22
   const speakerName = !image && (element.kind === 'speech' || element.kind === 'thought') ? element.speakerName?.trim() : undefined
   const speakerFontSize = speakerName ? fontSize : 0
@@ -146,7 +147,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
   const faceReplacementMaskId = `v6-face-replacement-${element.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
   const fill = '#ffffff'
   const balloonOutlineColor = element.speakerColor ?? '#624d5b'
-  return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={`${speakerName ? `${speakerName}: ` : ''}${element.text || asset?.name || 'Objeto'}`} role={interaction ? 'button' : undefined}
+  return <g transform={transform(element.x, displayY, element.rotation)} data-element-id={element.id} aria-label={`${speakerName ? `${speakerName}: ` : ''}${element.text || asset?.name || 'Objeto'}`} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
     {image && (asset || rasterCanvas) ? <g transform={element.flipX ? 'scale(-1 1)' : undefined}>

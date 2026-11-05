@@ -23,6 +23,7 @@ const baseProps = {
   selectedElement: null,
   characterNameColor: null,
   balloonScalePercent: 100,
+  balloonOffsetY: 0,
   selectedBackgroundAsset: null,
   selectedVideoBlock: null,
   selectedVideo: null,
@@ -34,6 +35,7 @@ const baseProps = {
   onUpdateElement: onAction,
   onUpdateCharacterNameColor: onAction,
   onUpdateBalloonScale: onAction,
+  onUpdateBalloonOffsetY: onAction,
   onUpdateVideoBlock: onAction,
   onRecordHistory: onAction,
   onDeleteSelected: onAction
@@ -106,7 +108,8 @@ describe('EditorV6PropertyPanel', () => {
       selectedElement: { id: 'speech-1', kind: 'speech', characterId: 'alice', text: 'Uma fala', x: 0, y: 0, width: 28, height: 16, rotation: 0, zIndex: 2 } as EditorV6Element
     })
     expect(html).toContain('Escala dos balões')
-    expect(html).toContain('Aplica a escala a todas as falas e pensamentos deste projeto.')
+    expect(html).toContain('Posição vertical')
+    expect(html).toContain('Aplica a escala e a posição vertical a todas as falas e pensamentos.')
     expect(html).toContain('data-value="140"')
   })
 })

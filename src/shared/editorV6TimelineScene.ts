@@ -73,7 +73,8 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
   return elements.map((element): EditorV6SceneElement => {
     if (element.kind !== 'speech' && element.kind !== 'thought') return element
     const balloonScalePercent = document.balloonScalePercent ?? 100
-    if (!element.characterId && !element.attachedCharacterElementId) return { ...element, balloonScalePercent }
+    const balloonOffsetY = document.balloonOffsetY ?? 0
+    if (!element.characterId && !element.attachedCharacterElementId) return { ...element, balloonScalePercent, balloonOffsetY }
     const exactTarget = element.attachedCharacterElementId ? characters.find((character) => character.id === element.attachedCharacterElementId) : undefined
     const linkedTargets = element.characterId ? characters.filter((character) => character.characterId === element.characterId) : []
     const target = exactTarget ?? linkedTargets.reduce<EditorV6Element | undefined>((nearest, character) => {
@@ -82,7 +83,7 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
       const nearestDistance = (nearest.x - element.x) ** 2 + (nearest.y - element.y) ** 2
       return distance < nearestDistance ? character : nearest
     }, undefined)
-    if (!target) return { ...element, balloonScalePercent }
+    if (!target) return { ...element, balloonScalePercent, balloonOffsetY }
     const balloonClip = editorV6ClipAtFrame(document.timeline, element.id, frame)
     const attachmentFrame = balloonClip?.block.startFrame ?? frame
     const anchorCharacterState = editorV6ClipAtFrame(document.timeline, target.id, attachmentFrame)?.block.state
@@ -94,6 +95,7 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
     return {
       ...element,
       balloonScalePercent,
+      balloonOffsetY,
       x: element.x + target.x - originX,
       y: element.y + target.y - originY,
       speakerName: target.text.trim() || undefined,

@@ -193,6 +193,7 @@ export const editorV6DocumentSchema = z.object({
   elements: z.array(editorV6ElementSchema).max(1000),
   characterNameColors: z.record(z.string().min(1).max(120), z.string().regex(/^#[0-9a-f]{6}$/i)).optional(),
   balloonScalePercent: finite.min(100).max(250).optional(),
+  balloonOffsetY: finite.min(-100).max(100).optional(),
   exportAudio: z.array(editorV6ExportAudioSchema).max(32).optional(),
   timeline: z.object({
     fps: z.literal(30),

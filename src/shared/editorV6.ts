@@ -123,7 +123,7 @@ export type EditorV6Element = {
 }
 
 /** Runtime-only speaker information resolved from a linked actor. */
-export type EditorV6SceneElement = EditorV6Element & { speakerName?: string; speakerColor?: string; balloonScalePercent?: number }
+export type EditorV6SceneElement = EditorV6Element & { speakerName?: string; speakerColor?: string; balloonScalePercent?: number; balloonOffsetY?: number }
 
 export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'object' | 'video' | 'audio'
 export type EditorV6BackgroundState = {
@@ -332,6 +332,8 @@ export type EditorV6Document = {
   characterNameColors?: Record<string, string>
   /** Shared scale percentage for every speech and thought balloon; omitted legacy value means 100%. */
   balloonScalePercent?: number
+  /** Shared vertical scene offset for all speech and thought balloons; omitted legacy value means 0%. */
+  balloonOffsetY?: number
   timeline: EditorV6Timeline
   exportAudio?: EditorV6ExportAudio[]
 }
