@@ -189,6 +189,8 @@ async function main() {
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || !Number.isFinite(run.milliseconds) || run.milliseconds <= 0 || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0
+        || !Number.isFinite(run.exportWallMs) || run.exportWallMs < run.milliseconds
+        || !Number.isFinite(run.clickToValidatedWallMs) || run.clickToValidatedWallMs !== run.exportWallMs
         || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
