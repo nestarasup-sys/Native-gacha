@@ -34,16 +34,17 @@ let expectedCapture = ''
 let panelProject: EditorV6Document
 let closePanelTest: () => void
 ;(globalThis as unknown as { checkExportPanel: () => Promise<unknown> }).checkExportPanel = async () => {
-  let imported = 0, started = 0, prepared = 0, startedWithoutHair = false
+  let linked = 0, started = 0, prepared = 0, startedWithoutHair = false
   localStorage.setItem(HAIR_MOTION_PRESET_KEY, JSON.stringify([FIRST_HAIR_MOTION_PRESET, FIRST_HAIR_MOTION_PRESET, null, null, null]))
   const clip = { id: crypto.randomUUID(), name: 'Trilha de teste.wav', fileName: `${crypto.randomUUID()}.wav`, sourceFrames: 120, sourceInFrame: 0, startFrame: 0, durationFrames: 120, gain: 1, muted: false }
   const job: EditorV6ExportStatus = { id: crypto.randomUUID(), state: 'completed', frames: 300, totalFrames: 300, message: 'MP4 exportado e validado.', fallback: false }
-  const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'getEditorV6ExportFolder' | 'chooseEditorV6ExportFolder' | 'clearEditorV6ExportFolder' | 'importEditorV6ExportAudio' | 'startEditorV6Export'> = {
+  const libraryAudio = { id: crypto.randomUUID(), category: 'audio' as const, name: 'Trilha compartilhada.wav', mimeType: 'audio/wav', extension: 'wav', size: 20000, createdAt: '2026-01-01T00:00:00.000Z', available: true, references: [] }
+  const editorV6: Pick<EditorV6DesktopApi, 'getEditorV6ExportStatus' | 'getEditorV6ExportFolder' | 'chooseEditorV6ExportFolder' | 'clearEditorV6ExportFolder' | 'linkEditorV6LibraryExportAudio' | 'startEditorV6Export'> = {
     getEditorV6ExportFolder: async () => null,
     chooseEditorV6ExportFolder: async () => 'C:/exportacoes',
     clearEditorV6ExportFolder: async () => {},
     getEditorV6ExportStatus: async (id: string) => { if (id === 'latest') throw Error('Nenhuma exportação anterior.'); return job },
-    importEditorV6ExportAudio: async () => { imported++; return clip },
+    linkEditorV6LibraryExportAudio: async (_projectId, audioId) => { assert(audioId === libraryAudio.id, 'O exportador vinculou um áudio com ID diferente.'); linked++; return { ...clip, id: audioId, name: libraryAudio.name } },
     startEditorV6Export: async (project: EditorV6Document, options: { turbo: boolean; width: number; height: number; encoder: string; forceTurbo1080?: boolean; hairPosteriorOnly?: boolean; hairPoseReactionOnly?: boolean; hairAnimationPresetSlot?: number }) => {
       assert(project.exportAudio?.length === 1 && options.turbo && options.width === 1920 && options.height === 1080 && options.encoder === 'cpu' && options.forceTurbo1080, 'Painel perdeu trilha de áudio ou configurações do Turbo.')
       if (options.hairAnimationPresetSlot === undefined) {
@@ -54,7 +55,7 @@ let closePanelTest: () => void
       return job
     }
   }
-  Object.defineProperty(window, 'desktop', { configurable: true, value: { editorV6 } })
+  Object.defineProperty(window, 'desktop', { configurable: true, value: { editorV6, editorV6MediaLibrary: { list: async (category: 'object' | 'audio') => { assert(category === 'audio', 'O exportador pediu a categoria errada da biblioteca.'); return [libraryAudio] }, import: async () => null } } })
   const mount = document.createElement('div')
   document.body.append(mount)
   const root = createRoot(mount)
@@ -73,9 +74,11 @@ let closePanelTest: () => void
   findButton('Escolher pasta fixa').click()
   await new Promise((resolve) => requestAnimationFrame(resolve))
   assert(mount.textContent?.includes('C:/exportacoes') && mount.textContent?.includes('Mudar pasta fixa'), 'Painel não mostrou a pasta escolhida.')
-  findButton('Adicionar áudio').click()
+  findButton('Selecionar da biblioteca').click()
   await new Promise((resolve) => requestAnimationFrame(resolve))
-  assert(imported === 1 && mount.textContent?.includes(clip.name), 'O botão de importar áudio não atualizou o projeto.')
+  findButton(libraryAudio.name).click()
+  await new Promise((resolve) => requestAnimationFrame(resolve))
+  assert(linked === 1 && mount.textContent?.includes(libraryAudio.name), 'A seleção da biblioteca não vinculou o áudio ao projeto.')
   findButton('EXPORTAR SEM ANIMAÇÃO DE CABELO').click()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(startedWithoutHair && prepared === 0 && started === 1, 'A opção sem cabelo preparou animação ou não iniciou a exportação.')
@@ -83,7 +86,7 @@ let closePanelTest: () => void
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(prepared === 1 && started === 2 && mount.textContent?.includes('MP4 exportado e validado.'), 'Exportação padrão não preservou a animação ou não mostrou o resultado.')
   closePanelTest = () => { root.unmount(); mount.remove() }
-  return { passed: true, importedAudio: imported, startedExports: started, startedWithoutHair }
+  return { passed: true, linkedLibraryAudio: linked, startedExports: started, startedWithoutHair }
 }
 ;(globalThis as unknown as { closeExportPanelCheck: () => void }).closeExportPanelCheck = () => closePanelTest()
 ;(globalThis as unknown as { compareNativeSurface: (image: string) => Promise<unknown> }).compareNativeSurface = async (image) => {

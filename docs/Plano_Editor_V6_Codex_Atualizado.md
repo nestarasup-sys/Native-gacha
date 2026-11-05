@@ -245,19 +245,19 @@ Atualizar após cada tarefa relevante, benchmark, mudança de arquitetura ou com
 | **Último tempo informado pelo usuário, com cabelo** | **107 segundos (1min47s), uma exportação; confirmar configuração e reproduzir** |
 | Ganho necessário para 30 s frente aos 107 s observados | **77 s de redução (~72,0%) ou ~3,57× de aceleração**, apenas referência aritmética |
 | Outra observação do usuário | 92 s (histórico separado, não comparável sem metadados) |
-| Baseline local comparável com cabelo | **Pendente** |
-| Baseline local comparável sem cabelo | **Pendente** |
-| Melhor tempo completo validado | **Nenhum após este plano** |
+| Baseline local com cabelo | **159,22 s ponta a ponta**, 1 execução completa, build `aad4b46`; preset 1; 2394 quadros; 1920×1080/30; Turbo; 4 áudios; `h264_amf`; cold motion cache. Não comparável ao relato de 107 s sem metadados equivalentes. |
+| Baseline local sem cabelo | **77,64 s de job**, 1 execução completa, mesmas fontes/configuração de cena/build; o harness desta rodada não registrou intervalo clique→MP4 validado, então não comparar como ponta a ponta com ON. Estado de cache não confirmado neste relatório. |
+| Melhor tempo completo validado | **159,22 s ON ponta a ponta** (uma amostra; ainda acima da meta) |
 | Meta | ≤30 s, qualidade preservada |
-| Bug cabelo — reset | **Não diagnosticado** |
-| Bug cabelo — ausência de reação | **Não diagnosticado** |
-| **BUG-VIS-01 — achatar na troca de expressão** | **Relatado pelo usuário; causa a investigar e corrigir antes da promoção** |
-| **BUG-VIS-02 — cabelo altera velocidade com expressão simultânea à pose** | **Relatado pelo usuário; causa a investigar e corrigir antes da promoção** |
-| Principal gargalo medido historicamente | Preparação de transições (23,7045 s no relatório antigo) |
-| Etapa ativa | **Etapa 0 → Etapa 0A (bugs prioritários) → otimização; trabalho pode ser intercalado conscientemente** |
-| Próxima tarefa | E0-T001 (conferir checkout), E0-T005 (cópia), E0-T007 (novo baseline) e E0A-T001 (triagem dos bugs) |
-| Último commit feito POR ESTA MISSÃO | Nenhum |
-| Situação global | Planejamento entregue; execução pendente |
+| Bug cabelo — reset | Investigação aberta; comparação de segmentos ON/OFF pendente |
+| Bug cabelo — ausência de reação | Em inspeção; imagens amostradas ainda não confirmam ausência nem correção |
+| **BUG-VIS-01 — achatar na troca de expressão** | Imagens de 4 tracks em eventos de expressão não mostram achatamento inequívoco; falta medir bounds/geometria por quadro |
+| **BUG-VIS-02 — cabelo altera velocidade com expressão simultânea à pose** | Projeto tem expressão 18 quadros após pose (dentro da reação de 30 quadros); falta comparação da curva/pixels controlada |
+| Gargalo medido nesta rodada | Render 98,02 s; preparação de cabelo 28,60 s; preparação de movimentos 18,64 s. Captura 14,03 s acumulados em workers (subfase, não somar às fases de parede). |
+| Etapa ativa | **E0 / E0A: fechar mapa de evidências e reprodução; depois corrigir defeitos e atacar gargalos.** |
+| Próxima tarefa | Reproduzir geom./cabelo em segmentos focados do projeto verificado; mapear o fluxo de exportação e corrigir lacunas do benchmark ON/OFF. |
+| Último commit feito POR ESTA MISSÃO | Ainda sem commit; correções de testes e este registro estão em revisão. |
+| Situação global | **Em andamento; nenhuma meta de performance ou correção visual declarada concluída.** |
 
 **Não substitua um campo pendente por uma estimativa.** Se o projeto local tiver mudado, atualizar as referências e justificar por que números antigos deixam de ser comparáveis.
 
@@ -302,18 +302,18 @@ A checklist inicial a seguir é suficiente para começar; **o Codex deve expandi
 
 **Gate:** nenhum resultado de performance deve ser promovido sem projeto, condições, build e saída equivalentes.
 
-- [ ] **E0-T001 — Confirmar código real:** branch, HEAD, `git status`, mudanças preexistentes, versões Node/Electron/Chromium, Windows, CPU, GPU, driver e ferramentas instaladas. Ler `AGENTS.md` antes de qualquer alteração.
+- [~] **E0-T001 — Confirmar código real:** branch `Dev-V2`, HEAD `aad4b46`, status/diff revisados; Node 24.18, Electron 45.1, Windows 11 Pro 26300, Ryzen 5 4600G, Radeon RX 7600. Driver da GPU e versão Chromium ainda pendentes.
 - [ ] **E0-T002 — Mapear os pontos de entrada V6:** botão/UI → snapshot → preparo de cabelo → IPC → runner → preparo movimentos/boca → workers → captura → FFmpeg → FFprobe; identificar lifecycle, cancelamento e publicação.
 - [ ] **E0-T003 — Mapear contratos visuais:** cores/tint, roupa deformada, camadas Posterior x Traseiro, rosto, blink, expressão, boca, transição, espelho, balões/texto, fundos, alpha, vídeo, áudio e sincronização.
 - [ ] **E0-T004 — Catalogar estratégias V6 já existentes:** Turbo 2×, cache de movimentos, reuso de materiais, 2 renderers de cabelo, R32–R37, reutilização de frames, modos de teste internos. Indicar o que está em produção, protótipo ou desligado.
-- [ ] **E0-T005 — Proteger o único projeto autorizado:** usar scripts de backup V6, verificar manifestos e SHA-256, trabalhar apenas em cópia isolada/imutável, preservar preset de cabelo e recursos ligados por ID. Nenhum upload de conteúdo pessoal.
+- [x] **E0-T005 — Proteger o único projeto autorizado:** backup verificado; todas as entradas do manifesto conferidas por tamanho e SHA-256; ON/OFF executados em pastas de perfil isoladas. Fontes preservadas; não publicar IDs, hashes nem mídia.
 - [ ] **E0-T006 — Fixar o relato mais recente e identidade:** registrar **107 s (1min47s), COM cabelo**, como observação não verificada; conferir se 54,7158 s pertence à mesma cópia mediante relatório original local; preservar 92 s separadamente. Usar como baseline nova somente medições completas realizadas pelo Codex no projeto autorizado e configuração fixada.
-- [ ] **E0-T007 — REFazer medição real (P0):** no **`Teste de Importação — Personagens do Pacote`**, executar **primeiro** export completo **com cabelo animado ligado** (Preset 2 se o projeto real estiver configurado assim; confirmar), e **também com cabelo desligado**, em cópias verificadas, mesmas dimensões, FPS, duração, recursos, encoder, Turbo e condição de cache. Registrar tempo **do clique/preparo efetivo até arquivo MP4 publicado/validado** e subfases. Comparar 107 s apenas como relato, sem proclamar ganho até validar comparabilidade.
-- [ ] **E0-T008 — Criar snapshots visuais e repro de bugs:** selecionar frame 0, último, todas as mudanças de expressão suspeitas, **pose+expressão no mesmo instante**, 7 mudanças de pose, 30 frames consecutivos do cabelo, emenda Turbo, estados de boca/olho, overlays e RGBA quando houver. Anotar frame anterior/exato/posterior ao achatamento e à suposta aceleração.
-- [ ] **E0-T009 — Medir recursos completos:** memória RSS Main + processos renderers + GPU, CPU, readbacks, buffers, GC e disco. Identificar saturação e contendas por worker.
+- [~] **E0-T007 — REFazer medição real (P0):** concluídas uma exportação completa ON e uma OFF em cópias verificadas, ambas 2394 quadros, 1920×1080/30, Turbo e 4 áudios, build `aad4b46`. ON: preset 1, `h264_amf`, 159,22 s clique→MP4 validado, cache de movimentos frio (28,60 s preparo de cabelo + job 130,59 s). OFF: 77,64 s de job; o relatório do harness OFF não contém tempo clique→validação nem estado de cache. Fazer rodada comparável apenas quando o protocolo registrar o mesmo intervalo, sem repetir full export a cada mudança.
+- [~] **E0-T008 — Criar snapshots visuais e repro de bugs:** gerados quadros amostrados de expressão para as 4 tracks e janela 750–795; inspeção não mostra achatamento conclusivo. Mapear pose+expressão temporalmente sobrepostos e extrair 30 quadros de cabelo ainda pendente.
+- [~] **E0-T009 — Medir recursos completos:** uma amostra ON registrou RSS de Main/benchmark renderer/export renderer/GPU até ~0,93/1,02/0,92/0,92 GiB (working set); FFmpeg ~0,29 GiB e ~325% CPU pico. Readback 14,03 s acumulados/297 capturas. Repetições, GPU driver/uso dedicado e disco/GC ainda pendentes.
 - [ ] **E0-T010 — Criar matriz de paridade:** requisito, módulo dono, caso de teste, evidência, tolerância visual acordada e risco. Especificar a correção desejada do bug do cabelo, não preservar falha como golden.
 - [ ] **E0-T011 — Criar primeiro relatório de gargalos:** tempo de parede por fase e caminho crítico, distinguindo subfases e sobreposição; priorizar por potencial real de redução do total.
-- [ ] **E0-T012 — Atualizar o Markdown:** painel, experimento zero, comparação com a observação 107 s, capacidade dos testes, linha de retomada e backlog inicial; depois **começar correção visual prioritária e tarefas de performance**, sem encerrar na documentação.
+- [~] **E0-T012 — Atualizar o Markdown:** painel e retomada atualizados com limitações de comparabilidade, medições e gates; aprofundar matriz de paridade e prosseguir para correção/otimização.
 - [ ] **E0-T013 — Registrar a revisão visual do projeto:** hash de conteúdo de cópia autorizada, timestamps de troca de expressão e pose, parâmetros do preset real e status de cabelo ON/OFF; não modificar a fonte.
 - [ ] **E0-T014 — Teste de diagnóstico direcionado:** apenas em cópia do projeto autorizado, comparar trechos **expressão somente**, **pose somente**, **pose + expressão**, com cabelo ON/OFF, sem reconfigurar a baseline principal. Restaurar a cópia e preservar hashes depois.
 - [ ] **E0-T015 — Recuperar relatórios locais com autorização:** se o export de 107 s deixou logs JSON, ler somente os relacionados ao projeto autorizado, sem copiar dados pessoais ou publicar ID; correlacionar métricas ao novo baseline.
@@ -676,21 +676,25 @@ Não criar ADR para um ajuste trivial; registrar decisões que alguém precisar�
 
 O Codex deve manter sempre esta seção curta e fiel ao Git real.
 
-**Último estado confirmado do repositório:** análise remota `Dev-V2` no commit `f4dae479d3e8be561741d1ad8b59ea38922b3b23`; **ainda não confirmado no checkout local**.
+**Último estado confirmado:** `Dev-V2`, commit-base `aad4b46`; o diff não commitado contém ajustes de fixtures/testes e este Markdown. Nenhuma alteração de produto foi feita nesta etapa.
 
-**Última ação desta missão:** reanálise remota estática e revisão do Markdown após novo relato de **1min47s** e dois bugs. Nenhuma exportação local ou commit de código foi executado nesta entrega.
+**Última ação:** `node scripts/editor-v6/rapid-gates-windows.cjs --gate=offscreen --scope=all` aprovado (110 testes Vitest, 6 Node, 4 nativos e 2 verificações Electron). O gate primeiro apontou uma fixture obsoleta: simulava importação direta de áudio, embora o V6 agora selecione a Biblioteca por ID. Também se explicitou a tolerância de quantização 8-bit já medida na borda da composição de face: diferença máxima de 1 LSB, alpha exato e limite de pixels afetados.
 
-**Tarefa ativa:** `E0-T001` pendente.
+**Próxima ação:** revisar e commitar a etapa de testes/medição; em seguida, continuar diagnóstico visual focado na cópia autorizada e corrigir a instrumentação do benchmark OFF para medir o mesmo intervalo clique→MP4 validado do ON. Priorizar expressão isolada e pose seguida de expressão (18 quadros dentro da reação de 30); evitar reexports completos a cada ajuste mínimo.
 
-**Próxima ação obrigatória:** abrir checkout do V6, conferir branch/status/AGENTS, verificar cópia/backup de **`Teste de Importação — Personagens do Pacote`**, **refazer exportação completa com cabelo ON e OFF** para nova baseline, e iniciar imediatamente **Etapa 0A: reprodução e correção dos dois bugs**, antes de promover novo backend.
+**Baseline local:** ON 159,22 s clique→MP4 validado, preset 1; OFF 77,64 s apenas de job, portanto ainda sem comparação direta. Ambos têm 2394 quadros, 1920×1080/30, Turbo, 4 áudios, build `aad4b46` e cópia verificada isolada. Estado do cache OFF não foi registrado. O relato de 107 s e a referência de 54,7158 s seguem sem condições equivalentes demonstradas.
 
-**Baseline local comprovada:** nenhuma executada pelo autor deste plano. **Último tempo informado pelo usuário: 107 s, com cabelo** (uma rodada, sem relatório local aqui). Baseline documental 54,7158 s é referência histórica que requer identidade verificada; anterior de 92 s também é histórico separado.
+**Limites abertos:** bugs visuais sem reprodução confirmada; meta ≤30 s não alcançada; driver da GPU e versão Chromium ainda não anotados; nenhuma alteração de produto nesta etapa.
 
-**Falhas abertas (P0):** **BUG-VIS-01: leve achatamento vertical ao trocar expressão**; **BUG-VIS-02: reação do cabelo após pose parece acelerar/bugar quando expressão muda junto**; reset/duplicidade da reação e ausência de reação em alguns personagens; custo excessivo de exportação. Causas **a confirmar com código e amostras visuais**.
+## Diário técnico — 05/11/2026
 
-**Decisões fixas:** exclusivamente Editor V6; projeto de teste único; até 30 s; qualidade, integridade, segurança e commits locais.
-
-**Ao retomar:** ler este bloco, confrontar o código e o Git, atualizar divergências, executar a próxima tarefa sem reescrever o plano inteiro por hábito.
+- A exportação ON terminou e validou em 159,22 s. Preparo do cabelo: 28,60 s; 37 transições; pacote serializado ~85,5 MiB. Fases registradas: preparo de movimentos 18,64 s, renderização 98,02 s, finalização 13,17 s. Captura: 297 readbacks; 14,03 s acumulados e 17,65 s de round-trip acumulado entre workers. Essas subfases podem sobrepor-se e não são aditivas.
+- Recursos ON, em amostra única: working set de Main ~0,93 GiB, benchmark renderer ~1,02 GiB, export renderer ~0,92 GiB, GPU ~0,92 GiB e FFmpeg ~0,29 GiB; FFmpeg atingiu ~325% CPU. Falta verificar repetibilidade, pressão de memória compartilhada, GC e disco.
+- A exportação OFF completa passou validação e FFprobe. O relatório mede 77,64 s de job, render 46,50 s e finalização 12,17 s, mas não registra clique→validação; não comparar esse intervalo com ON.
+- Quadros amostrados de expressão nas quatro tracks mostram variação de rosto e nenhum achatamento inequívoco nas miniaturas. O caso track 3 em 1794–1830 envolve pose e expressão em sequência; não demonstra ainda aceleração nem correção do cabelo.
+- A composição dual de face divergiu em 17 pixels, apenas cor de borda, máximo 1/255 e alpha idêntico. O teste declara limite tight de 1 LSB e 0,2% dos pixels, baseado nesta evidência, sem mascarar diferença geométrica.
+- O teste do painel agora valida seleção de áudio existente na biblioteca e vínculo por ID. O fluxo de produção já usava essa API; somente a fixture estava defasada.
+- `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram antes desta etapa. O gate offscreen repetido passou em 6,78 s. Os testes sintéticos de geometria/paridade não substituem aceite visual do projeto inteiro.
 
 ---
 

@@ -59,7 +59,7 @@ function fixture() {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
   const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs' })
-  const payload = { project: { media: [] }, width: 320, height: 180, layeredVideo: false } as unknown as EditorV6WorkerPayload
+  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: false } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
     handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })
