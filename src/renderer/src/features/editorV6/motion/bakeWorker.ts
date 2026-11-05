@@ -10,7 +10,9 @@ export async function runEditorV6MotionWorker() {
     if (!request) return
     try {
       const nextRevision = JSON.stringify([request.character, request.plan.from.characterSourceUpdatedAt, request.plan.to.characterSourceUpdatedAt, [request.plan.from.modelSourceRevision, request.plan.to.modelSourceRevision].sort(), [request.plan.from.poseSourceRevision, request.plan.to.poseSourceRevision].sort(), [request.plan.from.wardrobeSourceRevision, request.plan.to.wardrobeSourceRevision].sort(), [request.plan.from.hairSourceRevision, request.plan.to.hairSourceRevision].sort(), [request.plan.from.headExtraSourceRevision, request.plan.to.headExtraSourceRevision].sort(), [request.plan.from.eyeSourceRevision, request.plan.to.eyeSourceRevision].sort(), request.plan.from.faceRendererVersion, request.plan.to.faceRendererVersion])
-      if (!session || nextRevision !== revision || uses >= 8) {
+      // The session already caps rig canvases, material entries and provider reads.
+      // Avoid discarding hot sources after only eight requests from one character.
+      if (!session || nextRevision !== revision || uses >= 32) {
         session?.dispose()
         session = createEditorV6BakeSession(bridge.provider)
         revision = nextRevision; uses = 0

@@ -11,7 +11,11 @@ export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../
 
 export { sceneFaceModeForElement as editorV6FaceModeForElement } from '../../characters/sceneFaceMode.ts'
 
-export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage | null {
+/** Exact alpha bounds of the legacy face crop, but without PNG encoding.
+ * A full image and an empty image both have no crop, matching the old contract.
+ * This is used by every hair-preparation face-mode measurement.
+ */
+export function canvasFaceAlphaBounds(source: HTMLCanvasElement): Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null {
   const context = source.getContext('2d', { willReadFrequently: true })
   if (!context || !source.width || !source.height) return null
   let pixels: Uint8ClampedArray
@@ -28,6 +32,13 @@ export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage |
   const width = right - left + 1
   const height = bottom - top + 1
   if (left === 0 && top === 0 && width === source.width && height === source.height) return null
+  return { left, top, width, height }
+}
+
+export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage | null {
+  const crop = canvasFaceAlphaBounds(source)
+  if (!crop) return null
+  const { left, top, width, height } = crop
   const canvas = document.createElement('canvas')
   canvas.width = width
   canvas.height = height
@@ -90,7 +101,8 @@ export async function measureFaceModeCrop(
       if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
       context.drawImage(frame, 0, 0)
     })
-    const crop = union ? trimTransparentCanvas(union) : null
+    // Measuring bounds must not allocate/encode a PNG. The caller only needs geometry.
+    const crop = union ? canvasFaceAlphaBounds(union) : null
     return crop ? { left: crop.left, top: crop.top, width: crop.width, height: crop.height } : null
   } finally { if (union) union.width = union.height = 1 }
 }
