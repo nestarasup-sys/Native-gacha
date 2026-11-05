@@ -29,3 +29,9 @@ A CI GitHub usa Windows Server 2025 e fixtures sintéticas. Ainda não há evid�
 - A bancada `zona-guerra-export-lab.yml` inclui esses testes em cada rodada e salva logs, PNGs e JSONs por rodada em artifacts do Actions.
 
 **Interpretação:** passar no teste de 30 quadros confirma apenas o subconjunto de peças planas com rotação e alpha. Não autoriza troca de atlas na produção, nem demonstra aceleração do projeto de 309 quadros. A aprovação de R37 completo depende dos gates visuais listados acima.
+
+## R38 — compositor experimental em camadas (não habilitado no MP4)
+
+A bancada R37 agora aceita operadores de pintura pré-compostos ordenados em quatro estágios: `behind-body`, `over-body`, `face` e `front-hair`. Cada camada aceita opacidade e flip por eixo, permitindo testes de roupas/rosto/cabelo transparentes sem capturar o palco React. O decodificador limita a quatro fontes simultâneas, compartilha requests concorrentes e continua usando cache LRU limitado.
+
+**Limite obrigatório:** este caminho recebe imagens **já preparadas**. Ainda não sintetiza tint/contour, joint bridges, mesh/deformação das roupas, expressão facial, física do cabelo nem recorte RGBA completo. A existência desses operadores não constitui paridade com a composição do personagem real. `exportReady:false` permanece e nenhuma integração de produção foi feita.

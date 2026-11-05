@@ -5,10 +5,35 @@ import type { EditorV6ExperimentalPartFrame } from './editorV6PartMotionPrototyp
  * decoding, source revision and tint. This is NOT a complete character renderer.
  * Never wire this to export until joint/skin/wardrobe/face/hair parity is proven.
  */
+/**
+ * Precomposed visual layers are an experimental bridge toward the real Gacha
+ * compositor. The assets are supplied by the caller; this backend does NOT
+ * synthesize tint, deform clothes, draw joints, or animate hair physics.
+ * Drawing them in explicit stages avoids flattening transparent overlays into
+ * the body sprites while those operators are built and checked independently.
+ */
+export type EditorV6PartOverlayStage = 'behind-body' | 'over-body' | 'face' | 'front-hair'
+export type EditorV6PartOverlayCommand = Readonly<{
+  id: string
+  sourceDataUrl: string
+  stage: EditorV6PartOverlayStage
+  visible: boolean
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  opacity?: number
+  flipX?: boolean
+  flipY?: boolean
+}>
+export type EditorV6LayeredPartFrame = EditorV6ExperimentalPartFrame & Readonly<{
+  overlays?: readonly EditorV6PartOverlayCommand[]
+}>
 export type EditorV6PartImage = CanvasImageSource
 export type EditorV6PartDecode = (sourceDataUrl: string, signal?: AbortSignal) => Promise<EditorV6PartImage>
 export type EditorV6PartCanvasContext = Pick<CanvasRenderingContext2D,
-  'save' | 'restore' | 'translate' | 'rotate' | 'drawImage' | 'clearRect'>
+  'save' | 'restore' | 'translate' | 'rotate' | 'scale' | 'drawImage' | 'clearRect' | 'globalAlpha'>
 export type EditorV6PartCanvas = {
   width: number
   height: number
@@ -19,9 +44,11 @@ export type EditorV6PartRenderMetrics = Readonly<{
   reusedImages: number
   drawnParts: number
   skippedHiddenParts: number
+  drawnOverlays?: number
+  skippedHiddenOverlays?: number
 }>
 export type EditorV6PartRenderer = Readonly<{
-  render: (frame: EditorV6ExperimentalPartFrame, canvas: EditorV6PartCanvas, signal?: AbortSignal) => Promise<EditorV6PartRenderMetrics>
+  render: (frame: EditorV6LayeredPartFrame, canvas: EditorV6PartCanvas, signal?: AbortSignal) => Promise<EditorV6PartRenderMetrics>
   clear: () => void
   cachedSources: () => number
 }>
@@ -38,6 +65,17 @@ const validPart = (part: EditorV6ExperimentalPartFrame['parts'][number]) =>
   typeof part.visible === 'boolean' && Number.isSafeInteger(part.order) && part.order >= 0 &&
   [part.x, part.y, part.width, part.height, part.rotation].every(Number.isFinite) &&
   part.width > 0 && part.height > 0
+const overlayStages: readonly EditorV6PartOverlayStage[] = ['behind-body', 'over-body', 'face', 'front-hair']
+const validOverlay = (layer: EditorV6PartOverlayCommand) =>
+  layer !== null && typeof layer === 'object' &&
+  typeof layer.id === 'string' && layer.id.length > 0 &&
+  typeof layer.sourceDataUrl === 'string' && layer.sourceDataUrl.length > 0 &&
+  overlayStages.includes(layer.stage) && typeof layer.visible === 'boolean' &&
+  [layer.x, layer.y, layer.width, layer.height, layer.rotation].every(Number.isFinite) &&
+  layer.width > 0 && layer.height > 0 &&
+  (layer.opacity === undefined || (Number.isFinite(layer.opacity) && layer.opacity >= 0 && layer.opacity <= 1)) &&
+  (layer.flipX === undefined || typeof layer.flipX === 'boolean') &&
+  (layer.flipY === undefined || typeof layer.flipY === 'boolean')
 
 /**
  * Predecodes unique visible sources before touching the target. Failed decodes
@@ -66,6 +104,7 @@ export function createEditorV6PartRasterRenderer(
     }
     const version = generation
     let task = pending.get(source)
+    const createdTask = !task
     if (!task) {
       // A shared decode must not be owned by any one caller's AbortSignal.
       // Cancellation is checked per consumer after awaiting the shared task.
@@ -79,7 +118,7 @@ export function createEditorV6PartRasterRenderer(
       images.delete(source)
       images.set(source, image)
       while (images.size > maxCachedSources) images.delete(images.keys().next().value!)
-      return { image, reused: false }
+      return { image, reused: !createdTask }
     } finally {
       if (pending.get(source) === task) pending.delete(source)
     }
@@ -89,8 +128,11 @@ export function createEditorV6PartRasterRenderer(
     cachedSources: () => images.size,
     async render(frame, canvas, signal) {
       assertActive(signal)
+      const overlays = frame.overlays ?? []
       if (!validFrame(frame) || !Array.isArray(frame.parts) || !frame.parts.every(validPart) ||
-        new Set(frame.parts.map(part => part.id)).size !== frame.parts.length) {
+        new Set(frame.parts.map(part => part.id)).size !== frame.parts.length ||
+        !Array.isArray(overlays) || !overlays.every(validOverlay) ||
+        new Set([...frame.parts.map(part => part.id), ...overlays.map(layer => layer.id)]).size !== frame.parts.length + overlays.length) {
         throw new Error('R37: invalid frame geometry')
       }
       if (canvas.width !== frame.width || canvas.height !== frame.height) {
@@ -99,34 +141,58 @@ export function createEditorV6PartRasterRenderer(
       const context = canvas.getContext()
       if (!context) throw new Error('R37: canvas 2D context unavailable')
       const visible = frame.parts.filter(part => part.visible)
+      const visibleOverlays = overlays.filter(layer => layer.visible)
+      const sources = [...new Set([...visible, ...visibleOverlays].map(item => item.sourceDataUrl))]
       const resolved = new Map<string, EditorV6PartImage>()
       let decodedImages = 0, reusedImages = 0
-      for (const part of visible) {
-        assertActive(signal)
-        if (resolved.has(part.sourceDataUrl)) { reusedImages++; continue }
-        const wasCached = images.has(part.sourceDataUrl)
-        const result = await getImage(part.sourceDataUrl, signal)
-        resolved.set(part.sourceDataUrl, result.image)
-        if (wasCached || result.reused) reusedImages++
-        else decodedImages++
+      // Decode several independent images together without creating an
+      // unbounded decode storm on characters with many accessories.
+      // Completion is required before the first pixel of the target changes.
+      let next = 0
+      const decodeNext = async () => {
+        while (next < sources.length) {
+          assertActive(signal)
+          const source = sources[next++]
+          const { image, reused } = await getImage(source, signal)
+          resolved.set(source, image)
+          if (reused) reusedImages++
+          else decodedImages++
+        }
       }
+      await Promise.all(Array.from({ length: Math.min(4, sources.length) }, () => decodeNext()))
+      reusedImages += visible.length + visibleOverlays.length - sources.length
       // Cancellation is checked immediately before the first canvas mutation.
       // Once drawing starts it must finish synchronously: aborting between
       // clearRect and the last part would leave a partially composed frame.
-      // A later render can observe cancellation before its own mutation.
       assertActive(signal)
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      for (const part of visible) {
+      const paint = (item: EditorV6PartOverlayCommand | EditorV6ExperimentalPartFrame['parts'][number]) => {
         context.save()
         try {
-          context.translate(part.x + part.width / 2, part.y + part.height / 2)
-          context.rotate(part.rotation * Math.PI / 180)
-          context.drawImage(resolved.get(part.sourceDataUrl)!, -part.width / 2, -part.height / 2, part.width, part.height)
+          context.translate(item.x + item.width / 2, item.y + item.height / 2)
+          context.rotate(item.rotation * Math.PI / 180)
+          if ('stage' in item) {
+            context.globalAlpha = item.opacity ?? 1
+            if (item.flipX || item.flipY) context.scale(item.flipX ? -1 : 1, item.flipY ? -1 : 1)
+          }
+          context.drawImage(resolved.get(item.sourceDataUrl)!, -item.width / 2, -item.height / 2, item.width, item.height)
         } finally {
           context.restore()
         }
       }
-      return { decodedImages, reusedImages, drawnParts: visible.length, skippedHiddenParts: frame.parts.length - visible.length }
+      context.clearRect(0, 0, canvas.width, canvas.height)
+      for (const layer of visibleOverlays) if (layer.stage === 'behind-body') paint(layer)
+      for (const part of visible) paint(part)
+      for (const stage of ['over-body', 'face', 'front-hair'] as const) {
+        for (const layer of visibleOverlays) if (layer.stage === stage) paint(layer)
+      }
+      return {
+        decodedImages, reusedImages, drawnParts: visible.length,
+        skippedHiddenParts: frame.parts.length - visible.length,
+        ...(overlays.length ? {
+          drawnOverlays: visibleOverlays.length,
+          skippedHiddenOverlays: overlays.length - visibleOverlays.length
+        } : {})
+      }
     }
   }
 }
