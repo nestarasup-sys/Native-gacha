@@ -282,16 +282,16 @@
 .roteiro-video-picker-filters>label:not(.roteiro-picker-search) { display:grid;gap:4px;color:#786b80;font-size:11px;font-weight:800; }
 .roteiro-video-picker-filters select { height:39px;min-width:120px;padding:0 9px;border:1px solid #e4dce9;border-radius:8px;background:#fff;color:#4f4356;font:600 13px 'DM Sans',sans-serif; }
 .roteiro-picker-result-count { padding:10px 2px;color:#8c7c92;font-size:12px;white-space:nowrap; }
-.roteiro-video-picker-list { min-height:160px;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));align-content:start;gap:12px; }
-.roteiro-video-picker-card { min-width:0;overflow:hidden;border:1px solid #e7dfeb;border-radius:12px;background:#fff;transition:border-color .15s,box-shadow .15s; }
+.roteiro-video-picker-list { min-height:160px;min-width:0;flex:1 1 auto;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:max-content;align-content:start;gap:12px;overflow:auto; }
+.roteiro-video-picker-card { min-width:0;min-height:0;align-self:start;overflow:hidden;border:1px solid #e7dfeb;border-radius:12px;background:#fff;transition:border-color .15s,box-shadow .15s; }
 .roteiro-video-picker-card:hover { border-color:#b99bd8;box-shadow:0 5px 15px #4c2a6314; }
 .roteiro-video-picker-card.linked { border-color:#8e69ce;box-shadow:0 0 0 2px #8e69ce24; }
-.roteiro-picker-thumb { width:100%;aspect-ratio:16/9;position:relative;display:block;overflow:hidden;padding:0;border:0;background:#211b25;cursor:pointer; }
-.roteiro-picker-thumb>video { width:100%;height:100%;object-fit:contain; }
+.roteiro-picker-thumb { width:100%;height:clamp(140px,18vw,190px);min-height:140px;position:relative;display:block;overflow:hidden;padding:0;border:0;background:#211b25;cursor:pointer; }
+.roteiro-picker-thumb>video { position:absolute;inset:0;display:block;width:100%;height:100%;max-width:none;object-fit:contain;background:#211b25; }
 .roteiro-picker-play { position:absolute;left:50%;top:50%;width:42px;height:42px;display:grid;place-items:center;transform:translate(-50%,-50%);border:1px solid #ffffffb0;border-radius:50%;background:#231b2bb8;color:#fff;font-size:17px;opacity:.92; }
 .roteiro-picker-thumb:hover .roteiro-picker-play { transform:translate(-50%,-50%) scale(1.08);background:#7550c8; }
 .roteiro-picker-thumb>small { position:absolute;right:7px;bottom:7px;padding:4px 6px;border-radius:5px;background:#211a28c9;color:#fff;font-size:10px;font-weight:850; }
-.roteiro-picker-card-info { display:grid;gap:7px;padding:10px; }
+.roteiro-picker-card-info { min-height:102px;display:grid;grid-template-rows:auto auto 1fr;gap:7px;padding:10px; }
 .roteiro-picker-card-info>div:first-child { min-width:0;display:flex;align-items:center;gap:7px; }
 .roteiro-picker-card-info>div:first-child>strong { overflow:hidden;color:#433849;font-size:12px;text-overflow:ellipsis;white-space:nowrap; }
 .roteiro-picker-card-info>small { color:#877b8d;font-size:10px; }
