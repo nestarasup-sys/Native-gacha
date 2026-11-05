@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { BaseVideoCategory, BaseVideoDetails } from '../../../../shared/baseVideos'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
+import type { CharacterSheet } from '../../../../shared/roteiros'
 import { formatSimpleVideoExport, selectSimpleExportEntries } from './baseVideoSimpleExport'
 
 type Props = {
@@ -17,6 +18,7 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
   const [exporting, setExporting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [characters, setCharacters] = useState<CustomizerCharacter[]>([])
+  const [characterSheets, setCharacterSheets] = useState<CharacterSheet[]>([])
   const [selectedCharacterIds, setSelectedCharacterIds] = useState<string[]>([])
   const [characterPickerOpen, setCharacterPickerOpen] = useState(false)
   const [charactersLoading, setCharactersLoading] = useState(true)
@@ -30,8 +32,8 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
 
   useEffect(() => {
     let cancelled = false
-    void window.desktop.customizer.listCustomizerCharacters().then((loaded) => {
-      if (!cancelled) setCharacters(loaded)
+    void Promise.all([window.desktop.customizer.listCustomizerCharacters(), window.desktop.roteiros.listCharacterSheets()]).then(([loaded, sheets]) => {
+      if (!cancelled) { setCharacters(loaded); setCharacterSheets(sheets) }
     }).catch((reason) => {
       if (!cancelled) setCharacterLoadError(reason instanceof Error ? reason.message : 'Não foi possível carregar os personagens do Customizador.')
     }).finally(() => { if (!cancelled) setCharactersLoading(false) })
@@ -52,7 +54,7 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
         const character = characters.find((item) => item.id === id)
         return character ? [character] : []
       })
-      await onExport(formatSimpleVideoExport(entries, selectedCharacters))
+      await onExport(formatSimpleVideoExport(entries, selectedCharacters, characterSheets))
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível exportar os dados simples.')
     } finally { setExporting(false) }
@@ -71,7 +73,7 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
           {characterPickerOpen && <div className="base-videos-export-character-list" aria-label="Personagens do Customizador">
             {charactersLoading ? <p>Carregando personagens…</p> : characterLoadError ? <p role="alert">{characterLoadError}</p> : characters.length ? characters.map((character) => {
               const checked = selectedCharacterIds.includes(character.id)
-              return <label key={character.id} className="base-videos-export-character-option"><input type="checkbox" checked={checked} disabled={exporting} onChange={() => setSelectedCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} /><span><strong>{character.name}</strong><small>Sem ficha — será exportado com campos vazios</small></span></label>
+              return <label key={character.id} className="base-videos-export-character-option"><input type="checkbox" checked={checked} disabled={exporting} onChange={() => setSelectedCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} /><span><strong>{character.name}</strong><small>{characterSheets.some((sheet) => sheet.characterId === character.id) ? 'Ficha local incluída no TXT' : 'Sem ficha — será exportado com campos vazios'}</small></span></label>
             }) : <p>O Customizador ainda não tem personagens.</p>}
           </div>}
           <label className="base-videos-export-category"><span>Vídeos para exportar</span><select value={categoryId} disabled={exporting} onChange={(event) => setCategoryId(event.target.value)}>

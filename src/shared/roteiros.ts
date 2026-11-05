@@ -66,7 +66,22 @@ export type RoteiroExportCharacterInfo = {
 
 export type RoteiroUiGifItem = { id: string; name: string; size: number; createdAt: string; builtIn?: boolean; available: boolean }
 
+export type CharacterSheetRelationship = { id: string; targetCharacterId: string; description: string }
+export type CharacterSheet = {
+  characterId: string
+  characterName: string
+  personality: string
+  backstory: string
+  fynRelationship: string
+  speakingStyle: string
+  relationships: CharacterSheetRelationship[]
+  additionalRules: string
+  updatedAt: string
+}
+
 export type RoteirosDesktopApi = {
+  listCharacterSheets: () => Promise<CharacterSheet[]>
+  saveCharacterSheet: (sheet: CharacterSheet) => Promise<void>
   listRoteiros: () => Promise<RoteiroDocument[]>
   saveRoteiros: (roteiros: RoteiroDocument[]) => Promise<void>
   listRoteiroExportLogs: (roteiroId: string) => Promise<RoteiroExportLog[]>

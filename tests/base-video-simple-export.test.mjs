@@ -38,3 +38,13 @@ test('export simples acrescenta personagens selecionados com ficha vazia e numer
   assert.match(text, /PERSONAGEM 2\nNOME: Noah Barros\nFICHA:/)
   assert.equal((text.match(/PERSONAGEM \d+/g) ?? []).length, 2)
 })
+
+test('export simples usa somente a ficha local vinculada ao ID do Customizador', () => {
+  const character = { id: 'current', name: 'Personagem atual', hair: '#000000', outfit: '#000000', skin: '#000000', customization: { modelSlot: null, poseSlot: null, partOverrides: {}, layerOrder: [] }, createdAt: '', updatedAt: '' }
+  const savedSheet = { characterId: 'current', characterName: 'Nome antigo', personality: 'Atenta.', backstory: '', fynRelationship: '', speakingStyle: '', relationships: [{ id: 'rel', targetCharacterId: 'other-id', description: 'Confia nela.' }], additionalRules: '', updatedAt: '' }
+  const unrelatedSheet = { ...savedSheet, characterId: 'legacy-id', personality: 'DADO QUE NÃO DEVE ENTRAR' }
+  const text = formatSimpleVideoExport([], [character], [savedSheet, unrelatedSheet])
+  assert.match(text, /"personality": "Atenta\."/)
+  assert.match(text, /"targetCharacterId": "other-id"/)
+  assert.doesNotMatch(text, /DADO QUE NÃO DEVE ENTRAR/)
+})

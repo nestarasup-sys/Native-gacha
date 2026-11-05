@@ -159,6 +159,8 @@ const baseVideosApi: BaseVideosDesktopApi = {
 }
 
 const roteirosApi: RoteirosDesktopApi = {
+  listCharacterSheets: () => ipcRenderer.invoke('roteiros:character-sheets:list'),
+  saveCharacterSheet: (sheet) => ipcRenderer.invoke('roteiros:character-sheets:save', sheet),
   listRoteiros: () => ipcRenderer.invoke('roteiros:list'),
   saveRoteiros: (roteiros) => ipcRenderer.invoke('roteiros:save', roteiros),
   listRoteiroExportLogs: (roteiroId) => ipcRenderer.invoke('roteiros:export-logs:list', roteiroId),

@@ -41,3 +41,7 @@ Avançar por domínio, sempre com testes e possibilidade de voltar ao módulo an
 ## Compatibilidade: tronco masculino do Fabricador
 
 O projeto de modelo pode conter `maleTorso`, uma cópia editável e independente do tronco feminino. O manifesto mantém somente os metadados dessa peça; a imagem é armazenada em `parts/male-torso.png`, e o histórico mantém sua imagem como asset referenciado por hash. Projetos antigos sem `maleTorso` continuam válidos. Customizador e renderizadores aplicam a cópia somente a personagens masculinos, sem alterar a montagem feminina de origem.
+
+## Fichas narrativas dos personagens
+
+Roteiros mantém fichas narrativas locais vinculadas pelo ID atual do personagem do Customizador. A tela React obtém a lista pelo contrato `RoteirosDesktopApi`; o preload encaminha listagem e gravação a handlers IPC que validam a origem do renderer. O serviço valida campos e limites e grava pela fila de escrita na tabela `roteiro_character_sheets` do catálogo local. A tabela já existe no schema 17 e não recebe dados durante a abertura da tela. Fichas ausentes são apresentadas vazias e só passam a persistir quando o usuário edita. A exportação TXT da Base de Vídeos consulta a ficha pelo mesmo ID e usa um objeto vazio quando não existe registro. Nenhum conteúdo do aplicativo legado é importado.

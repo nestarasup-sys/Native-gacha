@@ -16,6 +16,8 @@ import { createRoteiroUiGifsService } from '../domains/roteiros/uiGifsService.ts
 import { registerRoteiroUiGifsHandlers } from '../domains/roteiros/uiGifsIpc.ts'
 import { createRoteirosDocumentService } from '../domains/roteiros/service.ts'
 import { registerRoteirosDocumentHandlers } from '../domains/roteiros/documentIpc.ts'
+import { createCharacterSheetsService } from '../domains/roteiros/characterSheetsService.ts'
+import { registerCharacterSheetsHandlers } from '../domains/roteiros/characterSheetsIpc.ts'
 
 export type RoteirosImportKind = 'video' | 'background' | 'gif'
 export type RoteirosIpcLifecycle = ReturnType<typeof registerRoteiroExportHandlers>
@@ -104,6 +106,9 @@ export function registerRoteirosIpc(deps: RegisterRoteirosIpcDependencies): Rote
     assertLibraryUiGifReferencesAvailable: deps.assertLibraryUiGifReferencesAvailable
   })
   registerRoteirosDocumentHandlers({ ipcMain: deps.ipcMain, assertTrustedSender: deps.assertTrustedSender, service: roteiroDocumentService })
+
+  const characterSheetsService = createCharacterSheetsService({ getDatabase: deps.getDatabase, waitForPendingWrites: deps.waitForPendingWrites, enqueueWrite: deps.enqueueWrite })
+  registerCharacterSheetsHandlers({ ipcMain: deps.ipcMain, assertTrustedSender: deps.assertTrustedSender, service: characterSheetsService })
 
   const roteiroExportLogsService = createRoteiroExportLogsService({
     getDatabase: deps.getDatabase,

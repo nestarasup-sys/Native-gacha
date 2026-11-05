@@ -1,5 +1,6 @@
 import type { BaseVideoCategory, BaseVideoDetails } from '../../../../shared/baseVideos'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
+import type { CharacterSheet } from '../../../../shared/roteiros'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 
 export type BaseVideoSimpleExportEntry = {
@@ -33,7 +34,7 @@ export function selectSimpleExportEntries(
     })
 }
 
-export function formatSimpleVideoExport(entries: BaseVideoSimpleExportEntry[], characters: CustomizerCharacter[] = []): string {
+export function formatSimpleVideoExport(entries: BaseVideoSimpleExportEntry[], characters: CustomizerCharacter[] = [], sheets: CharacterSheet[] = []): string {
   const videoSections = entries.map(({ item, details, category }) => {
     const heading = details.videoNumber === undefined
       ? `RASCUNHO — ${item.name}`
@@ -52,7 +53,15 @@ export function formatSimpleVideoExport(entries: BaseVideoSimpleExportEntry[], c
     ].join('\n')
   })
   const characterSections = characters.map((character, index) => {
-    const emptySheet = {
+    const savedSheet = sheets.find((sheet) => sheet.characterId === character.id)
+    const ficha = savedSheet ? {
+      personality: savedSheet.personality,
+      backstory: savedSheet.backstory,
+      fynRelationship: savedSheet.fynRelationship,
+      speakingStyle: savedSheet.speakingStyle,
+      relationships: savedSheet.relationships.map(({ targetCharacterId, description }) => ({ targetCharacterId, description })),
+      additionalRules: savedSheet.additionalRules
+    } : {
       personality: '',
       backstory: '',
       fynRelationship: '',
@@ -60,7 +69,7 @@ export function formatSimpleVideoExport(entries: BaseVideoSimpleExportEntry[], c
       relationships: [],
       additionalRules: ''
     }
-    return [`PERSONAGEM ${index + 1}`, `NOME: ${character.name}`, 'FICHA:', JSON.stringify(emptySheet, null, 2)].join('\n')
+    return [`PERSONAGEM ${index + 1}`, `NOME: ${character.name}`, 'FICHA:', JSON.stringify(ficha, null, 2)].join('\n')
   })
   return [...videoSections, ...characterSections].join('\n\n') + (videoSections.length || characterSections.length ? '\n' : '')
 }
