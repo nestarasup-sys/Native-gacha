@@ -4,7 +4,7 @@ import type { EditorV6ExperimentalPartFrame } from '../../src/shared/editorV6Par
 
 function harness() {
   const calls: unknown[][] = []
-  const context = Object.fromEntries(['save', 'restore', 'translate', 'rotate', 'drawImage', 'clearRect'].map(name =>
+  const context = Object.fromEntries(['save', 'restore', 'translate', 'rotate', 'scale', 'drawImage', 'clearRect'].map(name =>
     [name, (...args: unknown[]) => { calls.push([name, ...args]) }]))
   const canvas = { width: 100, height: 100, getContext: () => context as never }
   return { canvas, calls }
@@ -114,6 +114,71 @@ describe('R37 isolated piece raster backend', () => {
     ]
     for (const candidate of invalid) {
       await expect(renderer.render(candidate, canvas)).rejects.toThrow('invalid frame geometry')
+    }
+    expect(decodes).toBe(0)
+    expect(calls).toHaveLength(0)
+  })
+  it('composites pre-rendered wardrobe, face and hair layers in explicit paint stages', async () => {
+    const { canvas, calls } = harness()
+    const renderer = createEditorV6PartRasterRenderer(async (source) => ({ source }) as never)
+    const makeOverlay = (id: string, stage: 'behind-body' | 'over-body' | 'face' | 'front-hair') => ({
+      id, stage, sourceDataUrl: id, visible: true, x: 3, y: 4, width: 12, height: 16,
+      rotation: 20, opacity: 0.7, flipX: id === 'fringe'
+    })
+    const result = await renderer.render({
+      ...frame([part('body', 'body')]),
+      overlays: [
+        makeOverlay('fringe', 'front-hair'), makeOverlay('shirt', 'over-body'),
+        makeOverlay('rear-hair', 'behind-body'), makeOverlay('mouth', 'face'),
+        { ...makeOverlay('unused', 'face'), visible: false }
+      ]
+    }, canvas)
+    expect(result).toEqual({
+      decodedImages: 5, reusedImages: 0, drawnParts: 1, skippedHiddenParts: 0,
+      drawnOverlays: 4, skippedHiddenOverlays: 1
+    })
+    expect(calls.filter(x => x[0] === 'drawImage').map(x => (x[1] as { source: string }).source))
+      .toEqual(['rear-hair', 'body', 'shirt', 'mouth', 'fringe'])
+    expect(calls.filter(x => x[0] === 'scale')).toEqual([['scale', -1, 1]])
+    expect(calls.filter(x => x[0] === 'restore')).toHaveLength(5)
+  })
+  it('bounds parallel image decoding to four while preparing all sources before painting', async () => {
+    let running = 0, peak = 0
+    const renderer = createEditorV6PartRasterRenderer(async () => {
+      running++
+      peak = Math.max(peak, running)
+      await Promise.resolve()
+      running--
+      return {} as never
+    })
+    const { canvas, calls } = harness()
+    const all = Array.from({ length: 12 }, (_, i) => ({ ...part('piece-' + i, 'image-' + i), order: i }))
+    const result = await renderer.render(frame(all), canvas)
+    expect(peak).toBe(4)
+    expect(result.decodedImages).toBe(12)
+    expect(result.drawnParts).toBe(12)
+    expect(calls.filter(x => x[0] === 'drawImage')).toHaveLength(12)
+    const warmed = await renderer.render(frame(all), canvas)
+    expect(warmed.decodedImages).toBe(0)
+    expect(warmed.reusedImages).toBe(12)
+  })
+  it('rejects invalid layered commands without modifying the destination canvas', async () => {
+    const { canvas, calls } = harness()
+    let decodes = 0
+    const renderer = createEditorV6PartRasterRenderer(async () => { decodes++; return {} as never })
+    const base = { id: 'overlay', sourceDataUrl: 'overlay', stage: 'face' as const,
+      visible: true, x: 0, y: 0, width: 10, height: 10, rotation: 0 }
+    const invalid = [
+      { ...base, opacity: 1.01 },
+      { ...base, flipX: 'yes' as never },
+      { ...base, stage: 'unknown' as never },
+      { ...base, width: Infinity },
+      { ...base, id: 'body' },
+      null as never
+    ]
+    for (const layer of invalid) {
+      await expect(renderer.render({ ...frame([part('body', 'body')]), overlays: [layer] }, canvas))
+        .rejects.toThrow('invalid frame geometry')
     }
     expect(decodes).toBe(0)
     expect(calls).toHaveLength(0)
