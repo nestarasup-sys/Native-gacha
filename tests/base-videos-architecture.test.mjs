@@ -141,17 +141,25 @@ test('proteção de mídia: vínculo do Editor V6 impede excluir o vídeo', asyn
   await assert.rejects(assertNoReferences(A), /projeto “Cena de teste” do Editor V6/)
 })
 
-test('IPC: os nove canais verificam origem em cada chamada antes da regra', async (t) => {
+test('IPC: os canais verificam origem e exportam texto apenas após o diálogo de destino', async (t) => {
   const { db, service } = fixture()
   t.after(() => db.close())
   const handlers = new Map()
+  const writes = []
+  let canceled = true
   registerBaseVideoHandlers({ handle(name, handler) { handlers.set(name, handler) } }, (event) => {
     if (event.allowed !== true) throw new Error('Origem não autorizada')
-  }, service)
+  }, service, {
+    showSaveDialog: async (_sender, options) => {
+      assert.equal(options.defaultPath, 'dados-simples-dos-videos.txt')
+      return canceled ? { canceled: true } : { canceled: false, filePath: '/exports/dados.txt' }
+    },
+    writeFile: async (...args) => { writes.push(args) }
+  })
   assert.deepEqual([...handlers.keys()], [
     'base-videos:list-details', 'base-videos:categories:list', 'base-videos:categories:create',
     'base-videos:categories:rename', 'base-videos:categories:delete', 'base-videos:save-details',
-    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish'
+    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data'
   ])
   for (const handler of handlers.values()) {
     await assert.rejects(Promise.resolve().then(() => handler({ allowed: false })), /Origem não autorizada/)
@@ -159,21 +167,29 @@ test('IPC: os nove canais verificam origem em cada chamada antes da regra', asyn
   const category = await handlers.get('base-videos:categories:create')({ allowed: true }, 'Ação')
   assert.equal(category.name, 'Ação')
   assert.equal((await handlers.get('base-videos:categories:list')({ allowed: true })).length, 1)
+  assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, 'VÍDEO 01'), false)
+  assert.equal(writes.length, 0, 'cancelar o diálogo não grava arquivo')
+  canceled = false
+  assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, 'VÍDEO 01'), true)
+  assert.deepEqual(writes, [['/exports/dados.txt', 'VÍDEO 01', 'utf8']])
+  await assert.rejects(handlers.get('base-videos:export-simple-data')({ allowed: true }, ''), /inválidos/)
 })
 
 test('contrato do preload mapeia a API inteira sem renomear canais e preserva argumentos', async () => {
   assert.deepEqual(Object.values(baseVideosIpcChannels), [
     'base-videos:list-details', 'base-videos:save-details', 'base-videos:categories:list',
     'base-videos:categories:create', 'base-videos:categories:rename', 'base-videos:categories:delete',
-    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish'
+    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data'
   ])
 
   const calls = []
   const invoke = createBaseVideosInvoker({ invoke: async (...args) => { calls.push(args); return 4 } })
   await invoke('renameCategory', 'category-id', 'Ação')
   await invoke('publish', 'video-id')
+  await invoke('exportSimpleData', 'conteúdo')
   assert.deepEqual(calls, [
     ['base-videos:categories:rename', 'category-id', 'Ação'],
-    ['base-videos:publish', 'video-id']
+    ['base-videos:publish', 'video-id'],
+    ['base-videos:export-simple-data', 'conteúdo']
   ])
 })

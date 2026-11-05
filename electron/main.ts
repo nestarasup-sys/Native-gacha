@@ -684,7 +684,13 @@ async function registerFabricatorHandlers(): Promise<void> {
     },
     assertNoVideoReferences,
     deleteLibraryVideo: async (id) => { await videoLibrary.delete(id) }
-  }))
+  }), {
+    showSaveDialog: (sender, options) => {
+      const owner = BrowserWindow.fromWebContents(sender)
+      return owner ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options)
+    },
+    writeFile: nativeWriteFile
+  })
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService)
 

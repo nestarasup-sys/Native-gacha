@@ -1,4 +1,4 @@
-/** Contrato tipado dos canais legados da Base de Vídeos entre preload e Main. */
+/** Contrato tipado dos canais da Base de Vídeos entre preload e Main. */
 import type { BaseVideosDesktopApi } from './baseVideos'
 
 export const baseVideosIpcChannels = {
@@ -10,7 +10,8 @@ export const baseVideosIpcChannels = {
   deleteCategory: 'base-videos:categories:delete',
   deleteDetails: 'base-videos:delete-details',
   deleteVideo: 'base-videos:delete',
-  publish: 'base-videos:publish'
+  publish: 'base-videos:publish',
+  exportSimpleData: 'base-videos:export-simple-data'
 } as const satisfies Record<keyof BaseVideosDesktopApi, string>
 
 export type BaseVideosIpcMethod = keyof typeof baseVideosIpcChannels

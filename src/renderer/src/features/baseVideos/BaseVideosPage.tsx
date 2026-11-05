@@ -11,6 +11,7 @@ import { deleteBaseVideosSequentially } from './deleteBaseVideosSequentially'
 import { createEmptyBaseVideoDetails } from './baseVideoDetailsModel'
 import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
 import { importBaseVideoDraft } from './importBaseVideoDraft'
+import { BaseVideosExportModal } from './BaseVideosExportModal'
 import '../../ui/components/videoEditorialFields.css'
 import './baseVideos.css'
 
@@ -60,6 +61,7 @@ export function BaseVideosPage() {
   const [timelineFilter, setTimelineFilter] = useState<BaseVideoTimelineFilter>('all')
   const [sort, setSort] = useState<BaseVideoListSort>('order')
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
+  const [exportModalOpen, setExportModalOpen] = useState(false)
   const [renameTarget, setRenameTarget] = useState<VideoLibraryItem | null>(null)
   const [renameValue, setRenameValue] = useState('')
   const [categoryVideoId, setCategoryVideoId] = useState<string | null>(null)
@@ -99,13 +101,14 @@ export function BaseVideosPage() {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return
       if (deleteConfirmOpen) { setDeleteConfirmOpen(false); return }
+      if (exportModalOpen) { setExportModalOpen(false); return }
       if (renameTarget) { setRenameTarget(null); return }
       if (categoryVideoId) { setCategoryVideoId(null); setCategoryError(null); return }
       if (deleteMode) { setDeleteMode(false); setSelectedIds([]) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteConfirmOpen, renameTarget, categoryVideoId, deleteMode])
+  }, [deleteConfirmOpen, exportModalOpen, renameTarget, categoryVideoId, deleteMode])
 
   useEffect(() => registerPendingWriteFlusher(saveQueue.flushPendingSaves), [saveQueue])
 
@@ -297,6 +300,7 @@ export function BaseVideosPage() {
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
+        <button className="base-videos-exports" type="button" onClick={() => setExportModalOpen(true)} disabled={!loaded || Boolean(loadError) || busy}>Exports</button>
         <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy || !loaded || Boolean(loadError)}>{busy ? 'Importando…' : 'Adicionar'}</button>
         <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={!loaded || Boolean(loadError) || busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
         {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy || !loaded} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}
@@ -332,6 +336,11 @@ export function BaseVideosPage() {
         </article>
       })}</div>{visibleItems.length > visibleCount && <button className="base-videos-load-more" type="button" onClick={() => setVisibleCount((current) => current + 18)}>Carregar mais vídeos ({visibleItems.length - visibleCount} restantes)</button>}</> : <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name={activeView === 'main' ? 'frame' : 'edit'} /></span><strong>{items.length === 0 ? activeView === 'main' ? 'A Base de vídeos está vazia' : 'Nenhum rascunho' : 'Nenhum vídeo encontrado'}</strong><span>{items.length === 0 ? activeView === 'main' ? 'Envie vídeos a partir da área Rascunhos para gerar a numeração permanente.' : 'Adicione um vídeo para começar a organizar os rascunhos.' : 'Tente outro termo ou remova filtros para ver mais resultados.'}</span></div>}
     </div>
+    {exportModalOpen && <BaseVideosExportModal items={items} detailsById={detailsById} categories={categories} onClose={() => setExportModalOpen(false)} onExport={async (text) => {
+      const saved = await window.desktop.baseVideos.exportSimpleData(text)
+      if (saved) setExportModalOpen(false)
+      return saved
+    }} />}
     {deleteConfirmOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setDeleteConfirmOpen(false) }}><section className="base-video-confirm-modal" role="alertdialog" aria-modal="true" aria-labelledby="base-video-confirm-title"><span className="base-video-confirm-icon"><Icon name="trash" /></span><h2 id="base-video-confirm-title">Excluir {selectedIds.length} vídeo(s)?</h2><p>Os arquivos selecionados e seus dados da Base serão removidos. Vídeos ainda usados em roteiros não poderão ser excluídos.</p><footer><button type="button" disabled={busy} onClick={() => setDeleteConfirmOpen(false)}>Cancelar</button><button className="danger" type="button" disabled={busy} onClick={() => void confirmDelete()}>{busy ? 'Excluindo…' : `Excluir ${selectedIds.length} vídeo(s)`}</button></footer></section></div>}
     {renameTarget && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setRenameTarget(null) }}><section className="base-video-confirm-modal rename" role="dialog" aria-modal="true" aria-labelledby="base-video-rename-title"><h2 id="base-video-rename-title">Renomear vídeo</h2><p>Isso altera apenas o nome mostrado no app; o arquivo original permanece intacto.</p><label>Novo nome<input autoFocus maxLength={255} value={renameValue} onChange={(event) => setRenameValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void renameVideo() }} /></label><footer><button type="button" disabled={busy} onClick={() => setRenameTarget(null)}>Cancelar</button><button className="primary" type="button" disabled={busy || !renameValue.trim()} onClick={() => void renameVideo()}>{busy ? 'Salvando…' : 'Salvar nome'}</button></footer></section></div>}
     {categoryVideoId && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) { setCategoryVideoId(null); setCategoryError(null) } }}><section className="base-video-category-modal" role="dialog" aria-modal="true" aria-labelledby="base-video-category-title"><header><div><span className="base-video-category-modal-icon"><Icon name="frame" /></span><div><h2 id="base-video-category-title">Categoria do vídeo</h2><p>{items.find((item) => item.id === categoryVideoId)?.name ?? 'Organize este vídeo em uma categoria.'}</p></div></div><button type="button" aria-label="Fechar" disabled={busy} onClick={() => { setCategoryVideoId(null); setCategoryError(null) }}>×</button></header><div className="base-video-category-create"><label htmlFor="base-video-category-name">Nova categoria</label><div><input id="base-video-category-name" autoFocus maxLength={60} value={categoryName} placeholder="Ex.: Reações, Aberturas, Humor" onChange={(event) => setCategoryName(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void createCategory() }} /><button type="button" disabled={busy || !categoryName.trim()} onClick={() => void createCategory()}>{busy ? 'Salvando…' : 'Criar'}</button></div><small>Cada categoria recebe uma cor exclusiva e o vídeo recebe automaticamente a categoria criada.</small></div>{categoryError && <p className="base-video-category-error" role="alert">{categoryError}</p>}<div className="base-video-category-list"><button className={`base-video-category-option${!detailsById[categoryVideoId]?.categoryId ? ' active' : ''}`} type="button" disabled={busy} onClick={() => updateDetails(categoryVideoId, { categoryId: null })}><span><i className="uncategorized" />Sem categoria</span>{!detailsById[categoryVideoId]?.categoryId && <b>Selecionada</b>}</button>{categories.map((category) => <div className={`base-video-category-option${detailsById[categoryVideoId]?.categoryId === category.id ? ' active' : ''}`} key={category.id} style={{ borderLeftColor: category.color }}><div className="base-video-category-option-main">{categoryEditingId === category.id ? <div className="base-video-category-rename"><input autoFocus maxLength={60} value={categoryEditValue} onChange={(event) => setCategoryEditValue(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') void renameCategory(category.id); if (event.key === 'Escape') setCategoryEditingId(null) }} /><button type="button" disabled={busy || !categoryEditValue.trim()} onClick={() => void renameCategory(category.id)}>Salvar</button><button type="button" disabled={busy} onClick={() => setCategoryEditingId(null)}>Cancelar</button></div> : <><button className="base-video-category-assign" type="button" disabled={busy} onClick={() => updateDetails(categoryVideoId, { categoryId: category.id })}><span><i style={{ backgroundColor: category.color }} />{category.name}</span>{detailsById[categoryVideoId]?.categoryId === category.id && <b>Selecionada</b>}</button><div className="base-video-category-tools"><button type="button" title="Renomear categoria" aria-label={`Renomear ${category.name}`} disabled={busy} onClick={() => { setCategoryEditingId(category.id); setCategoryEditValue(category.name) }}><Icon name="edit" /></button><button className="danger" type="button" title="Excluir categoria" aria-label={`Excluir ${category.name}`} disabled={busy} onClick={() => void deleteCategory(category)}><Icon name="trash" /></button></div></>}</div></div>)}</div><footer><span>{categories.length} categoria{categories.length === 1 ? '' : 's'}</span><button type="button" disabled={busy} onClick={() => { setCategoryVideoId(null); setCategoryError(null) }}>Concluir</button></footer></section></div>}
