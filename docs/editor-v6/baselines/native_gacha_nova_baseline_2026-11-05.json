@@ -67,7 +67,7 @@
     "Tempos de captura e da boca sao subetapas e nao devem ser somados ao total",
     "Memoria medida apenas para o processo Main",
     "Nenhum conteudo pessoal nem caminho absoluto foi transferido ao resumo",
-    "O hash SHA-256 do identificador do projeto ajuda a detectar comparações com outro projeto, sem publicar o identificador original"
+    "A versão pública sanitizada não contém o hash do ID original; o comparador requer o relatório original local via --reference-report para confirmar identidade do projeto"
   ],
-  "project_id_sha256": "6493dcae13af778f571de5f1117cc77412db11630c3dbf545bf7da84f1b04519"
+  "project_id_sha256": null
 }

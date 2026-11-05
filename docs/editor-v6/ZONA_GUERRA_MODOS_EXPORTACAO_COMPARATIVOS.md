@@ -25,3 +25,13 @@ Estes modos são **hipóteses A/B**, não promessas de aceleração: diminuir a 
 **Baseline histórica ativa:** [54,716 s](baselines/native_gacha_nova_baseline_2026-11-05.md) de uma exportação fria. Não é média de três rodadas, e não prova o desempenho de qualquer um dos novos modos. Relatórios não devem ser enviados integralmente ao GitHub, pois podem conter caminhos locais. Use o comparador sanitizado ou compartilhe somente os tempos/métricas relevantes.
 
 A opção **03 Boca 1×** passa pela preparação do backend com limite de **um** job concorrente; o comportamento é coberto por regressão com contagem de concorrência 1 versus 2. A opção **05 Rosto clássico** executa o encode PNG só para o teste A/B, preservando o mesmo recorte de alpha da versão otimizada.
+
+## Comparador offline por modo
+
+O resumo sanitizado no GitHub **não contém o identificador original do projeto**. Não é possível recuperar ou inventar esse hash. Para provar que uma exportação candidata é do mesmo projeto, informe o relatório **original da baseline** como referência local:
+
+```powershell
+npm run bench:editor-v6:compare -- --reference-report="C:\\...\\baseline-original.report.json" --candidate="C:\\...\\modo01-1.report.json" --candidate="C:\\...\\modo01-2.report.json" --candidate="C:\\...\\modo01-3.report.json"
+```
+
+Acrescente quantos `--candidate` forem necessários, inclusive dos outros modos. O programa não imprime caminhos nem IDs. Ele agrupa mediana por `options.testMode`, exige três execuções por modo para apontar vencedor e recusa resultados sem confirmação do mesmo projeto. Mesmo assim a paridade visual precisa ser inspecionada no MP4.

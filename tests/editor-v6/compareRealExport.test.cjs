@@ -2,7 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createHash } = require('node:crypto')
-const { compareExportReport, median, parseCli } = require('../../scripts/editor-v6/compare-real-export.cjs')
+const { compareExportReport, summarizeByMode, median, parseCli } = require('../../scripts/editor-v6/compare-real-export.cjs')
 const baseline = require('../../docs/editor-v6/baselines/native_gacha_nova_baseline_2026-11-05.json')
 const fixture = () => ({
   projectId: 'fixture-project',
@@ -44,10 +44,28 @@ test('rejects incomplete MP4 or fallback, even when wall time improves', () => {
   const fallback=fixture();fallback.fallback=true
   assert.equal(compareExportReport(fakeBaseline,fallback).compatible,false)
 })
+test('sanitized reference refuses a fabricated project hash and accepts a locally verified ID', () => {
+  assert.equal(baseline.project_id_sha256, null)
+  assert.ok(compareExportReport(baseline, fixture()).reasons.some(reason => reason.includes('--reference-report')))
+  assert.equal(compareExportReport(fakeBaseline, fixture()).compatible, true)
+})
+test('groups six selectable modes independently; never calls 3 total runs a winner', () => {
+  const control = compareExportReport(fakeBaseline, fixture())
+  const fast = { ...control, mode: 'captura-8', totalSeconds: 40 }
+  const incomplete = summarizeByMode([control, control, fast])
+  assert.equal(incomplete.winner, null)
+  assert.deepEqual(incomplete.modes.map(group => group.samples), [2, 1])
+  const winner = summarizeByMode([control, control, control, fast, fast, fast])
+  assert.equal(winner.winner, 'captura-8')
+  assert.equal(winner.modes[0].medianSeconds, 45)
+  const unknown = fixture(); unknown.options.testMode='modo-inventado'
+  assert.equal(compareExportReport(fakeBaseline, unknown).compatible, false)
+})
 test('median and flags have no outlier bias', () => {
   assert.equal(median([99,25,30]),30)
   assert.equal(median([30,20]),25)
   assert.equal(median([]),null)
   assert.equal(parseCli(['--candidate=one.json','--candidate=two.json','--json']).candidates.length,2)
+  assert.ok(parseCli(['--reference-report=base.report.json','--candidate=one.json']).referenceReport.endsWith('base.report.json'))
   assert.throws(()=>parseCli(['--not-allowed']))
 })
