@@ -10,7 +10,7 @@ import type { EditorV6ExportMouthLoops } from '../../src/shared/editorV6Export'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
-import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
+import { editorV6OutputColorFilter, encodingArgs, probeExportMedia, runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
 import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
@@ -29,6 +29,19 @@ const ffmpeg = join(videoTools, 'ffmpeg.exe'), ffprobe = join(videoTools, 'ffpro
 const run = (args: string[]) => execFileSync(ffmpeg, ['-v', 'error', ...args], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
 async function main() {
   await app.whenReady()
+  const colorParts = [join(folder, 'color-tagged.mp4'), join(folder, 'color-unknown.mp4')]
+  for (const [index, path] of colorParts.entries()) {
+    const metadata = index === 0 ? 'setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709' : 'setparams=range=unknown:colorspace=unknown:color_primaries=unknown:color_trc=unknown'
+    run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=0.1', '-vf', `${metadata},${editorV6OutputColorFilter}`, ...encodingArgs('libopenh264', 1), '-frames:v', '3', path])
+  }
+  const colorProbes = await Promise.all(colorParts.map((path) => probeExportMedia(ffprobe, path, new AbortController().signal)))
+  const hashes = colorProbes.map((probe) => probe.streams.find((stream) => stream.codec_type === 'video')?.extradata_hash)
+  assert(hashes[0] === hashes[1], `Partes com metadados de cor diferentes produziram cabeçalhos incompatíveis: ${hashes.join(' / ')}`)
+  const concatList = join(folder, 'color-parts.txt'), colorOutput = join(folder, 'color-joined.mp4')
+  await writeFile(concatList, colorParts.map((path) => `file '${path.replace(/\\/g, '/')}'`).join('\n') + '\n')
+  run(['-f', 'concat', '-safe', '0', '-i', concatList, '-c:v', 'copy', colorOutput])
+  const decodeColor = (path: string) => run(['-i', path, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  assert(decodeColor(colorOutput).equals(Buffer.concat(colorParts.map(decodeColor))), 'A junção alterou os quadros das partes com metadados de cor diferentes.')
   const png = join(folder, 'actor.png'), audio = join(folder, 'tone.wav')
   run(['-f', 'lavfi', '-i', 'color=c=yellow:s=16x16', '-frames:v', '1', png])
   run(['-f', 'lavfi', '-i', 'sine=frequency=440:sample_rate=48000:duration=4', audio])
@@ -211,7 +224,7 @@ async function main() {
   assert(single.totalFrames === 1 && single.attempts[0].parallelism === 1 && !single.fallback, 'Intervalo de um quadro não foi tratado corretamente.')
   await mkdir(join(folder, 'media'), { recursive: true })
   const videoId = randomUUID(), videoFileName = `${videoId}.mp4`, videoPath = join(folder, 'media', videoFileName)
-  run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=4', '-f', 'lavfi', '-i', 'sine=frequency=600:sample_rate=48000:duration=4', '-c:v', 'mpeg4', '-q:v', '3', '-c:a', 'aac', '-shortest', videoPath])
+  run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=4', '-f', 'lavfi', '-i', 'sine=frequency=600:sample_rate=48000:duration=4', '-c:v', 'mpeg4', '-q:v', '3', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', videoPath])
   const audioId = randomUUID(), audioFileName = `${audioId}.wav`
   await copyFile(audio, join(folder, 'media', audioFileName))
   const mediaProject: EditorV6Document = { ...silent, id: randomUUID(), media: [
