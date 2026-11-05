@@ -28,18 +28,6 @@ export function createSpeechBalloonPath(width: number, height: number): string {
   ].join(' ')
 }
 
-/** Mixes the speaker title color into white so the balloon stays bright and readable. */
-export function speechBalloonFillColor(speakerColor?: string): string {
-  const match = /^#([\da-f]{6})$/i.exec(speakerColor ?? '')
-  const color = match?.[1] ?? '624d5b'
-  const tint = 0.12
-  const channels = [0, 2, 4].map((index) => {
-    const source = Number.parseInt(color.slice(index, index + 2), 16)
-    return Math.round(255 * (1 - tint) + source * tint).toString(16).padStart(2, '0')
-  })
-  return `#${channels.join('')}`
-}
-
 /** Oval thought balloon with a pointed lower-left tail, sized to the existing element bounds. */
 export function createThoughtBalloonPath(width: number, height: number): string {
   const left = -width / 2

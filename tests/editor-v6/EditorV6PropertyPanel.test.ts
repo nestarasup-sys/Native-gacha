@@ -1,7 +1,7 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
-import type { EditorV6Asset, EditorV6Document } from '../../src/shared/editorV6'
+import type { EditorV6Asset, EditorV6Document, EditorV6Element } from '../../src/shared/editorV6'
 import { EditorV6PropertyPanel, type EditorV6NumericControl } from '../../src/renderer/src/features/editorV6/EditorV6PropertyPanel'
 
 const backgroundAsset: EditorV6Asset = {
@@ -77,5 +77,20 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).toContain('Vídeo selecionado')
     expect(html).toContain('Início da mídia')
     expect(html).not.toContain('Áudio do vídeo')
+  })
+
+  it('oferece cores nomeadas e destaca a cor atual do nome do personagem', () => {
+    const html = renderPanel({
+      ...baseProps,
+      activeTool: null,
+      characterNameColor: '#7768c8',
+      onUpdateCharacterNameColor: onAction,
+      selectedElement: { id: 'actor-1', kind: 'character', characterId: 'alice', text: 'Alice', assetId: 'alice-asset', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 } as EditorV6Element
+    })
+    expect(html).toContain('Cor do nome e do contorno')
+    expect(html).toContain('aria-label="Roxo, #7768c8"')
+    expect(html).toContain('aria-pressed="true"')
+    expect(html).toContain('Turquesa')
+    expect(html).not.toContain('type="color"')
   })
 })

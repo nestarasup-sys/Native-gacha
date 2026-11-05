@@ -2,7 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
-import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath, speechBalloonFillColor } from './speechBalloonPath'
+import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath } from './speechBalloonPath'
 
 export type ScenePointerEvent = ReactPointerEvent<SVGElement>
 export type SceneSurfaceInteraction = {
@@ -133,7 +133,8 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
   const lines = useMemo(() => image ? [] : wrapSceneText(element.text, Math.max(1, width - 32), fontSize, maxTextLines), [element.text, image, width, fontSize, maxTextLines])
   const clipId = `v6-text-${element.id}`
   const faceReplacementMaskId = `v6-face-replacement-${element.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
-  const fill = speakerName ? speechBalloonFillColor(element.speakerColor) : element.kind === 'thought' ? '#fffafd' : '#ffffff'
+  const fill = '#ffffff'
+  const balloonOutlineColor = element.speakerColor ?? '#624d5b'
   return <g transform={transform(element.x, element.y, element.rotation)} data-element-id={element.id} aria-label={`${speakerName ? `${speakerName}: ` : ''}${element.text || asset?.name || 'Objeto'}`} role={interaction ? 'button' : undefined}
     style={{ cursor: interaction ? element.positionLocked ? 'default' : 'move' : undefined, touchAction: 'none' }}
     onPointerDown={interaction ? (event) => interaction.start(event, element.id) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
@@ -149,7 +150,7 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
       </g>
       {element.mouthPatch && mouthAsset && <svg x={-width / 2 + element.mouthPatch.x * width} y={-height / 2 + element.mouthPatch.y * height} width={element.mouthPatch.width * width} height={element.mouthPatch.height * height} viewBox={`${element.mouthPatch.sprite.x} ${element.mouthPatch.sprite.y} ${element.mouthPatch.sprite.width} ${element.mouthPatch.sprite.height}`} preserveAspectRatio="none" overflow="hidden"><image href={mouthAsset.dataUrl} onLoad={onImageLoad} x={0} y={0} width={element.mouthPatch.sprite.atlasWidth} height={element.mouthPatch.sprite.atlasHeight} /></svg>}
     </g> : !image && <>
-      {element.kind === 'speech' ? <path d={createSpeechBalloonPath(width, height)} fill={fill} fillOpacity={.96} stroke="#111111" strokeWidth={5} strokeLinejoin="round" /> : element.kind === 'thought' ? <><path d={createThoughtBalloonPath(width, height)} fill={fill} stroke="#111111" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" /><path d={createThoughtBalloonSketchPath(width, height)} fill="none" stroke="#111111" strokeWidth={1.3} strokeLinejoin="round" strokeLinecap="round" opacity={.9} /></> : <rect x={-width / 2} y={-height / 2} width={width} height={height} rx={16} fill={fill} fillOpacity={.94} stroke="#624d5b" strokeWidth={2} />}
+      {element.kind === 'speech' ? <path d={createSpeechBalloonPath(width, height)} fill={fill} stroke={balloonOutlineColor} strokeWidth={5} strokeLinejoin="round" /> : element.kind === 'thought' ? <><path d={createThoughtBalloonPath(width, height)} fill={fill} stroke={balloonOutlineColor} strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" /><path d={createThoughtBalloonSketchPath(width, height)} fill="none" stroke={balloonOutlineColor} strokeWidth={1.3} strokeLinejoin="round" strokeLinecap="round" opacity={.9} /></> : <rect x={-width / 2} y={-height / 2} width={width} height={height} rx={16} fill={fill} fillOpacity={.94} stroke={balloonOutlineColor} strokeWidth={2} />}
       <defs><clipPath id={clipId}><rect x={-width / 2 + 10} y={-height / 2 + 8} width={Math.max(0, width - 20)} height={Math.max(0, height - 16)} /></clipPath></defs>
       {speakerLabel && <text x={0} y={-height / 2 + 8 + speakerFontSize / 2} fontFamily={FONT} fontSize={speakerFontSize} fontWeight={750} textAnchor="middle" dominantBaseline="middle" fill={element.speakerColor ?? '#624d5b'} clipPath={`url(#${clipId})`}>{speakerLabel}</text>}
       <text fontFamily={FONT} fontSize={fontSize} fontWeight={600} textAnchor="middle" dominantBaseline="middle" fill="#352d35" clipPath={`url(#${clipId})`}>
