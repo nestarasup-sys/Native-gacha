@@ -74,3 +74,13 @@ test('frame conversion and scene resolution reject invalid time', () => {
   assert.throws(() => editorV7FrameToTick(1.5, document.frameRate), RangeError)
   assert.throws(() => resolveEditorV7Scene(document, document.durationTicks), RangeError)
 })
+
+test('text layers are valid temporal scene content and escape XML markup', async () => {
+  const document = fixture()
+  document.layers.push({ id: 'speech', name: 'speech', text: '<script>&', textKind: 'speech', startTick: 0, endTick: document.durationTicks, transform: { x: 20, y: 20, width: 100, height: 60, rotation: 0, opacity: 1, flipX: false }, visible: true, zIndex: 2 })
+  assert.equal(parseEditorV7Document(document).layers.length, 2)
+  const { renderEditorV7SceneSvg } = await import('../../src/shared/editorV7Svg.ts')
+  const svg = renderEditorV7SceneSvg(document, 0)
+  assert.match(svg, /&lt;/)
+  assert.doesNotMatch(svg, /<script>/)
+})

@@ -12,7 +12,12 @@ export type EditorV7Asset = { id: string; mimeType: 'image/png' | 'image/jpeg' |
 export type EditorV7Layer = {
   id: string
   name: string
-  assetId: string
+  assetId?: string
+  /** Vector speech, thought, or narrator content, rendered by the shared SVG scene. */
+  text?: string
+  textKind?: 'plain' | 'speech' | 'thought'
+  textColor?: string
+  speakerName?: string
   startTick: number
   endTick: number
   transform: EditorV7Transform
@@ -33,7 +38,7 @@ export type EditorV7Document = {
   assets: EditorV7Asset[]
   layers: EditorV7Layer[]
 }
-export type EditorV7ResolvedLayer = EditorV7Layer & { asset: EditorV7Asset }
+export type EditorV7ResolvedLayer = EditorV7Layer & { asset?: EditorV7Asset }
 export type EditorV7Scene = { tick: number; background: string; layers: EditorV7ResolvedLayer[] }
 export type EditorV7ExportStatus = { id: string; state: 'preparing' | 'rendering' | 'completed' | 'cancelled' | 'failed'; frames: number; totalFrames: number; message: string; outputPath?: string; encoder?: string; milliseconds?: number; error?: string }
 export type EditorV7DesktopApi = {
@@ -53,7 +58,7 @@ const assetSchema = z.object({ id, mimeType: z.enum(['image/png', 'image/jpeg', 
   if (!asset.dataUrl.startsWith(prefix) || !/^[A-Za-z0-9+/]*={0,2}$/.test(asset.dataUrl.slice(prefix.length))) context.addIssue({ code: z.ZodIssueCode.custom, path: ['dataUrl'], message: 'O conteúdo do asset precisa ser base64 válido do MIME declarado.' })
 })
 const keyframeSchema = z.object({ tick: z.number().int().nonnegative(), transform: transformSchema }).strict()
-const layerSchema = z.object({ id, name: z.string().max(240), assetId: id, startTick: z.number().int().nonnegative(), endTick: z.number().int().positive(), transform: transformSchema, keyframes: z.array(keyframeSchema).max(100_000).optional(), preserveAspectRatio: z.enum(['none', 'xMidYMid meet']).optional(), visible: z.boolean(), zIndex: z.number().int() }).strict()
+const layerSchema = z.object({ id, name: z.string().max(240), assetId: id.optional(), text: z.string().max(20_000).optional(), textKind: z.enum(['plain', 'speech', 'thought']).optional(), textColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(), speakerName: z.string().max(240).optional(), startTick: z.number().int().nonnegative(), endTick: z.number().int().positive(), transform: transformSchema, keyframes: z.array(keyframeSchema).max(100_000).optional(), preserveAspectRatio: z.enum(['none', 'xMidYMid meet']).optional(), visible: z.boolean(), zIndex: z.number().int() }).strict().refine((layer) => Boolean(layer.assetId) !== Boolean(layer.text !== undefined), { message: 'A camada precisa conter exatamente uma imagem ou texto.' })
 
 export const editorV7DocumentSchema = z.object({
   version: z.literal(EDITOR_V7_DOCUMENT_VERSION), id, title: z.string().trim().min(1).max(120),
@@ -72,7 +77,7 @@ export const editorV7DocumentSchema = z.object({
   for (const [index, layer] of document.layers.entries()) {
     if (layers.has(layer.id)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['layers', index, 'id'], message: 'ID de camada duplicado.' })
     layers.add(layer.id)
-    if (!assets.has(layer.assetId)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['layers', index, 'assetId'], message: 'A camada aponta para um asset ausente.' })
+    if (layer.assetId && !assets.has(layer.assetId)) context.addIssue({ code: z.ZodIssueCode.custom, path: ['layers', index, 'assetId'], message: 'A camada aponta para um asset ausente.' })
     if (layer.endTick <= layer.startTick || layer.endTick > document.durationTicks) context.addIssue({ code: z.ZodIssueCode.custom, path: ['layers', index], message: 'Intervalo de camada fora da duração do documento.' })
     let previousTick = layer.startTick - 1
     for (const [keyframeIndex, keyframe] of (layer.keyframes ?? []).entries()) {
@@ -116,7 +121,7 @@ export function resolveEditorV7Scene(document: EditorV7Document, tick: number): 
     .filter((layer) => layer.visible && layer.startTick <= tick && tick < layer.endTick)
     .slice()
     .sort((left, right) => left.zIndex - right.zIndex || left.id.localeCompare(right.id))
-    .map((layer) => ({ ...layer, transform: resolveTransformAtTick(layer.transform, layer.keyframes, tick), asset: assets.get(layer.assetId)! }))
+    .map((layer) => ({ ...layer, transform: resolveTransformAtTick(layer.transform, layer.keyframes, tick), ...(layer.assetId ? { asset: assets.get(layer.assetId)! } : {}) }))
   return { tick, background: document.background.color, layers }
 }
 

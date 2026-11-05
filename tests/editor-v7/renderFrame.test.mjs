@@ -24,3 +24,12 @@ test('native V7 renderer rejects a cancelled frame render before allocating work
   controller.abort(new Error('cancelled'))
   await assert.rejects(renderEditorV7Frame(document, 0, controller.signal), /cancelled/)
 })
+
+test('text layers rasterize as cached transparent overlays above images', async () => {
+  const document = createEditorV7Document('text-test', 'Text test', { width: 320, height: 180, fps: 30, durationFrames: 30 })
+  document.layers.push({ id: 'speech', name: 'speech', text: 'Teste', textKind: 'speech', startTick: 0, endTick: document.durationTicks, transform: { x: 100, y: 60, width: 120, height: 60, rotation: 0, opacity: 1, flipX: false }, visible: true, zIndex: 1 })
+  const render = createEditorV7FrameRenderer(document)
+  const first = await render(0), second = await render(0)
+  assert.deepEqual(first, second)
+  assert.deepEqual([...first.subarray((90 * 320 + 110) * 4, (90 * 320 + 110) * 4 + 4)], [255, 255, 255, 255])
+})

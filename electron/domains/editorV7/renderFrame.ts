@@ -1,6 +1,6 @@
 import sharp from 'sharp'
 import { resolveEditorV7Scene, type EditorV7Document, type EditorV7ResolvedLayer } from '../../../src/shared/editorV7'
-import { renderEditorV7SceneSvg } from '../../../src/shared/editorV7Svg'
+import { renderEditorV7SceneSvg, renderEditorV7TextLayerSvg } from '../../../src/shared/editorV7Svg'
 
 /** Rasterizes the canonical V7 SVG scene through libvips, without a DOM, WebContents, IPC-per-frame, or GPU readback. */
 export async function renderEditorV7Frame(document: EditorV7Document, tick: number, signal?: AbortSignal): Promise<Buffer> {
@@ -23,19 +23,22 @@ export function createEditorV7FrameRenderer(document: EditorV7Document) {
   let cacheBytes = 0
 
   const overlayFor = async (layer: EditorV7ResolvedLayer) => {
+    if (!layer.assetId && layer.text === undefined) throw new Error(`Camada ${layer.id} não contém imagem nem texto.`)
     const { transform } = layer
     const width = Math.max(1, Math.round(transform.width)), height = Math.max(1, Math.round(transform.height))
-    const key = JSON.stringify([layer.assetId, width, height, transform.rotation, transform.flipX, transform.opacity, layer.preserveAspectRatio ?? 'none'])
+    const key = JSON.stringify([layer.assetId, layer.text, layer.textKind, layer.textColor, layer.speakerName, width, height, transform.rotation, transform.flipX, transform.opacity, layer.preserveAspectRatio ?? 'none'])
     let task = cache.get(key)
     let created = false
     if (task) {
       cache.delete(key); cache.set(key, task)
     } else {
-      const source = assets.get(layer.assetId)
-      if (!source) throw new Error(`O asset ${layer.assetId} não está disponível no renderer V7.`)
+      if (layer.text === undefined && !layer.assetId) throw new Error(`A camada ${layer.id} não contém imagem nem texto.`)
+      const source = layer.assetId ? assets.get(layer.assetId) : undefined
+      if (layer.assetId && !source) throw new Error(`O asset ${layer.assetId} não está disponível no renderer V7.`)
       task = (async () => {
         const fit = layer.preserveAspectRatio === 'xMidYMid meet' ? 'contain' : 'fill'
-        const resized = await sharp(source).resize(width, height, { fit, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+        const input = layer.text !== undefined ? Buffer.from(renderEditorV7TextLayerSvg({ ...layer, text: layer.text }, width, height)) : source!
+        const resized = await sharp(input).resize(width, height, { fit, background: { r: 0, g: 0, b: 0, alpha: 0 } })
           .rotate(transform.rotation, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
           .flop(transform.flipX)
           .ensureAlpha()

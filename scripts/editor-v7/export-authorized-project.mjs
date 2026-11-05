@@ -4,6 +4,8 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createEditorV7Document } from '../../src/shared/editorV7.ts'
 import { editorV6ElementSize } from '../../src/shared/editorV6SceneModel.ts'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene.ts'
+import { planEditorV6VideoOverlays } from '../../src/shared/editorV6VideoComposition.ts'
 import { runEditorV7Export } from '../../electron/domains/editorV7/exportRunner.ts'
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -32,10 +34,10 @@ async function selectBackup() {
   throw Error(`Não encontrei um backup verificado do projeto autorizado “${authorizedTitle}”.`)
 }
 
-async function verifyProjectBackup(folder, manifest) {
-  const sourceRoot = join(folder, 'project')
-  const expected = manifest.sources?.project?.entries
-  if (!Array.isArray(expected) || expected.length < 1) throw Error('O manifesto verificado não contém hashes do projeto autorizado.')
+async function verifyBackupSource(folder, manifest, sourceName) {
+  const sourceRoot = join(folder, sourceName)
+  const expected = manifest.sources?.[sourceName]?.entries
+  if (!Array.isArray(expected) || expected.length < 1) throw Error(`O manifesto verificado não contém hashes da fonte ${sourceName} do projeto autorizado.`)
   for (const entry of expected) {
     const target = resolve(sourceRoot, ...entry.path.split('/'))
     if (!isInside(sourceRoot, target)) throw Error('O manifesto do backup contém um caminho fora do projeto.')
@@ -69,37 +71,66 @@ async function makeDocument(sourceRoot, source, frameCount) {
   const doc = createEditorV7Document(`v7-authorized-${source.id}`, authorizedTitle, { width: 1920, height: 1080, fps, durationFrames: duration })
   doc.background.color = /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#ffffff'
   const assetsById = new Map(source.assets.map((asset) => [asset.id, asset]))
-  const used = new Map()
+  const used = new Set()
   const addAsset = async (assetId) => {
-    if (!assetId) return undefined
-    if (used.has(assetId)) return used.get(assetId)
+    if (!assetId || used.has(assetId)) return
     const sourceAsset = assetsById.get(assetId)
-    if (!sourceAsset) return undefined
+    if (!sourceAsset) return
     const dataUrl = await imageData(sourceRoot, sourceAsset)
-    if (!dataUrl) return undefined
-    const asset = { id: sourceAsset.id, name: sourceAsset.name.slice(0, 240), mimeType: sourceAsset.mimeType, dataUrl }
-    used.set(assetId, asset)
-    doc.assets.push(asset)
-    return asset
+    if (!dataUrl) return
+    doc.assets.push({ id: sourceAsset.id, name: sourceAsset.name.slice(0, 240), mimeType: sourceAsset.mimeType, dataUrl })
+    used.add(assetId)
   }
-  if (source.backgroundAssetId) {
-    const asset = await addAsset(source.backgroundAssetId)
-    if (asset) {
-      const width = source.backgroundWidth * 19.2, height = source.backgroundHeight * 10.8
-      doc.layers.push({ id: `background-${asset.id}`, name: 'Background', assetId: asset.id, startTick: 0, endTick: doc.durationTicks,
-        transform: { x: (50 + source.backgroundX) * 19.2 - width / 2, y: (50 + source.backgroundY) * 10.8 - height / 2, width, height, rotation: source.backgroundRotation, opacity: 1, flipX: false }, preserveAspectRatio: 'none', visible: true, zIndex: -10_000 })
+  const transformFor = (element) => {
+    const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
+    return { x: (50 + element.x) * 19.2 - width / 2, y: (50 + element.y) * 10.8 - height / 2, width, height, rotation: element.rotation, opacity: 1, flipX: element.flipX ?? false }
+  }
+  const active = new Map()
+  const endLayer = (id, frame) => {
+    const record = active.get(id)
+    if (record) { record.layer.endTick = Math.max(record.layer.startTick + 1, Math.round(frame * 90_000 / fps)); active.delete(id); doc.layers.push(record.layer) }
+  }
+  const beginLayer = async (id, state, frame) => {
+    const startTick = Math.round(frame * 90_000 / fps)
+    if ((state.kind === 'character' || state.kind === 'image') && state.assetId) {
+      await addAsset(state.assetId)
+      if (!used.has(state.assetId)) return
+      const layer = { id: `${id}@${frame}`, name: state.text.slice(0, 240), assetId: state.assetId, startTick, endTick: doc.durationTicks, transform: transformFor(state), preserveAspectRatio: state.kind === 'character' ? 'none' : 'xMidYMid meet', visible: true, zIndex: state.zIndex }
+      active.set(id, { signature: JSON.stringify([state.assetId, layer.transform, state.visible]), layer })
+    } else if (state.kind === 'speech' || state.kind === 'thought' || state.kind === 'narrator') {
+      const layer = { id: `${id}@${frame}`, name: state.text.slice(0, 240), text: state.text, textKind: state.kind === 'narrator' ? 'plain' : state.kind, textColor: '#352d35', ...(state.speakerName ? { speakerName: state.speakerName } : {}), startTick, endTick: doc.durationTicks, transform: transformFor(state), visible: true, zIndex: state.zIndex }
+      active.set(id, { signature: JSON.stringify([state.kind, state.text, layer.transform, state.speakerName]), layer })
     }
   }
-  for (const element of source.elements) {
-    if (element.visible === false || (element.kind !== 'character' && element.kind !== 'image')) continue
-    const asset = await addAsset(element.assetId)
-    if (!asset) continue
-    const size = editorV6ElementSize(element), width = size.width * 19.2, height = size.height * 10.8
-    doc.layers.push({ id: element.id, name: element.text.slice(0, 240), assetId: asset.id, startTick: 0, endTick: doc.durationTicks,
-      transform: { x: (50 + element.x) * 19.2 - width / 2, y: (50 + element.y) * 10.8 - height / 2, width, height, rotation: element.rotation, opacity: 1, flipX: element.flipX ?? false },
-      preserveAspectRatio: element.kind === 'character' ? 'none' : 'xMidYMid meet', visible: true, zIndex: element.zIndex })
+  for (let frame = 0; frame < duration; frame += 1) {
+    const scene = resolveEditorV6SceneAtFrame(source, frame)
+    const states = new Map()
+    for (const element of scene.elements) states.set(element.id, element)
+    for (const id of [...active.keys()]) if (!states.has(id)) endLayer(id, frame)
+    for (const [id, state] of states) {
+      const old = active.get(id)
+      const signature = state.kind === 'character' || state.kind === 'image'
+        ? JSON.stringify([state.assetId, transformFor(state), state.visible])
+        : JSON.stringify([state.kind, state.text, transformFor(state), state.speakerName])
+      if (old?.signature === signature) continue
+      if (old) endLayer(id, frame)
+      await beginLayer(id, state, frame)
+      const next = active.get(id)
+      if (next) next.signature = signature
+    }
+    const bg = scene.background
+    const bgState = { kind: 'image', id: '__background__', text: 'Background', assetId: bg.backgroundAssetId, x: bg.backgroundX, y: bg.backgroundY, width: bg.backgroundWidth, height: bg.backgroundHeight, rotation: bg.backgroundRotation, zIndex: -10_000, visible: true }
+    const bgSignature = JSON.stringify([bg.backgroundColor, bg.backgroundAssetId, bg.backgroundX, bg.backgroundY, bg.backgroundWidth, bg.backgroundHeight, bg.backgroundRotation])
+    if (active.get('__background__')?.signature !== bgSignature) {
+      endLayer('__background__', frame)
+      if (bg.backgroundAssetId) await beginLayer('__background__', bgState, frame)
+      const next = active.get('__background__')
+      if (next) next.signature = bgSignature
+    }
   }
-  if (!doc.layers.length) throw Error('O frame/cena atual do projeto autorizado não contém camadas de imagem exportáveis.')
+  for (const id of [...active.keys()]) endLayer(id, duration)
+  doc.background.color = /^#[0-9a-f]{6}$/i.test(source.backgroundColor) ? source.backgroundColor : '#ffffff'
+  if (!doc.layers.length) throw Error('A timeline do projeto autorizado não contém camadas exportáveis.')
   return { document: doc, durationFrames: duration }
 }
 
@@ -108,7 +139,8 @@ async function main() {
   const frameCount = frameCountValue === undefined ? 30 : Number(frameCountValue)
   if (!Number.isSafeInteger(frameCount) || frameCount < 1 || frameCount > 2_394) throw Error('--frames aceita um inteiro de 1 a 2394.')
   const backup = await selectBackup()
-  const sourceRoot = await verifyProjectBackup(backup.folder, backup.manifest)
+  const sourceRoot = await verifyBackupSource(backup.folder, backup.manifest, 'project')
+  const libraryRoot = await verifyBackupSource(backup.folder, backup.manifest, 'library')
   const source = JSON.parse(await readFile(join(sourceRoot, 'editorV6.json'), 'utf8'))
   if (source.id !== authorizedId || source.title?.trim() !== authorizedTitle || source.timeline?.durationFrames !== backup.manifest.project.durationFrames) throw Error('O documento fonte não corresponde ao projeto autorizado registrado no backup.')
   const fps = source.timeline.fps ?? 30
@@ -117,19 +149,31 @@ async function main() {
   await mkdir(runRoot, { recursive: true })
   await mkdir(runFolder, { recursive: false })
   const { document, durationFrames } = await makeDocument(sourceRoot, source, frameCount)
+  const videoOverlays = planEditorV6VideoOverlays(source, 0, durationFrames).map((clip) => {
+    if (!clip.libraryVideoId || !/^[0-9a-f-]{36}$/i.test(clip.libraryVideoId)) throw Error(`O clipe ${clip.blockId} não aponta para um vídeo estável da biblioteca autorizada.`)
+    const media = source.media.find((item) => item.libraryVideoId === clip.libraryVideoId)
+    if (!media) throw Error(`Não encontrei metadados de áudio/vídeo para ${clip.blockId}.`)
+    const path = join(libraryRoot, 'videos', `${clip.libraryVideoId}.mp4`)
+    return { path, startFrame: clip.startFrame, endFrame: clip.endFrame, mediaInFrame: clip.mediaInFrame, layout: clip.layout,
+      audioEnabled: media.hasAudio && source.timeline.tracks.some((track) => track.kind === 'video' && !track.muted && !track.hidden && track.blocks.some((block) => block.id === clip.blockId && block.audioEnabled !== false)),
+      gain: source.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === clip.blockId)?.gain ?? 1 }
+  })
+  for (const clip of videoOverlays) await readFile(clip.path)
   const outputPath = join(runFolder, 'authorized-project-v7.mp4')
   const ffmpeg = join(root, 'resources', 'video-tools', 'ffmpeg.exe')
   const ffprobe = join(root, 'resources', 'video-tools', 'ffprobe.exe')
   const started = performance.now()
-  const result = await runEditorV7Export({ document, ffmpeg, ffprobe, outputPath, signal: new AbortController().signal, onProgress: (frames, total) => {
+  const result = await runEditorV7Export({ document, ffmpeg, ffprobe, outputPath, videoOverlays, signal: new AbortController().signal, onProgress: (frames, total) => {
     if (frames === 1 || frames % 30 === 0 || frames === total) process.stdout.write(`V7 export ${frames}/${total}\n`)
   } })
   const output = await readFile(outputPath)
-  const report = { schemaVersion: 1, projectId: source.id, projectTitle: source.title, backupVerified: true, sourceFileHashesVerified: backup.manifest.sources.project.entries.length,
-    durationFrames, fps, width: document.width, height: document.height, v7ImageLayers: document.layers.length, v7ImageAssets: document.assets.length,
+  const report = { schemaVersion: 2, projectId: source.id, projectTitle: source.title, backupVerified: true,
+    sourceFileHashesVerified: { project: backup.manifest.sources.project.entries.length, library: backup.manifest.sources.library.entries.length },
+    durationFrames, fps, width: document.width, height: document.height, v7Layers: document.layers.length, v7TextLayers: document.layers.filter((layer) => layer.text !== undefined).length, v7ImageAssets: document.assets.length,
+    videoClips: videoOverlays.length, audioVideoClips: videoOverlays.filter((clip) => clip.audioEnabled).length, timelineTrackCount: source.timeline.tracks.length, timelineBlockCount: source.timeline.tracks.reduce((count, track) => count + track.blocks.length, 0),
     encoder: result.encoder, exportMilliseconds: result.milliseconds, renderMilliseconds: result.renderingMilliseconds, encoderBackpressureMilliseconds: result.encoderBackpressureMilliseconds,
     endToEndMilliseconds: Math.round(performance.now() - started), mp4Bytes: output.length,
-    mp4Sha256: createHash('sha256').update(output).digest('hex'), outputPath }
+    mp4Sha256: createHash('sha256').update(output).digest('hex'), outputPath, ...(result.mediaDecodeWarning ? { mediaDecodeWarning: result.mediaDecodeWarning } : {}) }
   await writeFile(join(runFolder, 'authorized-project-v7-report.json'), JSON.stringify(report, null, 2), { flag: 'wx' })
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`)
 }
