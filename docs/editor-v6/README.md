@@ -8,7 +8,8 @@
 | --- | --- |
 | [README do produto](../../README.md) | Instalação, produto, branches e comandos |
 | [Auditoria de importação JSON (05/11)](AUDITORIA_IMPORTACAO_JSON_IA_GUIA_V14_2026-11-05.md) | Diagnóstico do V6 e incompatibilidades do V13.1 |
-| [Guia V14 — React JSON](GUIA_V14_NATIVE_GACHA_EDITOR_V6_JSON_REACT.md) | Formato importável, atuação, PT, TALK, poses e validação |
+| [Guia V14.1 — React JSON](GUIA_V14_1_NATIVE_GACHA_EDITOR_V6_JSON_REACT.md) | Guia atual para IA: contrato V6 e direção criativa do V13.1 consolidado |
+| [Guia V14.0 — histórico](GUIA_V14_NATIVE_GACHA_EDITOR_V6_JSON_REACT.md) | Versão anterior do guia de importação |
 | [Painel de pendências da Zona de Guerra](ZONA_GUERRA_PENDENCIAS.md) | O que está implementado, o que falta validar e o que não começou |
 | [Baseline ativa — projeto novo (05/11)](baselines/native_gacha_nova_baseline_2026-11-05.md) | Medição do projeto novo, separado do cenário anterior alterado |
 | [Baseline ativa — dados JSON](baselines/native_gacha_nova_baseline_2026-11-05.json) | Números estruturados e sanitizados para A/B |

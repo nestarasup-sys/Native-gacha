@@ -1,5 +1,7 @@
 # GUIA V14.0 — Native Gacha / Editor V6 — JSON de React
 
+> **Versão atual:** use o [guia V14.1](GUIA_V14_1_NATIVE_GACHA_EDITOR_V6_JSON_REACT.md), que recupera o núcleo criativo do V13.1 consolidado e atualiza o contrato técnico. Este documento é mantido como referência histórica.
+
 **Editor-alvo:** Native Gacha, Editor V6, branch Dev-V2.  
 **Formato externo:** NYMI_EDITOR_V6_REACT_V1.  
 **Documento interno:** EditorV6Document, schemaVersion 1, 30 fps.  
@@ -129,7 +131,7 @@ scene_end é o início **exato da primeira fala ou pensamento pós-cena**. Se o 
 - Início com poses reais diferentes sempre que o inventário permitir; repetir de modo equilibrado se há mais atores que poses.
 - A cada **15 segundos globais** (15,30,45…), exatamente um personagem elegível muda para outra pose real do próprio modelo. Semente fixa para reprodução.
 - Troca de pose não reinicia emoção nem olhar. Não inventar pose indisponível.
-- A ferramenta gera cortes imediatos nos estados importados, para não antecipar o auge emocional em 250 ms. Transições podem ser ativadas manualmente após revisão.
+- As transições de estados elegíveis são habilitadas no fluxo atual e podem começar até 250 ms antes do quadro do beat; veja o guia V14.1 para planejar a causalidade.
 
 ### Expressões e personalidade
 
