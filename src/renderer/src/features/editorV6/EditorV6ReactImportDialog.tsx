@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import './editorV6ReactImport.css'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, resolveEditorV6ReactVideos, type EditorV6ReactImport } from '../../../../shared/editorV6ReactImport'
@@ -64,21 +65,21 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
     }catch(reason){setError(reason instanceof Error?reason.message:'Falha ao importar o projeto.');setProgress('')}
     finally{setBusy(false)}
   }
-  return <div className="roteiro-modal-backdrop" role="presentation">
-    <section className="base-videos-ai-modal" role="dialog" aria-modal="true" aria-label="Importar react JSON no Editor V6">
-      <header><h2>Importar react JSON · Editor V6</h2><button type="button" onClick={onClose} disabled={busy} aria-label="Fechar">×</button></header>
+  return <div className="v6-react-json-backdrop" role="presentation">
+    <section className="v6-react-json-dialog" role="dialog" aria-modal="true" aria-label="Importar react JSON no Editor V6">
+      <header><h2>Importar react JSON · Editor V6</h2><button type="button" className="v6-react-json-close" onClick={onClose} disabled={busy} aria-label="Fechar">×</button></header>
       <p>Importe o formato <code>{EDITOR_V6_REACT_IMPORT_FORMAT}</code>. O editor vincula personagens e vídeos reais e prepara as imagens antes de criar um projeto novo.</p>
       <p>O projeto atual não será alterado. Os textos serão preservados literalmente.</p>
       <input type="file" ref={input} accept="application/json,.json" hidden disabled={busy||checking} onChange={(event)=>void inspect(event.target.files?.[0])}/>
-      <button type="button" className="studio-action" disabled={busy||checking} onClick={()=>input.current?.click()}>Selecionar JSON</button>
+      <button type="button" disabled={busy||checking} onClick={()=>input.current?.click()}>Selecionar JSON</button>
       {filename&&<p><strong>Arquivo:</strong> {filename}</p>}
       {source&&<p><strong>{source.title}</strong> · {source.cast.length} personagens · {source.videos.length} vídeos · {source.lines.length} falas/pensamentos · {source.beats.length} atuações</p>}
       {warnings.length>0&&<p role="status">{warnings.join(' | ')}</p>}
-      {progress&&<p role="status">{progress}</p>}
+      {progress&&<p className="v6-react-json-progress" role="status">{progress}</p>}
       {error&&<pre role="alert" style={{whiteSpace:'pre-wrap',maxHeight:180,overflow:'auto'}}>{error}</pre>}
-      <footer style={{display:'flex',gap:12,marginTop:16}}>
-        <button type="button" className="studio-action" disabled={busy} onClick={onClose}>Cancelar</button>
-        <button type="button" className="studio-action studio-action-primary" disabled={!source||!verified||checking||busy} onClick={()=>void run()}>{busy?'Preparando projeto…':'Validar e criar projeto'}</button>
+      <footer>
+        <button type="button" disabled={busy} onClick={onClose}>Cancelar</button>
+        <button type="button" className="v6-react-json-primary" disabled={!source||!verified||checking||busy} onClick={()=>void run()}>{busy?'Preparando projeto…':'Validar e criar projeto'}</button>
       </footer>
     </section>
   </div>
