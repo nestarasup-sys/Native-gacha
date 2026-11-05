@@ -42,17 +42,17 @@ test('catalog rejects a future schema without changing its database', async () =
   const databasePath = path.join(root, 'database', 'catalog.sqlite')
   await fs.mkdir(path.dirname(databasePath), { recursive: true })
   const legacy = new Database(databasePath)
-  legacy.exec('CREATE TABLE preserved_fixture (value TEXT NOT NULL); PRAGMA user_version = 18;')
+  legacy.exec('CREATE TABLE preserved_fixture (value TEXT NOT NULL); PRAGMA user_version = 19;')
   legacy.prepare('INSERT INTO preserved_fixture(value) VALUES (?)').run('keep')
   legacy.close()
 
   const catalog = new DataPlatform(root)
-  assert.throws(() => catalog.initialize(), /schema 18/)
+  assert.throws(() => catalog.initialize(), /schema 19/)
   assert.equal(catalog.database, null)
 
   const verify = new Database(databasePath, { readonly: true })
   try {
-    assert.equal(verify.pragma('user_version', { simple: true }), 18)
+    assert.equal(verify.pragma('user_version', { simple: true }), 19)
     assert.equal(verify.prepare('SELECT value FROM preserved_fixture').get().value, 'keep')
   } finally { verify.close() }
 }))
@@ -115,7 +115,7 @@ test('roteiros migra JSON para SQLite sem apagar a origem e adapta o schema lega
 
   const catalog = catalogAt(root)
   const db = catalog.database
-  assert.equal(db.pragma('user_version', { simple: true }), 17)
+  assert.equal(db.pragma('user_version', { simple: true }), 18)
   assert.ok(db.prepare('PRAGMA table_info(roteiros)').all().some((column) => column.name === 'position'))
   assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='roteiro_sections'").get())
   assert.deepEqual(db.prepare('SELECT id, title, video_title, character_ids_json, position FROM roteiros ORDER BY position').all(), [{
@@ -175,7 +175,7 @@ test('schema de categorias V14 migra para cores exclusivas e persiste os valores
   legacyDb.close()
   const catalog = catalogAt(root)
   const colors = catalog.database.prepare('SELECT color_hex FROM base_video_categories ORDER BY category_id').all().map((row) => row.color_hex)
-  assert.equal(catalog.database.pragma('user_version', { simple: true }), 17)
+  assert.equal(catalog.database.pragma('user_version', { simple: true }), 18)
   assert.equal(new Set(colors).size, 2)
   catalog.close()
   const reopened = catalogAt(root)

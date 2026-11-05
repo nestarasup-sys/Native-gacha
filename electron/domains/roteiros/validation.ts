@@ -30,12 +30,14 @@ export function isRoteiroDocument(value: unknown): value is RoteiroDocument {
       && (block.kind === 'fala' || block.kind === 'pensamento')
       && typeof block.expression === 'string' && block.expression.length <= 500
       && typeof block.textPortuguese === 'string' && block.textPortuguese.length <= 10000
-      && typeof block.textEnglish === 'string' && block.textEnglish.length <= 10000)))
+      && typeof block.textEnglish === 'string' && block.textEnglish.length <= 10000
+      && (block.startAt === undefined || isOptionalSeconds(block.startAt)))))
   return isRoteiroId(roteiro.id) && isText(roteiro.title, 100) && isText(roteiro.videoTitle, 100)
     && Array.isArray(roteiro.characterIds) && roteiro.characterIds.length <= 500 && roteiro.characterIds.every(isRoteiroId)
     && (roteiro.backgroundAssetId === undefined || roteiro.backgroundAssetId === null || isRoteiroId(roteiro.backgroundAssetId))
     && (roteiro.uiGifAssetId === undefined || roteiro.uiGifAssetId === null || isRoteiroId(roteiro.uiGifAssetId))
     && (roteiro.previewDetailsCollapsed === undefined || typeof roteiro.previewDetailsCollapsed === 'boolean')
+    && (roteiro.importOrigin === undefined || Boolean(roteiro.importOrigin && roteiro.importOrigin.kind === 'ai-json' && isRoteiroId(roteiro.importOrigin.importId) && typeof roteiro.importOrigin.importedAt === 'string' && Number.isFinite(Date.parse(roteiro.importOrigin.importedAt)) && Array.isArray(roteiro.importOrigin.createdCharacterIds) && roteiro.importOrigin.createdCharacterIds.length <= 500 && roteiro.importOrigin.createdCharacterIds.every(isRoteiroId) && isText(roteiro.importOrigin.sourceTitle, 100)))
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isRoteiroId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)

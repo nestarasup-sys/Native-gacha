@@ -51,14 +51,15 @@ export function registerBaseVideoHandlers(
     assertTrustedSender(event)
     return service.publishVideo(id)
   })
-  ipc.handle(baseVideosIpcChannels.exportSimpleData, async (event, content: unknown) => {
+  ipc.handle(baseVideosIpcChannels.exportSimpleData, async (event, content: unknown, purpose: unknown) => {
     assertTrustedSender(event)
     if (typeof content !== 'string' || content.trim().length === 0 || Buffer.byteLength(content, 'utf8') > 25 * 1024 * 1024 || content.includes('\0')) {
       throw new Error('Os dados simples para exportação são inválidos ou excedem 25 MB.')
     }
+    if (purpose !== undefined && purpose !== 'simple' && purpose !== 'ai-package') throw new Error('Tipo de exportação inválido.')
     const result = await exportDependencies.showSaveDialog(event.sender, {
-      title: 'Exportar dados simples dos vídeos',
-      defaultPath: 'dados-simples-dos-videos.txt',
+      title: purpose === 'ai-package' ? 'Exportar pacote completo para IA' : 'Exportar dados simples dos vídeos',
+      defaultPath: purpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : 'dados-simples-dos-videos.txt',
       filters: [{ name: 'Arquivo de texto', extensions: ['txt'] }]
     })
     if (result.canceled || !result.filePath) return false

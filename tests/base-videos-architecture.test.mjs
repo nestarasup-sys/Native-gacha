@@ -147,11 +147,12 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
   const handlers = new Map()
   const writes = []
   let canceled = true
+  let exportPurpose
   registerBaseVideoHandlers({ handle(name, handler) { handlers.set(name, handler) } }, (event) => {
     if (event.allowed !== true) throw new Error('Origem não autorizada')
   }, service, {
     showSaveDialog: async (_sender, options) => {
-      assert.equal(options.defaultPath, 'dados-simples-dos-videos.txt')
+      assert.equal(options.defaultPath, exportPurpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : 'dados-simples-dos-videos.txt')
       return canceled ? { canceled: true } : { canceled: false, filePath: '/exports/dados.txt' }
     },
     writeFile: async (...args) => { writes.push(args) }
@@ -172,6 +173,11 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
   canceled = false
   assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, 'VÍDEO 01'), true)
   assert.deepEqual(writes, [['/exports/dados.txt', 'VÍDEO 01', 'utf8']])
+  exportPurpose = 'ai-package'
+  canceled = true
+  assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, 'PACOTE COMPLETO', exportPurpose), false)
+  exportPurpose = 'unknown'
+  await assert.rejects(handlers.get('base-videos:export-simple-data')({ allowed: true }, 'texto', exportPurpose), /Tipo de exportação inválido/)
   await assert.rejects(handlers.get('base-videos:export-simple-data')({ allowed: true }, ''), /inválidos/)
 })
 
@@ -187,9 +193,11 @@ test('contrato do preload mapeia a API inteira sem renomear canais e preserva ar
   await invoke('renameCategory', 'category-id', 'Ação')
   await invoke('publish', 'video-id')
   await invoke('exportSimpleData', 'conteúdo')
+  await invoke('exportSimpleData', 'pacote', 'ai-package')
   assert.deepEqual(calls, [
     ['base-videos:categories:rename', 'category-id', 'Ação'],
     ['base-videos:publish', 'video-id'],
-    ['base-videos:export-simple-data', 'conteúdo']
+    ['base-videos:export-simple-data', 'conteúdo'],
+    ['base-videos:export-simple-data', 'pacote', 'ai-package']
   ])
 })

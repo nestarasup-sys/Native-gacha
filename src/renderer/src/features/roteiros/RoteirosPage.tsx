@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useSearchParams } from 'react-router'
 import './roteiros.css'
 import { Icon } from '../../ui/components/Icon'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
@@ -32,6 +33,8 @@ function roteiroThumbnailColor(id: string): string {
 }
 
 export function RoteirosPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
+  const importedRouteId = searchParams.get('imported')
   const [activeArea, setActiveArea] = useState<(typeof roteiroAreas)[number]['id']>('roteiros')
   const [roteiros, setRoteiros] = useState<SidebarRoteiro[]>([])
   const [roteirosLoaded, setRoteirosLoaded] = useState(false)
@@ -78,6 +81,17 @@ export function RoteirosPage() {
     void window.desktop.mediaLibrary.list().then((items) => { if (!cancelled) { setLibraryItems(items); setLibraryLoaded(true) } }).catch(() => { if (!cancelled) setLibraryLoaded(true) })
     return () => { cancelled = true }
   }, [])
+
+  useEffect(() => {
+    if (!roteirosLoaded || !importedRouteId) return
+    if (roteiros.some((roteiro) => roteiro.id === importedRouteId)) {
+      setSelectedRoteiroId(importedRouteId)
+      setOpenedRoteiroId(importedRouteId)
+    }
+    const next = new URLSearchParams(searchParams)
+    next.delete('imported')
+    setSearchParams(next, { replace: true })
+  }, [roteiros, roteirosLoaded, importedRouteId, searchParams, setSearchParams])
 
   useEffect(() => {
     let cancelled = false

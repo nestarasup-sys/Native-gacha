@@ -19,8 +19,9 @@ function duplicateSection(section: RoteiroSectionContent, createId: () => string
 
 /** Copies a script document while assigning new IDs to document-owned records and retaining live media references. */
 export function duplicateRoteiroDocument(source: RoteiroDocument, createId: () => string): RoteiroDocument {
+  const { importOrigin: _importOrigin, ...copyableSource } = source
   return {
-    ...source,
+    ...copyableSource,
     id: createId(),
     title: `${source.title.slice(0, 92)} (cópia)`,
     characterIds: [...source.characterIds],

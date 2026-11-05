@@ -155,7 +155,7 @@ const baseVideosApi: BaseVideosDesktopApi = {
   deleteDetails: (videoId) => invokeBaseVideos('deleteDetails', videoId),
   deleteVideo: (videoId) => invokeBaseVideos('deleteVideo', videoId),
   publish: (videoId) => invokeBaseVideos('publish', videoId),
-  exportSimpleData: (content) => invokeBaseVideos('exportSimpleData', content)
+  exportSimpleData: (content, purpose) => invokeBaseVideos('exportSimpleData', content, purpose)
 }
 
 const roteirosApi: RoteirosDesktopApi = {

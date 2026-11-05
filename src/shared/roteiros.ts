@@ -24,6 +24,7 @@ export type RoteiroReactionBlock = {
   expression: string
   textPortuguese: string
   textEnglish: string
+  startAt?: number
 }
 
 export type RoteiroSectionContent = {
@@ -50,6 +51,7 @@ export type RoteiroDocument = {
   previewDetailsCollapsed?: boolean
   opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
+  importOrigin?: { kind: 'ai-json'; importId: string; importedAt: string; createdCharacterIds: string[]; sourceTitle: string }
 }
 
 export type RoteiroExportCharacterInfo = {

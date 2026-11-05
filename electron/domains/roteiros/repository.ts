@@ -13,6 +13,8 @@ export class RoteirosRepository {
     const roteiroRows = this.db.prepare('SELECT id, title, video_title, character_ids_json, background_asset_id, ui_gif_asset_id, preview_details_collapsed FROM roteiros ORDER BY position, created_at, id').all() as Array<{ id: string; title: string; video_title: string; character_ids_json: string; background_asset_id: string | null; ui_gif_asset_id: string | null; preview_details_collapsed: number }>
     const tiktokRows = this.db.prepare('SELECT id, roteiro_id, title, video_title FROM roteiro_tiktoks ORDER BY roteiro_id, position').all() as Array<{ id: string; roteiro_id: string; title: string; video_title: string }>
     const sectionRows = this.db.prepare('SELECT section_id, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context FROM roteiro_sections').all() as Array<{ section_id: string; video_asset_json: string | null; blocks_json: string; description_text: string; timeline: RoteiroSectionContent['timeline']; scene_end_seconds: number | null; first_group_reaction_seconds: number | null; second_group_reaction_seconds: number | null; additional_context: string }>
+    const importRows = this.db.prepare('SELECT roteiro_id, import_id, imported_at, created_character_ids_json, source_title FROM roteiro_import_origins').all() as Array<{ roteiro_id: string; import_id: string; imported_at: string; created_character_ids_json: string; source_title: string }>
+    const importByRoteiro = new Map(importRows.map((row) => [row.roteiro_id, { kind: 'ai-json' as const, importId: row.import_id, importedAt: row.imported_at, createdCharacterIds: JSON.parse(row.created_character_ids_json) as string[], sourceTitle: row.source_title }]))
     const contentById = new Map(sectionRows.map((row) => [row.section_id, {
       video: row.video_asset_json ? JSON.parse(row.video_asset_json) as RoteiroVideoReference : null,
       blocks: JSON.parse(row.blocks_json) as RoteiroReactionBlock[],
@@ -35,6 +37,7 @@ export class RoteirosRepository {
       ...(row.background_asset_id ? { backgroundAssetId: row.background_asset_id } : {}),
       ...(row.ui_gif_asset_id ? { uiGifAssetId: row.ui_gif_asset_id } : {}),
       previewDetailsCollapsed: Boolean(row.preview_details_collapsed),
+      ...(importByRoteiro.has(row.id) ? { importOrigin: importByRoteiro.get(row.id)! } : {}),
       opening: contentById.get(`${row.id}:opening`) ?? { video: null, blocks: [], description: '' },
       tiktoks: tiktoksByRoteiro.get(row.id) ?? []
     }))
@@ -99,8 +102,11 @@ export class RoteirosRepository {
       const upsertSection = this.db.prepare(`INSERT INTO roteiro_sections(section_id, roteiro_id, section_kind, video_asset_json, blocks_json, description_text, timeline, scene_end_seconds, first_group_reaction_seconds, second_group_reaction_seconds, additional_context, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(section_id) DO UPDATE SET roteiro_id=excluded.roteiro_id, section_kind=excluded.section_kind, video_asset_json=excluded.video_asset_json, blocks_json=excluded.blocks_json, description_text=excluded.description_text, timeline=excluded.timeline, scene_end_seconds=excluded.scene_end_seconds, first_group_reaction_seconds=excluded.first_group_reaction_seconds, second_group_reaction_seconds=excluded.second_group_reaction_seconds, additional_context=excluded.additional_context, updated_at=excluded.updated_at
         WHERE roteiro_sections.roteiro_id IS NOT excluded.roteiro_id OR roteiro_sections.section_kind IS NOT excluded.section_kind OR roteiro_sections.video_asset_json IS NOT excluded.video_asset_json OR roteiro_sections.blocks_json IS NOT excluded.blocks_json OR roteiro_sections.description_text IS NOT excluded.description_text OR roteiro_sections.timeline IS NOT excluded.timeline OR roteiro_sections.scene_end_seconds IS NOT excluded.scene_end_seconds OR roteiro_sections.first_group_reaction_seconds IS NOT excluded.first_group_reaction_seconds OR roteiro_sections.second_group_reaction_seconds IS NOT excluded.second_group_reaction_seconds OR roteiro_sections.additional_context IS NOT excluded.additional_context`)
+      const upsertImportOrigin = this.db.prepare(`INSERT INTO roteiro_import_origins(roteiro_id, import_id, imported_at, created_character_ids_json, source_title) VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(roteiro_id) DO UPDATE SET import_id=excluded.import_id, imported_at=excluded.imported_at, created_character_ids_json=excluded.created_character_ids_json, source_title=excluded.source_title`)
       items.forEach((roteiro, position) => {
         upsertRoteiro.run(roteiro.id, roteiro.title.trim(), roteiro.videoTitle.trim(), JSON.stringify(roteiro.characterIds), roteiro.backgroundAssetId ?? null, roteiro.uiGifAssetId ?? null, roteiro.previewDetailsCollapsed ? 1 : 0, position, now, now)
+        if (roteiro.importOrigin) upsertImportOrigin.run(roteiro.id, roteiro.importOrigin.importId, roteiro.importOrigin.importedAt, JSON.stringify(roteiro.importOrigin.createdCharacterIds), roteiro.importOrigin.sourceTitle)
         const opening = roteiro.opening ?? { video: null, blocks: [], description: '' }
         upsertSection.run(`${roteiro.id}:opening`, roteiro.id, 'opening', opening.video ? JSON.stringify(opening.video) : null, JSON.stringify(opening.blocks), opening.description ?? '', opening.timeline ?? 'unspecified', opening.sceneEndSeconds ?? null, opening.firstGroupReactionSeconds ?? null, opening.secondGroupReactionSeconds ?? null, opening.additionalContext ?? '', now)
         roteiro.tiktoks.forEach((tiktok, tiktokPosition) => {

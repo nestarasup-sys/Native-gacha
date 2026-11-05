@@ -11,7 +11,8 @@ test('duplicar roteiro gera IDs próprios e mantém referências vivas de mídia
   const source = {
     id: 'roteiro-original', title: 'Roteiro de teste', videoTitle: 'Vídeo original', characterIds: ['personagem-1'],
     opening: { video: { id: 'video-abertura', name: 'Abertura', mimeType: 'video/mp4', extension: 'mp4', size: 80, durationFrames: 60 }, blocks: [{ id: 'bloco-abertura', characterId: 'personagem-1', kind: 'fala', expression: 'alegre', textPortuguese: 'oi', textEnglish: 'hi' }] },
-    tiktoks: [{ id: 'tiktok-1', title: 'Parte 1', videoTitle: 'Vídeo 1', video: { id: 'video-tiktok', name: 'TikTok', mimeType: 'video/mp4', extension: 'mp4', size: 120, durationFrames: 90 }, blocks: [{ id: 'bloco-tiktok', characterId: 'personagem-1', kind: 'fala', expression: 'sério', textPortuguese: 'não', textEnglish: 'no' }] }]
+    tiktoks: [{ id: 'tiktok-1', title: 'Parte 1', videoTitle: 'Vídeo 1', video: { id: 'video-tiktok', name: 'TikTok', mimeType: 'video/mp4', extension: 'mp4', size: 120, durationFrames: 90 }, blocks: [{ id: 'bloco-tiktok', characterId: 'personagem-1', kind: 'fala', expression: 'sério', textPortuguese: 'não', textEnglish: 'no' }] }],
+    importOrigin: { kind: 'ai-json', importId: 'import-1', importedAt: '2026-11-05T00:00:00.000Z', createdCharacterIds: [], sourceTitle: 'Importado' }
   }
   const copy = duplicateRoteiroDocument(source, idSequence('roteiro-copia', 'bloco-abertura-copia', 'tiktok-copia', 'bloco-tiktok-copia'))
 
@@ -25,6 +26,7 @@ test('duplicar roteiro gera IDs próprios e mantém referências vivas de mídia
   assert.notEqual(copy.opening?.video, source.opening.video)
   assert.notEqual(copy.characterIds, source.characterIds)
   assert.deepEqual(copy.characterIds, source.characterIds)
+  assert.equal(copy.importOrigin, undefined)
   assert.equal(source.opening.blocks[0].id, 'bloco-abertura')
   assert.equal(source.tiktoks[0].blocks[0].id, 'bloco-tiktok')
 })

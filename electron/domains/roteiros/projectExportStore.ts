@@ -152,7 +152,7 @@ export class RoteiroProjectExportStore {
         if (!section.blocks.length) lines.push('Sem falas ou pensamentos.')
         section.blocks.forEach((block, blockIndex) => {
           const name = names.get(block.characterId) ?? (knownIds.has(block.characterId) ? `Personagem ${block.characterId.slice(0, 8)}` : 'Personagem não selecionado no elenco')
-          lines.push(`${blockIndex + 1} - ${name} (${block.kind === 'fala' ? 'fala' : 'pensamento'}${block.expression ? ` · ${block.expression}` : ''})`, `Português: ${block.textPortuguese || 'Não preenchido.'}`, `English: ${block.textEnglish || 'Não preenchido.'}`)
+          lines.push(`${blockIndex + 1} - ${name} (${block.kind === 'fala' ? 'fala' : 'pensamento'}${block.expression ? ` · ${block.expression}` : ''}${block.startAt === undefined ? '' : ` · início ${block.startAt.toFixed(2)}s`})`, `Português: ${block.textPortuguese || 'Não preenchido.'}`, `English: ${block.textEnglish || 'Não preenchido.'}`)
         })
         if (section.video) lines.push(`Vídeo original: ${section.video.name}`, `ID do vídeo: ${section.video.id}`)
         lines.push('')

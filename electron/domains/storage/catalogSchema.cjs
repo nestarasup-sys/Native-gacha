@@ -1,7 +1,7 @@
 const { sha256 } = require('./storageFiles.cjs')
 const { nextCategoryColor } = require('../../categoryColors.cjs')
 
-const CATALOG_SCHEMA_VERSION = 17
+const CATALOG_SCHEMA_VERSION = 18
 const BUILTIN_DOMAINS = [
   'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
   'fabricator.face-sets', 'fabricator.face-catalog', 'fabricator.face-components',
@@ -155,6 +155,13 @@ function initializeCatalogSchema(database, currentSchema) {
       additional_rules TEXT NOT NULL DEFAULT '',
       updated_at TEXT NOT NULL
     ) WITHOUT ROWID;
+    CREATE TABLE IF NOT EXISTS roteiro_import_origins (
+      roteiro_id TEXT PRIMARY KEY REFERENCES roteiros(id) ON DELETE CASCADE,
+      import_id TEXT NOT NULL,
+      imported_at TEXT NOT NULL,
+      created_character_ids_json TEXT NOT NULL DEFAULT '[]',
+      source_title TEXT NOT NULL
+    ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS roteiro_export_logs_by_parent ON roteiro_export_logs(roteiro_id, created_at DESC, id DESC);
     CREATE TABLE IF NOT EXISTS base_video_sequence (
       sequence_id INTEGER PRIMARY KEY CHECK(sequence_id = 1),
@@ -287,6 +294,8 @@ function initializeCatalogSchema(database, currentSchema) {
     .run(sha256('gacha-roteiro-export-log-persistence-schema-v16'), now)
   database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (17, 'roteiro-character-sheets', ?, ?)")
     .run(sha256('gacha-roteiro-character-sheets-schema-v17'), now)
+  database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (18, 'roteiro-ai-import-origin', ?, ?)")
+    .run(sha256('gacha-roteiro-ai-import-origin-schema-v18'), now)
   if (currentSchema < CATALOG_SCHEMA_VERSION) database.pragma(`user_version = ${CATALOG_SCHEMA_VERSION}`)
   const insertDomain = database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
   const registerBuiltins = database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
