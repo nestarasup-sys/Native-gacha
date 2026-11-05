@@ -2,6 +2,8 @@
 import { z } from 'zod'
 import type { CustomizerCharacter } from './customizer'
 import type { EditorV6MediaAsset } from './editorV6'
+import type { VideoLibraryItem } from './mediaLibrary'
+import type { BaseVideoDetails } from './baseVideos'
 
 export const EDITOR_V6_REACT_IMPORT_FORMAT = 'NYMI_EDITOR_V6_REACT_V1'
 const seconds = z.number().finite().min(0).max(33_333)
@@ -30,7 +32,9 @@ export const editorV6ReactImportSchema = z.object({
     gaze: gaze.optional()
   })).min(1).max(24),
   videos: z.array(z.object({
-    videoId: z.string().uuid(),
+    videoId: z.string().uuid().optional(),
+    videoName: z.string().trim().min(1).max(255).optional(),
+    videoNumber: z.number().int().min(1).max(500).optional(),
     startSeconds: seconds,
     durationSeconds: z.number().finite().gt(0).max(33_333).optional(),
     layout: z.object({
@@ -40,7 +44,7 @@ export const editorV6ReactImportSchema = z.object({
       height: z.number().finite().min(1).max(200),
       rotation: z.number().finite().min(-180).max(180).default(0)
     }).optional()
-  })).max(500),
+  }).refine((item)=>[item.videoId,item.videoName,item.videoNumber].filter((value)=>value!==undefined).length===1,'Informe exatamente um identificador de vídeo: videoId, videoName ou videoNumber.')).max(500),
   lines: z.array(z.object({
     character: characterRef,
     kind: z.enum(['speech', 'thought']),
@@ -84,6 +88,22 @@ export function parseEditorV6ReactImport(source: unknown): EditorV6ReactImport {
   return editorV6ReactImportSchema.parse(source)
 }
 export const secondsToFrame = (value: number): number => Math.ceil(value * 30 - 1e-8)
+/** Resolve human-friendly video numbers/names to the installed Base de Vídeos UUIDs. */
+export function resolveEditorV6ReactVideos(source:EditorV6ReactImport,items:readonly VideoLibraryItem[],details:readonly BaseVideoDetails[]):EditorV6ReactImport {
+  const available=items.filter((item)=>item.available)
+  return {...source,videos:source.videos.map((video)=>{
+    if(video.videoId){
+      if(!available.some((item)=>item.id===video.videoId))throw new Error('Vídeo ausente na Base de Vídeos: '+video.videoId)
+      return video
+    }
+    const matched=video.videoNumber!==undefined?
+      available.filter((item)=>details.some((entry)=>entry.videoId===item.id&&entry.videoNumber===video.videoNumber)):
+      available.filter((item)=>canonical(item.name)===canonical(video.videoName??''))
+    if(matched.length!==1)throw new Error((matched.length?'Vídeo ambíguo':'Vídeo não encontrado')+': '+String(video.videoNumber??video.videoName))
+    return {videoId:matched[0].id,startSeconds:video.startSeconds,...(video.durationSeconds?{durationSeconds:video.durationSeconds}:{}),...(video.layout?{layout:video.layout}:{})}
+  })}
+}
+
 const canonical = (value: string) => value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLocaleLowerCase('pt-BR')
 const random = (seed: number) => {
   let state = seed >>> 0
@@ -163,6 +183,7 @@ export function planEditorV6ReactImport(source: EditorV6ReactImport, available: 
   })
   const mediaById = new Map(available.media.map((item) => [item.libraryVideoId ?? item.id, item]))
   const videos = source.videos.map((item) => {
+    if(!item.videoId)throw new Error('Resolva videoName/videoNumber para videoId antes de planejar o projeto.')
     const video = mediaById.get(item.videoId)
     if (!video || video.kind !== 'video') throw new Error('Vídeo não encontrado na Base de Vídeos: ' + item.videoId)
     const startFrame = secondsToFrame(item.startSeconds)
