@@ -1,6 +1,6 @@
 /** Compile a portable react plan into genuine Editor V6 images, clips and character tracks. */
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { EditorV6Document, EditorV6Element, EditorV6Asset, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../../../shared/editorV6'
+import type { EditorV6Document, EditorV6Element, EditorV6Asset, EditorV6TimelineTrack } from '../../../../shared/editorV6'
 import { createEditorV6Timeline, editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { parseEditorV6Document } from '../../../../shared/editorV6Schema'
