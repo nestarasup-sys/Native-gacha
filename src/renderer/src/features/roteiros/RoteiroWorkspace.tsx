@@ -4,8 +4,9 @@ import { RoteiroSectionEditor } from './RoteiroSectionEditor'
 import { CharacterPortrait } from '../../ui/components/CharacterPortrait'
 import { buildCharacterExportExpressionNames } from './characterExportNames'
 import { emptyRoteiroContent } from './roteiroDefaults'
+import { buildRoteiroEditorV6Text, selectRoteiroV6Poses } from './roteiroEditorV6Text'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { RoteiroDocument, RoteiroExportCharacterInfo, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem } from '../../../../shared/roteiros'
+import type { RoteiroDocument, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroUiGifItem } from '../../../../shared/roteiros'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 
 /** Editor e exportação de um roteiro aberto; persistência do documento pertence à página de catálogo. */
@@ -20,6 +21,7 @@ export function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo
   const [characterExportError, setCharacterExportError] = useState('')
   const [roteiroExportBusy, setRoteiroExportBusy] = useState<string | null>(null)
   const [roteiroExportMessage, setRoteiroExportMessage] = useState('')
+  const [exportedV6Text, setExportedV6Text] = useState(false)
   const [roteiroExportError, setRoteiroExportError] = useState('')
   const [openingExportFolder, setOpeningExportFolder] = useState<string | null>(null)
   const [backgroundPickerOpen, setBackgroundPickerOpen] = useState(false)
@@ -198,24 +200,22 @@ export function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo
   const exportRoteiroAsset = async (kind: 'background' | 'videos' | 'script' | 'gif') => {
     setRoteiroExportBusy(kind); setRoteiroExportError(''); setRoteiroExportMessage('')
     try {
-      const characterInfo = kind === 'script' ? await Promise.all(roteiro.characterIds.map(async (id): Promise<RoteiroExportCharacterInfo | null> => {
-        const character = characters.find((item) => item.id === id)
-        if (!character) return null
-        const modelSlot = character.customization.modelSlot ?? 1
-        const [allPoseSummaries, exportSlots] = await Promise.all([window.desktop.fabricator.listFabricatorPoseSlots(modelSlot), window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot)])
-        const availableSlots = allPoseSummaries.filter((pose): pose is NonNullable<typeof pose> => Boolean(pose)).sort((a, b) => a.slot - b.slot).map((pose) => pose.slot)
-        const poseSlots = exportSlots === null ? availableSlots : exportSlots.filter((slot): slot is number => slot !== null && availableSlots.includes(slot))
-        let expressions: string[] = []
-        if (character.customization.faceAppearance) {
-          const [presets, collections] = await Promise.all([window.desktop.fabricator.listFaceExpressionPresets(modelSlot), window.desktop.fabricator.listFaceExpressionCollections(modelSlot)])
-          expressions = buildCharacterExportExpressionNames(
-            presets.filter((preset) => preset.modelSlot === modelSlot).sort((a, b) => (a.expressionIndex ?? 0) - (b.expressionIndex ?? 0)),
-            collections,
-          ).map((item) => item.name).filter((name) => name !== 'normal')
-        }
-        return { id, name: character.name, modelSlot, hair: character.hair, outfit: character.outfit, skin: character.skin, hasFaceAppearance: Boolean(character.customization.faceAppearance), poseSlots: poseSlots.length ? poseSlots : [0], expressions }
-      })) : undefined
-      const result = await window.desktop.roteiros.exportRoteiroAssets({ roteiro, kind, ...(characterInfo ? { characters: characterInfo.filter((item): item is RoteiroExportCharacterInfo => Boolean(item)) } : {}) })
+      if (kind === 'script') {
+        const modelSlots = [...new Set(characters.filter((item) => roteiro.characterIds.includes(item.id)).map((item) => item.customization.modelSlot ?? 1))]
+        const [sheets, videos, details, backgrounds, models] = await Promise.all([
+          window.desktop.roteiros.listCharacterSheets(), window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(),
+          roteiro.backgroundAssetId ? window.desktop.videoBackgrounds.listVideoBackgroundLibrary() : Promise.resolve([]),
+          Promise.all(modelSlots.map(async (modelSlot) => {
+            const [summaries, saved, presets] = await Promise.all([window.desktop.fabricator.listFabricatorPoseSlots(modelSlot), window.desktop.fabricator.getFabricatorExportPoseSlots(modelSlot), window.desktop.fabricator.listFaceExpressionPresets(modelSlot)])
+            return { modelSlot, selectedPoses: selectRoteiroV6Poses(modelSlot, summaries, saved), expressions: presets.filter((preset) => preset.modelSlot === modelSlot).map(({ id, name }) => ({ id, name })) }
+          }))
+        ])
+        const text = buildRoteiroEditorV6Text({ roteiro, characters, sheets, videos, details, backgrounds, models })
+        const path = await window.desktop.roteiros.exportRoteiroV6Text(text)
+        if (path) { setExportedV6Text(true); setRoteiroExportMessage(`Roteiro para Editor V6 salvo em: ${path}`); addExportLog('Exportar roteiro para Editor V6', 'success', path) }
+        return
+      }
+      const result = await window.desktop.roteiros.exportRoteiroAssets({ roteiro, kind })
       const label = kind === 'background' ? 'Fundo' : kind === 'videos' ? 'Vídeos' : kind === 'gif' ? 'GIF' : 'Roteiro'
       setRoteiroExportMessage(`${label} exportado${kind === 'videos' && result.files !== 1 ? 's' : ''}: ${result.files} arquivo(s) · ${result.path}`)
       addExportLog(`Exportar ${label.toLocaleLowerCase('pt-BR')}`, 'success', `${result.files} arquivo(s) · ${result.path}`)
@@ -322,7 +322,7 @@ export function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('videos')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'videos' ? 'Exportando vídeos…' : 'Exportar vídeos'}</button>
       <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('videos')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'videos' ? 'Abrindo…' : 'Abrir pasta'}</button>
       <button className="roteiro-export-characters roteiro-export-secondary" type="button" onClick={() => void exportRoteiroAsset('script')} disabled={Boolean(roteiroExportBusy)}>{roteiroExportBusy === 'script' ? 'Exportando roteiro…' : 'Exportar roteiro'}</button>
-      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" onClick={() => void openExportFolder('script')} disabled={Boolean(openingExportFolder)}>{openingExportFolder === 'script' ? 'Abrindo…' : 'Abrir pasta'}</button>
+      <button className="roteiro-export-characters roteiro-export-open-folder" type="button" disabled={!exportedV6Text || Boolean(roteiroExportBusy)} onClick={() => void window.desktop.roteiros.revealRoteiroV6Text().catch((reason: unknown) => setRoteiroExportError(reason instanceof Error ? reason.message : String(reason)))}>Mostrar arquivo</button>
       {characterExportStatus && <p className="roteiro-export-feedback" role="status">{characterExportStatus}</p>}
       {characterExportError && <p className="roteiro-export-error" role="alert">{characterExportError}</p>}
       {roteiroExportMessage && <p className="roteiro-export-feedback" role="status">{roteiroExportMessage}</p>}

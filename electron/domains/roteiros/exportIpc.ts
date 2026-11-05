@@ -15,10 +15,13 @@ export function registerRoteiroExportHandlers(deps: {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   openPath: (path: string) => Promise<string>
+  saveV6Text: (event: IpcMainInvokeEvent, content: string) => Promise<string | null>
+  revealV6Text: (path: string) => void
   service: RoteiroExportService
 }): { drain: () => Promise<void>; resumeAfterFailedShutdown: () => void } {
   const jobOwners = new Map<string, number>()
   const watchedSenders = new Set<number>()
+  const savedV6Files = new Map<number, string>()
   const activeTasks = new Set<Promise<unknown>>()
   const jobOperations = createKeyedOperationQueue({ retainFailures: true })
   let shuttingDown = false
@@ -53,6 +56,7 @@ export function registerRoteiroExportHandlers(deps: {
     watchedSenders.add(senderId)
     event.sender.once('destroyed', () => {
       watchedSenders.delete(senderId)
+      savedV6Files.delete(senderId)
       const abandonedJobs = [...jobOwners]
         .filter(([, ownerId]) => ownerId === senderId)
         .map(([jobId]) => jobId)
@@ -97,6 +101,26 @@ export function registerRoteiroExportHandlers(deps: {
     deps.assertTrustedSender(event)
     assertAvailable()
     return track(() => deps.service.exportAssets(request))
+  })
+
+  deps.ipcMain.handle('roteiros:export-v6-text', async (event, content: unknown) => {
+    deps.assertTrustedSender(event)
+    assertAvailable()
+    if (typeof content !== 'string' || !content.trim() || content.includes('\0') || Buffer.byteLength(content, 'utf8') > 25 * 1024 * 1024) throw new Error('O roteiro está vazio ou excede o limite de 25 MB.')
+    return track(async () => {
+      watchSender(event)
+      const path = await deps.saveV6Text(event, content)
+      if (path && !event.sender.isDestroyed()) savedV6Files.set(event.sender.id, path)
+      return path
+    })
+  })
+
+  deps.ipcMain.handle('roteiros:reveal-v6-text', async (event) => {
+    deps.assertTrustedSender(event)
+    assertAvailable()
+    const path = savedV6Files.get(event.sender.id)
+    if (!path) throw new Error('Exporte o roteiro primeiro para abrir sua localização.')
+    deps.revealV6Text(path)
   })
 
   deps.ipcMain.handle('roteiros:export-folder:open', async (event, request: unknown) => {

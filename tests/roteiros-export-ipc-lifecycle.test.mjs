@@ -10,7 +10,7 @@ function deferred() {
 
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
-function createHarness(service = {}) {
+function createHarness(service = {}, saveV6Text = async (_event, content) => `saved:${content}`) {
   const handlers = new Map()
   let destroyed = false
   let onDestroyed
@@ -31,6 +31,8 @@ function createHarness(service = {}) {
     ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) },
     assertTrustedSender: () => {},
     openPath: async () => '',
+    saveV6Text,
+    revealV6Text: () => {},
     service: { ...defaults, ...service }
   })
   return {
@@ -39,6 +41,31 @@ function createHarness(service = {}) {
     destroySender: () => { destroyed = true; onDestroyed?.() }
   }
 }
+
+test('exportação TXT V6 valida conteúdo, respeita cancelamento e aguarda gravação no encerramento', async () => {
+  const gate = deferred(), started = deferred()
+  const harness = createHarness({}, async (_event, content) => { started.resolve(); await gate.promise; return content === 'cancelar' ? null : 'roteiro.txt' })
+  await assert.rejects(harness.invoke('roteiros:export-v6-text', ''), /vazio/)
+  await assert.rejects(harness.invoke('roteiros:export-v6-text', 'a\0b'), /vazio/)
+  const saving = harness.invoke('roteiros:export-v6-text', 'roteiro válido')
+  await started.promise
+  const draining = harness.lifecycle.drain()
+  await assert.rejects(harness.invoke('roteiros:export-v6-text', 'outro'), /encerrando/)
+  gate.resolve()
+  assert.equal(await saving, 'roteiro.txt')
+  await draining
+  harness.lifecycle.resumeAfterFailedShutdown()
+  await harness.invoke('roteiros:reveal-v6-text')
+  assert.equal(await harness.invoke('roteiros:export-v6-text', 'cancelar'), null)
+})
+
+test('exportação TXT V6 rejeita remetente não confiável antes de abrir o diálogo', async () => {
+  const handlers = new Map()
+  let saves = 0
+  registerRoteiroExportHandlers({ ipcMain: { handle: (channel, handler) => handlers.set(channel, handler) }, assertTrustedSender: () => { throw Error('origem inválida') }, openPath: async () => '', saveV6Text: async () => { saves++; return null }, service: {} })
+  await assert.rejects(handlers.get('roteiros:export-v6-text')({ sender: { id: 1 } }, 'conteúdo'), /origem inválida/)
+  assert.equal(saves, 0)
+})
 
 test('drain waits for one-shot file exports and blocks new ones until shutdown aborts', async () => {
   const gate = deferred()

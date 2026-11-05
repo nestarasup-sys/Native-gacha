@@ -633,13 +633,13 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         </section>
 
         <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
-          <section className="pose-export-slots-panel" aria-label="Poses usadas na exportação de personagens">
-            <header><span><strong>Poses para exportação</strong><small>Escolha até cinco poses deste modelo</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
+          <section className="pose-export-slots-panel" aria-label="Poses para Editor V6 Importer">
+            <header><span><strong>Poses para Editor V6 Importer</strong><small>Escolha até cinco poses deste modelo</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
             <div className="pose-export-slot-list">
               {exportPoseSlots.map((poseSlot, index) => {
                 const available = allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === selectedModelSlot))
                 const selectedPose = available.find((pose) => pose.slot === poseSlot)
-                return <label className="pose-export-slot-row" key={index}><b>{String(index + 1).padStart(2, '0')}</b><select aria-label={`Pose do slot de exportação ${index + 1}`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Escolher pose</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose {String(poseSlot).padStart(2, '0')} · indisponível</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>Pose {String(pose.slot).padStart(2, '0')}</option>)}</select></label>
+                return <label className="pose-export-slot-row" key={index}><b>{String(index + 1).padStart(2, '0')}</b><select aria-label={`Pose do Editor V6 Importer ${index + 1}`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Escolher pose</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose {String(poseSlot).padStart(2, '0')} · indisponível</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>Pose {String(pose.slot).padStart(2, '0')}</option>)}</select></label>
               })}
             </div>
           </section>

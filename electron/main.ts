@@ -659,6 +659,16 @@ async function registerFabricatorHandlers(): Promise<void> {
     getAppDataRoot: () => configuredAppDataRoot ?? join(app.getPath('userData'), 'app-data'),
     resolvePhysicalPath: (path) => dataFileSystem.resolvePhysicalPath(path),
     openPath: (path) => shell.openPath(path),
+    revealV6Text: (path) => shell.showItemInFolder(path),
+    saveV6Text: async (event, content) => {
+      const owner = BrowserWindow.fromWebContents(event.sender)
+      const options = { title: 'Exportar roteiro para Editor V6', defaultPath: 'roteiro-editor-v6.txt', filters: [{ name: 'Arquivo de texto', extensions: ['txt'] }] }
+      const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options)
+      if (result.canceled || !result.filePath) return null
+      const destination = result.filePath.toLowerCase().endsWith('.txt') ? result.filePath : `${result.filePath}.txt`
+      await nativeWriteFile(destination, content, 'utf8')
+      return destination
+    },
     openImportFile: async (kind) => {
       const selection = kind === 'video'
         ? { title: 'Biblioteca de vídeos: importar', filters: [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }] }
