@@ -46,6 +46,26 @@ describe('Editor V6 single-readback frame capture', () => {
     expect(image.toBitmap).toHaveBeenCalledTimes(1)
   })
 
+  it('writes into a reusable output slice without changing the neighboring layer', () => {
+    const width = 32, height = 20
+    const { bytes, image, stride } = makeCapture(width, height, 0xa31f06, 28)
+    const output = Buffer.alloc(width * height * 4 * 2, 0x7f)
+    const secondLayerBefore = Buffer.from(output.subarray(width * height * 4))
+    const result = captureEditorV6FrameBitmap(image, width, height, 0xa31f06, output, 0)
+    const expected = Buffer.alloc(width * height * 4)
+    for (let y = 0; y < height; y++) bytes.copy(expected, y * width * 4, y * stride * 4, y * stride * 4 + width * 4)
+    expect(result).toBe(output)
+    expect(output.subarray(0, width * height * 4)).toEqual(expected)
+    expect(output.subarray(width * height * 4)).toEqual(secondLayerBefore)
+  })
+
+  it('rejects undersized reusable output before writing pixels', () => {
+    const { image } = makeCapture(24, 20, 1)
+    const output = Buffer.alloc(24 * 20 * 4 - 1, 0x7f)
+    expect(captureEditorV6FrameBitmap(image, 24, 20, 1, output)).toBeNull()
+    expect(output.every((value) => value === 0x7f)).toBe(true)
+  })
+
   it('rejects transparent or invalid compositor token cells', () => {
     const { image, bytes, stride } = makeCapture(24, 20, 1)
     const firstCell = (2 * stride + 24 + 2) * 4

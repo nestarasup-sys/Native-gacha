@@ -14,15 +14,20 @@ const PAINT_TOKEN_SIZE = 24
 const FRAME_CAPTURE_TIMEOUT_MS = 60000
 const FRAME_CAPTURE_RETRY_MS = 16
 
-async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number, retryMilliseconds = FRAME_CAPTURE_RETRY_MS) {
+async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number, output: Buffer, outputOffset = 0, retryMilliseconds = FRAME_CAPTURE_RETRY_MS) {
   const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
   let readbacks = 0
+  let capturePageMs = 0, captureBitmapMs = 0
   while (Date.now() < deadline) {
     signal.throwIfAborted()
     readbacks++
+    const capturePageStarted = performance.now()
     const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: width + PAINT_TOKEN_SIZE, height }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
-    const bitmap = captureEditorV6FrameBitmap(image, width, height, token)
-    if (bitmap) return { bitmap, readbacks }
+    capturePageMs += performance.now() - capturePageStarted
+    const captureBitmapStarted = performance.now()
+    const bitmap = captureEditorV6FrameBitmap(image, width, height, token, output, outputOffset)
+    captureBitmapMs += performance.now() - captureBitmapStarted
+    if (bitmap) return { bitmap, readbacks, capturePageMs, captureBitmapMs }
     // Invalidate only after observing a stale readback. This is a bounded
     // readback fence, not a blind wait for any queued paint event: each retry
     // verifies the marker in the exact image that will be exported.
@@ -89,6 +94,9 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     entries.set(window.webContents.id, { payload, ready: (error) => error ? rejectReady(Error(error)) : resolveReady() })
     const id = window.webContents.id
     let closed = false
+    // exportRunner awaits each FFmpeg stdin callback before requesting the next
+    // frame from this worker, so this owned buffer can be safely reused.
+    let frameBitmap: Buffer | undefined
     let layeredBitmap: Buffer | undefined
     const close = () => {
       if (closed) return
@@ -123,16 +131,21 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         }
         const result = await draw(layeredVideo ? 'background' : undefined)
         if (result.reused) return result
-        const capture = async () => {
+        const capture = async (outputOffset = 0) => {
           const started = performance.now()
           const token = nextPaintToken
-          const { bitmap, readbacks } = await capturePaintedFrame(window, signal, payload.width, payload.height, token, captureRetryMilliseconds)
-          await deps.inspectCapture?.({ window, frame, bitmap })
-          return { bitmap, readbacks, elapsedMs: performance.now() - started }
+          const layerBytes = payload.width * payload.height * 4
+          const output = layeredVideo
+            ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2))
+            : (frameBitmap ??= Buffer.allocUnsafe(layerBytes))
+          const captured = await capturePaintedFrame(window, signal, payload.width, payload.height, token, output, outputOffset, captureRetryMilliseconds)
+          const { bitmap, readbacks, capturePageMs, captureBitmapMs } = captured
+          await deps.inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + payload.width * payload.height * 4) : bitmap })
+          return { bitmap, readbacks, elapsedMs: performance.now() - started, capturePageMs, captureBitmapMs }
         }
         if (!layeredVideo) {
           const captured = await capture()
-          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs }, metrics: {
+          return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs, capturePageMs: captured.capturePageMs, captureBitmapMs: captured.captureBitmapMs }, metrics: {
             ...result.metrics, captureReadbacks: captured.readbacks, captureStaleReadbacks: captured.readbacks - 1
           } }
         }
@@ -145,15 +158,17 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         }
         const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
           if (drawn.layerReused) return
-          const captured = await capture()
+          const captured = await capture(offset)
           timings.captureMs = (timings.captureMs ?? 0) + captured.elapsedMs
+          timings.capturePageMs = (timings.capturePageMs ?? 0) + captured.capturePageMs
+          timings.captureBitmapMs = (timings.captureBitmapMs ?? 0) + captured.captureBitmapMs
           metrics.captureReadbacks = (metrics.captureReadbacks ?? 0) + captured.readbacks
           metrics.captureStaleReadbacks = (metrics.captureStaleReadbacks ?? 0) + captured.readbacks - 1
           const timingKey = layer === 'background' ? 'backgroundCaptureMs' : 'foregroundCaptureMs'
           timings[timingKey] = captured.elapsedMs
-          if (!layeredBitmap) layeredBitmap = Buffer.allocUnsafe(layerBytes * 2)
-          if (captured.bitmap.length !== layerBytes) throw Error('Dimensões inesperadas de uma camada exportada.')
-          captured.bitmap.copy(layeredBitmap, offset)
+          // Capture directly into the reusable combined frame, avoiding an
+          // intermediate 8 MiB layer bitmap and its second copy.
+          if (captured.bitmap.length !== layerBytes * 2) throw Error('Dimensões inesperadas do bitmap combinado das camadas.')
         }
         await copyLayer(0, 'background', result)
         const foreground = await draw('foreground')

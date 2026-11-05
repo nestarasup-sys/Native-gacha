@@ -91,7 +91,7 @@ async function main() {
   const setupReport = JSON.parse(await readFile(join(folder, 'setup-failure.report.json'), 'utf8'))
   assert(setupFailed && setupReport.state === 'failed' && setupReport.error && setupReport.phaseMilliseconds.temporarySetup > 0, 'Falha ao criar a pasta temporária não gerou um relatório de diagnóstico.')
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
-  assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0), 'O relatório não separou os tempos de renderização, espera RAF e captura por quadro.')
+  assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0 && (part.frameTiming?.capturePageMs?.samples ?? 0) > 0 && (part.frameTiming?.captureBitmapMs?.samples ?? 0) > 0), 'O relatório não separou renderização, espera RAF, capturePage e conversão/cópia do bitmap por quadro.')
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
   assert(report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0) > 60, 'Quadros estáticos não foram reaproveitados.')
   const rgb = run(['-i', output, '-vf', "select='eq(n,39)+eq(n,40)+eq(n,41)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
