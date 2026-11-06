@@ -252,7 +252,8 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 
 ### Próximo ciclo mensurável
 
-1. Microbenchmark de leitura direta Canvas→main contra `capturePage`+`toBitmap`, comprovando TypedArray/ArrayBuffer, custo de transferência e conversão a 1920×1080.
-2. Se houver oportunidade, implementar o transporte direto limitado por contrato/token somente na superfície experimental; manter SVG como referência e FFmpeg para vídeo, áudio, mux e fallback.
-3. Validar smoke e exportação fria integral; comparar pixels antes do encode, MP4 decodificado, áudio, quadros, memória e disco. Reverter se não reduzir tempo clique→MP4 ou se degradar a imagem.
-4. Só então avaliar WebCodecs/shared texture e levar as fronteiras a preview/timeline/personagens e módulos ligados por IDs, sem cache pesado entre exportações.
+1. O microbenchmark direto Canvas→main foi concluído a 1080p em 3 processos Electron novos. TypedArray + conversão RGBA→BGRA empatou com `capturePage` dentro da variação; MessagePort com clone foi mais lento. Não integrar esse caminho.
+2. Próximo experimento: testar alocação de threads do x264 em smoke curto e A/B frio completo. Use a mesma cena, encoder, bitrate, qualidade, áudio, workers e processo frio; candidate só é aceito se reduzir clique→MP4 validado.
+3. Em paralelo, manter visíveis os maiores estágios medidos (render comum e motion). Coletar tempo por part/lane, encoder e peak RSS; somas de timings em partes concorrentes não são wall time.
+4. Se o perfil de CPU não apontar margem de threads, voltar ao hotspot de preparo dos 37 bakes de movimento e verificar custo por pedido antes de mudar reuso por personagem. Não elevar concorrência nem mudar resolução/qualidade para obter um número melhor.
+5. Avaliar WebCodecs/shared texture só com um resultado que atravesse composição real, vídeo, áudio, mux, backpressure, fallback e validação MP4; depois compartilhar o plano determinístico com preview/timeline por IDs.

@@ -88,7 +88,7 @@
 
 **Fontes primárias adicionais:** [SVG 2 — `foreignObject`](https://svgwg.org/svg2-draft/embedded.html#ForeignObjectElement) documenta a inclusão e renderização de conteúdo HTML no SVG; [HTML Standard — Canvas](https://html.spec.whatwg.org/multipage/canvas.html#security-with-canvas-elements) especifica a proteção de leitura de pixels por estado *origin-clean*. A falha observada no Electron é um resultado de runtime local, não uma conclusão inferida apenas da especificação.
 
-**Próximo experimento:** medir TypedArray/ArrayBuffer 1080p do renderer para main e comparar leitura de Canvas com `capturePage`+`NativeImage.toBitmap`; só então decidir implementação. Preservar BGRA, alpha, sRGB, token e backpressure. WebCodecs/shared texture ficam posteriores porque não removem por si só o filter graph, áudio e mux.
+**Readback seguido:** [Pesquisa 19 — transferência de quadros Electron](19-TRANSFERENCIA-DE-QUADROS-ELECTRON.md) comparou TypedArray, MessagePort e `capturePage` em 1080p com token dinâmico. A captura continua padrão: o readback direto não mostrou ganho robusto e não substituiu a composição nem o filter graph/áudio/mux.
 
 ## A/B frio do projeto real — 06/11/2026
 
