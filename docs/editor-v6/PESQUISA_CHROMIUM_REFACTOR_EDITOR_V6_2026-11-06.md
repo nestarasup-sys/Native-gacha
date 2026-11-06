@@ -194,7 +194,7 @@ A refatoração de maior valor não começa trocando SVG, React ou FFmpeg. Come�
 
 ---
 
-#### Parte II — Segunda auditoria sistêmica: Native Gacha inteiro, Editor V6, Chromium, FFmpeg e alternativas de arquitetura
+## Parte II — Segunda auditoria sistêmica: Native Gacha inteiro, Editor V6, Chromium, FFmpeg e alternativas de arquitetura
 
 **Data:** 06/11/2026  
 **Escopo:** aplicativo desktop Native Gacha, suas fontes de conteúdo e persistência, Editor V6 completo (edição, prévia, movimento, exportação), Electron/Chromium, pipeline de áudio/vídeo/FFmpeg, bibliotecas nativas, segurança, desempenho, integração e possíveis motores alternativos.  
