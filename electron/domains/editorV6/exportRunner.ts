@@ -128,10 +128,14 @@ function isAudioPacketDecodeFailure(error: unknown) {
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
   const testSettings = editorV6ExportTestSettings(options.testMode)
+  const stressWorkerOverride = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS : undefined
+  // The default 300-frame mouth-loop windows expose at most two lanes in a
+  // 20-second benchmark. Split only stress runs asking for four renderers so
+  // the override measures four actual workers; frame content remains intact.
+  const mouthLoopBatchFrames = stressWorkerOverride === '4' ? Math.floor(MOUTH_LOOP_BATCH_FRAMES / 2) : MOUTH_LOOP_BATCH_FRAMES
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
-  const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, MOUTH_LOOP_BATCH_FRAMES) : requestedParts
-  const stressWorkerOverride = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS : undefined
+  const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
   if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
     throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
   }
