@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { BaseVideoDetails } from '../../../../shared/baseVideos'
 
@@ -90,7 +91,7 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
     finally { setBusy(false) }
   }
 
-  return <div className="roteiro-modal-backdrop v6-video-picker-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
+  return createPortal(<div className="roteiro-modal-backdrop v6-video-picker-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section className="v6-video-picker" role="dialog" aria-modal="true" aria-labelledby="v6-video-picker-title">
       <header><div><span>VÍDEOS COMPARTILHADOS POR ID</span><h2 id="v6-video-picker-title">Adicionar vídeo à timeline</h2><p>O Editor V6 cria uma referência ao vídeo da Base; não duplica o arquivo.</p></div><button type="button" disabled={busy} aria-label="Fechar" onClick={onClose}>×</button></header>
       <nav className="v6-video-picker-tabs" aria-label="Seção da Base de vídeos">
@@ -111,5 +112,5 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
       </div>
       <footer><small>{visible.length} vídeo(s) · os vídeos importados por aqui entram em Rascunhos</small><button type="button" disabled={busy} onClick={onClose}>Cancelar</button></footer>
     </section>
-  </div>
+  </div>, document.body)
 }
