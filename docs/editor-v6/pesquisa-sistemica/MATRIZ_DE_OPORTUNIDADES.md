@@ -21,7 +21,7 @@
 | EXP-WC-001 | WebCodecs pode melhorar encoder completo? | Electron 45.1.0/Chromium 156 codificou e remuxou 150 quadros Canvas sintéticos em 1,57s; sem cena, áudio ou comparação equivalente | Integrar saída da nova superfície após golden RGBA; medir projeto frio completo + áudio/mux/ffprobe | P1 | CAPACIDADE SINTÉTICA CONFIRMADA; GANHO/QUALIDADE DA CENA PENDENTES |
 | EXP-ENGINE-001 | Como separar estado da cena, desenho e exportação da UI? | Plano imutável + contrato desacoplado; golden sintético aprovado; A/B UI frio integral Canvas2D 90,87s vs SVG 90,38s; render +4,66s e hash de foreground diferente | Manter Canvas2D fora da produção; reconsiderar somente se eliminar captura intermediária e passar golden RGBA | P0 | CONTRATO/COMPILADOR MANTIDOS; Canvas2D NÃO PROMOVIDO |
 | EXP-ENGINE-002 | O renderer pode entregar BGRA direto ao FFmpeg sem `capturePage`/`NativeImage`? | 3 processos Electron novos, 7 pares por processo, 1920×1080, token dinâmico, zero divergência em 21 quadros; direto 18,31ms vs captura 18,60ms; MessagePort clone 20,02ms | Não integrar a conversão TypedArray; shared texture continua exigindo prova nativa end-to-end | P0 | MEDIDO; SEM GANHO ROBUSTO, CAPTUREPAGE MANTIDO |
-| EXP-ENGINE-003 | A alocação de threads do x264 afeta o wall total? | Em exportes instrumentados, FFmpeg alcançou pico 502% CPU; processo principal 98%, renderer de benchmark 93%. Pico não é média | Smoke rápido e depois export frio equivalente com threads limitadas; validar imagem, áudio, fallback e RAM antes de alterar default | P0 | PRÓXIMO EXPERIMENTO |
+| EXP-ENGINE-003 | A alocação de threads do x264 afeta o wall total? | Smoke do FFmpeg empacotado: 300f 1080p `testsrc2`, 2/4/6 threads = 0,966/0,777/0,684s; uma amostra por opção. Export real anterior: pico FFmpeg 498% CPU, sem causalidade | A/B frio integral entre 6 (padrão observado) e 8 threads, processos/perfis novos; validar vídeo, áudio, fallback, RAM e qualidade decodificada | P0 | INSTRUMENTADO; COLD A/B PENDENTE; PADRÃO INALTERADO |
 | EXP-ENGINE-004 | O compilador novo pode reutilizar cenas estáveis sem perder semântica? | Índice esparso por blocos, transições, fala, mídia e blink; 7 testes com comparação quadro a quadro e fallback limitado a 50.000 eventos; export frio integral validado | Manter o plano compartilhado no worker; medir custo do resolver separado do compositor antes de atribuir ganho | P0 | IMPLEMENTADO; PARIDADE SINTÉTICA + EXPORT REAL PASSARAM; SEM GANHO PONTA A PONTA DECLARADO |
 | EXP-BUILD-001 | Startup/packaging/contratos limitam experimentos? | [Pesquisa 21](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | Build portátil+ABI+CSP/IPC regressão | P1 | PESQUISADA / NÃO MEDIDA |
 | CHROM-AUD-001 | Em qual etapa Chromium/cabelo se perde o tempo? | [Pesquisa 02, seções 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md) | A/B pré-job+worker com 0/1/múltiplas reações | P0 | PESQUISADA / SEM MEDIÇÃO |
@@ -41,6 +41,8 @@
 **Observação importante:** no modo `hairPoseReactionOnly`, `selectEditorV6HairlessTransitionBakes` já evita um segundo bake das transições; priorizar outras formas de duplicidade antes de culpar essa operação (ver `motion/hairBakeBatch.ts`).
 
 [Plano detalhado](PLANO_EXECUTAVEL.md) · [Pesquisa 01](pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
+
+O teste de alocação de threads está documentado em [Pesquisa 22](pesquisas/22-X264-THREADS-ALOCACAO.md); a amostra sintética é somente um gate de triagem, não um benchmark do projeto.
 
 ## Atualização de resultado — 06/11/2026
 

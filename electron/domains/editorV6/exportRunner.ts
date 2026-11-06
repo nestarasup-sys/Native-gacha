@@ -28,7 +28,7 @@ type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinal
 type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
 type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
 type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
-type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
+type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; encoderThreads: number; milliseconds?: number; error?: string }
 type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 type ExportPhaseTimings = Record<ExportPhase, number>
 export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
@@ -123,6 +123,13 @@ export const encodingArgs = (encoder: string, threads: number) => [
   '-profile:v', encoder === 'h264_mf' ? '100' : 'high',
   '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000'
 ]
+export function editorV6EncoderThreads(encoder: string, renderParallelism: number, cpuCount = availableParallelism()) {
+  const defaultThreads = Math.max(1, Math.min(8, Math.floor(Math.max(1, cpuCount) / Math.max(1, renderParallelism))))
+  const candidate = Number(process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS)
+  if (encoder === 'libx264' && process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
+    && Number.isSafeInteger(candidate) && candidate >= 1 && candidate <= 8) return candidate
+  return defaultThreads
+}
 export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
 const MOUTH_LOOP_BATCH_FRAMES = 300
 function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
@@ -213,7 +220,8 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     deps.signal.addEventListener('abort', abort, { once: true })
     if (deps.signal.aborted) abort()
     const parallelism = Math.max(1, Math.min(maxParallelism, parts.length))
-    const attempt: AttemptReport = { parts: [], encoder, parallelism }
+    const encoderThreads = editorV6EncoderThreads(encoder, parallelism)
+    const attempt: AttemptReport = { parts: [], encoder, parallelism, encoderThreads }
     report.attempts.push(attempt)
     let done = 0
     const mouthStats = { states: 0, characterIds: new Set<string>(), isolatedStates: 0, legacyPatchStates: 0, skipped: 0, skippedStale: 0, atlasBytes: 0, atlasPixels: 0, preparationMilliseconds: 0, details: new Set<string>() }
@@ -279,7 +287,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         filters.push(`[${lastVideo}]${editorV6OutputColorFilter}[vout]`)
         const filterArgs = ['-filter_complex', filters.join(';'), '-map', '[vout]']
         const rawHeight = options.height * (layeredVideo ? 2 : 1)
-        process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
+        process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, encoderThreads), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
         if (process.child.pid) deps.onFfmpegProcessStarted?.(process.child.pid)
         const workerStarted = performance.now()
         worker = await deps.createWorker(renderProject, part, controller.signal, layeredVideo, mouthLoops)

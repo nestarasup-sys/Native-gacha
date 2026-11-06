@@ -34,6 +34,8 @@ const uiExportProfile = process.argv.includes('--ui-export-profile')
 const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument('--hair-preset-file='))
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
 const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
+const x264ThreadsValue = argument('--x264-threads=')
+const x264Threads = x264ThreadsValue === undefined ? undefined : Number(x264ThreadsValue)
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
 const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
 const MAX_RUN_OUTPUT_BYTES = 2 * 1024 ** 3
@@ -162,6 +164,7 @@ async function main() {
   if (!['svg', 'canvas2d'].includes(sceneSurface)) throw Error('--scene-surface aceita svg ou canvas2d.')
   if (sceneSurface === 'canvas2d' && (!uiExportProfile || hairPreparationOnly || !(hairPresetSlot || noHairControl))) throw Error('Canvas2D experimental exige uma exportação completa do perfil UI em processo isolado.')
   if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
+  if (x264ThreadsValue !== undefined && (!/^[1-8]$/.test(x264ThreadsValue) || encoder !== 'cpu')) throw Error('--x264-threads aceita 1 a 8 e exige --encoder=cpu.')
   if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
   if (renderWorkers && !['2', '4'].includes(renderWorkers)) throw Error('--render-workers aceita 2 ou 4 no harness Turbo.')
   if (renderWorkers && process.argv.includes('--compare-workers')) throw Error('--render-workers não se combina com --compare-workers.')
@@ -257,6 +260,7 @@ async function main() {
     ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
+    ...(x264Threads === undefined ? {} : { GACHA_EDITOR_V6_STRESS_X264_THREADS: String(x264Threads) }),
     GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
@@ -270,6 +274,7 @@ async function main() {
     } : {}),
     GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT: outputFolder, ELECTRON_DISABLE_SECURITY_WARNINGS: 'true' }
   delete childEnv.ELECTRON_RUN_AS_NODE
+  if (x264Threads === undefined) delete childEnv.GACHA_EDITOR_V6_STRESS_X264_THREADS
   let code
   try {
     const exportChild = spawn(require('electron'), [path.join(root, 'out', 'main', 'main.js')], { cwd: root, env: childEnv, stdio: 'inherit', windowsHide: true })

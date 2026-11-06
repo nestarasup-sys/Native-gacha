@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { encodingArgs, publishEditorV6Output } from '../../electron/domains/editorV6/exportRunner'
+import { editorV6EncoderThreads, encodingArgs, publishEditorV6Output } from '../../electron/domains/editorV6/exportRunner'
 
 describe('codificação do Editor V6', () => {
   afterEach(() => vi.unstubAllEnvs())
@@ -21,6 +21,18 @@ describe('codificação do Editor V6', () => {
     expect(args.slice(args.indexOf('-profile:v') + 1, args.indexOf('-profile:v') + 2)).toEqual(['100'])
     expect(args.slice(args.indexOf('-hw_encoding') + 1, args.indexOf('-hw_encoding') + 2)).toEqual(['0'])
     expect(args).toContain('yuv420p')
+  })
+
+  it('mantém a alocação normal por worker e só permite override de threads no harness frio', () => {
+    vi.stubEnv('GACHA_VIDEO_STRESS_OFFSCREEN', '0')
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '2')
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(6)
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(6)
+    vi.stubEnv('GACHA_VIDEO_STRESS_OFFSCREEN', '1')
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(2)
+    expect(editorV6EncoderThreads('libopenh264', 2, 12)).toBe(6)
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '9')
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(6)
   })
 })
 

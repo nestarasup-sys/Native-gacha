@@ -63,6 +63,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | 19 | [Node/streams/buffers/IPC](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) | PESQUISADA — Grupo A (código+fonte oficial); runtime pendente |
 | 20 | [WebCodecs](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | PESQUISADA — Grupo A (código+fonte oficial); runtime pendente |
 | 21 | [Vite/electron-vite/TypeScript/Zod](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | PESQUISADA — Grupo A (código+fonte oficial); runtime pendente |
+| 22 | [Alocação de threads x264](pesquisas/22-X264-THREADS-ALOCACAO.md) | Instrumentação e smoke sintético medidos; cold A/B integral pendente |
 
 **Pesquisa 02 aprofundada:** [Chromium/Blink/Viz/Skia — segunda rodada completa, capítulos 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md). Foi ampliada com mapa dos 12 estágios, código por frame, sincronização do token, ROI de cabelo, diagnóstico Perfetto, 11 experimentos e critérios de decisão. **Medição Windows ainda pendente.**
 
