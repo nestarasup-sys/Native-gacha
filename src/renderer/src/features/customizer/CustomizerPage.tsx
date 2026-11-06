@@ -39,7 +39,7 @@ import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
-import { getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
+import { filterCustomizerHairStylesByGender, getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
 import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { CustomizerHairWorkspace } from './CustomizerHairWorkspace'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -164,6 +164,7 @@ export function CustomizerPage() {
   }, [setHairDetails])
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<CharacterPaletteRole>('base')
+  const [showOtherGenderHair, setShowOtherGenderHair] = useState(false)
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
@@ -252,9 +253,14 @@ export function CustomizerPage() {
   const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
+  const selectedCharacterGender = selectedCharacter?.customization.gender ?? 'female'
+  const eligibleHairStyles = useMemo(
+    () => filterCustomizerHairStylesByGender(hairStyles, selectedCharacterGender, showOtherGenderHair),
+    [hairStyles, selectedCharacterGender, showOtherGenderHair]
+  )
   const hairLibraryPageView = useMemo(
-    () => getCustomizerHairLibraryPage(hairStyles, hairLibraryPart, hairLibraryPage),
-    [hairStyles, hairLibraryPart, hairLibraryPage]
+    () => getCustomizerHairLibraryPage(eligibleHairStyles, hairLibraryPart, hairLibraryPage),
+    [eligibleHairStyles, hairLibraryPart, hairLibraryPage]
   )
   const activeHairStyleIds = useMemo(() => {
     const ids = new Set(hairLibraryPageView.visibleStyles.map((style) => style.id))
@@ -659,7 +665,11 @@ export function CustomizerPage() {
               loading={hairLoading}
               appearance={characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined}
               styles={hairStyles}
+              eligibleStyles={eligibleHairStyles}
               details={hairDetails}
+              gender={selectedCharacterGender}
+              showOtherGenderHair={showOtherGenderHair}
+              onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
               libraryPart={hairLibraryPart}
               libraryPageLoading={hairLibraryPageLoading}
               libraryPageView={hairLibraryPageView}

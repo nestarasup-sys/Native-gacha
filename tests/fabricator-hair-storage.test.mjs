@@ -75,7 +75,9 @@ test('rascunho e conjunto de cabelo preservam PNGs, estilos e caminho legado', a
     { id: 'front', dataUrl: png('style-front') },
     { id: 'source', dataUrl: png('style-source') }
   ])
-  assert.equal((await storage.readHairStyle(1, 'style-1')).front.dataUrl, png('style-front'))
+  const loadedOldStyle = await storage.readHairStyle(1, 'style-1')
+  assert.equal(loadedOldStyle.front.dataUrl, png('style-front'))
+  assert.equal(loadedOldStyle.gender, undefined)
   assert.equal((await storage.readHairStyle(1, 'style-1', true)).sourceImageDataUrl, png('style-source'))
 
   await storage.writeLegacyHairCatalogState(1, 'dismissed')
@@ -98,4 +100,13 @@ test('persistência capilar rejeita entradas inválidas sem publicar manifestos'
   }
   await assert.rejects(storage.writeHairStyle(1, invalid, [{ id: 'front', dataUrl: png('never-written') }]), /Estilo de cabelo inválido/)
   assert.equal(await storage.readHairStyle(1, 'bad-style'), null)
+
+  const invalidGender = {
+    ...invalid,
+    id: 'bad-gender',
+    gender: 'nonbinary',
+    transforms: { front: transform(), back: transform() }
+  }
+  await assert.rejects(storage.writeHairStyle(1, invalidGender, [{ id: 'front', dataUrl: png('never-written') }]), /Estilo de cabelo inválido/)
+  assert.equal(await storage.readHairStyle(1, 'bad-gender'), null)
 })

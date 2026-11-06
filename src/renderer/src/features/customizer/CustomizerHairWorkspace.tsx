@@ -1,6 +1,6 @@
 import { useRef, type Dispatch, type SetStateAction } from 'react'
 import { normalizeCharacterHairColorOverrides } from '../../../../shared/customizer'
-import type { CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
+import type { CharacterGender, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
 import type { HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories'
 import { customizerHairParts, resolvedHairColors } from '../../characters/characterRenderer'
@@ -19,7 +19,8 @@ type HairLibraryPageView = {
 }
 
 export function CustomizerHairWorkspace({
-  modelSlot, hasCharacter, loading, appearance, styles, details,
+  modelSlot, hasCharacter, loading, appearance, styles, eligibleStyles, details,
+  gender, showOtherGenderHair, onShowOtherGenderHairChange,
   libraryPart, libraryPageLoading, libraryPageView,
   activeColorRole, onActiveColorRoleChange,
   onSetLibraryPart, onSetLibraryPage,
@@ -31,7 +32,11 @@ export function CustomizerHairWorkspace({
   loading: boolean
   appearance?: HairAppearance
   styles: HairStyleSummary[]
+  eligibleStyles: HairStyleSummary[]
   details: Record<string, HairStyle>
+  gender: CharacterGender
+  showOtherGenderHair: boolean
+  onShowOtherGenderHairChange: (show: boolean) => void
   libraryPart: HairPartId | null
   libraryPageLoading: boolean
   libraryPageView: HairLibraryPageView
@@ -48,6 +53,11 @@ export function CustomizerHairWorkspace({
   onRestoreColors: () => void | Promise<void>
 }) {
   const paletteStripRef = useRef<HTMLDivElement>(null)
+  const oppositeGenderLabel = gender === 'male' ? 'femininos' : 'masculinos'
+  const genderFilter = <label className="customizer-hair-gender-filter">
+    <input type="checkbox" checked={showOtherGenderHair} disabled={!hasCharacter} onChange={(event) => onShowOtherGenderHairChange(event.target.checked)} />
+    <span>Mostrar cabelos {oppositeGenderLabel}?</span>
+  </label>
 
   if (libraryPart) {
     const part = customizerHairParts.find((item) => item.id === libraryPart)
@@ -61,6 +71,7 @@ export function CustomizerHairWorkspace({
         <h2 id="customizer-hair-library-title">{part.label}</h2>
         <button className="customizer-hair-library-close" type="button" onClick={() => onSetLibraryPart(null)} aria-label="Fechar biblioteca">×</button>
       </header>
+      {genderFilter}
       <div className="customizer-hair-library-grid" aria-label={`Peças disponíveis para ${part.label}`} aria-busy={libraryPageLoading}>
         {visible.map((summary) => {
           if (!summary) return <button className={`customizer-hair-library-item${!selectedId ? ' selected' : ''}`} key="empty-slot" title="Slot vazio" aria-label={`Slot vazio · remover ${part.label} do personagem`} aria-pressed={!selectedId} type="button" onClick={() => void onChooseStyle(part.id, null)} />
@@ -80,8 +91,8 @@ export function CustomizerHairWorkspace({
     </section>
   }
 
-  if (modelSlot === null) return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo"><div className="customizer-catalog-empty">Escolha um modelo para carregar os cabelos do Fabricador Dev.</div></section>
-  if (loading) return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo"><div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div></section>
+  if (modelSlot === null) return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">{genderFilter}<div className="customizer-catalog-empty">Escolha um modelo para carregar os cabelos do Fabricador Dev.</div></section>
+  if (loading) return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">{genderFilter}<div className="customizer-catalog-empty">Carregando cabelos do Fabricador Dev…</div></section>
 
   const rawColorOverrides = appearance?.colors
   const colorOverrides = normalizeCharacterHairColorOverrides(rawColorOverrides)
@@ -89,6 +100,7 @@ export function CustomizerHairWorkspace({
   const hasLocalPartColors = (partId: HairPartId) => Object.keys(appearance?.partColors?.[partId] ?? {}).length > 0
 
   return <section className="customizer-hair-workspace" aria-label="Personalização do cabelo">
+    {genderFilter}
     <div className="customizer-hair-layout">
       <div className="customizer-hair-color-controls" aria-label="Paleta geral dos cabelos">
         <div className="customizer-hair-palette-editor">
@@ -104,10 +116,14 @@ export function CustomizerHairWorkspace({
         </aside>
       </div>
       {customizerHairParts.map((part) => {
-        const options = styles.filter((summary) => hairStyleSupportsCategory(summary, part.id))
+        const options = eligibleStyles.filter((summary) => hairStyleSupportsCategory(summary, part.id))
         const selectedId = hairAppearancePartStyleId(appearance, part.id)
         const selectedIndex = options.findIndex((summary) => summary.id === selectedId)
-        const selected = selectedIndex >= 0 ? options[selectedIndex] : null
+        const currentStyle = selectedId
+          ? styles.find((summary) => summary.id === selectedId && hairStyleSupportsCategory(summary, part.id)) ?? null
+          : null
+        const selected = selectedIndex >= 0 ? options[selectedIndex] : currentStyle
+        const selectedIsOutsideFilter = selectedIndex < 0 && currentStyle !== null
         const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
         const slotCount = options.length + 1
         const asset = selected ? details[`${selected.modelSlot}:${selected.id}`]?.[part.side] : null
@@ -118,14 +134,22 @@ export function CustomizerHairWorkspace({
           const slot = wrapSlotIndex(index, slotCount)
           void onChooseStyle(part.id, slot === 0 ? null : options[slot - 1])
         }
+        const chooseRelative = (direction: -1 | 1) => {
+          if (selectedIsOutsideFilter) {
+            if (!options.length) return
+            void onChooseStyle(part.id, direction > 0 ? options[0] : options[options.length - 1])
+            return
+          }
+          chooseAt(selectedSlot + direction)
+        }
         return <article className="customizer-hair-piece" key={part.id}>
-          <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalPartColors(part.id) && <button className="customizer-hair-reset" onClick={() => void onResetPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
+          <header><strong>{selectedIsOutsideFilter ? `${part.label} · atual fora do filtro` : `${part.label} ${selectedSlot + 1}/${slotCount}`}</strong>{hasLocalPartColors(part.id) && <button className="customizer-hair-reset" onClick={() => void onResetPartColors(part.id)} title={`Voltar ${part.label} à paleta geral`} type="button">Usar paleta geral</button>}</header>
           <div className="customizer-hair-piece-selector">
-            <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
+            <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseRelative(-1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} onClick={() => { onSetLibraryPage(0); onSetLibraryPart(part.id) }} type="button">
               {asset ? <HairAssetPreview source={asset.dataUrl} colors={rawPieceColors} fixedPalette alt={selected?.name ?? ''} /> : null}
             </button>
-            <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
+            <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseRelative(1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
               {customizerHairColorControls.map((color) => {
                 const local = Boolean(appearance?.partColors?.[part.id]) && localPieceColors[color.id] !== globalColorOverrides[color.id]

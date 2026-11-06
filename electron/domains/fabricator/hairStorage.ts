@@ -184,6 +184,7 @@ export function createFabricatorHairStorage(deps: Dependencies) {
   function validHairStyle(modelSlot: number, style: HairStyleSave): boolean {
     if (!deps.isValidModelSlot(modelSlot) || style?.schemaVersion !== 1 || style.modelSlot !== modelSlot || !deps.isValidWardrobeId(style.id)
       || typeof style.name !== 'string' || !style.name.trim() || style.name.length > 80 || !style.transforms) return false
+    if (style.gender !== undefined && style.gender !== 'female' && style.gender !== 'male') return false
     if (!style.front && !style.back && !style.fringe) return false
     if (style.category !== undefined) {
       const category = hairCategories.find((item) => item.id === style.category)

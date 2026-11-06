@@ -2,7 +2,7 @@ import { projectForOriginalPreview } from '../../../../shared/fabricatorModelVie
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent, type SetStateAction } from 'react'
 import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData } from '../../../../shared/fabricator'
-import type { HairPartId } from '../../../../shared/customizer'
+import type { CharacterGender, HairPartId } from '../../../../shared/customizer'
 import { hairCategories } from '../../../../shared/hairCategories'
 import { emptyHairTransform } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
@@ -93,6 +93,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [activeStyleId, setActiveStyleId] = useState<string | null>(null)
   const [hairCatalogPage, setHairCatalogPage] = useState(0)
   const [styleName, setStyleName] = useState('')
+  const [hairGender, setHairGender] = useState<CharacterGender | null>('female')
   const [selectedCategory, setSelectedCategory] = useState<HairPartId>('rearHair')
   const [loadingModels, setLoadingModels] = useState(true)
   const [loadingProject, setLoadingProject] = useState(false)
@@ -196,6 +197,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setLoadingStyle(false)
     hairStyleRequestRef.current += 1
     setStyleName('')
+    setHairGender('female')
     legacyWorkspaceRef.current = null
     setProject(null)
     setHairWorkspace(null)
@@ -230,6 +232,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setHairWorkspace(legacyWorkspace)
         setActiveStyleId(legacy.id)
         setStyleName(legacy.name)
+        setHairGender(legacy.gender ?? null)
         const firstSide = hairStyleSides(legacy)[0]
         const firstCategory = firstSide ? categoriesForHairStyle(legacy)[firstSide] : undefined
         if (firstCategory) setSelectedCategory(firstCategory)
@@ -238,6 +241,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setHairWorkspace(emptyHairWorkspace(modelSlot))
         setActiveStyleId(null)
         setStyleName('')
+        setHairGender('female')
       }
       setDirty(false)
     }).catch((reason: unknown) => {
@@ -429,6 +433,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setHairCatalogPage(0)
     setActiveStyleId(first.detail.id)
     setStyleName(first.detail.name)
+    setHairGender(first.detail.gender ?? null)
     setSelectedCategory('rearHair')
     legacyWorkspaceRef.current = null
     setDirty(false)
@@ -568,6 +573,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setHairCatalogPage(0)
       setActiveStyleId(detail.id)
       setStyleName(detail.name)
+      setHairGender(detail.gender ?? null)
       legacyWorkspaceRef.current = null
       setDirty(false)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
@@ -580,7 +586,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined): Promise<HairStyle> {
-    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, existing: existingOverride }, {
+    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, gender: hairGender ?? undefined, existing: existingOverride }, {
       saveHairStyle: (slot, style, assets) => window.desktop.fabricator.saveHairStyle(slot, style, assets),
       createId: () => crypto.randomUUID(),
       now: () => new Date().toISOString()
@@ -612,6 +618,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setHairWorkspace(workspace)
       setActiveStyleId(style.id)
       setStyleName(style.name)
+      setHairGender(style.gender ?? null)
       setDirty(false)
       const firstSide = hairStyleSides(style)[0]
       const firstCategory = firstSide ? workspace.categoryBySide?.[firstSide] : undefined
@@ -637,6 +644,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setHairDetails((current) => { const next = { ...current }; delete next[`${modelSlot}:${activeStyleId}`]; return next })
       setActiveStyleId(null)
       setStyleName('')
+      setHairGender('female')
       legacyWorkspaceRef.current = null
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       setNotice(`Conjunto “${activeStyleSummary.name}” e seus arquivos foram excluídos.`)
@@ -685,6 +693,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setHairWorkspace(emptyHairWorkspace(modelSlot))
         setActiveStyleId(null)
         setStyleName('')
+        setHairGender('female')
         setDirty(false)
         legacyWorkspaceRef.current = null
         window.dispatchEvent(new Event('fabricator:assets-updated'))
@@ -705,6 +714,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setHairWorkspace(emptyHairWorkspace(modelSlot))
     setActiveStyleId(null)
     setStyleName('')
+    setHairGender('female')
     setDirty(false)
     setError('')
     setNotice('Novo conjunto iniciado. Importe as peças e salve quando estiver pronto.')
@@ -738,6 +748,12 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
         <input ref={threeStyleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importThreeStyleGrid(event)} />
         <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
+        <label className="hair-dev-set-gender">Gênero do conjunto<select value={hairGender ?? 'legacy'} disabled={loadingStyle || saving || deformMode} onChange={(event) => { setHairGender(event.target.value === 'legacy' ? null : event.target.value as CharacterGender); setDirty(true) }}>
+          {hairGender === null && <option value="legacy">Sem filtro · conjunto antigo</option>}
+          <option value="female">Feminino</option>
+          <option value="male">Masculino</option>
+        </select></label>
+        {hairGender === null && <small className="hair-dev-gender-legacy-note">Conjunto antigo sem gênero: continua visível para todos.</small>}
         <small className="hair-dev-library-hint">Importe peças para o mesmo conjunto. O botão Salvar grava todas juntas.</small>
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
           {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} disabled={deformMode} onClick={() => { setSelectedCategory(item.id); if (hairWorkspace?.[item.side] && hairWorkspace.categoryBySide?.[item.side] !== item.id) updateWorkspace((current) => ({ ...current, categoryBySide: { ...current.categoryBySide, [item.side]: item.id } })) }}>{item.label}</button>)}
@@ -761,7 +777,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                     ? <img key={side} src={asset.dataUrl} alt="" />
                     : <span className="hair-dev-set-thumbnail-empty" key={side} aria-hidden="true"><Icon name="bow" /></span>
                 })}</span>
-                <span className="hair-dev-set-caption"><b>{style.name}</b><small>{hairStyleSides(style).length} peça(s)</small></span>
+                <span className="hair-dev-set-caption"><b>{style.name}</b><small>{hairStyleSides(style).length} peça(s) · {style.gender === 'male' ? 'Masculino' : style.gender === 'female' ? 'Feminino' : 'Todos (antigo)'}</small></span>
               </button>
             })}
             {loadingHairCatalogPage && <small>Carregando prévias…</small>}

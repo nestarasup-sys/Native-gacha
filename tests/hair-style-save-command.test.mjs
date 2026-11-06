@@ -31,6 +31,7 @@ test('salva metadados e binários separados, preservando IDs, datas e opções e
   const calls = []
   const detail = await saveHairStyleDraft({
     workspace: workspace(), modelSlot: 2, styleName: '  Teste capilar  ',
+    gender: 'male',
     existing: { id: 'style-stored', createdAt: '2026-01-01T00:00:00.000Z' }
   }, {
     saveHairStyle: async (...args) => calls.push(args),
@@ -43,6 +44,7 @@ test('salva metadados e binários separados, preservando IDs, datas e opções e
   assert.equal(savedSlot, 2)
   assert.equal(saved.id, 'style-stored')
   assert.equal(saved.name, 'Teste capilar')
+  assert.equal(saved.gender, 'male')
   assert.equal(saved.createdAt, '2026-01-01T00:00:00.000Z')
   assert.equal(saved.updatedAt, '2026-11-01T12:00:00.000Z')
   assert.deepEqual(saved.categoryBySide, { front: 'frontHair', back: 'backHair' })
@@ -75,6 +77,23 @@ test('usa valores legados padrão e um ID novo quando o conjunto ainda não exis
   assert.equal(saved.createdAt, '2026-11-01T12:00:00.000Z')
   assert.deepEqual(saved.categoryBySide, {})
   assert.equal(saved.sourceImageSaved, false)
+})
+
+test('preserva o gênero salvo e mantém conjuntos antigos sem gênero quando regravados', async () => {
+  const saves = []
+  for (const existing of [
+    { id: 'female-set', gender: 'female' },
+    { id: 'legacy-set' }
+  ]) {
+    await saveHairStyleDraft({ workspace: workspace(), modelSlot: 2, styleName: 'Atualizado', existing }, {
+      saveHairStyle: async (_slot, style) => saves.push(style),
+      createId: () => 'unused',
+      now: () => '2026-11-01T12:00:00.000Z'
+    })
+  }
+
+  assert.equal(saves[0].gender, 'female')
+  assert.equal(Object.hasOwn(saves[1], 'gender'), false)
 })
 
 test('cópia original ausente é bloqueada antes de chamar o repositório', async () => {

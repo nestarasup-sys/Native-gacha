@@ -353,6 +353,8 @@ export type HairStyle = {
   id: string
   modelSlot: number
   name: string
+  /** Absent on older sets; these remain visible for both character genders. */
+  gender?: import('./customizer').CharacterGender
   /** Absent on legacy styles, which remain visible in every compatible category. */
   category?: import('./customizer').HairPartId
   /** Category assigned to each piece in a multi-piece hair set. */
