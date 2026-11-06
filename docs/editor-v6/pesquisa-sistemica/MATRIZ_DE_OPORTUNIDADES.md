@@ -1,6 +1,6 @@
 # Matriz de oportunidades — hipóteses rastreáveis
 
-**Status:** atualizada após pesquisa do Grupo A e primeiro A/B dinâmico frio no LAB. Medições registradas abaixo; não extrapolar para outros projetos/hardware.
+**Status:** atualizada após pesquisa do Grupo A e primeiro A/B dinâmico frio no LAB. **A solução final é tecnologicamente livre (CPU/GPU/AMF/NVENC/QSV/FFmpeg etc.), sujeita a resultado frio, qualidade e fallback** conforme [diretriz](DIRETRIZ_CODEX_RESULTADO_FINAL.md). Medições registradas abaixo; não extrapolar para outros projetos/hardware.
 
 | ID | Problema/pergunta | Evidência disponível | Hipótese / experimento | Prioridade | Estado |
 |---|---|---|---|---|---|
@@ -11,7 +11,7 @@
 | EXP-CHAR-001 | Preparações/representações repetidas entre módulos? | Renderizador normal/sem cabelo + fontes compartilhadas | Revisão de materiais e cache por identidade completa | P1 | HIPÓTESE |
 | EXP-ELE-001 | `capturePage` é gargalo residual? | A/B 3+3 frias: mediana de captura acumulada por lanes 105,81s vs 95,53s; parede 116,32s vs 110,47s | Manter `paint-event`, ampliar paridade RGBA e variância em corridas futuras | P1 | GANHO MODESTO MEDIDO; PROMOVIDO NO LAB COM RESSALVAS |
 | EXP-ELE-002 | Shared texture D3D evita readback? | Disponível na API Electron, não ativo | PoC nativo isolado (após EXP-ELE-001) | P2 | HIPÓTESE |
-| EXP-FFM-001 | Encoder CPU é custo dominante depois do preparo? | `rawvideo` e modo `encoder:'cpu'` | Comparar CPU/AMF no hardware real, mesma qualidade | P1 | HIPÓTESE |
+| EXP-FFM-001 | Qual encoder/backend entrega o MP4 correto mais rápido a frio? | UI tem CPU como padrão; LAB usou auto/AMF; 91s do usuário não são comparação direta | Competição CPU/AMF/NVENC/QSV/Media Foundation/alternativas compatíveis, qualidade/mux/fallback/tempo total | P0 | PESQUISA E BENCHMARK CONTROLADO PENDENTES |
 | EXP-RAS-001 | DrawPlan nativo pode renderizar subconjunto com paridade? | Protótipo possui `unsupported` | Cenas reais com bloqueadores explícitos | P2 | HIPÓTESE |
 | EXP-UI-001 | Clock/timeline re-renderizam desnecessariamente? | RAF e virtualização já presentes | Trace de scrub/scroll/drag real | P1 | HIPÓTESE |
 | EXP-DATA-001 | Cache/salvamento atravessam ownership? | JSON, CAS, SQLite, refs | Mapear chaves de revisão e recuperação | P1 | HIPÓTESE |
@@ -29,7 +29,7 @@
 | ELE-SPIKE-001 | paint/dirtyRect substitui capturePage com frameId? | [Pesquisa 03, seção 10](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | PoC de paint, 150/300 frames, 2 layers, cancelamento | P1 | HIPÓTESE CONDICIONAL |
 | ELE-SPIKE-002 | setFrameRate/stayHidden reduz espera/capturas? | [Pesquisa 03, seção 12](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | A/B cadência 30/60/90, stayHidden, cor e token | P2 | HIPÓTESE CONDICIONAL |
 | ELE-SPIKE-003 | Textura GPU compartilhada elimina readback real? | [Pesquisa 03, seção 11](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | PoC driver/encoder hardware, release/VRAM/fallback | P2 | PESQUISADA / PROTÓTIPO PENDENTE |
-| REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark e riscos | P1 | BLOQUEADO |
+| REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark frio, qualidade e riscos, sem preferência por CPU/AMF | P1 | BLOQUEADO |
 
 **Critério de prioridade:** custo total evitável no **mesmo projeto**, probabilidade de preservar paridade, tamanho da mudança, risco de memória/dados/driver e manutenção. Não usar ranking como prova de ganho.
 

@@ -2,6 +2,8 @@
 
 **Regra atual:** o usuário autoriza **pesquisa + implementação + testes iterativos** para melhorar o Editor V6 **e módulos conectados**, **somente** numa cópia local isolada com branch nova, BAT/porta novos e dados canônicos verificados. Não modificar app/dados originais nem dar push sem pedido. Seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). **Exportação fria sem cache persistente pesado** e gates de qualidade obrigatórios.
 
+> **Critério global de escolha técnica revisado:** [Diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md). O usuário autorizou trocar encoder (CPU/AMF/NVENC/QSV/Media Foundation/WebCodecs), GPU, Chromium/Electron/compositor e caminhos de captura **se** houver melhor MP4 frio, fidelidade, fallback e regressões aprovadas. Não manter CPU somente por tradição. Comparar o mesmo trabalho/preset ao isolar gargalos, depois testar **backends diferentes como variável registrada** em competição por melhor resultado. O usuário relatou 91s num perfil não idêntico ao baseline do LAB; não compará-los diretamente.
+
 ## Fluxo de trabalho e estados
 
 `IDEIA → PESQUISADA → EXPERIMENTO AUTORIZADO → VALIDADA/REJEITADA → ADR APROVADA → PRONTA PARA IMPLEMENTAR → IMPLEMENTADA + REGRESSÃO`.
@@ -40,7 +42,7 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 | A2-02 | Traçar `composeHairFrame` e `hairRasterPixels` em repouso/transição | [04](pesquisas/04-CANVAS-SVG-IMAGENS-ALPHA.md) + [05](pesquisas/05-GPU-WEBGL-WEBGPU-NATIVO.md) | Somente depois A2-01; distinguir 0/1/muitas reações |
 | A2-03 | PoC de cabelo posterior RGBA ROI sob oclusão correta | [10](pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md) | RGBA paridade e ganho prep+render, não duplicar cabelo |
 | A2-04 | Captura offscreen `capturePage` vs `paint` | [03](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md), [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md) | A/B frio 3+3 completo; agora ampliar golden RGBA, cancelamento e resize |
-| A2-05 | Medir pipeline FFmpeg: pipe/encode/mux/probe | [11](pesquisas/11-EXPORTADOR-FFMPEG-CODECS-AUDIO.md) + [19](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) | Mesmo encoder CPU, validação H.264/áudio, 150/300 frames |
+| A2-05 | Comparar pipeline FFmpeg, encoders CPU/GPU e mux/probe | [11](pesquisas/11-EXPORTADOR-FFMPEG-CODECS-AUDIO.md) + [19](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) + [12](pesquisas/12-WINDOWS-AMD-AMF-DIRECT3D.md) | A/B de mesmo encoder para causa + disputa explícita CPU/AMF/NVENC/QSV se disponíveis; igual qualidade/áudio, fallback, vídeo real |
 | A2-06 | Benchmark da preparação de materiais estáticos Sharp × Canvas | [17](pesquisas/17-SHARP-LIBVIPS-NORMALIZACAO-IMAGENS.md) | Se preparo de assets for dominante; PNG/crop/alpha iguais |
 | A2-07 | Perfil de React/estado e staleness de face | [09](pesquisas/09-EDITOR-V6-TIMELINE-PREVIA-ESTADO.md) + [18](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md) | Métrica de UI + renderer; preservar undo/redo e relógio |
 | A2-08 | Capabilities WebCodecs e PoC de MP4 muxado | [20](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | Só se encode for relevante; mux+áudio+codec são obrigatórios |
@@ -77,8 +79,8 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 - Depende de EXP-ELE-001 e proof-of-concept com Native addon, sincronização e `release()` explícito.
 - Aceite: Windows real, estabilidade e memória/VRAM bounded, paridade visual e ganho total. Sem habilitar recurso experimental por padrão antes disso.
 
-### EXP-FFM-001 — FFmpeg CPU vs AMF e caminho de pixels
-- **Depende:** AUD-002 para saber se encode domina. A/B mesmas frames/qualidade/áudio e FFmpeg binário.
+### EXP-FFM-001 — Escolher melhor encoder/backend livremente (CPU, AMF, NVENC, QSV, etc.)
+- **Depende:** AUD-002 para medir fases. Comparar CPU, AMF, NVENC, QSV, Media Foundation, WebCodecs ou outros backends disponíveis (com feature detection), usando **mesma entrada e saída pretendida**; registrar configuração/qualidade e preço em cópias GPU, inicialização, mux e fallback. Troca de encoder é permitida e pode virar padrão da UI se beneficiar o usuário.
 - Validar H.264, 1080p30, contagem exata 150/300, PTS, seams, áudio, MP4 final.
 - Aceleração de hardware **não substitui** teste de renderização/preparação.
 
@@ -99,7 +101,7 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 ### CHROM-AUD-001 — Evidência causal Chromium/Blink/Viz para hair ON/OFF
 
 - **Estudo técnico completo:** [Pesquisa 02 aprofundada](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md), capítulos 7–21, na revisão GitHub atual.
-- **Pré-requisito:** snapshot autorizado, build e hash da fixture, [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md), baseline OFF/ON incluindo hair pre-job anterior ao Main; 3+3 amostras, 1080p30, Turbo CPU.
+- **Pré-requisito:** snapshot autorizado, build e hash da fixture, [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md), baseline OFF/ON incluindo hair pre-job anterior ao Main; 3+3 amostras, 1080p30, Turbo, encoder controlado dentro do par A/B; variantes CPU/GPU podem ser testadas depois como escolha final.
 - **Coletar:** hairPreparationBeforeJobMs, hairRasterFrames e pixels em repouso vs reação, faceComposition, hairCanvasBlitMs, React commit, rAF wait, capturePage/Bitmap, retry/token, FFmpeg write, wall-clock e memória.
 - **Resultado necessário:** atribuir diferença a fases **sem somar durações de workers concorrentes como parede**, com caso de 0/1/várias reações. Se hipótese cair, não iniciar o spike dependente.
 
@@ -126,7 +128,7 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 ### ELE-AUD-001 — Medir Electron offscreen no caminho atual
 
 - **Referência:** [Pesquisa 03 aprofundada, capítulos 1–25](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md). Não assumir que capturePage é o gargalo antes de medir.
-- **Entrada:** cópia autorizada, commit/dirty, 1080p30, 300 quadros, Turbo/encoder CPU, 3× hair ON + 3× OFF, pré-job de cabelo incluído no wall clock.
+- **Entrada:** cópia autorizada, commit/dirty, 1080p30, duração real ou fixture indicada, Turbo/encoder fixo dentro de cada contraste, 3× hair ON + 3× OFF, pré-job de cabelo incluído no wall clock.
 - **Coletar:** workerStartupMs, ipcDrawMs, rafWaitMs, capturePageMs, captureBitmapMs, captureReadbacks/stale, hair/face/frame, ffmpegWriteMs, RSS e wall-clock. Separar as duas lanes e o pre-job.
 - **Gate:** custo atribuído por etapa e MP4/paridade preservados; não somar tempo de lanes como se fosse parede.
 
@@ -156,6 +158,13 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 ### ELE-ADR-001 — Decisão de backend de captura
 
 - Escolher **manter capturePage**, melhorar Canvas/ROI, `paint` ou GPU somente após baselines, golden color/alpha, vídeo layered e rollback. Registrar opção rejeitada.
+
+## Critério de conclusão integrado do laboratório
+
+- **Não concluir ao terminar uma pesquisa**: implementar e testar continuamente, priorizando maior redução de tempo total frio por risco/esforço. Entrega final inclui Editor V6 e integrações relevantes (Fabricador, Customizador, Studio, bibliotecas, timeline, renderer, export, persistência), regressões e fallback.
+- **Encoder não é requisito fixo.** Se AMF/NVENC/QSV ou outro backend gerar MP4 correto com qualidade equivalente, menor tempo frio e fallback, adotá-lo no LAB, com opção CPU quando GPU indisponível.
+- **`paint-event`** mantém status experimental até golden RGB(A), layered video, cancelamento, métricas de espera e distribuição portátil serem verificados; conservar `capturePage` disponível.
+- **Documentar cada decisão:** input/commit, modo frio, meio (CPU/GPU), qualidade, tempo total medido, pico RAM/VRAM/disco, impacto nos módulos, regressões e rollback. Não publicar dados privados ou MP4.
 
 ## Fase C — decisões e implementação
 

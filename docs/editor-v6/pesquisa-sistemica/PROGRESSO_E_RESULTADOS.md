@@ -85,3 +85,11 @@ Somente Markdown, sem credenciais, dados pessoais, screenshots ou assets. GitHub
 - Proteções: recusa sessão reutilizada, exige cache vazio em exportações cold, limita saída a 2 GiB e exige 3 GiB livres; limpa apenas a pasta isolada da execução após validação.
 - Testes: typecheck; audit:architecture; build; `test:editor-v6:quick` (59 Vitest + 6 Node); bootstrap (7); captura (13); stress/saída/ferramentas de vídeo (8). Export curto final passou após adição da guarda.
 - Limites: ganho modesto/variável; ampliar amostras e golden RGBA integral, validar cancelamento/resize e build empacotado. Próxima prioridade: medir preparo de personagens/cabelo posterior; não iniciar ROI sem provar repetição e paridade.
+
+## Diretriz de resultado final atualizada — 06/11/2026
+
+- [x] Usuário confirmou que **CPU, GPU, AMF, NVIDIA, Intel ou qualquer outro encoder são intercambiáveis**: só importam o primeiro MP4 frio, qualidade, integridade, compatibilidade e fallback. Registrado em [DIRETRIZ_CODEX_RESULTADO_FINAL.md](DIRETRIZ_CODEX_RESULTADO_FINAL.md).
+- [x] Plano e matriz passaram a autorizar comparações entre backends diferentes **explicitamente identificadas**, mantendo A/B do mesmo backend para atribuição causal.
+- [x] Confirmada divergência de perfil: na UI o padrão é `encoder:'cpu'`, preset 2, `hairPoseReactionOnly:true`, `hairPosteriorOnly:true`; no benchmark LAB foi selecionado `encoder:'auto'`, preset 1, resultando em AMF. **O relato de 91s não pode ser usado para anunciar ganho sem alinhar o perfil.**
+- [ ] Ainda faltam golden integral de `paint-event`, layered video, stress de erro/cancelamento, replicação do fluxo UI e benchmarking de encoders/backends melhores disponíveis.
+- [ ] **Esta revisão só mudou a política e documentos**; nenhuma alteração no renderizador, encoder ou testes foi executada aqui.
