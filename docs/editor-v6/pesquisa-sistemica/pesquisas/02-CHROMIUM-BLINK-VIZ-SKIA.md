@@ -75,7 +75,7 @@
 
 ## 7. Auditoria aprofundada: propósito, limites e metodologia
 
-**Segunda rodada intensiva — 06/11/2026.** Esta seção amplia a Pesquisa 02 sem apagar a rodada de reconhecimento acima. **Escopo investigado:** Chromium (Blink, cc, Viz, compositor, GPU, Skia, vídeo), APIs web e Electron efetivamente usadas pelo Native Gacha, contornos de pixel/tempo entre componentes, instrumentação e experimentos falsificáveis. **Fontes primárias realmente consultadas via site:** Chrome for Developers, Chromium.org, Electron, Skia e MDN; URLs e conclusão de cada fonte no ```20```.
+**Segunda rodada intensiva — 06/11/2026.** Esta seção amplia a Pesquisa 02 sem apagar a rodada de reconhecimento acima. **Escopo investigado:** Chromium (Blink, cc, Viz, compositor, GPU, Skia, vídeo), APIs web e Electron efetivamente usadas pelo Native Gacha, contornos de pixel/tempo entre componentes, instrumentação e experimentos falsificáveis. **Fontes primárias realmente consultadas via site:** Chrome for Developers, Chromium.org, Electron, Skia e MDN; URLs e conclusão de cada fonte na seção 20.
 
 ### 7.1 Tipos de evidência
 
@@ -192,11 +192,11 @@ EditorV6ExportPanel (clique)
       → capturePage(width + 24 pixels de token)
       → NativeImage.toBitmap(scaleFactor=1)
       → validar pixels do token; copiar linhas BGRA excluindo faixa
-      → FFmpeg stdin.rawvideo(bg ra, 1920×1080, 30fps)
+      → FFmpeg stdin.rawvideo(bgra, 1920×1080, 30fps)
       → H.264, overlay/áudio, concat, ffprobe, publicar MP4
 ````
 
-**Observação:** `bg ra` acima significa o formato FFmpeg `bgra`, sem espaços. **O pipeline não produz um MP4 de 120fps intermediário**. O worker pede frames lógicos numerados em 30 fps; `setFrameRate(60)` limita a cadência de pintura de uma BrowserWindow, não o fps do MP4.
+**Observação:** **O pipeline não produz um MP4 de 120fps intermediário**. O worker pede frames lógicos numerados em 30 fps; `setFrameRate(60)` limita a cadência de pintura de uma BrowserWindow, não o fps do MP4.
 
 ### 9.3 A função de cada arquivo: mapa verificável
 
@@ -406,7 +406,7 @@ Segundo Electron, modo offscreen pode emitir evento `paint` com `dirtyRect`; o b
 
 | Código já presente | Benefício previsto | O que ainda medir |
 |---|---|---|
-| `SceneLayer` com `memo` e `sceneLayerPropsEqual` | Evita reconstruir SVG quando props visuais estáveis | Se ```rasterFrame=scene.frame``` invalida camadas de hair mesmo em repouso |
+| `SceneLayer` com `memo` e `sceneLayerPropsEqual` | Evita reconstruir SVG quando props visuais estáveis | Se `rasterFrame=scene.frame` invalida camadas de hair mesmo em repouso |
 | Relógio de playback externo | Evita que o playhead cause render de toda a página | Scrub/seek/pausa e preview real |
 | `TimelineRows` memoizado/virtualizado | Reduz blocos DOM fora da janela visível | Scroll e projetos longos |
 | `editorV6VisualKey` e `editorV6LayerVisualKeys` | Permite skip de frames/camadas idênticos | Precisão das chaves e custo de `JSON.stringify` |
