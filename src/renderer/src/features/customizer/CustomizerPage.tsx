@@ -40,6 +40,7 @@ import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
 import { filterCustomizerHairStylesByGender, getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
+import { filterCustomizerWardrobeSetsByGender } from './customizerWardrobeCatalog'
 import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { CustomizerHairWorkspace } from './CustomizerHairWorkspace'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -165,6 +166,7 @@ export function CustomizerPage() {
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<CharacterPaletteRole>('base')
   const [showOtherGenderHair, setShowOtherGenderHair] = useState(false)
+  const [showOtherGenderClothes, setShowOtherGenderClothes] = useState(false)
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
@@ -257,6 +259,10 @@ export function CustomizerPage() {
   const eligibleHairStyles = useMemo(
     () => filterCustomizerHairStylesByGender(hairStyles, selectedCharacterGender, showOtherGenderHair),
     [hairStyles, selectedCharacterGender, showOtherGenderHair]
+  )
+  const eligibleWardrobeSets = useMemo(
+    () => filterCustomizerWardrobeSetsByGender(wardrobeSets, selectedCharacterGender, showOtherGenderClothes),
+    [wardrobeSets, selectedCharacterGender, showOtherGenderClothes]
   )
   const hairLibraryPageView = useMemo(
     () => getCustomizerHairLibraryPage(eligibleHairStyles, hairLibraryPart, hairLibraryPage),
@@ -527,12 +533,12 @@ export function CustomizerPage() {
     return createWardrobePanelCandidateIndex({
       panels,
       selectedModelSlot: selectedCatalogModelSlot,
-      wardrobeSets,
+      wardrobeSets: eligibleWardrobeSets,
       wardrobeDetails,
       faceComponentAssets,
       faceComponentDetails
     })
-  }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
+  }, [eligibleWardrobeSets, faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels])
   const wardrobeCatalogWorkspaceProps = {
     loading: wardrobeLoading,
     catalogError,
@@ -739,6 +745,8 @@ export function CustomizerPage() {
               onGenderChange={(gender) => { void saveCharacterCustomization({ gender }) }}
               showOtherGenderHair={showOtherGenderHair}
               onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
+              showOtherGenderClothes={showOtherGenderClothes}
+              onShowOtherGenderClothesChange={(show) => { setShowOtherGenderClothes(show); setWardrobeLibraryPage(0) }}
               loading={catalogLoading}
               onSelect={(model) => void selectCatalogModel(model)}
             />}

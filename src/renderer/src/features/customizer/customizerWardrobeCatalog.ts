@@ -1,7 +1,20 @@
 import type { WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
+import type { CharacterGender } from '../../../../shared/customizer'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems.ts'
 
 export type CustomizerWardrobeThumbnailCategory = { id: string; source: WardrobeCategory[] }
+
+/** Legacy wardrobe sets without a gender tag remain available to every character. */
+export function filterCustomizerWardrobeSetsByGender(
+  summaries: readonly WardrobeSetSummary[],
+  gender: CharacterGender,
+  showOtherGender: boolean
+): WardrobeSetSummary[] {
+  return summaries.filter((summary) => showOtherGender
+    || summary.previewGender === undefined
+    || (summary.previewGender !== 'female' && summary.previewGender !== 'male')
+    || summary.previewGender === gender)
+}
 
 export type CustomizerWardrobeCatalogDependencies = {
   summaries: WardrobeSetSummary[]

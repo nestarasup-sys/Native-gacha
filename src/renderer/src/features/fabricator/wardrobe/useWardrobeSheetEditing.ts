@@ -84,7 +84,7 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
           setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)
         }
         clearDeformationSession()
-        setDraft({ schemaVersion: 1, edition: 1, id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+        setDraft({ schemaVersion: 1, edition: 1, previewGender: 'female', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
         setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setJoinJointsMode(false)
       }
       worker.onerror = () => { setProcessing(false); setError('Falha ao processar a imagem localmente.'); worker.terminate(); workerRef.current = null }
@@ -106,7 +106,7 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
       const components = createWardrobeTorsoGridComponents(image, referenceModel ?? model, gridSize, () => crypto.randomUUID())
       if (!components.length) throw new Error('A grade ' + gridSize + '×3 não contém peças visíveis. Confira as células da imagem.')
       clearDeformationSession()
-      setDraft({ schemaVersion: 1, edition: 1, importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+      setDraft({ schemaVersion: 1, edition: 1, previewGender: 'female', importKind: gridSize === 4 ? 'torso-grid-4x3' : 'torso-grid-3x3', id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0].id); setDirty(true); setJoinJointsMode(false)
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade de roupas.') }
     finally { setProcessing(false) }
@@ -121,7 +121,7 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
       if (!source) return
       const components = createWardrobePairedSheetComponents(await createImageBitmap(await (await fetch(source)).blob()), referenceModel ?? model, () => crypto.randomUUID(), pairedSheetKindRef.current)
       clearDeformationSession()
-      setDraft({ schemaVersion: 1, edition: 1, importKind: wardrobePairedGridImportKind(pairedSheetKindRef.current), id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
+      setDraft({ schemaVersion: 1, edition: 1, previewGender: 'female', importKind: wardrobePairedGridImportKind(pairedSheetKindRef.current), id: crypto.randomUUID(), modelSlot, modelName: model.name, name: file.name.replace(/\.[^.]+$/, ''), width: model.width, height: model.height, components, updatedAt: new Date().toISOString() })
       setActiveSetId(null); setSelectedId(components[0]?.id ?? null); setDirty(true); setJoinJointsMode(false)
       pairedGridHistoryRef.current.clear()
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível importar a grade pareada.') }

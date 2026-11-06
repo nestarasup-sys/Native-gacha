@@ -12,21 +12,28 @@ export function CustomizerModelPicker(props: {
   onGenderChange: (gender: CharacterGender) => void
   showOtherGenderHair: boolean
   onShowOtherGenderHairChange: (show: boolean) => void
+  showOtherGenderClothes: boolean
+  onShowOtherGenderClothesChange: (show: boolean) => void
   genderDisabled?: boolean
   loading: boolean
   onSelect: (model: ModelSummary) => void
 }) {
-  const { models, thumbnails, selectedSlot, gender, onGenderChange, showOtherGenderHair, onShowOtherGenderHairChange, genderDisabled = false, loading, onSelect } = props
+  const { models, thumbnails, selectedSlot, gender, onGenderChange, showOtherGenderHair, onShowOtherGenderHairChange, showOtherGenderClothes, onShowOtherGenderClothesChange, genderDisabled = false, loading, onSelect } = props
   const oppositeGenderLabel = gender === 'male' ? 'femininos' : 'masculinos'
+  const oppositeGenderClothesLabel = gender === 'male' ? 'femininas' : 'masculinas'
 
   return <section className="customizer-model-picker" aria-label="Modelos do Fabricador Dev">
     <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
       <button className={'customizer-model-gender-button female' + (gender === 'female' ? ' active' : '')} type="button" aria-pressed={gender === 'female'} disabled={genderDisabled} onClick={() => onGenderChange('female')}>Feminino</button>
       <button className={'customizer-model-gender-button male' + (gender === 'male' ? ' active' : '')} type="button" aria-pressed={gender === 'male'} disabled={genderDisabled} onClick={() => onGenderChange('male')}>Masculino</button>
     </div>
-    <label className="customizer-model-hair-filter">
+    <label className="customizer-model-other-gender-filter">
       <input type="checkbox" checked={showOtherGenderHair} disabled={genderDisabled} onChange={(event) => onShowOtherGenderHairChange(event.target.checked)} />
       <span>Mostrar cabelos {oppositeGenderLabel}?</span>
+    </label>
+    <label className="customizer-model-other-gender-filter">
+      <input type="checkbox" checked={showOtherGenderClothes} disabled={genderDisabled} onChange={(event) => onShowOtherGenderClothesChange(event.target.checked)} />
+      <span>Mostrar roupas {oppositeGenderClothesLabel}?</span>
     </label>
     <header className="customizer-catalog-heading">
       <div><p className="eyebrow">CATÁLOGO</p><h2>Modelo base</h2></div>

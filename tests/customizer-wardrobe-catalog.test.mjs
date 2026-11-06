@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { useCustomizerWardrobePanelActions } from '../src/renderer/src/features/customizer/useCustomizerWardrobePanelActions.ts'
-import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
+import { filterCustomizerWardrobeSetsByGender, loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
 import { getCustomizerHairLibraryPage, loadCustomizerHairDetails, loadCustomizerHairLibraryPageDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 import {
   upperWardrobePanels,
@@ -28,6 +28,35 @@ const set = (id, category) => ({
   height: 10,
   components: [{ id: `${id}-component`, name: id, category, attachedPartId: 'body', x: 0, y: 0, width: 10, height: 10, rotation: 0, dataUrl: 'data:image/png;base64,AA==' }],
   updatedAt: '2026-10-29T00:00:00.000Z'
+})
+
+test('filtra roupas pelo gênero e mantém conjuntos antigos sem marcação disponíveis para todos', () => {
+  const summaries = [
+    summary('old-set'),
+    { ...summary('female-set'), previewGender: 'female' },
+    { ...summary('male-set'), previewGender: 'male' }
+  ]
+
+  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'female', false).map(({ id }) => id), ['old-set', 'female-set'])
+  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'male', false).map(({ id }) => id), ['old-set', 'male-set'])
+  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'male', true).map(({ id }) => id), ['old-set', 'female-set', 'male-set'])
+  assert.deepEqual(summaries.map(({ id }) => id), ['old-set', 'female-set', 'male-set'])
+})
+
+test('controle de roupas usa o checkbox do gênero oposto em Modelos', async () => {
+  const [picker, page, importFlow] = await Promise.all([
+    readFile('src/renderer/src/features/customizer/CustomizerModelPicker.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/wardrobe/useWardrobeSheetEditing.ts', 'utf8')
+  ])
+
+  const checkboxPosition = picker.indexOf('Mostrar roupas {oppositeGenderClothesLabel}?')
+  assert.ok(checkboxPosition > picker.indexOf('customizer-model-gender-band'))
+  assert.match(picker, /showOtherGenderClothes/)
+  assert.match(page, /showOtherGenderClothes=\{showOtherGenderClothes\}/)
+  assert.match(page, /onShowOtherGenderClothesChange=\{\(show\) => \{ setShowOtherGenderClothes\(show\); setWardrobeLibraryPage\(0\) \}\}/)
+  assert.match(page, /filterCustomizerWardrobeSetsByGender\(wardrobeSets, selectedCharacterGender, showOtherGenderClothes\)/)
+  assert.equal((importFlow.match(/previewGender: 'female'/g) ?? []).length, 3)
 })
 
 test('carrega todos os conjuntos com concorrência limitada e publica os detalhes progressivamente', async () => {

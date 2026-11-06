@@ -529,7 +529,7 @@ export function WardrobeWorkspace({ baseModelSlot }: { baseModelSlot: number }) 
   }
   const restoreSelectedOrigin = () => { if (selected) updateComponent(selected.id, restoreWardrobeComponentOrigin(selected)) }
   const choosePreviewGender = (gender: WardrobePreviewGender) => {
-    if (!draft || wardrobePreviewGenderOf(draft.previewGender) === gender) return
+    if (!draft || draft.previewGender === gender) return
     setDraft((current) => current ? { ...current, previewGender: gender } : current)
     setDirty(true)
   }

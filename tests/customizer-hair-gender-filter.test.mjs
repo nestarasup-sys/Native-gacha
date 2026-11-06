@@ -48,7 +48,7 @@ test('o controle de cabelos do outro gênero aparece em Modelos abaixo do seleto
     readFile('src/renderer/src/features/customizer/CustomizerHairWorkspace.tsx', 'utf8')
   ])
 
-  assert.ok(picker.indexOf('customizer-model-hair-filter') > picker.indexOf('customizer-model-gender-band'))
+  assert.ok(picker.indexOf('customizer-model-other-gender-filter') > picker.indexOf('customizer-model-gender-band'))
   assert.match(picker, /Mostrar cabelos \{oppositeGenderLabel\}\?/)
   assert.match(page, /showOtherGenderHair=\{showOtherGenderHair\}/)
   assert.doesNotMatch(hairWorkspace, /Mostrar cabelos/)
