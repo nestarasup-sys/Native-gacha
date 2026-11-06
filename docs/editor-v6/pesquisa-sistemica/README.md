@@ -83,7 +83,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 
 ## Critérios de segurança
 
-Não modificar perfil, assets ou projetos **originais**. Duplicar código e dados necessários fisicamente para LAB isolado e trabalhar somente na nova branch, novo BAT e porta exclusiva; ver [protocolo](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. Mudança de código, modelo persistido ou backend de produção exige aprovação e testes específicos.
+Não modificar perfil, assets ou projetos **originais**. Duplicar código e dados necessários fisicamente para LAB isolado e trabalhar somente na nova branch, novo BAT e porta exclusiva; ver [protocolo](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. O usuário autorizou **código e testes na branch do laboratório**; mudanças de schema, backend e arquitetura exigem gates de qualidade, compatibilidade e rollback. **Não fazer merge para `Dev-V2`** sem pedido explícito.
 
 ## Próxima ação
 

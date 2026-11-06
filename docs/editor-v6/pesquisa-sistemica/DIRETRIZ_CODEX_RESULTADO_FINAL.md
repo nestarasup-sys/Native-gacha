@@ -21,6 +21,6 @@
 
 **P2 — melhoria de maior retorno:** prototipar ROI/camadas e pré-render **em memória somente se o perfil justificar**; em paralelo comparar opções de encoder/GPU/FFmpeg de modo justo, com qualidade e fallback. Priorizar o que reduzir o tempo total.
 
-**P3 — finalização integrada:** expandir para preview/timeline, compartilhaments de assets, recuperação, build portátil e bugs verificados; fechar matriz/ADRs, validar projeto real, publicar **somente código e Markdown** na `refactor/editor-v6-cold-lab` (não assets, perfis, mídia ou métricas com paths privados). Não mesclar na `Dev-V2`.
+**P3 — finalização integrada:** expandir para preview/timeline, compartilhamento de assets, recuperação, build portátil e bugs verificados; fechar matriz/ADRs, validar projeto real, publicar **somente código e Markdown** na `refactor/editor-v6-cold-lab` (não assets, perfis, mídia ou métricas com paths privados). Não mesclar na `Dev-V2`.
 
 **Estado inicial desta diretriz:** política revisada e documentação atualizada; nenhuma mudança de código ou benchmark foi feita nesta revisão documental.

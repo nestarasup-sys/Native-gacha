@@ -1,6 +1,6 @@
 # Protocolo Codex — laboratório isolado e exportação fria
 
-**Atualizado em 06/11/2026.** O usuário autorizou **pesquisa + implementação + refatoração + teste** em cópia local independente, com branch e BAT novos; **não** autorizou modificar o aplicativo original ou fazer push sem pedido explícito.
+**Atualizado em 06/11/2026.** O usuário autorizou **pesquisa + implementação + refatoração + teste** em cópia local independente, com branch e BAT novos; **não** autorizou modificar o aplicativo original, mesclar na `Dev-V2` ou enviar dados privados. **É permitido publicar commits de código/documentação somente na branch isolada `refactor/editor-v6-cold-lab` após testes.**
 
 > **Política tecnológica atualizada:** o usuário não exige CPU, AMF, NVENC ou nenhum encoder específico. Escolher o **melhor resultado final com qualidade e fallback**, conforme [DIRETRIZ_CODEX_RESULTADO_FINAL.md](DIRETRIZ_CODEX_RESULTADO_FINAL.md). Benchmarks com encoder diferente são válidos como **competição entre backends declarada**; não afirmar ganho sobre o relato de 91s se as configurações diferirem.
 
@@ -37,7 +37,7 @@
 1. Ler `AGENTS.md`, [README](README.md), [Pesquisa 01](pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md), pesquisas 02/03, [Plano](PLANO_EXECUTAVEL.md), matriz e estudos das funções afetadas.
 2. Medir baseline real: **91s ON [relato, não reproduzido em preset/encoder iguais]**, OFF já tem dois controles no LAB (~68,03s com encoder auto/AMF), enquanto ON mediu 116,32s `capturePage` e 110,47s `paint-event` na mesma configuração LAB. Registrar configuração completa e permitir comparar outros backends como variável explícita. Separar preparo de cabelo antes do Main, composição de personagem/cabelo/face, React, Canvas/WebGL/SVG, captura BGRA, FFmpeg e validação, sem somar lanes paralelas como parede.
 3. Investigar uma causa comprovada, consultar documentação oficial, **implementar e testar no LAB**, refutar/aceitar por evidências. Comparar livremente captura, CPU/GPU/AMF/NVENC/QSV/FFmpeg, render ROI e reuso **dentro do job**; escolha final por **velocidade fria ponta a ponta, qualidade e fallback**, nunca por preferência de tecnologia. Abranger melhorias de UI, timeline, personagens, bibliotecas e estabilidade, respeitando contratos entre módulos.
-4. A cada etapa atualizar a pesquisa correspondente, `MATRIZ_DE_OPORTUNIDADES.md`, `PLANO_EXECUTAVEL.md` e `PROGRESSO_E_RESULTADOS.md` com antes/depois frio, testes, bugs, rollback e próximo passo. Commits **locais pequenos**; sem push, sem arquivos pesados, sem dados pessoais.
+4. A cada etapa atualizar a pesquisa correspondente, `MATRIZ_DE_OPORTUNIDADES.md`, `PLANO_EXECUTAVEL.md` e `PROGRESSO_E_RESULTADOS.md` com antes/depois frio, testes, bugs, rollback e próximo passo. Commits pequenos, podendo publicar **somente na branch do LAB** após checks; sem merge, sem arquivos pesados e sem dados pessoais.
 5. Preservar visual RGBA pré-encode, MP4, 30fps do app quando aplicável, mouth/face/roupa/áudio/vídeo, IPC/sandbox e projetos salvos. Não chamar ganho de desempenho sem tempo total reproduzido no LAB.
 
 **Limite de autorização:** pode editar/testar/refatorar **somente na cópia local isolada**. Se arquivos referenciados estiverem ausentes, houver risco de perda de dados ou espaço insuficiente, interromper a operação arriscada e registrar o bloqueio.
