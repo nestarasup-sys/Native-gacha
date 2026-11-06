@@ -9,7 +9,6 @@ const projectFolder = argument('--project=') && path.resolve(argument('--project
 const libraryFolder = argument('--library=') && path.resolve(argument('--library='))
 const charactersPath = argument('--characters=') && path.resolve(argument('--characters='))
 const fabricatorFolder = argument('--fabricator=') && path.resolve(argument('--fabricator='))
-const sessionDataPath = argument('--session-data=') && path.resolve(argument('--session-data='))
 const sourceMotionCache = argument('--motion-cache=') && path.resolve(argument('--motion-cache='))
 const defaultOutput = path.join(root, 'out', 'editor-v6-stress', 'runs', `actual-project-${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
 const outputFolder = path.resolve(argument('--output=') ?? defaultOutput)
@@ -27,6 +26,10 @@ const fullTimeline = process.argv.includes('--full-timeline')
 const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
+const captureModeValue = argument('--capture-mode=')
+const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
+const MAX_RUN_OUTPUT_BYTES = 2 * 1024 ** 3
+const MIN_FREE_SPACE_BYTES = 3 * 1024 ** 3
 const reuseRendererServer = process.argv.includes('--reuse-renderer-server')
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
 const inside = (parent, child) => {
@@ -81,6 +84,17 @@ function verifyExistingRenderer(origin) {
   })
 }
 
+async function directoryBytes(directory) {
+  let total = 0
+  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+    const target = path.join(directory, entry.name)
+    if (entry.isDirectory()) total += await directoryBytes(target)
+    else if (entry.isFile()) total += (await fs.stat(target)).size
+    else throw Error(`A saída do benchmark contém um tipo de arquivo não suportado: ${entry.name}`)
+  }
+  return total
+}
+
 async function main() {
   const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
   if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe && !singleMotionRun)
@@ -88,11 +102,12 @@ async function main() {
     || singleMotionRun && !['1', '2'].includes(motionConcurrency)
     || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || noHairControl || process.argv.includes('--compare-workers'))
     || noHairControl && (hairPresetSlot || cacheProbe || singleMotionRun || hairPreparationOnly || process.argv.includes('--compare-workers'))) {
-    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache copiado> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2 | --hair-preset-slot=1..5 --session-data=<sessão copiada> [--hair-preparation-only] | --no-hair-control)')
+    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control)')
   }
   if (!Number.isInteger(rendererPort) || rendererPort < 1024 || rendererPort > 65535) throw Error('--renderer-port precisa ser uma porta local válida.')
-  if (hairPresetSlot && (!/^\d+$/.test(hairPresetSlot) || Number(hairPresetSlot) < 1 || Number(hairPresetSlot) > 5 || !sessionDataPath)) {
-    throw Error('A medição de cabelo requer --hair-preset-slot=1..5 e --session-data apontando para a sessão localStorage copiada.')
+  if (argument('--session-data=') !== undefined) throw Error('Reutilizar sessão Electron não é permitido no protocolo frio; cada execução cria uma sessão nova.')
+  if (hairPresetSlot && (!/^\d+$/.test(hairPresetSlot) || Number(hairPresetSlot) < 1 || Number(hairPresetSlot) > 5)) {
+    throw Error('--hair-preset-slot precisa ser um inteiro entre 1 e 5.')
   }
   const segmentStartFrame = segmentStartFrameValue === undefined ? 0 : Number(segmentStartFrameValue)
   const segmentDurationSeconds = segmentDurationSecondsValue === undefined ? (fullTimeline ? null : 20) : Number(segmentDurationSecondsValue)
@@ -100,6 +115,7 @@ async function main() {
   if (exportTestMode !== undefined && !['controle', 'captura-8'].includes(exportTestMode)) {
     throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
   }
+  if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
     || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
@@ -108,7 +124,7 @@ async function main() {
     throw Error('Benchmark de cabelo aceita --start-frame=, --duration-seconds= e --repeat=1..3; janela e repetição não se aplicam ao perfil somente de preparação.')
   }
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
-  const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, ...(hairPresetSlot ? [sessionDataPath] : [])]
+  const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
   if (!immutableSources.every((source) => inside(verifiedBackupRoot, source))
     || !(inside(verifiedBackupRoot, sourceMotionCache) || inside(allowedRunsRoot, sourceMotionCache))) {
     throw Error('Projeto, mídias, personagens e Fabricador precisam vir do backup verificado; o cache pode vir do backup ou de uma execução isolada anterior.')
@@ -130,12 +146,14 @@ async function main() {
   for (const media of manifest.media ?? []) if (media.libraryVideoId) await fs.access(path.join(libraryFolder, 'videos', media.fileName))
   await fs.access(charactersPath)
   await fs.access(sourceMotionCache)
-  if (singleMotionRun && (await fs.readdir(sourceMotionCache)).length !== 0) throw Error('A comparação fria de movimentos exige uma pasta de cache-fonte vazia.')
+  if ((hairPresetSlot || noHairControl || singleMotionRun) && (await fs.readdir(sourceMotionCache)).length !== 0) throw Error('A exportação fria exige cache-fonte de movimentos vazio.')
   await fs.access(path.join(fabricatorFolder, 'models', 'slot-1', 'project.json'))
   await fs.access(path.join(root, 'out', 'main', 'main.js'))
 
   await fs.mkdir(path.dirname(outputFolder), { recursive: true })
   await fs.mkdir(outputFolder, { recursive: false })
+  const disk = await fs.statfs(outputFolder)
+  if (disk.bavail * disk.bsize < MIN_FREE_SPACE_BYTES) throw Error('O benchmark foi interrompido: são necessários pelo menos 3 GiB livres na unidade de saída.')
   // Resolve a run-folder junction before Electron's canonical-path check.
   // This lets stress outputs live on a separate volume when the repository
   // volume is full while keeping all writes inside the requested run folder.
@@ -152,12 +170,6 @@ async function main() {
   await fs.cp(charactersPath, charactersTarget, { errorOnExist: true, force: false })
   await fs.cp(fabricatorFolder, path.join(profile, 'fabricator'), { recursive: true, errorOnExist: true, force: false })
   await fs.cp(sourceMotionCache, path.join(profile, 'cache', 'editor-v6-motion-v2'), { recursive: true, errorOnExist: true, force: false })
-  if (hairPresetSlot) {
-    const isolatedSessionData = path.join(dataRoot, 'cache', 'electron-session')
-    await fs.mkdir(path.dirname(isolatedSessionData), { recursive: true })
-    await fs.cp(sessionDataPath, isolatedSessionData, { recursive: true, errorOnExist: true, force: false })
-  }
-
   const rendererOrigin = `http://127.0.0.1:${rendererPort}`
   const rendererServer = reuseRendererServer
     ? (await verifyExistingRenderer(rendererOrigin), { origin: rendererOrigin, close: async () => {} })
@@ -167,6 +179,8 @@ async function main() {
     ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
     ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
+    ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
+    ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),
@@ -180,10 +194,29 @@ async function main() {
   let code
   try {
     const exportChild = spawn(require('electron'), [path.join(root, 'out', 'main', 'main.js')], { cwd: root, env: childEnv, stdio: 'inherit', windowsHide: true })
-    code = await new Promise((resolve, reject) => {
-      exportChild.once('error', reject)
-      exportChild.once('exit', (status, signal) => status === null ? reject(Error(`Electron encerrou por sinal ${signal}.`)) : resolve(status))
-    })
+    let outputLimitExceeded = false, sizeCheckRunning = false
+    const sizeCheck = setInterval(() => {
+      if (sizeCheckRunning || outputLimitExceeded) return
+      sizeCheckRunning = true
+      void directoryBytes(outputFolder).then((bytes) => {
+        if (bytes > MAX_RUN_OUTPUT_BYTES) {
+          outputLimitExceeded = true
+          exportChild.kill()
+        }
+      }).catch((error) => {
+        outputLimitExceeded = true
+        exportChild.kill()
+        console.error('[V6 benchmark output guard]', error)
+      }).finally(() => { sizeCheckRunning = false })
+    }, 3000)
+    sizeCheck.unref()
+    try {
+      code = await new Promise((resolve, reject) => {
+        exportChild.once('error', reject)
+        exportChild.once('exit', (status, signal) => status === null ? reject(Error(`Electron encerrou por sinal ${signal}.`)) : resolve(status))
+      })
+    } finally { clearInterval(sizeCheck) }
+    if (outputLimitExceeded) throw Error('O benchmark excedeu o limite de 2 GiB; a saída parcial foi preservada para diagnóstico.')
   } finally { await rendererServer.close() }
   if (code !== 0) throw Error(`A comparação do projeto real falhou (Electron ${code}); os relatórios parciais ficaram em ${outputFolder}.`)
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
@@ -223,6 +256,17 @@ async function main() {
   if (hairPreparationOnly && (await fs.readdir(outputFolder)).some((name) => name.toLowerCase().endsWith('.mp4'))) {
     throw Error(`O perfil de preparação não deveria gerar MP4. Revise ${outputFolder}.`)
   }
+  // Retain lightweight evidence only. The run's Electron profile and generated
+  // media are disposable copies owned by this benchmark directory.
+  await fs.rm(path.join(outputFolder, 'isolated-app-data'), { recursive: true, force: true })
+  async function removeGeneratedBinaryOutputs(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name)
+      if (entry.isDirectory()) await removeGeneratedBinaryOutputs(target)
+      else if (!['.json', '.txt'].includes(path.extname(entry.name).toLowerCase())) await fs.rm(target, { force: true })
+    }
+  }
+  await removeGeneratedBinaryOutputs(outputFolder)
   console.log(`Comparação completa: ${summaryPath}`)
 }
 

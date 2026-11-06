@@ -749,4 +749,10 @@ Os links abaixo apontam ao `sha` da revisão da pesquisa; conferir mudanças loc
 
 **Primeiro ELE-AUD-001 e ELE-AUD-002:** perfilar com e sem cabelo, incluir o preparo anterior ao Main e validar sRGB/alpha/frames de um benchmark autorizado. **Depois** perf de Viz e teste `paint` condicionado ao custo medido. Se o gargalo for recomposição de personagem, priorizar ROI de cabelo (Pesquisa 10), e não mudar o Electron.
 
-**Resultado desta entrega:** pesquisa técnico-documental aprofundada, pronta para guiar testes e decisões no código local. **Nenhuma alteração de código ou teste runtime foi realizada.**
+## Atualização experimental no LAB — 06/11/2026
+
+O benchmark frio mostrou captura como custo relevante após a preparação: em três exports completos por caminho, mediana de parede foi 116,32s para `capturePage` e 110,47s para subscription `paint-event` (~5,0% menor). As somas de captura acumuladas por workers caíram 105,81s→95,53s; não interpretar essas somas como parede porque as lanes concorrem. O intervalo inclui uma corrida paint de 119,58s, maior que a mediana baseline, portanto a variância pede mais amostras.
+
+O LAB agora usa `beginFrameSubscription(false, callback)` para manter a `NativeImage` mais recente e entrega pixels somente quando o token lateral corresponde exatamente ao frame solicitado; incompatibilidade invalida a imagem e retorna ao fluxo existente de retry. A leitura de pixels usa o mesmo conversor BGRA e buffer reutilizado. O modo `capturePage` continua selecionável para comparação/fallback. Em smoke com hashes RGBA esparsos, frames 0/29/30/149 coincidiram; export curto validou 150 frames, 1080p30 e áudio. Ainda falta golden completo, cancelamento/resize sob estresse e uma distribuição empacotada.
+
+Electron documenta subscription offscreen com imagem integral quando `onlyDirty=false` e callback assíncrono; o fluxo mantém a confirmação de token como barreira contra frame anterior. [Offscreen rendering](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering) · [webContents API](https://www.electronjs.org/docs/latest/api/web-contents).

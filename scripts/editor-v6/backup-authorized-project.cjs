@@ -7,7 +7,6 @@ const crypto = require('node:crypto')
 const fs = require('node:fs/promises')
 const path = require('node:path')
 
-const PROJECT_ID = '2d6fb9ec-cfea-45ea-91ff-366fbc1abd59'
 const PROJECT_TITLE = 'Teste de Importação — Personagens do Pacote'
 
 async function inventory(source) {
@@ -42,17 +41,27 @@ async function main() {
   const root = path.resolve(__dirname, '../..')
   const appData = path.join(root, 'app-data')
   const profile = path.join(appData, 'runtime', 'profile')
-  const projectSource = path.join(profile, 'studios', 'Editor V6', `editorV6-${PROJECT_ID}`)
+  const projectsRoot = path.join(profile, 'studios', 'Editor V6')
+  const projectMatches = []
+  for (const entry of await fs.readdir(projectsRoot, { withFileTypes: true })) {
+    if (!entry.isDirectory() || !entry.name.startsWith('editorV6-')) continue
+    const candidate = path.join(projectsRoot, entry.name)
+    try {
+      const candidateManifest = JSON.parse(await fs.readFile(path.join(candidate, 'editorV6.json'), 'utf8'))
+      if (candidateManifest.title?.trim() === PROJECT_TITLE) projectMatches.push({ folder: candidate, manifest: candidateManifest })
+    } catch (error) {
+      if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+    }
+  }
+  if (projectMatches.length !== 1) throw Error(`Esperava um único projeto autorizado "${PROJECT_TITLE}"; encontrados: ${projectMatches.length}.`)
+  const { folder: projectSource, manifest } = projectMatches[0]
   const sources = [
     ['project', projectSource],
     ['library', path.join(profile, 'studios', 'Editor Gacha', 'media-library')],
     ['characters', path.join(profile, 'customizer', 'characters', 'characters.json')],
-    ['fabricator', path.join(profile, 'fabricator')],
-    ['motion-cache', path.join(profile, 'cache', 'editor-v6-motion-v2')],
-    ['session', path.join(appData, 'cache', 'electron-session')]
+    ['fabricator', path.join(profile, 'fabricator')]
   ]
-  const manifest = JSON.parse(await fs.readFile(path.join(projectSource, 'editorV6.json'), 'utf8'))
-  if (manifest.id !== PROJECT_ID || manifest.title?.trim() !== PROJECT_TITLE || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1) {
+  if (manifest.id !== path.basename(projectSource).slice('editorV6-'.length) || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1) {
     throw Error('A fonte não corresponde ao projeto autorizado ou não possui duração válida; nada foi copiado.')
   }
   for (const [, source] of sources) await fs.access(source)
@@ -61,6 +70,8 @@ async function main() {
   await fs.mkdir(backupRoot, { recursive: true })
   const output = path.join(backupRoot, `authorized-import-package-${new Date().toISOString().replace(/[:.]/g, '-')}-${process.pid}`)
   await fs.mkdir(output, { recursive: false })
+  const emptyMotionCache = path.join(output, 'motion-cache')
+  await fs.mkdir(emptyMotionCache)
   const before = new Map()
   for (const [name, source] of sources) before.set(name, await inventory(source))
   for (const [name, source] of sources) {
@@ -80,6 +91,7 @@ async function main() {
     const files = copied.get(name)
     return [name, { files: files.length, bytes: files.reduce((sum, file) => sum + file.bytes, 0), entries: files }]
   }))
+  summary['motion-cache'] = { files: 0, bytes: 0, entries: [] }
   const backupManifest = {
     schemaVersion: 1, verified: true, createdAt: new Date().toISOString(),
     project: { id: manifest.id, title: manifest.title, updatedAt: manifest.updatedAt, durationFrames: manifest.timeline.durationFrames, fps: manifest.timeline.fps ?? 30 },

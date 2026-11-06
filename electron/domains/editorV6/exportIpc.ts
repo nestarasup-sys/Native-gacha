@@ -34,6 +34,8 @@ type EditorV6ExportIpcDependencies = {
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   getMotionCacheStats?: () => EditorV6MotionCacheStats
+  captureMode?: 'capturePage' | 'paint-event'
+  inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
   resolveLibraryAudio: (id: string) => Promise<{ path: string; name: string; mimeType: string; extension: string; size: number }>
   resolveLibraryAsset: (id: string) => Promise<{ path: string; mimeType: string }>
@@ -60,7 +62,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     await publishJsonManifest({ files: fs, target: folderPreference, temporary: `${folderPreference}.${randomUUID()}.tmp`, value: { folder } })
   }
   const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
-  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
+  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, captureMode: deps.captureMode, inspectCapture: deps.inspectCapture })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = new Map<string, Job>()
   const pendingFileWrites = createPendingOperationTracker()

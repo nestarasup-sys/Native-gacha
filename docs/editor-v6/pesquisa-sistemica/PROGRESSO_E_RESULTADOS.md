@@ -1,6 +1,6 @@
 # Progresso e resultados — trilha auditável
 
-**Data:** 06/11/2026 · **Branch:** `Dev-V2` · **Revisão de base da pesquisa:** `c636ff03c80274eabed7892dc9d5fa0e8ad025c5`. O commit que introduz a estrutura estará no log Git posterior.
+**Data:** 06/11/2026 · **Branch do laboratório:** `refactor/editor-v6-cold-lab` · documentação de referência herdada da revisão `c636ff03c80274eabed7892dc9d5fa0e8ad025c5`.
 
 ## Concluído nesta rodada
 
@@ -62,7 +62,7 @@
 - **[RELATO HISTÓRICO]** ~50s ON/9s OFF foram de outro projeto/experimento. **Não comparar com 91s** nem supor tempo OFF atual.
 - [x] Publicado [protocolo de LAB](LABORATORIO_CODEX_EXPORTACAO_FRIA.md), com isolamento de app-data/SQLite/CAS/asset, branch nova, BAT exclusivo, porta 5199, execução fria e limpeza limitada a saídas temporárias de teste.
 - [x] [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md) retificado para a baseline vigente e condições frias.
-- [ ] **Pendente para Codex local:** duplicar projeto e dados no Windows, testar cold ON/OFF, validar MP4, pesquisar+implementar com progressos documentados. Esta atualização foi somente Markdown no GitHub.
+- [x] Laboratório Windows independente criado e hash-verificado. Ver rodada local abaixo.
 
 ## Observação histórica relevante
 
@@ -71,3 +71,17 @@
 ## Publicação e privacidade
 
 Somente Markdown, sem credenciais, dados pessoais, screenshots ou assets. GitHub branch verificada antes de publicar; alterações locais do usuário não são visíveis por esta conexão. Uma nova sessão deve comparar HEAD e a cópia de trabalho real antes de propor código.
+
+## Rodada local Codex — laboratório frio e captura paint — 06/11/2026
+
+- [x] Confirmados branch/status/commit/espaço antes da criação. LAB irmão `GACHA EM C++-V6-LAB`, branch `refactor/editor-v6-cold-lab`; clone independente sem hardlinks. Alterações locais/untracked da origem foram copiadas para a branch, preservadas fora do commit desta tarefa. Binários/saídas temporárias não entram no Git.
+- [x] Copiados projeto e dependências de Fabricador, Customizador, biblioteca, SQLite/CAS e perfil mínimo. Inventário de 3.044 arquivos (~0,722 GB) comparado por SHA-256; referências de vídeos da timeline resolvidas. `app-data` independente; manifest de integridade local ignorado pelo Git.
+- [x] `ABRIR_REFATORACAO_V6_LAB.bat`: branch estrita, porta 5199, `127.0.0.1`, `strictPort`; sem checkout automático de `Dev-V2` e com ferramentas locais do LAB. Launcher validado após alterações finais.
+- Ambiente: Electron 45.1.0; Node 24.18.0; FFmpeg/ffprobe 8.1.2; projeto autorizado 2394 frames, 30fps, 79,8s, preset 1, 1920×1080, Turbo, AMF. Processo/sessão novos e cache de movimento vazio por corrida. Não foi possível reproduzir literalmente os 91s relatados; preset original desconhecido.
+- Baseline hair ON `capturePage` (clique→MP4 validado): **120,72 / 116,32 / 114,62s**, mediana **116,32s**. Controle sem cabelo (2 amostras): **68,04 / 68,01s**; amostragem OFF ainda não é 3.
+- Candidato `paint-event` hair ON: **108,91 / 119,58 / 110,47s**, mediana **110,47s** (~5,0% menor que baseline). Uma amostra candidata foi mais lenta que a mediana baseline. Captura somada por workers mediana 105,81→95,53s (~9,7%); tempos concorrentes não equivalem a parede. Preparo de cabelo pré-job foi mediana ~8,46s; composição de cabelo ~5,76s somada por partes, sem prova de causa dominante.
+- Paridade: hashes RGBA em frames 0/29/30/149 coincidiram em 4/4 amostras esparsas. Export paint curto validou 150 quadros, 1080p30, áudio e transições; sem golden integral. MP4s e perfis isolados foram removidos após ffprobe; permanecem relatórios JSON leves em `out/editor-v6-stress/runs`.
+- Mudança LAB: `beginFrameSubscription(false, callback)` mantém somente a imagem mais recente, confirma token do quadro pedido e rejeita imagem obsoleta; reutiliza conversão BGRA/buffer e mantém fallback selecionável `capturePage`. Paint passa a ser modo normal apenas na cópia LAB.
+- Proteções: recusa sessão reutilizada, exige cache vazio em exportações cold, limita saída a 2 GiB e exige 3 GiB livres; limpa apenas a pasta isolada da execução após validação.
+- Testes: typecheck; audit:architecture; build; `test:editor-v6:quick` (59 Vitest + 6 Node); bootstrap (7); captura (13); stress/saída/ferramentas de vídeo (8). Export curto final passou após adição da guarda.
+- Limites: ganho modesto/variável; ampliar amostras e golden RGBA integral, validar cancelamento/resize e build empacotado. Próxima prioridade: medir preparo de personagens/cabelo posterior; não iniciar ROI sem provar repetição e paridade.

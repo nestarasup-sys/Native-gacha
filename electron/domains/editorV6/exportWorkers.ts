@@ -14,7 +14,62 @@ const PAINT_TOKEN_SIZE = 24
 const FRAME_CAPTURE_TIMEOUT_MS = 60000
 const FRAME_CAPTURE_RETRY_MS = 16
 
-async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number, output: Buffer, outputOffset = 0, retryMilliseconds = FRAME_CAPTURE_RETRY_MS) {
+type PaintFrameCapture = { capture: (token: number, output: Buffer, outputOffset?: number) => Promise<{ bitmap: Buffer; readbacks: number; capturePageMs: number; captureBitmapMs: number }>; close: () => void }
+
+/** Retain only the latest full frame of this export and return it only after its paint token matches. */
+function createPaintFrameCapture(window: BrowserWindow, width: number, height: number, signal: AbortSignal): PaintFrameCapture {
+  let latestImage: Electron.NativeImage | null = null
+  let pending: { token: number; output: Buffer; outputOffset: number; readbacks: number; bitmapMs: number; started: number; resolve: (value: { bitmap: Buffer; readbacks: number; capturePageMs: number; captureBitmapMs: number }) => void; reject: (error: Error) => void } | null = null
+  let closed = false
+  const onFrame = (image: Electron.NativeImage) => {
+    latestImage = image
+    const request = pending
+    if (!request || closed) return
+    request.readbacks++
+    const started = performance.now()
+    const bitmap = captureEditorV6FrameBitmap(image, width, height, request.token, request.output, request.outputOffset)
+    request.bitmapMs += performance.now() - started
+    if (bitmap) {
+      pending = null
+      request.resolve({ bitmap, readbacks: request.readbacks, capturePageMs: 0, captureBitmapMs: request.bitmapMs })
+    } else if (request.readbacks === 1) window.webContents.invalidate()
+  }
+  window.webContents.beginFrameSubscription(false, onFrame)
+  return {
+    capture: async (token, output, outputOffset = 0) => {
+      const started = performance.now()
+      let readbacks = 0, bitmapMs = 0
+      const tryImage = (image: Electron.NativeImage) => {
+        readbacks++
+        const bitmapStarted = performance.now()
+        const bitmap = captureEditorV6FrameBitmap(image, width, height, token, output, outputOffset)
+        bitmapMs += performance.now() - bitmapStarted
+        return bitmap ? { bitmap, readbacks, capturePageMs: 0, captureBitmapMs: bitmapMs } : null
+      }
+      if (latestImage) {
+        const captured = tryImage(latestImage)
+        if (captured) return captured
+      }
+      const waiting = new Promise<{ bitmap: Buffer; readbacks: number; capturePageMs: number; captureBitmapMs: number }>((resolve, reject) => {
+        if (pending) return reject(Error('O worker já aguarda outro quadro paint.'))
+        pending = { token, output, outputOffset, readbacks, bitmapMs, started, resolve, reject }
+        window.webContents.invalidate()
+      })
+      try { return await waitForExport(waiting, signal, FRAME_CAPTURE_TIMEOUT_MS, 'aguardar quadro paint com token') }
+      finally { if (pending?.token === token) pending = null }
+    },
+    close: () => {
+      if (closed) return
+      closed = true
+      if (pending) { pending.reject(Error('A captura paint foi encerrada.')); pending = null }
+      latestImage = null
+      if (!window.isDestroyed()) window.webContents.endFrameSubscription()
+    }
+  }
+}
+
+async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, width: number, height: number, token: number, output: Buffer, outputOffset = 0, retryMilliseconds = FRAME_CAPTURE_RETRY_MS, paintCapture?: PaintFrameCapture) {
+  if (paintCapture) return paintCapture.capture(token, output, outputOffset)
   const deadline = Date.now() + FRAME_CAPTURE_TIMEOUT_MS
   let readbacks = 0
   let capturePageMs = 0, captureBitmapMs = 0
@@ -37,7 +92,7 @@ async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, w
   throw Error('Tempo limite: o compositor não apresentou o quadro solicitado para exportação.')
 }
 
-export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void> }) {
+export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   const activeWorkers = new Set<() => void>()
   const retiredWorkers = new Set<number>()
@@ -98,6 +153,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     // frame from this worker, so this owned buffer can be safely reused.
     let frameBitmap: Buffer | undefined
     let layeredBitmap: Buffer | undefined
+    let paintCapture: PaintFrameCapture | undefined
     const close = () => {
       if (closed) return
       closed = true
@@ -106,6 +162,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       retiredWorkers.add(id)
       while (retiredWorkers.size > 128) retiredWorkers.delete(retiredWorkers.values().next().value!)
       layeredBitmap = undefined
+      paintCapture?.close()
       signal.removeEventListener('abort', close)
       rejectReady(Error('A janela de exportação foi fechada.'))
       if (!window.isDestroyed()) window.destroy()
@@ -117,6 +174,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
+      if (deps.captureMode === 'paint-event') paintCapture = createPaintFrameCapture(window, payload.width, payload.height, signal)
       let nextPaintToken = 0
       return { close, frame: async (frame) => {
         signal.throwIfAborted()
@@ -138,7 +196,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
           const output = layeredVideo
             ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2))
             : (frameBitmap ??= Buffer.allocUnsafe(layerBytes))
-          const captured = await capturePaintedFrame(window, signal, payload.width, payload.height, token, output, outputOffset, captureRetryMilliseconds)
+          const captured = await capturePaintedFrame(window, signal, payload.width, payload.height, token, output, outputOffset, captureRetryMilliseconds, paintCapture)
           const { bitmap, readbacks, capturePageMs, captureBitmapMs } = captured
           await deps.inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + payload.width * payload.height * 4) : bitmap })
           return { bitmap, readbacks, elapsedMs: performance.now() - started, capturePageMs, captureBitmapMs }

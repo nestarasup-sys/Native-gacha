@@ -1,15 +1,15 @@
 # Matriz de oportunidades — hipóteses rastreáveis
 
-**Status:** atualizada após pesquisa estática do Grupo A (15 estudos; testes dinâmicos pendentes). Priorização de leitura e desenho experimental. **Nenhum ganho deste arquivo é medição nova.**
+**Status:** atualizada após pesquisa do Grupo A e primeiro A/B dinâmico frio no LAB. Medições registradas abaixo; não extrapolar para outros projetos/hardware.
 
 | ID | Problema/pergunta | Evidência disponível | Hipótese / experimento | Prioridade | Estado |
 |---|---|---|---|---|---|
 | AUD-001 | Mapa completo de dependências? | Pesquisa 01 e árvore do repo | Confirmar links restantes, runtime e decisões de ownership | P0 | PESQUISADO EM CÓDIGO / RUNTIME PENDENTE |
-| AUD-002 | Por que cabelo ON ≈50s e OFF ≈9s? | [RELATO] mesmo vídeo 10s, sem relatórios brutos | Repetir A/B controlado e medir preparação→MP4 | P0 | PROTOCOLO PREPARADO |
+| AUD-002 | Por que cabelo ON demora? | [RELATO] 91s; laboratório: 3 frias ON com cabelo mediana 116,32s; controle sem cabelo 68,01s | Medir preparação→MP4, comparar fases e manter OFF como controle | P0 | PRIMEIRO A/B FRIO MEDIDO; DIFERENTE DO RELATO |
 | EXP-CAB-001 | Personagem redesenhado apesar de cabelo em repouso? | `composeHairFrame` + preparação dupla do hair | Instrumentar 0 / 1 / múltiplas reações | P0 | HIPÓTESE |
 | EXP-CAB-002 | RGBA ROI/camada posterior substitui full canvas? | Código WebGL→Canvas→SVG e reação 29 frames | Spike ROI com alpha + oclusão | P0 | HIPÓTESE |
 | EXP-CHAR-001 | Preparações/representações repetidas entre módulos? | Renderizador normal/sem cabelo + fontes compartilhadas | Revisão de materiais e cache por identidade completa | P1 | HIPÓTESE |
-| EXP-ELE-001 | `capturePage` é gargalo residual? | Captura tokenizada e BGRA por quadro | A/B capturePage x paint com frameId | P1 | HIPÓTESE |
+| EXP-ELE-001 | `capturePage` é gargalo residual? | A/B 3+3 frias: mediana de captura acumulada por lanes 105,81s vs 95,53s; parede 116,32s vs 110,47s | Manter `paint-event`, ampliar paridade RGBA e variância em corridas futuras | P1 | GANHO MODESTO MEDIDO; PROMOVIDO NO LAB COM RESSALVAS |
 | EXP-ELE-002 | Shared texture D3D evita readback? | Disponível na API Electron, não ativo | PoC nativo isolado (após EXP-ELE-001) | P2 | HIPÓTESE |
 | EXP-FFM-001 | Encoder CPU é custo dominante depois do preparo? | `rawvideo` e modo `encoder:'cpu'` | Comparar CPU/AMF no hardware real, mesma qualidade | P1 | HIPÓTESE |
 | EXP-RAS-001 | DrawPlan nativo pode renderizar subconjunto com paridade? | Protótipo possui `unsupported` | Cenas reais com bloqueadores explícitos | P2 | HIPÓTESE |

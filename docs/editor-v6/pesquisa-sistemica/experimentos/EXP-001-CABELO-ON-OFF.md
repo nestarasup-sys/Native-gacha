@@ -1,11 +1,11 @@
 # EXP-001 — Perfil causal cabelo ON vs OFF
 
-**Status:** PROTOCOLO PREPARADO — NÃO EXECUTADO.  
+**Status:** baseline fria inicial concluída no LAB; 3 hair ON + 2 controles sem cabelo completos. Rodada ON 3+3 para A/B com captura em [EXP-002](EXP-002-CAPTURA-OFFSCREEN.md).
 **Origem:** [Pesquisa 01](../pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md) e [Pesquisa 10](../pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md).
 
 ## Pergunta
 
-**[RELATO ATUAL]** Projeto **Teste de Importação — Personagens do Pacote** exportou com cabelo ON em **1min31s (91s)**. OFF atual ainda não medido; duração/frame count devem ser apurados. O antigo 50s/9s foi outro projeto e não é comparável. Onde se gastam os 91s e quanto muda OFF no mesmo snapshot frio?
+**[RELATO ATUAL]** O usuário informou 91s. No LAB, 3 exports frios ON mediram 120,72 / 116,32 / 114,62s (mediana 116,32s); 2 controles completos sem cabelo mediram 68,04 / 68,01s (mediana 68,03s). O relato de 91s não foi reproduzido; preset original desconhecido. O antigo 50s/9s foi outro projeto e não é comparável.
 
 ## Prerrequisitos e proteção de dados
 

@@ -4,7 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, Menu, protocol, sess
 import { existsSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { FABRICATOR_MODEL_SLOT_COUNT, FABRICATOR_POSE_SLOT_COUNT, type FaceExpressionPreset, type FabricatorProjectSave, type ModelPart } from '../src/shared/fabricator'
 import type { CustomizerCharacter } from '../src/shared/customizer'
 import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceAssetReferences'
@@ -183,6 +183,7 @@ let fabricatorDesignSettingsIpc: ReturnType<typeof registerFabricatorDesignSetti
 let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers> | null = null
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
+const stressCapturePixelHashes = new Map<number, string[]>()
 let editorV7ExportService: ReturnType<typeof registerEditorV7ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
 let rendererWritesFlushedForShutdown = false
@@ -1108,7 +1109,16 @@ app.whenReady().then(async () => {
       catch { const item = await editorV6MediaLibrary.resolve('object', id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } }
     },
     bakeMotion: (request, signal) => editorV6MotionService!.bakeForExport(request, signal),
-    getMotionCacheStats: () => editorV6MotionService!.getCacheStats() })
+    getMotionCacheStats: () => editorV6MotionService!.getCacheStats(),
+    captureMode: process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
+      ? (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage')
+      : 'paint-event',
+    ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { inspectCapture: async ({ frame, bitmap }: { window: BrowserWindow; frame: number; bitmap: Buffer }) => {
+      if (![0, 29, 30, 149, 300, 599, 1199, 2393].includes(frame)) return
+      const hashes = stressCapturePixelHashes.get(frame) ?? []
+      hashes.push(createHash('sha256').update(bitmap).digest('hex'))
+      stressCapturePixelHashes.set(frame, hashes)
+    } } : {}) })
   editorV7ExportService = registerEditorV7ExportHandlers({ ipcMain, assertTrustedSender, toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools') })
   if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
     void (async () => {
@@ -1162,7 +1172,7 @@ app.whenReady().then(async () => {
         mainProcessMemory: unknown; partTiming: unknown[]; processSampleCount: number; processPeaks: unknown[]
       }> = []
       let hairPreparationProfile: Record<string, unknown> | null = null
-      const runs: Array<{ run: number; totalFrames: number; width: number; height: number; fps: string; workers: number; motionConcurrency: number; motionConcurrentPeak: number; milliseconds: number; exportWallMs: number; clickToValidatedWallMs: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean }> = []
+      const runs: Array<{ run: number; totalFrames: number; width: number; height: number; fps: string; workers: number; motionConcurrency: number; motionConcurrentPeak: number; milliseconds: number; exportWallMs: number; clickToValidatedWallMs: number; renderingMilliseconds: number; finalizationMilliseconds: number; rssPeakBytes: number; motionTransitions: number; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; motionCacheTotal?: EditorV6MotionCacheStats; mouthStates: number; audioClips: number; videoInputs: number; audioOutput: boolean; phaseMilliseconds?: unknown; partTiming?: unknown[] }> = []
       try {
         if (hairPresetSlot !== null) {
           const { createWindowsProcessSampler } = require(resolve(__dirname, '../../scripts/editor-v6/windowsProcessSampler.cjs')) as { createWindowsProcessSampler: (scriptPath: string) => NonNullable<typeof processSampler> }
@@ -1299,7 +1309,9 @@ app.whenReady().then(async () => {
           if (report.state !== 'completed' || report.totalFrames !== frameCount || Number(validatedVideoFrames) !== frameCount
             || video?.r_frame_rate !== '30/1' || video.width !== options.width || video.height !== options.height
             || report.motionTransitionsPrepared !== report.motionTransitionsRequired
-            || hairPresetSlot === null && (!report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates || report.videoInputs < 1)
+            || hairPresetSlot === null && (noHairControl
+              ? (!report.motionTransitionsRequired || report.videoInputs < 1)
+              : (!report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates || report.videoInputs < 1))
             || hairPresetSlot !== null && (report.options.hairAnimationPresetSlot !== hairPresetSlot || !hairAnimation?.rigs.length || !report.attempts.some(attempt => attempt.parts.some(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0)))
             || !audioValid
             || singleMotionRun && (!report.motionPreparation || report.motionPreparation.maxConcurrentBakes !== Math.min(motionConcurrency, report.motionPreparation.unique)
@@ -1311,7 +1323,7 @@ app.whenReady().then(async () => {
             const runNumber = index + 1
             hairRuns.push({ run: runNumber, cacheState: index === 0 ? 'cold-motion-cache' : 'warm-motion-cache', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', requestedEncoder: options.encoder, selectedEncoder: report.attempts[0]?.encoder ?? 'unknown', hairPresetSlot, hairPresetFingerprint, hairPreparationRendererMs, hairPreparationWallMs, hairPreparationStages, hairBundleSerializationMs, hairBundleBytes, mainExportWallMs: exportWallMs, clickToValidatedWallMs: hairPreparationWallMs + exportWallMs, exportMilliseconds: report.milliseconds ?? exportWallMs, phaseMilliseconds: report.phaseMilliseconds, audioClips: report.audioClips, audioOutput: audio, videoInputs: report.videoInputs, mouthAnimation: report.mouthAnimation ? { characters: report.mouthAnimation.characters, stateAtlases: report.mouthAnimation.stateAtlases, skippedStates: report.mouthAnimation.skippedStates, staleStates: report.mouthAnimation.staleStates, preparationMilliseconds: report.mouthAnimation.preparationMilliseconds } : null, motionTransitionsPrepared: report.motionTransitionsPrepared, motionCache: report.motionCache ?? null, motionCacheDelta: motionCacheTotal, mainProcessMemory: report.mainProcessMemory ?? null, partTiming: timing, processSampleCount: processSampleCountByRun.get(runNumber) ?? 0, processPeaks: [...processPeakByRunRole.values()].filter(sample => sample.run === runNumber) })
           } else {
-            runs.push({ run: index + 1, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, exportWallMs, clickToValidatedWallMs: hairPreparationWallMs + exportWallMs, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation?.stateAtlases ?? 0, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio })
+            runs.push({ run: index + 1, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, exportWallMs, clickToValidatedWallMs: hairPreparationWallMs + exportWallMs, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation?.stateAtlases ?? 0, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio, phaseMilliseconds: report.phaseMilliseconds, partTiming: report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming) })
           }
         }
         const median = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[Math.floor(sorted.length / 2)] }
@@ -1322,12 +1334,12 @@ app.whenReady().then(async () => {
           console.log(JSON.stringify(hairPreparationProfile, null, 2))
         } else if (hairPresetSlot !== null) {
           const targetSeconds = segmentFrameCount === 600 ? 10 : segmentFrameCount === 1200 ? 15 : null
-          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, targetSeconds, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), runs: hairRuns }
+          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, targetSeconds, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), runs: hairRuns }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           hairStressCompleted = summary.passed
           console.log(JSON.stringify(summary, null, 2))
         } else if (noHairControl) {
-          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: segmentFrameCount, durationSeconds: segmentFrameCount / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, medianClickToValidatedWallMs: median(runs.map(run => run.clickToValidatedWallMs)), runs }
+          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: segmentFrameCount, durationSeconds: segmentFrameCount / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: 'auto', audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, medianClickToValidatedWallMs: median(runs.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), runs }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           console.log(JSON.stringify(summary, null, 2))
         } else {
