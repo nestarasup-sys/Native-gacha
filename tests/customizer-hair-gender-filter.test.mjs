@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFile } from 'node:fs/promises'
 import { filterCustomizerHairStylesByGender, getCustomizerHairLibraryPage } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 
 const hair = (id, gender) => ({
@@ -38,4 +39,17 @@ test('a biblioteca pagina apenas os cabelos elegíveis para o personagem', () =>
 
   assert.deepEqual(page.options.map(({ id }) => id), ['old-set', 'male-set'])
   assert.deepEqual(page.visibleStyles.map(({ id }) => id), ['old-set', 'male-set'])
+})
+
+test('o controle de cabelos do outro gênero aparece em Modelos abaixo do seletor de gênero', async () => {
+  const [picker, page, hairWorkspace] = await Promise.all([
+    readFile('src/renderer/src/features/customizer/CustomizerModelPicker.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/CustomizerHairWorkspace.tsx', 'utf8')
+  ])
+
+  assert.ok(picker.indexOf('customizer-model-hair-filter') > picker.indexOf('customizer-model-gender-band'))
+  assert.match(picker, /Mostrar cabelos \{oppositeGenderLabel\}\?/)
+  assert.match(page, /showOtherGenderHair=\{showOtherGenderHair\}/)
+  assert.doesNotMatch(hairWorkspace, /Mostrar cabelos/)
 })

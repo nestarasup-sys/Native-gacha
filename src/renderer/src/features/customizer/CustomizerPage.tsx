@@ -737,6 +737,8 @@ export function CustomizerPage() {
               gender={selectedCharacter?.customization.gender ?? 'female'}
               genderDisabled={!selectedCharacter}
               onGenderChange={(gender) => { void saveCharacterCustomization({ gender }) }}
+              showOtherGenderHair={showOtherGenderHair}
+              onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
               loading={catalogLoading}
               onSelect={(model) => void selectCatalogModel(model)}
             />}

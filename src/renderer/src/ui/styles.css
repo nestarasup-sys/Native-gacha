@@ -694,10 +694,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-other-category-tabs button span { max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .customizer-hair-workspace { min-width:0;min-height:0;flex:1;display:flex;flex-direction:column;padding:3px; }
 .customizer-hair-workspace>.customizer-catalog-empty { min-height:0;flex:1; }
-.customizer-hair-layout { width:100%;height:auto;min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:6px; }
-.customizer-hair-gender-filter { min-width:0;min-height:28px;flex:none;display:flex;align-items:center;gap:7px;padding:3px 6px;color:#5f4c70;font-size:clamp(9px,.78vw,11px);font-weight:750;line-height:1.2;cursor:pointer; }
-.customizer-hair-gender-filter input { width:14px;height:14px;flex:none;margin:0;accent-color:#cf559e;cursor:pointer; }
-.customizer-hair-gender-filter input:disabled { cursor:default; }
+.customizer-hair-layout { width:100%;height:100%;min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:6px; }
 .customizer-hair-color-controls { min-width:0;min-height:0;display:grid;grid-template-rows:minmax(0,1fr) auto;gap:5px;padding:5px;border:2px solid #514183;border-radius:5px;background:#171a30; }
 .customizer-hair-palette-editor { min-width:0;min-height:0;display:grid;grid-template-rows:auto minmax(0,1fr);gap:5px; }
 .customizer-hair-palette-title { min-width:0;display:flex;flex-wrap:wrap;align-items:baseline;gap:1px 6px;color:#fff; }
@@ -764,8 +761,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-character-asset-preview { position:relative;display:block;width:100%;height:100%;min-width:0;min-height:0;padding:0;color:inherit; }
 .customizer-character-asset-preview img { display:block;width:100%;height:100%;object-fit:contain;object-position:center; }
 .customizer-palette-compatibility-notice { position:absolute;left:2px;right:2px;bottom:2px;padding:2px 4px;border-radius:4px;background:rgba(255,248,228,.94);color:#79510c;font-size:9px;line-height:1.2;text-align:center;pointer-events:none; }
-.customizer-hair-library { width:100%;height:100%;min-width:0;min-height:0;flex:1;display:grid;grid-template-rows:clamp(48px,10%,76px) minmax(28px,auto) minmax(0,1fr) clamp(56px,12%,88px);overflow:hidden;border:3px solid #442067;border-radius:8px;background:#512477; }
-.customizer-hair-library .customizer-hair-gender-filter { padding:2px 10px;color:#f6ebff; }
+.customizer-hair-library { width:100%;height:100%;min-width:0;min-height:0;flex:1;display:grid;grid-template-rows:clamp(48px,10%,76px) minmax(0,1fr) clamp(56px,12%,88px);overflow:hidden;border:3px solid #442067;border-radius:8px;background:#512477; }
 .customizer-hair-library-heading { min-width:0;display:grid;grid-template-columns:clamp(42px,14%,64px) minmax(0,1fr) clamp(42px,14%,64px);align-items:center;gap:6px;padding:4px;border-bottom:3px solid #341455;background:#522478;color:#fff; }
 .customizer-hair-library-heading-mouth { grid-template-columns:clamp(42px,14%,64px) minmax(0,1fr) auto clamp(42px,14%,64px); }
 .customizer-hair-library-heading-mouth .customizer-mouth-blush-group { margin:0; }
@@ -789,7 +785,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-hair-library-page-arrow:disabled { opacity:.38;cursor:default; }
 .customizer-hair-library-pagination span { min-width:110px; }
 @media (max-width:720px) {
-  .customizer-hair-library { grid-template-rows:48px minmax(28px,auto) minmax(0,1fr) 56px; }
+  .customizer-hair-library { grid-template-rows:48px minmax(0,1fr) 56px; }
   .customizer-hair-library-heading { grid-template-columns:42px minmax(0,1fr) 42px;gap:4px; }
   .customizer-hair-library-heading-mouth { grid-template-columns:42px minmax(0,1fr) auto 42px; }
   .customizer-hair-library-remove,.customizer-hair-library-close { max-height:54px;border-width:3px; }
@@ -960,6 +956,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .customizer-model-gender-button.active { box-shadow:0 2px 6px #332d3533; }
 .customizer-model-gender-button:disabled { opacity:.45;cursor:not-allowed; }
 .customizer-model-gender-button:focus-visible { outline:2px solid #332d35;outline-offset:2px; }
+.customizer-model-hair-filter { min-width:0;display:flex;align-items:center;gap:7px;padding:0 5px;color:#5f4c70;font-size:11px;font-weight:700;line-height:1.2;cursor:pointer; }
+.customizer-model-hair-filter input { width:14px;height:14px;flex:none;margin:0;accent-color:#cf559e;cursor:pointer; }
+.customizer-model-hair-filter input:disabled { cursor:default; }
 .customizer-new-character-head-size { flex:0 0 auto;display:grid;gap:8px;padding:10px 12px;border:1px solid #efc4d8;border-radius:9px;background:#fff7fb; }
 .customizer-new-character-head-size-toggle { display:grid;grid-template-columns:auto minmax(0,1fr);align-items:start;gap:8px;color:#75304f;cursor:pointer; }
 .customizer-new-character-head-size-toggle>input { margin:2px 0 0;accent-color:#d65391; }
