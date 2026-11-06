@@ -1,51 +1,103 @@
-# Pesquisa 11 — Exportador, FFmpeg, codecs e áudio
+# Pesquisa 11 — FFmpeg/ffprobe: raw BGRA, H.264, Turbo, áudio e validação MP4
 
-**Status:** **ROTEIRO ABERTO — PESQUISA PROFUNDA NÃO EXECUTADA.**  
-**Criado:** 06/11/2026 · **Base:** `Dev-V2@c636ff03` · **Pré-requisito:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
+**Estado:** PESQUISADA EM CÓDIGO E DOCUMENTAÇÃO PRIMÁRIA · RUNTIME/TESTES NÃO EXECUTADOS.
+**Data:** 06/11/2026. **Base estática:** Dev-V2 (commit `5166de7`, antes dos documentos deste Grupo A). Revalidar HEAD e working tree local antes de implementar.
 
-> Este arquivo define a investigação que falta fazer. Os links de código foram verificados na árvore do repositório; isso **não** significa que a tecnologia foi estudada profundamente ou que houve benchmark.
+## Questão e critério de saída
 
-## Pergunta de pesquisa
+O que custa tempo entre frame pronto e MP4 final validado? Quais filtros e codecs são realmente usados? Como comparar mudanças de encoder sem mascarar custo de criar cada quadro?
 
-Quais fases gastam tempo real desde o clique até MP4 e quais formatos/filtros/encoders preservam 1080p30 com áudio e sobreposição?
+## Evidências verificadas no código do aplicativo
 
-## Caminhos reais do aplicativo a percorrer
+1. **[CÓDIGO]** `EditorV6ExportPanel.tsx:15` fixa perfil padrão `1920×1080`, `turbo:true`, `forceTurbo1080:true`, `encoder:'cpu'`, boca loop e hair reaction; UI não escolhe automaticamente AMD por existir GPU.
 
-- [`electron/domains/editorV6/exportRunner.ts`](../../../../electron/domains/editorV6/exportRunner.ts)
-- [`electron/domains/editorV6/exportIpc.ts`](../../../../electron/domains/editorV6/exportIpc.ts)
-- [`electron/domains/editorV6/exportWorkers.ts`](../../../../electron/domains/editorV6/exportWorkers.ts)
-- [`src/shared/editorV6Export.ts`](../../../../src/shared/editorV6Export.ts)
-- [`src/shared/editorV6VideoComposition.ts`](../../../../src/shared/editorV6VideoComposition.ts)
+2. **[CÓDIGO]** `src/shared/editorV6Export.ts:32–52` valida frames do projeto, 1080p Turbo e cria duas partes para intervalo com dois ou mais quadros; áudio/vídeo têm intervalos em frames lógicos.
 
-Para cada caminho: localizar importadores/chamadores, dono do dado, fonte do recurso, prévia, exportação, efeitos sobre Studio/Customizador/Fabricador e alterações persistidas. Conferir as chamadas no HEAD **e no checkout local**, não apenas no commit de base.
+3. **[CÓDIGO]** `editorV6ExportCommands.ts:24–41` cria snapshot desligado do Immer e **pode preparar cabelo antes de iniciar o job do Main**. O relatório de exportRunner sozinho não cobre necessariamente todo tempo de clique.
 
-## Rodada de investigação obrigatória
+4. **[CÓDIGO]** `exportRunner.ts:139–162` exige Windows (`win32`) para esse exportador BGRA, fixa fps 30 e identifica necessidade de sobreposição de mídia. `:101–112` monta opções de codificação H.264 e yuv420p/BT709.
 
-1. [ ] **[CÓDIGO]** Inspecionar rawvideo BGRA por stdin, filtros, partes Turbo, concat e validar FFprobe.
-2. [ ] **[CÓDIGO + FONTE OFICIAL]** Discriminar encoder CPU padrão, auto/hardware, áudio, PTS, range de frames e seam.
-3. [ ] **[EXPERIMENTO]** Comparar custo de encoder vs geração de frames e finalização em mesmas condições.
-4. [ ] Inspecionar versões, APIs e limitações do binário Windows real.
-5. [ ] Analisar alternativas, custo de migração, paridade visual, dados, riscos e rollback.
-6. [ ] Publicar resultados negativos e pendências, e atualizar `MATRIZ_DE_OPORTUNIDADES.md`.
+5. **[CÓDIGO]** `exportRunner.ts:214–225` prepara mouth loops por trecho; `:238–295` cria FFmpeg, define filtros de vídeos overlay e `-f rawvideo -pixel_format bgra -video_size` com 30fps, e alimenta stdin com frames do worker.
 
-## Fontes oficiais candidatas (a confirmar na pesquisa)
+6. **[CÓDIGO]** `exportRunner.ts:274–285` espera `worker.frame` e o callback de escrita `stdin.write`, registrando `ffmpegWriteMs`; o callback de stream não necessariamente iguala tempo de CPU efetivo de codificação.
 
-- https://ffmpeg.org/ffmpeg.html — **fonte a verificar em profundidade na rodada 11; compatibilidade com o build ainda não comprovada**.
-- https://ffmpeg.org/ffmpeg-filters.html — **fonte a verificar em profundidade na rodada 11; compatibilidade com o build ainda não comprovada**.
-- https://ffmpeg.org/ffmpeg-formats.html — **fonte a verificar em profundidade na rodada 11; compatibilidade com o build ainda não comprovada**.
+7. **[CÓDIGO]** `exportRunner.ts:372` testa `h264_nvenc`, `h264_qsv`, `h264_amf`, `h264_mf`, `libopenh264` em modo `auto`; CPU explícito escolhe `libopenh264`. Não misturar hardware/CPU no A/B.
 
-**Regra:** não afirmar que a pesquisa desses sites está concluída só porque a URL consta aqui. Registrar páginas lidas, data, trecho relevante e vínculo com o código.
+8. **[CÓDIGO]** `exportRunner.ts:375–450` valida características das partes H.264 antes de concatenação stream-copy, planeja `atrim`,`asetpts`,`aresample`,`adelay`,`amix` e `apad` quando há áudio e tenta recuperar fontes danificadas com aviso sem publicar MP4 ausente.
 
-## Gate de teste e critério de conclusão
+9. **[CÓDIGO]** `exportRunner.ts:440–497` usa ffprobe e validação de emendas/pacotes; publicação de MP4 ocorre após checks. Nunca medir somente tempo até `stdin.end()`.
 
-MP4 H.264 íntegro, 150/300 frames, sem alteração visual, áudio e cancelamento intactos.
+10. **[CÓDIGO]** `exportIpc.ts:64–68` resolve `ffmpeg.exe`/`ffprobe.exe` do diretório de ferramentas da aplicação; versões reais dependem do binário embarcado.
 
-### Risco que não pode ser ignorado
+11. **[CÓDIGO]** `src/shared/editorV6Export.ts:73–81` define campos de timings e contadores incluindo `captureStaleReadbacks`/`hairRasterPixels`; `exportRunner.ts` agrega em relatório por parte e fase.
 
-Não otimizar encode removendo mídia/áudio, nem misturar GPU/CPU entre grupos A/B.
+## Pesquisa nas fontes oficiais
 
-## Integração com o plano
+1. **[FONTE OFICIAL] [FFmpeg formats](https://ffmpeg.org/ffmpeg-formats.html)** — Demuxer concat exige streams compatíveis em codecs/time base; timestamps podem criar gaps quando duração errada.
 
-Abrir tarefas no [plano executável](../PLANO_EXECUTAVEL.md) somente após demonstrar o comportamento no código, registrar o que pode melhorar e propor experimento falsificável. Um resultado sem benchmark **não** autoriza refatoração em produção.
+2. **[FONTE OFICIAL] [FFmpeg filters](https://ffmpeg.org/ffmpeg-filters.html)** — Filtros `overlay`, `atrim`, `asetpts`, `aresample`,`adelay`,`amix`,`apad` possuem sincronismo e políticas de EOF que precisam preservar os clips do projeto.
 
-**Primeiro próximo passo:** completar a leitura dos arquivos acima, registrar chamadas cruzadas e classificar [CÓDIGO]/[FONTE OFICIAL]/[HIPÓTESE]/[A CONFIRMAR]/[MEDIDO].
+3. **[FONTE OFICIAL] [FFmpeg ffprobe](https://ffmpeg.org/ffprobe.html)** — `-show_frames`, `-show_packets`, `-count_packets`, `-count_frames` não são intercambiáveis sem condições de stream/perfil.
+
+4. **[FONTE OFICIAL] [FFmpeg ffmpeg](https://ffmpeg.org/ffmpeg.html)** — Entrada rawvideo precisa definir dimensões/pixel format/frame rate explicitamente; pipeline FFmpeg recebe bytes, não DOM/SVG.
+
+5. **[FONTE OFICIAL] [Node Stream](https://nodejs.org/api/stream.html)** — `writable.write` pode sinalizar backpressure; ignorá-lo provoca buffers crescentes e RSS alto.
+
+**Limite de proveniência:** informações de documentação oficial foram confrontadas conceitualmente com as APIs usadas no código, mas o EXE e as versões efetivas instaladas não foram executados. Não existe medição própria neste estudo.
+
+## Análise causal e possibilidades de mudança
+
+### 1. O vídeo movimenta gigabytes de pixels brutos
+
+300×1920×1080×4 = 2.488.320.000 bytes (~2,32 GiB) de BGRA único antes de cópias, mesmo com MP4 pequeno. Rota com duas camadas background/foreground pode dobrar fluxo bruto por frame, mas não necessariamente a RAM simultânea.
+
+### 2. Encoder não pode acelerar física/atlas
+
+Se custo dominante estiver na preparação capilar, trocar codec para AMF pode reduzir só uma fração pequena do total. Primeiro extrair tempo real preparação/render/capture/FFmpeg/concat.
+
+### 3. Codec de áudio e vídeo devem ser tratados separadamente
+
+Em projeto com mídia externa, `overlay` pode usar decodificação adicional e duas imagens de fundo/foreground; audio mix tem filtros e timestamps. Testar só personagem sem vídeo não aprova backend para casos reais.
+
+### 4. Paridade de cor
+
+`yuv420p`/BT709/TV range fixos no encoder têm efeito em tonalidade e bordas. Mesmo MP4 1080p/30 não prova visual idêntico se conversão RGBA/alpha mudar.
+
+### 5. Stream copy é otimização existente
+
+A junção `-c:v copy` elimina recodificação quando as partes são compatíveis. Alterar o encoder por lane ou os parâmetros pode impedir concatenação segura.
+
+### 6. Métricas de parede vs acumuladores
+
+Com duas lanes, soma de `ffmpegWriteMs`, `renderMs` etc. pode exceder o tempo total; comparar tempo do primeiro clique até output publicado, e subfases por parte.
+
+## Experimentos propostos (ainda não rodados)
+
+1. **FFM-01:** Mesmo fixture 150/300 frames, CPU H.264: separar tempo prep, worker startup, geração, pipe, encode, mux, probes, concat e validação.
+
+2. **FFM-02:** Repetir com mouth loop + áudio + vídeo overlay em cenas autorizadas; comparar frames/seams e duração de mídia.
+
+3. **FFM-03:** PoC CPU vs auto/AMF mantendo resoluções, qualidade-alvo e mesmas frames; registrar qual encoder foi REALMENTE selecionado.
+
+4. **FFM-04:** Capturar perfil `ffmpeg -version`, `-buildconf`, `-encoders` e `ffprobe -version` do EXE/ambiente, registrar licenças e opção de distribuição.
+
+5. **FFM-05:** Stress de cancelamento/falha: nenhum mp4 parcial publicado, reaproveitamento de frame não provoca corrupção em duas partes Turbo.
+
+6. **FFM-06:** Testar `ffprobe -count_packets` vs decodificação em perfis com e sem B-frames e tempos de emenda em amostras controladas.
+
+## Gates de segurança, qualidade e integração
+
+- H.264 MP4 válido com 1920×1080, 30fps, contagem exata, áudio e qualidade equivalentes.
+- Manter encoder CPU padrão como referência; otimização de hardware deve ter fallback real validado.
+- Não tratar H.264 MP4 padrão como formato RGBA com transparência.
+- Não eliminar mixagem, cabeçalho faststart, tratamento de fonte inválida, cancelamento ou auditoria de emendas.
+- Não publicar informações privadas ou caminhos de mídia em logs/CI.
+- Comparar tempo total incluindo preparação de cabelo que ocorre fora do job Main.
+
+## Veredito da pesquisa
+
+**O fluxo FFmpeg é tecnicamente bem defendido por validação e stream-copy; não parece o primeiro candidato a reescrever.** O estudo recomenda prova de custo de encode/cópias em 300 frames antes de AMF, WebCodecs ou transportes GPU. O desvio de 50s→9s com cabelo exige separar geração de pixels do trabalho de FFmpeg.
+
+**[A CONFIRMAR]** Custo específico do encoder no Windows alvo, efeito da seleção AMF, impacto de filtros de vídeo externo, comportamento do pipe em hardware real e qual tempo do pre-job está fora do relatório.
+
+**Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).

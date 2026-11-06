@@ -1,51 +1,92 @@
-# Pesquisa 09 — Editor V6: timeline, prévia e estado
+# Pesquisa 09 — React/DOM e relógio do Editor V6: timeline, prévia, memoização e estado
 
-**Status:** **ROTEIRO ABERTO — PESQUISA PROFUNDA NÃO EXECUTADA.**  
-**Criado:** 06/11/2026 · **Base:** `Dev-V2@c636ff03` · **Pré-requisito:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
+**Estado:** PESQUISADA EM CÓDIGO E DOCUMENTAÇÃO PRIMÁRIA · RUNTIME/TESTES NÃO EXECUTADOS.
+**Data:** 06/11/2026. **Base estática:** Dev-V2 (commit `5166de7`, antes dos documentos deste Grupo A). Revalidar HEAD e working tree local antes de implementar.
 
-> Este arquivo define a investigação que falta fazer. Os links de código foram verificados na árvore do repositório; isso **não** significa que a tecnologia foi estudada profundamente ou que houve benchmark.
+## Questão e critério de saída
 
-## Pergunta de pesquisa
+Quais atualizações de estado e de DOM acontecem em playback, scrub, drag, face patch e exportação? Quais já estão otimizadas e quais causam commits, long tasks e cenas recompostas?
 
-Qual é a fonte da verdade do frame e qual é o custo de scrub, drag, seleção, timeline longa, re-renderizações e face async?
+## Evidências verificadas no código do aplicativo
 
-## Caminhos reais do aplicativo a percorrer
+1. **[CÓDIGO]** `src/renderer/src/ui/App.tsx:33` aplica `<Profiler>` por rota; `src/renderer/src/ui/performanceDiagnostics.ts` coleta `actualDuration`, long tasks e cenas. Ou seja, instrumentação existe e deve ser reutilizada.
 
-- [`src/shared/editorV6TimelineScene.ts`](../../../../src/shared/editorV6TimelineScene.ts)
-- [`src/shared/editorV6TimelineCore.ts`](../../../../src/shared/editorV6TimelineCore.ts)
-- [`src/renderer/src/features/editorV6/EditorV6Page.tsx`](../../../../src/renderer/src/features/editorV6/EditorV6Page.tsx)
-- [`src/renderer/src/features/editorV6/EditorV6Timeline.tsx`](../../../../src/renderer/src/features/editorV6/EditorV6Timeline.tsx)
-- [`src/renderer/src/features/editorV6/useEditorV6Playback.ts`](../../../../src/renderer/src/features/editorV6/useEditorV6Playback.ts)
-- [`src/renderer/src/features/editorV6/EditorV6PlaybackScene.tsx`](../../../../src/renderer/src/features/editorV6/EditorV6PlaybackScene.tsx)
+2. **[CÓDIGO]** `EditorV6Page.tsx:64–986` compõe a página, com seleção, edição, personagem, painéis e exportação; `:926` e `:955` colocam Profiler na cena e na timeline. O tamanho da página sozinho NÃO demonstra render de toda UI a cada frame.
 
-Para cada caminho: localizar importadores/chamadores, dono do dado, fonte do recurso, prévia, exportação, efeitos sobre Studio/Customizador/Fabricador e alterações persistidas. Conferir as chamadas no HEAD **e no checkout local**, não apenas no commit de base.
+3. **[CÓDIGO]** `useEditorV6Playback.ts:7–51` calcula frame de playback com `requestAnimationFrame`, publica em relógio externo e só sincroniza estado mais amplo sob condições definidas. É uma otimização existente de UI.
 
-## Rodada de investigação obrigatória
+4. **[CÓDIGO]** `EditorV6PlaybackScene.tsx:17–39` assina frame externo, usa `useMemo` para `resolveEditorV6SceneAtFrame`, compõe patches faciais async e renderiza `SceneSurface` sob Profiler.
 
-1. [ ] **[CÓDIGO]** Mapear frame lógico, RAF, seleção externa, reactCommit, virtualização horizontal e índices.
-2. [ ] **[CÓDIGO + FONTE OFICIAL]** Provar igualdade de preview/export em seek, borda de bloco e transição.
-3. [ ] **[EXPERIMENTO]** Inspecionar SceneSurface, face async e media element em projetos longos.
-4. [ ] Inspecionar versões, APIs e limitações do binário Windows real.
-5. [ ] Analisar alternativas, custo de migração, paridade visual, dados, riscos e rollback.
-6. [ ] Publicar resultados negativos e pendências, e atualizar `MATRIZ_DE_OPORTUNIDADES.md`.
+5. **[CÓDIGO]** `EditorV6Timeline.tsx:33–83` separa `TimelineRows` memoizados e janela de elementos visíveis; `:110–112` computa range conforme scroll/zoom e `:306` desenha cursor por overlay.
 
-## Fontes oficiais candidatas (a confirmar na pesquisa)
+6. **[CÓDIGO]** `SceneSurface.tsx:99–125` possui comparação específica de props (`sceneLayerPropsEqual`) e `memo(SceneLayer)`, e não uma atualização cega de todas as imagens.
 
-- https://react.dev/reference/react/Profiler — **fonte a verificar em profundidade na rodada 09; compatibilidade com o build ainda não comprovada**.
-- https://developer.chrome.com/docs/devtools/performance/reference — **fonte a verificar em profundidade na rodada 09; compatibilidade com o build ainda não comprovada**.
+7. **[CÓDIGO]** `editorV6Store.ts:29–78` implementa Zustand com middleware Immer, histórico undo/redo e estado ativo. `editorV6ExportCommands.ts:10–26` cria snapshot usando `current` e `structuredClone` para não atravessar awaits com Immer draft.
 
-**Regra:** não afirmar que a pesquisa desses sites está concluída só porque a URL consta aqui. Registrar páginas lidas, data, trecho relevante e vínculo com o código.
+8. **[CÓDIGO]** `editorV6TimelineScene.ts:25` resolve cena em frame absoluto; `editorV6Export.ts:82–93` constrói visual keys para reuso em export. Os estados de UI e cena têm contratos parcialmente distintos.
 
-## Gate de teste e critério de conclusão
+9. **[CÓDIGO]** `SceneSurface.tsx:75–84` monta HTML media em `foreignObject`; playhead lógico não garante sozinho que o `<video>` decodificou exatamente o timestamp apropriado, exigindo testes de seek/paridade.
 
-Trace medido de scrub/drag/scroll e frames corretos, sem reintroduzir re-render de toda a página.
+## Pesquisa nas fontes oficiais
 
-### Risco que não pode ser ignorado
+1. **[FONTE OFICIAL] [React Profiler](https://react.dev/reference/react/Profiler)** — O callback fornece `actualDuration`, `baseDuration`, `startTime`, `commitTime`; medem React, não raster/compositor Chromium.
 
-Não trocar modelo determinístico por timestamp de renderizador, nem quebrar edição persistida.
+2. **[FONTE OFICIAL] [React memo](https://react.dev/reference/react/memo)** — Uma otimização, não garantia de ausência de render; props novas/references diferentes invalidam memo e contexto interno pode atualizar.
 
-## Integração com o plano
+3. **[FONTE OFICIAL] [RenderingNG](https://developer.chrome.com/docs/chromium/renderingng-architecture)** — Atualização de DOM pode desencadear estilo/layout/paint; animações de compositor podem pular fases dependendo da invalidação.
 
-Abrir tarefas no [plano executável](../PLANO_EXECUTAVEL.md) somente após demonstrar o comportamento no código, registrar o que pode melhorar e propor experimento falsificável. Um resultado sem benchmark **não** autoriza refatoração em produção.
+4. **[FONTE OFICIAL] [DevTools Performance](https://developer.chrome.com/docs/devtools/performance/reference)** — Frame timeline, Main, GPU/Raster e long tasks revelam gargalo após commit React.
 
-**Primeiro próximo passo:** completar a leitura dos arquivos acima, registrar chamadas cruzadas e classificar [CÓDIGO]/[FONTE OFICIAL]/[HIPÓTESE]/[A CONFIRMAR]/[MEDIDO].
+5. **[FONTE OFICIAL] [Immer Performance](https://immerjs.github.io/immer/performance/)** — Structural sharing e no-op podem preservar identidade, mas atualização profunda e clonagem têm custos mensuráveis.
+
+**Limite de proveniência:** informações de documentação oficial foram confrontadas conceitualmente com as APIs usadas no código, mas o EXE e as versões efetivas instaladas não foram executados. Não existe medição própria neste estudo.
+
+## Análise causal e possibilidades de mudança
+
+### 1. Não reescrever relógio que já está isolado
+
+[CÓDIGO] O V6 usa um relógio externo por RAF; seria prematuro 'otimizar playback' centralizando tudo num único Zustand set por frame. A prioridade é medir quedas de frames sob cenas complexas e verificar se causadas pela UI ou preparação de assets.
+
+### 2. Diferenciar atualização de cena e atualização de camada
+
+[HIPÓTESE] `resolveEditorV6SceneAtFrame` pode recalcular estado lógico barato enquanto cabelo/face em PNG custa caro. Medir os dois tempos separadamente. Se `sceneLayerPropsEqual` receber novas refs por mudanças semânticas relevantes, há re-render necessário; se não, estabilizar apenas props específicas.
+
+### 3. Patches faciais assíncronos
+
+[CÓDIGO] `EditorV6PlaybackScene` condiciona a superfície a composições de face; investigar invalidação quando o usuário faz seek rápido e quando a promessa anterior termina fora de ordem. Não afirmar bug sem fixture reproduzida.
+
+### 4. Timeline e elementos visíveis
+
+[CÓDIGO] Windowing de tracks e `TimelineRows` memoizados já existem. Experimento deve priorizar carregamento e drag de projeto longo em vez de substituir a timeline por virtualização genérica redundante.
+
+### 5. Fontes e sincronização de vídeo
+
+[HIPÓTESE] Prévia Chromium e export FFmpeg podem divergir em PTS/seek/color management; criar comparação por frame exato com mídia do fixture.
+
+## Experimentos propostos (ainda não rodados)
+
+1. **UI-01:** Fixture sintética: timeline curta e longa, scrub 0→150→300, gravação de `snapshotUiPerformance()` e trace Main/React/RAF.
+
+2. **UI-02:** Drag de bloco sobre outros tracks, scroll e zoom, medindo commits e long tasks sem perder estado/undo.
+
+3. **UI-03:** Boca e face em personagem único; comparar sceneResolve, composição de patch e raster em cada quadro.
+
+4. **UI-04:** HTML `<video>` com seek e início/corte de clipe, comparação do frame lógico no preview e MP4 final.
+
+5. **UI-05:** Check de React.memo props identity nos elementos estáticos vs animados com debugger/Profiler; propor alterações somente nos componentes provadamente quentes.
+
+## Gates de segurança, qualidade e integração
+
+- Não alterar arquivo salvo, IDs, snapping, duração em frames, undo/redo ou lógica de transição.
+- Não inferir que React Compiler está instalado por existir em docs modernas; configuração observada usa plugin React padrão.
+- Não converter clock lógico em wall clock de `requestAnimationFrame` do worker de export.
+- Aceite inclui UX (latência, input), frame parity com export, React+Raster medidos e memória estável.
+- Experimentos de mídia externos usam cópias autorizadas, jamais perfil pessoal.
+
+## Veredito da pesquisa
+
+**Otimização inicial recomendada:** auditar as camadas já existentes com Profiler/DevTools antes de mexer na arquitetura. A prévia já possui isolamento de clock, memoização e virtualização. Os potenciais problemas restantes são invalidação cruzada de face/asset e custo da superfície SVG/Canvas, não ausência dessas técnicas.
+
+**[A CONFIRMAR]** Custos reais de playback longo, seek em vídeo de biblioteca, React tree update sob stress e efeitos de flags de diagnóstico; sem dados não há ganho quantitativo.
+
+**Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).
