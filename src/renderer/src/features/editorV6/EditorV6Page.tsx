@@ -292,12 +292,19 @@ export function EditorV6Page() {
   const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => projectCreation.duplicateStudio(sourceSummary)
 
   useEffect(() => {
-    if (!activeEditorV6 || dragRef.current) return
-    markEditorV6Unsaved()
+    if (!activeEditorV6) {
+      expressionSaveSignatureRef.current = null
+      return
+    }
+    if (dragRef.current) return
     const signature = sceneCharacterProjection.autosaveSignature
     const previous = expressionSaveSignatureRef.current
     expressionSaveSignatureRef.current = { studioId: activeEditorV6.id, value: signature }
-    if (previous?.studioId === activeEditorV6.id && previous.value !== signature) {
+    // Loading a persisted project establishes the autosave baseline; opening it
+    // must not mark it dirty and immediately rewrite an otherwise untouched file.
+    if (previous?.studioId !== activeEditorV6.id) return
+    markEditorV6Unsaved()
+    if (previous.value !== signature) {
       void saveActiveEditorV6Project(activeEditorV6)
       return
     }
