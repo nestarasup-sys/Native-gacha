@@ -40,7 +40,6 @@ import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
 import { filterCustomizerHairStylesByGender, getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
-import { filterCustomizerWardrobeSetsByGender } from './customizerWardrobeCatalog'
 import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { CustomizerHairWorkspace } from './CustomizerHairWorkspace'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -259,10 +258,6 @@ export function CustomizerPage() {
   const eligibleHairStyles = useMemo(
     () => filterCustomizerHairStylesByGender(hairStyles, selectedCharacterGender, showOtherGenderHair),
     [hairStyles, selectedCharacterGender, showOtherGenderHair]
-  )
-  const eligibleWardrobeSets = useMemo(
-    () => filterCustomizerWardrobeSetsByGender(wardrobeSets, selectedCharacterGender, showOtherGenderClothes),
-    [wardrobeSets, selectedCharacterGender, showOtherGenderClothes]
   )
   const hairLibraryPageView = useMemo(
     () => getCustomizerHairLibraryPage(eligibleHairStyles, hairLibraryPart, hairLibraryPage),
@@ -533,12 +528,13 @@ export function CustomizerPage() {
     return createWardrobePanelCandidateIndex({
       panels,
       selectedModelSlot: selectedCatalogModelSlot,
-      wardrobeSets: eligibleWardrobeSets,
+      wardrobeSets,
       wardrobeDetails,
       faceComponentAssets,
-      faceComponentDetails
+      faceComponentDetails,
+      wardrobeGenderFilter: { gender: selectedCharacterGender, showOtherGender: showOtherGenderClothes }
     })
-  }, [eligibleWardrobeSets, faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels])
+  }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, selectedCharacterGender, showOtherGenderClothes, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
   const wardrobeCatalogWorkspaceProps = {
     loading: wardrobeLoading,
     catalogError,

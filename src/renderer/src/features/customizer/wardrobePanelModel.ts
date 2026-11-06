@@ -2,7 +2,7 @@
  * Os PNGs continuam fontes permanentes do Fabricador DEV; nenhuma escrita aqui.
  */
 import type { FaceComponentAsset, FaceComponentAssetSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
-import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
+import type { CharacterGender, CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
 import type { ClothingGroupCategory } from '../../characters/characterRenderer'
 
 export type WardrobePanel = { id: CustomizerWardrobePaletteKey; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
@@ -176,6 +176,17 @@ export function wardrobePanelGroupMatchesComponent(
 }
 
 export type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; pairedComponents?: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
+export type WardrobePanelGenderFilter = { gender: CharacterGender; showOtherGender: boolean }
+
+function wardrobePanelComponentMatchesGender(
+  summary: WardrobeSetSummary,
+  component: WardrobeSet['components'][number],
+  genderFilter: WardrobePanelGenderFilter | undefined
+): boolean {
+  if (!genderFilter || component.category !== 'camisa' || genderFilter.showOtherGender) return true
+  if (summary.previewGender !== 'female' && summary.previewGender !== 'male') return true
+  return summary.previewGender === genderFilter.gender
+}
 
 export function wardrobePanelCandidates(
   panel: WardrobePanel,
@@ -183,7 +194,8 @@ export function wardrobePanelCandidates(
   wardrobeSets: WardrobeSetSummary[],
   wardrobeDetails: Record<string, WardrobeSet>,
   faceComponentAssets: FaceComponentAssetSummary[],
-  faceComponentDetails: Record<string, FaceComponentAsset>
+  faceComponentDetails: Record<string, FaceComponentAsset>,
+  genderFilter?: WardrobePanelGenderFilter
 ): WardrobePanelCandidate[] {
   const wardrobeCandidates = wardrobeSets
     .filter((summary) => summary.modelSlot === selectedModelSlot)
@@ -191,6 +203,7 @@ export function wardrobePanelCandidates(
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
       if (!set) return []
       const components = wardrobeComponentsForPanel(set, panel)
+        .filter((component) => wardrobePanelComponentMatchesGender(summary, component, genderFilter))
       if (!components.length) return []
       if (isSleeveUpperPanel(panel)) {
         return components
@@ -261,7 +274,8 @@ export function createWardrobePanelCandidateIndex({
   wardrobeSets,
   wardrobeDetails,
   faceComponentAssets,
-  faceComponentDetails
+  faceComponentDetails,
+  wardrobeGenderFilter
 }: {
   panels: readonly WardrobePanel[]
   selectedModelSlot: number | null
@@ -269,6 +283,7 @@ export function createWardrobePanelCandidateIndex({
   wardrobeDetails: Record<string, WardrobeSet>
   faceComponentAssets: FaceComponentAssetSummary[]
   faceComponentDetails: Record<string, FaceComponentAsset>
+  wardrobeGenderFilter?: WardrobePanelGenderFilter
 }): ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]> {
   const index = new Map<WardrobePanel['id'], readonly WardrobePanelCandidate[]>()
   for (const panel of panels) {
@@ -278,7 +293,8 @@ export function createWardrobePanelCandidateIndex({
       wardrobeSets,
       wardrobeDetails,
       faceComponentAssets,
-      faceComponentDetails
+      faceComponentDetails,
+      wardrobeGenderFilter
     ))
   }
   return index

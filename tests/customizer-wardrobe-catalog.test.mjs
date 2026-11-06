@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { useCustomizerWardrobePanelActions } from '../src/renderer/src/features/customizer/useCustomizerWardrobePanelActions.ts'
-import { filterCustomizerWardrobeSetsByGender, loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
+import { loadCustomizerWardrobeCatalog } from '../src/renderer/src/features/customizer/customizerWardrobeCatalog.ts'
 import { getCustomizerHairLibraryPage, loadCustomizerHairDetails, loadCustomizerHairLibraryPageDetails, retainCustomizerHairDetailsForModel } from '../src/renderer/src/features/customizer/customizerHairCatalog.ts'
 import {
   upperWardrobePanels,
@@ -30,17 +30,52 @@ const set = (id, category) => ({
   updatedAt: '2026-10-29T00:00:00.000Z'
 })
 
-test('filtra roupas pelo gênero e mantém conjuntos antigos sem marcação disponíveis para todos', () => {
-  const summaries = [
-    summary('old-set'),
-    { ...summary('female-set'), previewGender: 'female' },
-    { ...summary('male-set'), previewGender: 'male' }
-  ]
+test('sem permitir o outro gênero, oculta só as camisas opostas e mantém calças, mangas e peças antigas', () => {
+  const component = (id, category, attachedPartId = 'body', sleeveSide, sleeveSegment) => ({
+    id, name: id, category, attachedPartId, ...(sleeveSide ? { sleeveSide } : {}), ...(sleeveSegment ? { sleeveSegment } : {}),
+    x: 0, y: 0, width: 10, height: 10, rotation: 0, dataUrl: 'data:image/png;base64,AA=='
+  })
+  const createSet = (id, previewGender) => ({
+    schemaVersion: 1,
+    edition: 1,
+    id,
+    modelSlot: 1,
+    modelName: 'Modelo',
+    name: id,
+    width: 20,
+    height: 20,
+    components: [
+      component(`${id}-shirt`, 'camisa'),
+      component(`${id}-pants`, 'calca-coxa'),
+      component(`${id}-sleeve`, 'manga-superior', 'braço esquerdo', 'left', 'upper')
+    ],
+    updatedAt: '2026-10-29T00:00:00.000Z',
+    ...(previewGender ? { previewGender } : {})
+  })
+  const sets = [createSet('male-set', 'male'), createSet('female-set', 'female'), createSet('legacy-set')]
+  const summaries = sets.map((item) => ({ ...summary(item.id), ...(item.previewGender ? { previewGender: item.previewGender } : {}) }))
+  const panels = [upperWardrobePanels[0], upperWardrobePanels[2], lowerWardrobePanels[0]]
+  const getCandidates = (gender, showOtherGender) => createWardrobePanelCandidateIndex({
+    panels,
+    selectedModelSlot: 1,
+    wardrobeSets: summaries,
+    wardrobeDetails: Object.fromEntries(sets.map((item) => [`1:${item.id}`, item])),
+    faceComponentAssets: [],
+    faceComponentDetails: {},
+    wardrobeGenderFilter: { gender, showOtherGender }
+  })
+  const ids = (index, panel) => index.get(panel)?.map((candidate) => candidate.summary.id)
+  const forFemale = getCandidates('female', false)
+  const forMale = getCandidates('male', false)
 
-  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'female', false).map(({ id }) => id), ['old-set', 'female-set'])
-  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'male', false).map(({ id }) => id), ['old-set', 'male-set'])
-  assert.deepEqual(filterCustomizerWardrobeSetsByGender(summaries, 'male', true).map(({ id }) => id), ['old-set', 'female-set', 'male-set'])
-  assert.deepEqual(summaries.map(({ id }) => id), ['old-set', 'female-set', 'male-set'])
+  assert.deepEqual(ids(forFemale, 'shirt'), ['female-set', 'legacy-set'])
+  assert.deepEqual(ids(forFemale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forFemale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'shirt'), ['male-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(getCandidates('male', true), 'shirt'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(getCandidates('female', true), 'shirt'), ['male-set', 'female-set', 'legacy-set'])
 })
 
 test('controle de roupas usa o checkbox do gênero oposto em Modelos', async () => {
@@ -55,7 +90,7 @@ test('controle de roupas usa o checkbox do gênero oposto em Modelos', async () 
   assert.match(picker, /showOtherGenderClothes/)
   assert.match(page, /showOtherGenderClothes=\{showOtherGenderClothes\}/)
   assert.match(page, /onShowOtherGenderClothesChange=\{\(show\) => \{ setShowOtherGenderClothes\(show\); setWardrobeLibraryPage\(0\) \}\}/)
-  assert.match(page, /filterCustomizerWardrobeSetsByGender\(wardrobeSets, selectedCharacterGender, showOtherGenderClothes\)/)
+  assert.match(page, /wardrobeGenderFilter: \{ gender: selectedCharacterGender, showOtherGender: showOtherGenderClothes \}/)
   assert.equal((importFlow.match(/previewGender: 'female'/g) ?? []).length, 3)
 })
 
