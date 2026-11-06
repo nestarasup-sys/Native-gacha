@@ -111,6 +111,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [dirty, setDirty] = useState(false)
   const [zoom, setZoom] = useState(1)
   const [deformMode, setDeformMode] = useState(false)
+  const [deformTool, setDeformTool] = useState<'deform' | 'smooth'>('deform')
   const [deformReady, setDeformReady] = useState(false)
   const [deformRadius, setDeformRadius] = useState(52)
   const [deformStrength, setDeformStrength] = useState(70)
@@ -778,15 +779,15 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
           {hairWorkspace?.back && visibleDraft('back') && (deformMode && selectedSide === 'back'
-            ? <HairDeformationPreview side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('back', result)} onError={setError} />
+            ? <HairDeformationPreview side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} tool={deformTool} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('back', result)} onError={setError} />
             : <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />)}
             <img className="hair-dev-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo de referência" draggable={false} />
             {project && <HairFaceReference project={project} head={head} />}
           {hairWorkspace?.front && visibleDraft('front') && (deformMode && selectedSide === 'front'
-            ? <HairDeformationPreview side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('front', result)} onError={setError} />
+            ? <HairDeformationPreview side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} tool={deformTool} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('front', result)} onError={setError} />
             : <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />)}
           {hairWorkspace?.fringe && hairWorkspace.transforms.fringe && visibleDraft('fringe') && (deformMode && selectedSide === 'fringe'
-            ? <HairDeformationPreview side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('fringe', result)} onError={setError} />
+            ? <HairDeformationPreview side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} tool={deformTool} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('fringe', result)} onError={setError} />
             : <HairPiece side="fringe" asset={hairWorkspace.fringe} transform={hairWorkspace.transforms.fringe} head={head} selected={selectedSide === 'fringe'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('fringe', dataUrl)} />)}
           </div>}
           {(loadingModels || loadingProject || loadingHair || loadingStyle) && <span className="hair-dev-message">Carregando modelo e cabelos…</span>}
@@ -822,7 +823,11 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
             {deformMode && <>
               <label className="hair-dev-range"><span><b>Raio do pincel</b><output>{deformRadius}px</output></span><input aria-label="Raio do pincel de deformação do cabelo" type="range" min="4" max="160" step="1" value={deformRadius} disabled={!deformReady || saving} onChange={(event) => setDeformRadius(Number(event.target.value))} /></label>
               <label className="hair-dev-range"><span><b>Força</b><output>{deformStrength}%</output></span><input aria-label="Força do pincel de deformação do cabelo" type="range" min="10" max="100" step="1" value={deformStrength} disabled={!deformReady || saving} onChange={(event) => setDeformStrength(Number(event.target.value))} /></label>
-              <small>{deformReady ? 'Arraste na peça para empurrar a malha. A mudança fica no rascunho até salvar.' : 'Preparando a imagem para deformação…'}</small>
+              <div className="hair-dev-deformation-tools" role="group" aria-label="Ferramenta de ajuste natural">
+                <button type="button" className={deformTool === 'deform' ? 'active' : ''} aria-pressed={deformTool === 'deform'} disabled={!deformReady || saving} onClick={() => setDeformTool('deform')}>Deformar</button>
+                <button type="button" className={deformTool === 'smooth' ? 'active' : ''} aria-pressed={deformTool === 'smooth'} disabled={!deformReady || saving} onClick={() => setDeformTool('smooth')}>Suavizar</button>
+              </div>
+              <small>{deformReady ? deformTool === 'smooth' ? 'Passe sobre as marcas para suavizar a transição sem perder o formato geral.' : 'Arraste na peça para empurrar a malha. Alterações ficam no rascunho até salvar.' : 'Preparando a imagem para deformação…'}</small>
             </>}
           </section>
           <button className="hair-dev-delete-piece" onClick={() => void deleteSelectedPiece()} disabled={saving || loadingHair || loadingStyle || deformMode} type="button"><Icon name="trash" /> Excluir esta peça</button>

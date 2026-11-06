@@ -148,6 +148,67 @@ export function applyImageWarpBrush(
   constrainOffsets(mesh, image)
 }
 
+/** Softens abrupt changes in the local warp field without discarding its overall shape. */
+export function applyImageWarpSmoothBrush(
+  mesh: ImageWarpMesh,
+  image: HTMLImageElement,
+  bounds: ImageWarpBounds,
+  pointer: ImageWarpPoint,
+  radius: number,
+  strength: number
+): void {
+  if (image.naturalWidth <= 0 || image.naturalHeight <= 0 || bounds.width <= 0 || bounds.height <= 0) return
+  const safeRadius = Math.max(1, radius)
+  const safeStrength = Math.max(0, Math.min(1, strength)) * 0.65
+  const originalX = new Float32Array(mesh.offsetX)
+  const originalY = new Float32Array(mesh.offsetY)
+  for (let row = 0; row <= mesh.rows; row += 1) {
+    for (let column = 0; column <= mesh.columns; column += 1) {
+      const index = meshIndex(column, row, mesh.columns)
+      const base = meshPoint(image, column, row, mesh.columns, mesh.rows)
+      const world = pointToWorld({ x: base.x + originalX[index], y: base.y + originalY[index] }, image, bounds)
+      const distance = Math.hypot(world.x - pointer.x, world.y - pointer.y)
+      const influence = Math.exp(-Math.pow(distance / (safeRadius * 0.78), 2) * 1.4)
+      if (influence < 0.005) continue
+      let sumX = 0, sumY = 0, count = 0
+      for (let neighborRow = Math.max(0, row - 1); neighborRow <= Math.min(mesh.rows, row + 1); neighborRow += 1) {
+        for (let neighborColumn = Math.max(0, column - 1); neighborColumn <= Math.min(mesh.columns, column + 1); neighborColumn += 1) {
+          const neighbor = meshIndex(neighborColumn, neighborRow, mesh.columns)
+          sumX += originalX[neighbor]
+          sumY += originalY[neighbor]
+          count += 1
+        }
+      }
+      const blend = influence * safeStrength
+      mesh.offsetX[index] = originalX[index] + (sumX / count - originalX[index]) * blend
+      mesh.offsetY[index] = originalY[index] + (sumY / count - originalY[index]) * blend
+    }
+  }
+  constrainOffsets(mesh, image)
+}
+
+/** Interpolates smoothing along sparse pointer events so the complete brush stroke is covered. */
+export function applyImageWarpSmoothBrushStroke(
+  mesh: ImageWarpMesh,
+  image: HTMLImageElement,
+  bounds: ImageWarpBounds,
+  from: ImageWarpPoint,
+  to: ImageWarpPoint,
+  radius: number,
+  strength: number
+): void {
+  const delta = { x: to.x - from.x, y: to.y - from.y }
+  const distance = Math.hypot(delta.x, delta.y)
+  if (distance <= 0.001) return
+  const steps = Math.max(1, Math.ceil(distance / Math.max(1, radius * 0.2)))
+  for (let step = 1; step <= steps; step += 1) {
+    applyImageWarpSmoothBrush(mesh, image, bounds, {
+      x: from.x + delta.x * (step / steps),
+      y: from.y + delta.y * (step / steps)
+    }, radius, strength)
+  }
+}
+
 /** Interpolates pointer movement so sparse mouse events deform along the complete stroke. */
 export function applyImageWarpBrushStroke(
   mesh: ImageWarpMesh,

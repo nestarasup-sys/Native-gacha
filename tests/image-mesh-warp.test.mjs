@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { applyImageWarpBrushStroke, createImageWarpMesh, drawImageWarp, imageWarpPadding } from '../src/renderer/src/features/fabricator/models/imageMeshWarp.ts'
+import { applyImageWarpBrushStroke, applyImageWarpSmoothBrush, applyImageWarpSmoothBrushStroke, createImageWarpMesh, drawImageWarp, imageWarpPadding } from '../src/renderer/src/features/fabricator/models/imageMeshWarp.ts'
 
 test('a malha sem deslocamentos desenha a imagem diretamente sem costuras triangulares', () => {
   const calls = { drawImage: 0, clip: 0, beginPath: 0 }
@@ -60,6 +60,26 @@ test('o pincel interpolado distribui a deformação pelo caminho inteiro do mous
   assert.ok(mesh.offsetX[at(2, 5)] > 0, 'a região inicial do traço foi afetada')
   assert.ok(mesh.offsetX[at(5, 5)] > 0, 'a região central do traço foi afetada')
   assert.ok(mesh.offsetX[at(8, 5)] > 0, 'a região final do traço foi afetada')
+})
+
+test('o pincel suavizador reduz picos locais sem apagar a forma ao redor', () => {
+  const mesh = createImageWarpMesh(10, 10)
+  const image = { naturalWidth: 100, naturalHeight: 100 }
+  const at = (column, row) => row * (mesh.columns + 1) + column
+  mesh.offsetX[at(5, 5)] = 24
+  applyImageWarpSmoothBrush(mesh, image, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }, { x: 50, y: 50 }, 20, 1)
+  assert.ok(mesh.offsetX[at(5, 5)] < 24, 'o pico central foi suavizado')
+  assert.ok(mesh.offsetX[at(4, 5)] > 0, 'a mudança se distribuiu aos vértices vizinhos')
+  assert.ok(mesh.offsetX[at(0, 0)] === 0, 'a área fora do pincel permaneceu intacta')
+})
+
+test('o traço suavizador cobre o caminho entre eventos esparsos do mouse', () => {
+  const mesh = createImageWarpMesh(10, 10)
+  const image = { naturalWidth: 100, naturalHeight: 100 }
+  const at = (column, row) => row * (mesh.columns + 1) + column
+  for (const column of [2, 5, 8]) mesh.offsetX[at(column, 5)] = 18
+  applyImageWarpSmoothBrushStroke(mesh, image, { x: 0, y: 0, width: 100, height: 100, rotation: 0 }, { x: 20, y: 50 }, { x: 80, y: 50 }, 20, 1)
+  for (const column of [2, 5, 8]) assert.ok(mesh.offsetX[at(column, 5)] < 18, `o pico da coluna ${column} foi suavizado`)
 })
 
 test('a malha mais densa do tronco mantém suas próprias subdivisões', () => {
