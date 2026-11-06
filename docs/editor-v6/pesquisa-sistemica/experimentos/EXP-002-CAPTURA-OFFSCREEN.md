@@ -27,7 +27,7 @@ Pixels iguais no domínio RGBA, MP4 correto, 30fps/1080p, sem stale frame nem se
 - Três exportações completas `capturePage`: 120,72 / 116,32 / 114,62 s; mediana 116,32 s. Três `paint-event`: 108,91 / 119,58 / 110,47 s; mediana 110,47 s, ~5,0% abaixo da mediana baseline. Uma corrida candidata foi mais lenta que a mediana baseline: dispersão relevante.
 - Soma de `captureMs` entre partes concorrentes mediana: 105,81s → 95,53s (~9,7%). `capturePageMs` mediana caiu de 77,29s a zero por definição do caminho candidato. Esses acumulados entre partes **não são tempo de parede**.
 - Em smoke de 150 frames com hashes RGBA esparsos nos frames 0, 29, 30 e 149, os dois caminhos coincidiram nas quatro amostras. O export curto paint também validou 1920×1080, 30fps, áudio e transições. Isso não é golden exaustivo de todos os pixels/frames.
-- Decisão: habilitar `paint-event` como padrão da exportação normal **nesta cópia LAB**. Ganho total é modesto e variável; manter fallback de `capturePage` e investigar preparação/composição de cabelo antes de alegar ganho robusto ou levar a outras distribuições.
+- Decisão inicial, posteriormente revogada: habilitar `paint-event` como padrão foi considerado após este primeiro A/B. A revalidação UI descrita abaixo encontrou foreground com hash diferente e smoke mais lento (14,20s vs 13,63s); por isso, `capturePage` continua padrão e `paint-event` fica opt-in até equivalência de pixels ser demonstrada.
 - Cada corrida terminou com validação do MP4 e removeu somente `isolated-app-data` e saídas não JSON/TXT da sua pasta única `out/editor-v6-stress/runs`; ficaram relatórios leves. Guarda: mínimo 3 GiB livres antes de iniciar, máximo 2 GiB por execução.
 
 ## Revalidação equivalente à UI — 06/11/2026

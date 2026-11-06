@@ -178,7 +178,7 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 
 ## Retomada segura — estado em 06/11/2026
 
-1. Começar na pasta irmã `C:\TRABALHO 2\OUTROS\GACHA EM C++-V6-LAB`; confirmar branch `refactor/editor-v6-cold-lab`, `git status`, `HEAD` e `origin` antes de editar. Não limpar/resetar o diff local: ver o handoff em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md).
+1. Começar na pasta irmã isolada do laboratório (`*-V6-LAB`); confirmar branch `refactor/editor-v6-cold-lab`, `git status`, `HEAD` e `origin` antes de editar. Não limpar/resetar o diff local: ver o handoff em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md).
 2. Validação integrada aprovada nessa branch com `npm run test:editor-v6:integration -- --scope=all`; build, typecheck e arquitetura também passaram. A suíte `test:refactor` tem duas expectativas de fixture de mídia antigas; corrigir após confirmar fluxo e adicionar cobertura do comando que grava após o picker.
 3. Ajustar `scripts/editor-v6/rapid-gates-windows.cjs`/doctor e seu teste para suportar explicitamente o branch do laboratório, sem trocar checkout: hoje o doctor interrompe ao exigir `Dev-V2`.
 4. `paint-event` permanece opt-in até prova de pixels no mesmo worker/estado; não promover apenas por velocidade. O benchmark só é elegível após captura controlada, cancelamento/layered video e saída completa validados.

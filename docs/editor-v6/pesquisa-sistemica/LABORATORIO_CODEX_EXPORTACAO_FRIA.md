@@ -44,4 +44,4 @@
 
 ## Resultado inicial registrado
 
-Ver A/B completo, métricas, limitações e próximo passo em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md), [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md) e [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md). A baseline de 91s não foi reproduzida; o primeiro candidato `paint-event` reduziu a mediana de parede ~5%, com dispersão material. Manter a próxima etapa focada em medir preparo/composição de personagem/cabelo e ampliar paridade.
+Ver A/B completo, métricas, limitações e próximo passo em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md), [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md) e [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md). A baseline de 91s não foi reproduzida. O primeiro A/B de `paint-event` mostrou mediana ~5% menor, mas a revalidação UI identificou hash diferente no foreground e smoke mais lento; a decisão foi revogada. `capturePage` continua padrão até paridade comprovada. A próxima etapa mede preparo/composição de personagem/cabelo e resolve a equivalência de captura.
