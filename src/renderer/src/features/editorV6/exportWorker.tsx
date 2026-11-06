@@ -1,7 +1,3 @@
-import { createRoot } from 'react-dom/client'
-import { flushSync } from 'react-dom'
-import type { SyntheticEvent } from 'react'
-import { SceneSurface } from './SceneSurface'
 import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
@@ -17,68 +13,15 @@ import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { compileEditorV6RenderPlan } from './engine/compileEditorV6RenderPlan'
+import { createReactSvgFrameSurface } from './adapters/reactSvgFrameSurface'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
   const renderPlan = compileEditorV6RenderPlan(project, { width, height })
   const rootElement = document.getElementById('root')!
-  // Keep the render surface at the requested export dimensions. A small strip
-  // beside it carries a per-frame compositor token and is cropped before the
-  // bitmap reaches FFmpeg.
-  rootElement.style.width = `${width}px`
-  rootElement.style.height = `${height}px`
-  rootElement.style.overflow = 'hidden'
-  const paintTokenElement = document.createElement('div')
-  paintTokenElement.setAttribute('aria-hidden', 'true')
-  Object.assign(paintTokenElement.style, {
-    position: 'fixed', left: `${width}px`, top: '0', width: '24px', height: '16px',
-    pointerEvents: 'none', zIndex: '2147483647', opacity: '1', contain: 'strict'
-  })
-  const paintTokenCells = Array.from({ length: 24 }, (_, bit) => {
-    const cell = document.createElement('div')
-    Object.assign(cell.style, {
-      position: 'absolute', left: `${(bit % 6) * 4}px`, top: `${Math.floor(bit / 6) * 4}px`,
-      width: '4px', height: '4px', backgroundColor: '#000'
-    })
-    paintTokenElement.append(cell)
-    return cell
-  })
-  document.body.append(paintTokenElement)
-  const setPaintToken = (token: number) => {
-    if (!Number.isInteger(token) || token < 1 || token > 0xffffff) throw Error('Identificador de quadro inválido na exportação.')
-    for (let bit = 0; bit < paintTokenCells.length; bit++) paintTokenCells[bit].style.backgroundColor = ((token >>> bit) & 1) === 1 ? '#fff' : '#000'
-  }
-  const root = createRoot(rootElement)
+  const frameSurface = createReactSvgFrameSurface(rootElement, width, height)
   const images = new Map<string, Promise<void>>()
-  const loadedSvgImages = new WeakMap<SVGImageElement, string>()
-  const onSvgImageLoad = (event: SyntheticEvent<SVGImageElement>) => {
-    const image = event.currentTarget
-    loadedSvgImages.set(image, image.getAttribute('href') ?? '')
-  }
-  const waitForSvgImage = (image: SVGImageElement, expectedSource: string) => {
-    if (loadedSvgImages.get(image) === expectedSource) return Promise.resolve()
-    return new Promise<void>((resolve, reject) => {
-      let timeout: ReturnType<typeof setTimeout>
-      const finish = (error?: Error) => {
-        clearTimeout(timeout)
-        image.removeEventListener('load', onLoad)
-        image.removeEventListener('error', onError)
-        if (error) reject(error)
-        else resolve()
-      }
-      const onLoad = () => {
-        const source = image.getAttribute('href') ?? ''
-        loadedSvgImages.set(image, source)
-        if (source === expectedSource) finish()
-      }
-      const onError = () => finish(Error('Uma imagem da cena falhou ao carregar no renderizador de exportação.'))
-      image.addEventListener('load', onLoad)
-      image.addEventListener('error', onError)
-      timeout = setTimeout(() => finish(Error('Tempo limite ao carregar uma imagem da cena para exportação.')), 60000)
-      if (loadedSvgImages.get(image) === expectedSource) finish()
-    })
-  }
   // The document catalog is immutable during this worker's lifetime. Keep its
   // composition index separate from the small durable atlas cache.
   const projectAssetIndex = new Map(renderPlan.assetIds.flatMap(id => {
@@ -654,27 +597,17 @@ async function initialize() {
       await prepared
     }
     timings.assetPreparationMs = performance.now() - assetPreparationStarted
-    const reactCommitStarted = performance.now()
-    flushSync(() => root.render(<SceneSurface scene={renderScene} assets={renderAssets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} onImageLoad={onSvgImageLoad} rasterCanvases={rasterCanvases} />))
-    timings.reactCommitMs = performance.now() - reactCommitStarted
-    const svgImageDecodeStarted = performance.now()
-    await Promise.all(Array.from(document.querySelectorAll<SVGImageElement>('svg image')).flatMap((image) => {
-      const source = image.getAttribute('href') ?? ''
-      return source ? [waitForSvgImage(image, source)] : []
-    }))
-    timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + performance.now() - svgImageDecodeStarted
-    setPaintToken(paintToken)
-    const rafStarted = performance.now()
-    // capturePage validates this exact paint with the per-frame token and retries a stale readback.
-    // One refresh handoff avoids an unconditional second display interval on every exported frame.
-    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
-    timings.rafWaitMs = performance.now() - rafStarted
+    const surfaceTimings = await frameSurface.present({ scene: renderScene, assets: renderAssets, width, height, renderLayer: activeLayer ?? 'all', rasterCanvases, paintToken })
+    timings.reactCommitMs = surfaceTimings.commitMs
+    timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + surfaceTimings.imageWaitMs
+    timings.rafWaitMs = surfaceTimings.presentationWaitMs
     if (activeLayer === 'background') previousBackground = layerKeys.background
     else if (activeLayer === 'foreground') { previousForeground = layerKeys.foreground; previous = key }
     else { previousBackground = layerKeys.background; previousForeground = layerKeys.foreground; previous = key }
     return { reused: false, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
   }
   window.addEventListener('pagehide', () => {
+    frameSurface.dispose()
     hairMeshRenderer.dispose()
     for (const canvas of hairWarpCanvases.values()) canvas.width = canvas.height = 1
     for (const canvas of staticHairWarpCanvases.values()) canvas.width = canvas.height = 1

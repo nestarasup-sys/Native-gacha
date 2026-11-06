@@ -10,12 +10,16 @@ async function main() {
     const root = path.resolve(__dirname, '../..')
     const taskRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'editor-v6-scene-check-'))
     const bundle = path.join(taskRoot, 'surface.browser.js')
-    await build({ entryPoints: [path.join(root, 'tests/editor-v6/surface.browser.tsx')], outfile: bundle, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', target: 'chrome140', define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'warning' })
-    const env = { ...process.env }
-    delete env.ELECTRON_RUN_AS_NODE
-    const child = spawn(require('electron'), [__filename, bundle, taskRoot], { stdio: 'inherit', windowsHide: true, env })
-    const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', resolve) })
-    process.exitCode = typeof code === 'number' ? code : 1
+    try {
+      await build({ entryPoints: [path.join(root, 'tests/editor-v6/surface.browser.tsx')], outfile: bundle, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', target: 'chrome140', define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'warning' })
+      const env = { ...process.env }
+      delete env.ELECTRON_RUN_AS_NODE
+      const child = spawn(require('electron'), [__filename, bundle, taskRoot], { stdio: 'inherit', windowsHide: true, env })
+      const code = await new Promise((resolve, reject) => { child.on('error', reject); child.on('exit', resolve) })
+      process.exitCode = typeof code === 'number' ? code : 1
+    } finally {
+      await fs.rm(taskRoot, { recursive: true, force: true })
+    }
     return
   }
   const { app, BrowserWindow } = require('electron')
@@ -35,16 +39,17 @@ async function main() {
     const result = await window.webContents.executeJavaScript('globalThis.runSurfaceCheck()')
     await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
     const screenshot = await window.webContents.capturePage({ x: 0, y: 0, width: 960, height: 540 })
-    await fs.writeFile(path.join(taskRoot, 'native-preview.png'), screenshot.toPNG())
-    await fs.writeFile(path.join(taskRoot, 'expected-capture.png'), Buffer.from(result.capture.split(',')[1], 'base64'))
     result.nativePreviewComparison = await window.webContents.executeJavaScript(`globalThis.compareNativeSurface(${JSON.stringify(screenshot.toDataURL())})`)
+    result.canvas2dStaticScene = await window.webContents.executeJavaScript(`globalThis.compareCanvasStaticScene(${JSON.stringify(screenshot.toDataURL())})`)
+    result.canvas2dExpandedGolden = await window.webContents.executeJavaScript('globalThis.compareCanvasExpandedGolden()')
+    result.foreignObjectCanvas = await window.webContents.executeJavaScript('globalThis.runForeignObjectSurfaceCheck()')
+    await window.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+    const hairScreenshot = await window.webContents.capturePage({ x: 0, y: 0, width: 960, height: 540 })
+    result.foreignObjectCanvas = await window.webContents.executeJavaScript(`globalThis.compareForeignObjectSurface(${JSON.stringify(hairScreenshot.toDataURL())})`)
+    result.canvas2dSurface = await window.webContents.executeJavaScript(`globalThis.compareCanvasFrameSurface(${JSON.stringify(hairScreenshot.toDataURL())})`)
     result.exportPanel = await window.webContents.executeJavaScript('globalThis.checkExportPanel()')
-    await fs.writeFile(path.join(taskRoot, 'export-panel.png'), (await window.webContents.capturePage()).toPNG())
     await window.webContents.executeJavaScript('globalThis.closeExportPanelCheck()')
-    const capturePath = path.join(taskRoot, 'scene-surface.png')
-    await fs.writeFile(capturePath, Buffer.from(result.capture.split(',')[1], 'base64'))
-    delete result.capture
-    console.log(JSON.stringify({ ...result, capturePath }, null, 2))
+    console.log(JSON.stringify(result, null, 2))
     clearTimeout(timeout)
     window.destroy()
     app.exit(0)

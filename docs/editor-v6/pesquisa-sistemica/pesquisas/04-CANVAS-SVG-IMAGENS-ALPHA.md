@@ -1,6 +1,6 @@
 # Pesquisa 04 — Canvas2D, SVG foreignObject, raster, alpha, Sharp e imagens
 
-**Status:** PESQUISADA EM CÓDIGO E FONTES PRIMÁRIAS · **BENCHMARK DE RUNTIME PENDENTE**
+**Status:** PESQUISADA EM CÓDIGO E FONTES PRIMÁRIAS · PROVA DE `foreignObject` EXECUTADA · BENCHMARK DO NOVO COMPOSITOR PENDENTE
 **Rodada:** 06/11/2026 · **Revisão estática:** `Dev-V2@5166de7bacb024a72ee15505f8289f81fc9889bd`. Atualizar commit antes de adotar conclusões. **Nenhum teste Windows/MP4 foi executado nesta rodada.**
 
 ## Pergunta principal
@@ -77,3 +77,15 @@
 **Ainda não sabemos:** quanto `toDataURL` e Canvas full rig custam em wall clock, memória de rigs, perfil de alpha real e impacto de várias texturas em paralelo.
 
 **Relações com outras pesquisas:** [Arquitetura do app](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz de oportunidades](../MATRIZ_DE_OPORTUNIDADES.md) e [Fontes](../evidencias/FONTES-OFICIAIS.md).
+
+## 7. Revalidação no motor novo — 06/11/2026
+
+**[RUNTIME Electron 45.1.0 / Chromium 156]** `npm run test:editor-v6:surface` montou um canvas RGBA sintético dentro do mesmo `foreignObject` usado por `SceneSurface` para cabelo rasterizado. `capturePage` preservou o pixel de referência `17,221,103,255`. Serializar o SVG vivo para Blob e carregá-lo como imagem contaminou a origem do canvas de leitura (`getImageData` lançou erro); o round-trip de bitmap não é seguro nessa forma. O scratch, incluindo perfil Chromium e imagens, foi removido pelo harness.
+
+**Consequência arquitetural:** SVG→Canvas não é uma rota de composição aprovada. Foi criado um adaptador candidato `Canvas2DFrameSurface`, sem importar React, que desenha bitmaps e hair canvas diretamente e mantém falas/pensamentos em SVG vetorial por causa da rasterização tipográfica. A quebra de linha é compartilhada por um módulo leve independente de UI. A captura SVG/capturePage continua em produção; o candidato ainda não foi medido em exportação real. Vídeo embutido por `<foreignObject>` é rejeitado pelo candidato e exige fallback; `dispose` libera as imagens/canvases do job.
+
+**Golden sintético Canvas2D vs capturePage:** a fixture expandida cobre personagem com atlas/motionSprite, flip/rotação e máscara de boca, imagem, narrador, fala/pensamento com speaker labels e background asset; 6.750 canais divergentes em 2.073.600 (<0,33%), máximo 90/255, erro médio 0,14072. Todos os pixels-controle do fundo coincidiram. A fixture simples de fala ficou em 7.524 canais, máximo 75/255 e média 0,12531; SVG atual no mesmo gate teve 7.524 canais e média 0,12531. Canvas hair RGBA com alpha + máscara e sprite de boca + flip + rotação: 6.860 canais divergentes, nenhum fora do ator, máximo 35/255 e média 0,00563. A camada frontal preservou alpha 0 fora da figura. Isto cobre apenas fixtures sintéticas; não cobre pose/cabelo real em movimento, vídeo, leitura/encoder nem velocidade.
+
+**Fontes primárias adicionais:** [SVG 2 — `foreignObject`](https://svgwg.org/svg2-draft/embedded.html#ForeignObjectElement) documenta a inclusão e renderização de conteúdo HTML no SVG; [HTML Standard — Canvas](https://html.spec.whatwg.org/multipage/canvas.html#security-with-canvas-elements) especifica a proteção de leitura de pixels por estado *origin-clean*. A falha observada no Electron é um resultado de runtime local, não uma conclusão inferida apenas da especificação.
+
+**Próximo experimento:** cobrir hair raster real em movimento e vídeo/fallback/cancelamento; então comparar exportações frias equivalentes do projeto completo, medindo wall time, cópias/readback, áudio, tamanho/qualidade do MP4 e memória. Manter a rota SVG como fallback até paridade real e ganho de parede comprovados.

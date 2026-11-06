@@ -2,6 +2,7 @@ import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
+import { EDITOR_V6_SCENE_FONT as FONT, wrapSceneText } from './engine/sceneTextLayout'
 import { editorV6ElementsWithBalloonsOnTop } from './editorV6SceneLayerOrder'
 import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath } from './speechBalloonPath'
 
@@ -11,40 +12,6 @@ export type SceneSurfaceInteraction = {
   move: (event: ScenePointerEvent) => void
   end: (event: ScenePointerEvent) => void
 }
-const FONT = 'Arial, sans-serif'
-let measurement: CanvasRenderingContext2D | null = null
-function measure(text: string, fontSize: number): number {
-  if (!measurement && typeof document !== 'undefined') measurement = document.createElement('canvas').getContext('2d')
-  if (!measurement) return Array.from(text).length * fontSize * .55
-  measurement.font = `600 ${fontSize}px ${FONT}`
-  return measurement.measureText(text).width
-}
-
-/** All wrapping is explicit SVG text, so preview and captured frames have identical layout. */
-export function wrapSceneText(text: string, width: number, fontSize: number, maxLines: number): string[] {
-  const lines: string[] = []
-  let overflow = false
-  const push = (line: string) => { if (lines.length < maxLines) lines.push(line); else overflow = true }
-  for (const paragraph of text.replace(/\r/g, '').split('\n')) {
-    let line = ''
-    for (const word of paragraph.split(/\s+/).filter(Boolean)) {
-      if (line && measure(`${line} ${word}`, fontSize) <= width) { line += ` ${word}`; continue }
-      if (line) { push(line); line = '' }
-      for (const character of Array.from(word)) {
-        if (line && measure(line + character, fontSize) > width) { push(line); line = '' }
-        line += character
-      }
-    }
-    push(line)
-  }
-  if (overflow && lines.length) {
-    let last = lines[lines.length - 1]
-    while (last && measure(`${last}…`, fontSize) > width) last = Array.from(last).slice(0, -1).join('')
-    lines[lines.length - 1] = `${last}…`
-  }
-  return lines
-}
-
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
 
