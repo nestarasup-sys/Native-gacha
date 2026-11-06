@@ -176,7 +176,11 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     signal.addEventListener('abort', close, { once: true })
     window.once('closed', close)
     try {
-      await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
+      if (deps.devUrl) {
+        const exportUrl = new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/')
+        if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && process.env.GACHA_EDITOR_V6_STRESS_SCENE_SURFACE === 'canvas2d') exportUrl.searchParams.set('sceneSurface', 'canvas2d')
+        await waitForExport(window.loadURL(exportUrl.href), signal, 60000, 'abrir renderizador')
+      } else await waitForExport(window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
       if (deps.captureMode === 'paint-event') paintCapture = createPaintFrameCapture(window, payload.width, payload.height, signal)

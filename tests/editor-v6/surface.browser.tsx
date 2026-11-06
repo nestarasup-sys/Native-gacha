@@ -4,6 +4,7 @@ import { flushSync } from 'react-dom'
 import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
 import { EditorV6ExportPanel } from '../../src/renderer/src/features/editorV6/EditorV6ExportPanel'
 import { createCanvas2dFrameSurface } from '../../src/renderer/src/features/editorV6/adapters/canvas2dFrameSurface'
+import { createCanvas2dWithSvgFallbackFrameSurface } from '../../src/renderer/src/features/editorV6/adapters/canvas2dWithSvgFallbackFrameSurface'
 import { captureEditorV6Frame, captureEditorV6Frames } from '../../src/renderer/src/features/editorV6/sceneCapture'
 import { createEditorV6Timeline, type EditorV6DesktopApi, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY } from '../../src/shared/hairMotionEngine'
@@ -381,6 +382,25 @@ let closePanelTest: () => void
       assert(ownedCanvas.width === 1 && ownedCanvas.height === 1, 'Canvas2D manteve uma superfície grande após dispose.')
       return { passed: true, differentChannels, outsideActorChannels, maximumChannelError, meanChannelError, foregroundAlpha: transparent[3], backgroundPixel: background, videoRequiresFallback, releasedCanvas: true }
     } finally { surface.dispose() }
+  }
+  ;(globalThis as unknown as { checkAdaptiveCanvasSurface: () => Promise<unknown> }).checkAdaptiveCanvasSurface = async () => {
+    const adaptiveRoot = document.createElement('div')
+    Object.assign(adaptiveRoot.style, { position: 'fixed', left: '-2000px', top: '0', width: '960px', height: '540px' })
+    document.body.append(adaptiveRoot)
+    const surface = createCanvas2dWithSvgFallbackFrameSurface(adaptiveRoot, 960, 540)
+    try {
+      const request = { scene: hairOnlyScene, assets: project.assets, width: 960, height: 540, renderLayer: 'all' as const, rasterCanvases: new Map([[actor.id, hairCanvas]]), paintToken: 1 }
+      const canvasTimings = await surface.present(request)
+      assert(canvasTimings.surfaceMode === 'canvas2d' && adaptiveRoot.children[1].querySelector('canvas'), 'A superfície adaptativa não compôs a cena estática com Canvas2D.')
+      assert((adaptiveRoot.children[1] as HTMLElement).style.display === 'block' && (adaptiveRoot.children[0] as HTMLElement).style.display === 'none', 'O Canvas2D não ficou como camada ativa na cena estática.')
+      const videoScene = { ...hairOnlyScene, mediaVideo: { blockId: 'video', mediaId: 'media', url: '', layout: { x: 0, y: 0, width: 10, height: 10, rotation: 0 }, startFrame: 0, sourceInFrame: 0, durationFrames: 1, hasAudio: false, audioEnabled: false, gain: 1 } }
+      const fallbackTimings = await surface.present({ ...request, scene: videoScene, paintToken: 2 })
+      assert(fallbackTimings.surfaceMode === 'svg-fallback', 'Uma cena com vídeo não selecionou o fallback SVG.')
+      assert((adaptiveRoot.children[0] as HTMLElement).style.display === 'block' && (adaptiveRoot.children[1] as HTMLElement).style.display === 'none' && adaptiveRoot.children[0].querySelector('svg'), 'O fallback SVG não ficou visível para compor a cena com vídeo.')
+      surface.setActive(false)
+      assert((adaptiveRoot.children[0] as HTMLElement).style.display === 'none' && (adaptiveRoot.children[1] as HTMLElement).style.display === 'none', 'setActive(false) deixou uma superfície visível.')
+      return { passed: true, staticSurface: canvasTimings.surfaceMode, videoSurface: fallbackTimings.surfaceMode, canvasLayerVisible: true, svgFallbackVisible: true, inactiveLayersHidden: true }
+    } finally { surface.dispose(); adaptiveRoot.remove() }
   }
   return { passed: true, differentPixelChannels: different, sequentialFrames: sequential.map(({ frame }) => frame), aspectChecks }
 }

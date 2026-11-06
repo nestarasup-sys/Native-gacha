@@ -71,7 +71,7 @@ export function createReactSvgFrameSurface(rootElement: HTMLElement, width: numb
     try {
       const commitStarted = performance.now()
       flushSync(() => root.render(<SceneSurface scene={request.scene} assets={request.assets} outputWidth={request.width} outputHeight={request.height} renderLayer={request.renderLayer} onImageLoad={onImageLoad} rasterCanvases={request.rasterCanvases} />))
-      const commitMs = performance.now() - commitStarted
+      const renderMs = performance.now() - commitStarted
 
       const imageWaitStarted = performance.now()
       await Promise.all(Array.from(rootElement.querySelectorAll<SVGImageElement>('svg image')).flatMap((image) => {
@@ -85,7 +85,7 @@ export function createReactSvgFrameSurface(rootElement: HTMLElement, width: numb
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
       const presentationWaitMs = performance.now() - presentationStarted
       previousToken = request.paintToken
-      return { commitMs, imageWaitMs, presentationWaitMs }
+      return { renderMs, imageWaitMs, presentationWaitMs, surfaceMode: 'svg' }
     } finally {
       inFlight = false
     }
@@ -93,6 +93,7 @@ export function createReactSvgFrameSurface(rootElement: HTMLElement, width: numb
 
   return {
     present,
+    setActive(active) { marker.style.display = active ? 'block' : 'none' },
     dispose() {
       if (disposed) return
       disposed = true

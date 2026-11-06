@@ -88,4 +88,23 @@
 
 **Fontes primárias adicionais:** [SVG 2 — `foreignObject`](https://svgwg.org/svg2-draft/embedded.html#ForeignObjectElement) documenta a inclusão e renderização de conteúdo HTML no SVG; [HTML Standard — Canvas](https://html.spec.whatwg.org/multipage/canvas.html#security-with-canvas-elements) especifica a proteção de leitura de pixels por estado *origin-clean*. A falha observada no Electron é um resultado de runtime local, não uma conclusão inferida apenas da especificação.
 
-**Próximo experimento:** cobrir hair raster real em movimento e vídeo/fallback/cancelamento; então comparar exportações frias equivalentes do projeto completo, medindo wall time, cópias/readback, áudio, tamanho/qualidade do MP4 e memória. Manter a rota SVG como fallback até paridade real e ganho de parede comprovados.
+**Próximo experimento:** medir TypedArray/ArrayBuffer 1080p do renderer para main e comparar leitura de Canvas com `capturePage`+`NativeImage.toBitmap`; só então decidir implementação. Preservar BGRA, alpha, sRGB, token e backpressure. WebCodecs/shared texture ficam posteriores porque não removem por si só o filter graph, áudio e mux.
+
+## A/B frio do projeto real — 06/11/2026
+
+O Canvas2D foi comparado com SVG no fluxo completo de exportação UI do projeto autorizado (2.394 quadros), com sessões/processos/app-data separados, Preset 2 posterior-only, libx264 `ultrafast`, duas lanes, 1080p30, `capturePage`, quatro vídeos e quatro áudios.
+
+| Medida | SVG | Canvas2D híbrido |
+|---|---:|---:|
+| Clique até MP4 validado | 90,38s | 90,87s |
+| Main export | 78,01s | 81,63s |
+| Fase de render | 54,38s | 59,04s |
+| Motion | 19,59s | 19,02s |
+| Apresentações Canvas2D | 0 | 464 |
+| Fallback SVG declarado | 0 | 0 |
+
+Uma amostra fria por caminho não caracteriza variação pequena; não houve melhora e a fase de render ficou 4,66s mais longa. Os dois MP4s passaram contagem, 1080p30 e áudio. Nos hashes de captura RGBA dos quadros 0 e 300, os backgrounds coincidiram e os foregrounds divergiram. A surface não recebe `mediaVideo` no export real porque os vídeos externos são sobrepostos no filter graph FFmpeg; por isso o fallback 0 não indica ausência de vídeo.
+
+Canvas compôs 464 apresentações, mas manteve `capturePage` e NativeImage/BGRA; adicionou desenho sem retirar o readback. O SVG acumulou 18,08s de `capturePage`, 4,83s de conversão BGRA e 43,74s de callback do stdin entre parts concorrentes (não são tempos de parede). Decisão: Canvas fica experimental; a rota normal permanece SVG/capturePage. Nenhum MP4 foi mantido no disco.
+
+Fontes oficiais consultadas para o próximo candidato: [Electron offscreen rendering](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering) descreve shared texture GPU como API avançada que exige integração nativa; [Electron sharedTexture](https://www.electronjs.org/docs/latest/api/shared-texture) classifica importação e transferência como experimental e exige controlar liberação/referências. Esse caminho não é tratado como atalho universal para FFmpeg.

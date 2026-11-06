@@ -46,3 +46,9 @@
 ### Handoff de continuidade — 06/11/2026
 
 Usuário pediu pausar a otimização adicional e deixar o contexto documentado para retomada. O laboratório está funcional e a integração/build passaram; isso não significa que a refatoração geral esteja concluída. Ver o ponto de retomada, arquivos locais que não podem ser descartados, falhas restantes da suíte ampla e próximo ciclo em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md) e [PLANO_EXECUTAVEL.md](PLANO_EXECUTAVEL.md). A branch permanece `refactor/editor-v6-cold-lab`; nunca trocar para `Dev-V2` para executar testes do LAB. `paint-event` permanece opt-in até golden RGBA no mesmo estado renderizado. Não modificar dados originais nem incluir diagnósticos/mídia em commits.
+
+### Continuação — A/B da superfície e transporte direto, 06/11/2026
+
+- A UI foi executada friamente no projeto autorizado por dois processos/perfis independentes. SVG: 90,38s clique→MP4 validado; Canvas2D: 90,87s. A fase de render Canvas cresceu 4,66s e os hashes do foreground divergiram. Não promover Canvas; o SVG segue como oráculo visual/renderer do produto.
+- A captura continua num ponto potencialmente caro, mas as somas medidas atravessam workers concorrentes: 18,08s `capturePage`, 4,83s cópia BGRA, 43,74s callbacks do pipe FFmpeg (não somar ao relógio de parede). O próximo experimento mede transferência direta TypedArray/ArrayBuffer de 1080p e só implementa uma rota nova se houver ganho sem perda de cor, alpha, vídeo/áudio ou fallback.
+- A prova Electron shared texture é experimental e precisa integração nativa; não substituir a arquitetura por essa opção sem validar suporte/driver/mux reais. Ver A/B completo e plano em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md), [matriz](MATRIZ_DE_OPORTUNIDADES.md) e [ENG-02](PLANO_EXECUTAVEL.md).

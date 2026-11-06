@@ -20,7 +20,9 @@ async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
   const renderPlan = compileEditorV6RenderPlan(project, { width, height })
   const rootElement = document.getElementById('root')!
-  const frameSurface = createReactSvgFrameSurface(rootElement, width, height)
+  const frameSurface = new URLSearchParams(window.location.search).get('sceneSurface') === 'canvas2d'
+    ? (await import('./adapters/canvas2dWithSvgFallbackFrameSurface')).createCanvas2dWithSvgFallbackFrameSurface(rootElement, width, height)
+    : createReactSvgFrameSurface(rootElement, width, height)
   const images = new Map<string, Promise<void>>()
   // The document catalog is immutable during this worker's lifetime. Keep its
   // composition index separate from the small durable atlas cache.
@@ -598,9 +600,11 @@ async function initialize() {
     }
     timings.assetPreparationMs = performance.now() - assetPreparationStarted
     const surfaceTimings = await frameSurface.present({ scene: renderScene, assets: renderAssets, width, height, renderLayer: activeLayer ?? 'all', rasterCanvases, paintToken })
-    timings.reactCommitMs = surfaceTimings.commitMs
+    timings.surfaceRenderMs = surfaceTimings.renderMs
     timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + surfaceTimings.imageWaitMs
     timings.rafWaitMs = surfaceTimings.presentationWaitMs
+    if (surfaceTimings.surfaceMode === 'canvas2d') metrics.canvas2dPresentations = (metrics.canvas2dPresentations ?? 0) + 1
+    else if (surfaceTimings.surfaceMode === 'svg-fallback') metrics.svgFallbackPresentations = (metrics.svgFallbackPresentations ?? 0) + 1
     if (activeLayer === 'background') previousBackground = layerKeys.background
     else if (activeLayer === 'foreground') { previousForeground = layerKeys.foreground; previous = key }
     else { previousBackground = layerKeys.background; previousForeground = layerKeys.foreground; previous = key }

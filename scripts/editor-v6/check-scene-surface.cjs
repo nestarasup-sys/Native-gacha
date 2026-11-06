@@ -47,6 +47,7 @@ async function main() {
     const hairScreenshot = await window.webContents.capturePage({ x: 0, y: 0, width: 960, height: 540 })
     result.foreignObjectCanvas = await window.webContents.executeJavaScript(`globalThis.compareForeignObjectSurface(${JSON.stringify(hairScreenshot.toDataURL())})`)
     result.canvas2dSurface = await window.webContents.executeJavaScript(`globalThis.compareCanvasFrameSurface(${JSON.stringify(hairScreenshot.toDataURL())})`)
+    result.adaptiveCanvasSurface = await window.webContents.executeJavaScript('globalThis.checkAdaptiveCanvasSurface()')
     result.exportPanel = await window.webContents.executeJavaScript('globalThis.checkExportPanel()')
     await window.webContents.executeJavaScript('globalThis.closeExportPanelCheck()')
     console.log(JSON.stringify(result, null, 2))

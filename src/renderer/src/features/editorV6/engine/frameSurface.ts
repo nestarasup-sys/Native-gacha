@@ -12,13 +12,15 @@ export type EditorV6FrameSurfaceRequest = Readonly<{
 }>
 
 export type EditorV6FrameSurfaceTimings = Readonly<{
-  commitMs: number
+  renderMs: number
   imageWaitMs: number
   presentationWaitMs: number
+  surfaceMode: 'svg' | 'canvas2d' | 'svg-fallback'
 }>
 
 /** Rendering adapter boundary: it presents one already-resolved frame but does not own timeline or export policy. */
 export interface EditorV6FrameSurface {
   present(request: EditorV6FrameSurfaceRequest): Promise<EditorV6FrameSurfaceTimings>
+  setActive(active: boolean): void
   dispose(): void
 }

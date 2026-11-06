@@ -330,13 +330,13 @@ export function createCanvas2dFrameSurface(rootElement: HTMLElement, width: numb
         dialogueBitmap = undefined
         dialogueBitmapKey = ''
       }
-      const commitMs = performance.now() - commitStarted
+      const renderMs = performance.now() - commitStarted
       for (let bit = 0; bit < markerCells.length; bit++) markerCells[bit].style.backgroundColor = ((request.paintToken >>> bit) & 1) === 1 ? '#fff' : '#000'
       const presentationStarted = performance.now()
       await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
       const presentationWaitMs = performance.now() - presentationStarted
       previousToken = request.paintToken
-      return { commitMs, imageWaitMs, presentationWaitMs }
+      return { renderMs, imageWaitMs, presentationWaitMs, surfaceMode: 'canvas2d' }
     } finally {
       inFlight = false
     }
@@ -345,6 +345,7 @@ export function createCanvas2dFrameSurface(rootElement: HTMLElement, width: numb
   return {
     canvas,
     present,
+    setActive(active) { marker.style.display = active ? 'block' : 'none' },
     dispose() {
       if (disposed) return
       disposed = true

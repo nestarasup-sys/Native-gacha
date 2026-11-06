@@ -29,6 +29,7 @@ const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
 const captureModeValue = argument('--capture-mode=')
+const sceneSurface = argument('--scene-surface=') ?? 'svg'
 const uiExportProfile = process.argv.includes('--ui-export-profile')
 const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument('--hair-preset-file='))
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
@@ -158,6 +159,8 @@ async function main() {
     throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
   }
   if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
+  if (!['svg', 'canvas2d'].includes(sceneSurface)) throw Error('--scene-surface aceita svg ou canvas2d.')
+  if (sceneSurface === 'canvas2d' && (!uiExportProfile || hairPreparationOnly || !(hairPresetSlot || noHairControl))) throw Error('Canvas2D experimental exige uma exportação completa do perfil UI em processo isolado.')
   if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
   if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
   if (renderWorkers && !['2', '4'].includes(renderWorkers)) throw Error('--render-workers aceita 2 ou 4 no harness Turbo.')
@@ -250,6 +253,7 @@ async function main() {
     ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
+    ...(sceneSurface === 'canvas2d' ? { GACHA_EDITOR_V6_STRESS_SCENE_SURFACE: 'canvas2d' } : {}),
     ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
@@ -302,6 +306,10 @@ async function main() {
       || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
     : noHairControl
     ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
+      || summary.sceneSurface !== sceneSurface
+      || summary.sceneSurfaceRuns?.length !== repeatCount
+      || sceneSurface === 'canvas2d' && summary.sceneSurfaceRuns.some((run) => run.canvas2dPresentations < 1)
+      || sceneSurface === 'svg' && summary.sceneSurfaceRuns.some((run) => run.canvas2dPresentations !== 0 || run.svgFallbackPresentations !== 0)
       || uiExportProfile && summary.profile !== 'editor-v6-ui-default-no-hair'
       || uiExportProfile && summary.x264Preset !== x264Preset
       || summary.motionConcurrency !== Number(motionConcurrency)
@@ -315,6 +323,10 @@ async function main() {
         || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
+      || summary.sceneSurface !== sceneSurface
+      || summary.sceneSurfaceRuns?.length !== repeatCount
+      || sceneSurface === 'canvas2d' && summary.sceneSurfaceRuns.some((run) => run.canvas2dPresentations < 1)
+      || sceneSurface === 'svg' && summary.sceneSurfaceRuns.some((run) => run.canvas2dPresentations !== 0 || run.svgFallbackPresentations !== 0)
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
       || summary.requestedEncoder !== encoder
