@@ -1,11 +1,11 @@
 # EXP-002 — Captura Electron: capturePage vs paint
 
-**Status:** PROTOCOLO PREPARADO — NÃO EXECUTADO.  
-**Dependência:** EXP-001 demonstrar que captura é parcela relevante.
+**Status:** revalidado no perfil equivalente à UI em 06/11/2026; `capturePage` continua padrão e `paint-event` fica opt-in até explicar divergência da camada frontal.
+**Dependência:** baseline fria EXP-001 mostrou captura relevante.
 
 ## Hipótese
 
-`electron/domains/editorV6/exportWorkers.ts` usa `BrowserWindow` com `offscreen:true`, define frame de modo determinístico, insere token de pintura e chama `webContents.capturePage` para extrair bitmap BGRA. **[HIPÓTESE]** O evento `paint` ou um backend framebuffer pode reduzir readback/cópias.
+`electron/domains/editorV6/exportWorkers.ts` usa `BrowserWindow` com `offscreen:true`, define frame de modo determinístico, insere token de pintura e pode capturar via `capturePage` ou por subscription `beginFrameSubscription(false)`. O segundo caminho mantém apenas a imagem mais recente em memória, verifica o mesmo token de 24 bits e rejeita/invalida imagem obsoleta antes de entregar BGRA.
 
 ## Cenários A/B
 
@@ -20,3 +20,20 @@
 Pixels iguais no domínio RGBA, MP4 correto, 30fps/1080p, sem stale frame nem seam, áudio preservado, ganho no **total** e memória limitada. GPU shared texture exige **estudo próprio** de addon nativo e `release()`; não é parte automática do teste `paint`.
 
 **Referências:** [Electron Offscreen](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering), [webContents](https://www.electronjs.org/docs/latest/api/web-contents).
+
+## Resultado A/B inicial no laboratório
+
+- Mesmo snapshot autorizado, processo Electron novo, sessão temporária nova, cache de movimentos vazio a cada corrida, preset 1, 2394 frames, 1080p30, Turbo/AMF e áudio do projeto. Não foram copiados perfis de sessão nem caches derivados de exportações anteriores.
+- Três exportações completas `capturePage`: 120,72 / 116,32 / 114,62 s; mediana 116,32 s. Três `paint-event`: 108,91 / 119,58 / 110,47 s; mediana 110,47 s, ~5,0% abaixo da mediana baseline. Uma corrida candidata foi mais lenta que a mediana baseline: dispersão relevante.
+- Soma de `captureMs` entre partes concorrentes mediana: 105,81s → 95,53s (~9,7%). `capturePageMs` mediana caiu de 77,29s a zero por definição do caminho candidato. Esses acumulados entre partes **não são tempo de parede**.
+- Em smoke de 150 frames com hashes RGBA esparsos nos frames 0, 29, 30 e 149, os dois caminhos coincidiram nas quatro amostras. O export curto paint também validou 1920×1080, 30fps, áudio e transições. Isso não é golden exaustivo de todos os pixels/frames.
+- Decisão inicial, posteriormente revogada: habilitar `paint-event` como padrão foi considerado após este primeiro A/B. A revalidação UI descrita abaixo encontrou foreground com hash diferente e smoke mais lento (14,20s vs 13,63s); por isso, `capturePage` continua padrão e `paint-event` fica opt-in até equivalência de pixels ser demonstrada.
+- Cada corrida terminou com validação do MP4 e removeu somente `isolated-app-data` e saídas não JSON/TXT da sua pasta única `out/editor-v6-stress/runs`; ficaram relatórios leves. Guarda: mínimo 3 GiB livres antes de iniciar, máximo 2 GiB por execução.
+
+## Revalidação equivalente à UI — 06/11/2026
+
+O benchmark agora usa comando do painel + IPC real, preset 2 posterior-only, 1080p30/Turbo/áudio, processo e sessão novos. No smoke de 150 frames/5s, capturePage/CPU completou em 13,63s e paint-event/CPU em 14,20s. Ambos passaram validação estrutural, mas amostraram dois buffers de camadas agrupados sob frame 0: fundo igual e foreground diferente por SHA-256. A divergência do foreground contém personagem/cabelo; não foi demonstrado se é erro visual ou variação de execução, então não declarar paridade. Paint ficou opt-in; `capturePage` segue caminho normal até localizar a discrepância.
+
+O timing paint agora inclui `paintWaitMs`; `capturePageMs=0` significa apenas que a API capturePage não foi usada, nunca captura sem custo. Cancelamento de capturePage e barreira de token estão cobertos; paint valida token e fecha subscription no lifecycle, mas stress de timeout/erro/resize/layered-video permanece aberto.
+
+O experimento anterior em 3+3 com preset 1/AMF continua somente histórico, metodologicamente diferente; ele não justifica promover paint nem comparar com esta baseline.

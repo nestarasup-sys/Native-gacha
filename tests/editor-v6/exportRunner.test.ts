@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { encodingArgs, publishEditorV6Output } from '../../electron/domains/editorV6/exportRunner'
 
 describe('codificação do Editor V6', () => {
+  afterEach(() => vi.unstubAllEnvs())
+
+  it('usa o preset frio medido e permite comparação restrita somente no harness isolado', () => {
+    expect(encodingArgs('libx264', 4).slice(encodingArgs('libx264', 4).indexOf('-preset') + 1, encodingArgs('libx264', 4).indexOf('-preset') + 2)).toEqual(['ultrafast'])
+    vi.stubEnv('GACHA_VIDEO_STRESS_OFFSCREEN', '1')
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_PRESET', 'ultrafast')
+    expect(encodingArgs('libx264', 4).slice(encodingArgs('libx264', 4).indexOf('-preset') + 1, encodingArgs('libx264', 4).indexOf('-preset') + 2)).toEqual(['ultrafast'])
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_PRESET', 'veryfast')
+    expect(encodingArgs('libx264', 4).slice(encodingArgs('libx264', 4).indexOf('-preset') + 1, encodingArgs('libx264', 4).indexOf('-preset') + 2)).toEqual(['veryfast'])
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_PRESET', 'invalid-value')
+    expect(encodingArgs('libx264', 4).slice(encodingArgs('libx264', 4).indexOf('-preset') + 1, encodingArgs('libx264', 4).indexOf('-preset') + 2)).toEqual(['ultrafast'])
+  })
+
   it('configura o Media Foundation com perfil H.264 numérico e codificação de software', () => {
     const args = encodingArgs('h264_mf', 4)
     expect(args).toContain('100')

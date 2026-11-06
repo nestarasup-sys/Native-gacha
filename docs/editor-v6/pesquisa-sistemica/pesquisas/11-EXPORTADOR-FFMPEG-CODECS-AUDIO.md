@@ -101,3 +101,27 @@ Com duas lanes, soma de `ffmpegWriteMs`, `renderMs` etc. pode exceder o tempo to
 **[A CONFIRMAR]** Custo específico do encoder no Windows alvo, efeito da seleção AMF, impacto de filtros de vídeo externo, comportamento do pipe em hardware real e qual tempo do pre-job está fora do relatório.
 
 **Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).
+
+## Smokes de backend no Windows LAB — 06/11/2026
+
+O FFmpeg 8.1.2 do LAB lista `h264_mf`, `h264_d3d12va`, `h264_amf`, NVENC, QSV, Vulkan e libx264. A documentação oficial do FFmpeg informa que Media Foundation aceita software/hardware e que hardware requer D3D11; recomenda `nv12` como formato mais seguro para muitos encoders [FFmpeg Codecs — MediaFoundation](https://www.ffmpeg.org/ffmpeg-codecs.html#MediaFoundation). A versão `h264_d3d12va` consta na implementação oficial do FFmpeg 8.1 [D3D12VA H.264 encoder](https://ffmpeg.org/doxygen/8.1/d3d12va__encode__h264_8c_source.html).
+
+- `h264_mf -hw_encoding 1`, 150 frames sintéticos 1080p30, entrada NV12: iniciou e terminou, ffprobe contou 150 frames yuv420p e decodificação completa não retornou erro. Com `yuv420p`/perfil textual `high` falhou negociação/opção; exigir `nv12` e perfil numérico funcionou neste build.
+- Mesmo `testsrc2`, 12Mbps: SSIM MF vs libx264 `veryfast` = 0,981299; PSNR médio 26,08dB. Esse clip sintético não é avaliação perceptual, mas mostra diferença forte de compressão/configuração; não atende sozinho ao gate de qualidade do projeto.
+- `h264_d3d12va` criou MP4 de 150 frames, mas decodificação reportou erros de blocos H.264. **Rejeitado** no estado atual, sem integrar ao app.
+- O runner do produto atualmente passa `-hw_encoding 0` para MF e fixa pixel format yuv420p; portanto um MF escolhido hoje seria software, não aceleração GPU. Não tratar disponibilidade da lista `-encoders` como compatibilidade runtime.
+- Nenhum benchmark frio completo foi rodado para MF/D3D12VA; outputs de smoke foram gerados na área temporária LAB e removidos. Nenhuma alteração de backend foi promovida.
+
+**Decisão:** manter CPU/libx264 como opção explícita medida e Auto (AMF no PC atual). Só reabrir MF com caminho de formato/qualidade integrado e comparável ao pipeline completo, incluindo custo de conversão, saída de áudio/MP4, fallback, golden RGBA e 3 exports frios. D3D12VA requer corrigir/diagnosticar bitstream antes de qualquer cronômetro de velocidade.
+
+## Atualização de encoder no LAB — 06/11/2026
+
+### Preset CPU validado em projeto completo
+
+Comparação fria de `libx264` manteve 12Mbps e trocou `veryfast` por `ultrafast`. Em hair ON, mediana 84,266→80,105s (3+3 exports); no controle OFF, 73,530→68,833s. Ambos foram decodificados integralmente: SSIM ≥0,997842, PSNR ≥52,763dB e áudio PCM idêntico. Fica como preset padrão local do `libx264`; a alteração só afeta CPU, não AMF/NVENC/QSV/MF. Revalidar em outro hardware/projeto antes de extrapolar.
+
+No FFmpeg 8.1.2 local, `ffmpeg -encoders` lista `libx264`, AMF, Media Foundation, NVENC e QSV, mas não lista `libopenh264`. O código anterior selecionava somente `libopenh264` para `encoder:cpu`; um smoke real do comando UI falhou imediatamente com “Nenhum codificador H.264 pôde ser iniciado”. CPU foi corrigido para testar `libx264` primeiro (preset `veryfast`, 12 Mbps e threads limitadas), mantendo OpenH264 como segunda opção e libx264 no fallback de um backend acelerado.
+
+Perfil UI completo 3+3, com processo/cache frios: `auto` escolheu AMF (83,18/90,12/84,83s; mediana 84,83); CPU escolheu libx264 (85,20/82,44/81,47s; mediana 82,44). No trecho comparável de 150 quadros, CPU↔AMF decodificado deu SSIM 0,99675 e PSNR 50,71dB; AAC estéreo 48kHz ficou idêntico após decode. A diferença mediana de tempo é pequena; manter CPU como padrão apenas para o projeto/hardware atual, com Auto/GPU selecionável e reavaliação em outros dispositivos.
+
+Referência de opções/presets libx264: [documentação oficial FFmpeg Codecs](https://ffmpeg.org/ffmpeg-codecs.html).

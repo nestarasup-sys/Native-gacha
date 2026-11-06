@@ -98,3 +98,26 @@ Para hair/face/roupa, comparar RGBA nos frames selecionados e só depois MP4 (H.
 **[A CONFIRMAR]** Medição reprodutível do projeto original e distribuição causal; versão de Electron/driver/FFmpeg e cold/cache do teste relatado.
 
 **Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).
+
+## Perfil obtido no LAB — escopos de cache, crop e parede — 06/11/2026
+
+### Equivalência UI e preset x264 — 06/11/2026
+
+- Hairless passou pelo comando de exportação do renderer/IPC real; cada corrida completa teve novo Electron e `userData`, cache-fonte vazio, destino descartável, CPU/1080p30/Turbo, duas lanes e 2.394 quadros.
+- OFF `veryfast`: 70,546/73,530/75,904s (mediana 73,530); OFF `ultrafast`: 71,132/68,678/68,833s (mediana 68,833; −6,4%). ON preset 2 posterior-only `veryfast`: 83,634/84,266/85,117s (mediana 84,266); ON `ultrafast`: 79,630/81,432/80,105s (mediana 80,105; −4,9%).
+- 2.394 quadros decodificados: SSIM/PSNR ON 0,997842/52,763dB; OFF 0,997868/52,827dB. PCM de áudio das oito saídas foi idêntico; todos os exports confirmaram 4 clips e zero bytes escritos no cache de motion. Pico RSS ON ultrafast 914–1.171MiB.
+- O corpus anterior `veryfast` do ON foi sequencial; a dispersão e a ordem limitam atribuição do ganho. No mesmo grupo `ultrafast`, as três comparações do quadro integral deram exatamente as mesmas métricas.
+- **Aceite:** preset padrão libx264 passa a `ultrafast` neste LAB; Auto/AMF e fallback permanecem. `--x264-preset` só vale no harness isolado e possui allowlist. Outro projeto/hardware ainda precisa validar o desempenho.
+
+### Concorrência residual
+
+Uma corrida full ON em 3 lanes Motion produziu pico concorrente 2, 18,22s de preparo e 80,68s totais (a referência ultrafast/2 lanes foi 77,29s em outra corrida e mediana de grupo 80,11s). Com apenas dois personagens não havia terceiro fluxo; sem ganho causal. Uma corrida a 4 render workers marcou 80,18s vs grupo 2-worker 79,63–81,43s, render 50,92 vs mediana 51,20s, RSS Main 1.060MiB. Não há ganho ponta a ponta reproduzido: deixar só opções experimentais no benchmark, padrão 2 lanes.
+
+- Benchmark do botão foi alinhado ao comando UI + IPC; painel de exportação prepara cabelo antes do start IPC. Corridas finais usam processo/sessão novos, cache-fonte vazio e pastas isoladas.
+- Três hair ON após o scan: parede clique→MP4 validado 80,94/87,85/82,13s (mediana 82,13); fases motion 17,32–18,99s, render 54,13–55,57s, finalização 3,33–3,51s. Pico RSS Main 846,7–971,2MiB.
+- Medição de alpha crop agregada: mediana 4,38→3,72s entre três corridas de cada grupo; wall total melhorou de 86,54→82,13s entre grupos não intercalados, mas baseline anterior de 82,44s mostra ausência de ganho global robusto.
+- Todos os exports finais: libx264, 2.394 quadros, 1920×1080, 30fps, áudio presente, sem disco motion read/write (0 bytes). Picos de GPU/FFmpeg e tempo somado por lane não são wall time.
+- Saídas MP4 temporárias foram apagadas pelo benchmark após ffprobe; uma execução interrompida deixou perfil temporário de 773MB. Sua raiz estava marcada pelo harness dentro da área `runs`; perfil foi limpo arquivo a arquivo e marcador leve retido. Sem MP4 ou PNG nas pastas finais.
+- A/B encoder anterior mantém AMF 84,83s vs CPU 82,44s mediana; diferença pequena, não intercalada. Fallback e compatibilidade foram preservados.
+
+**Próxima mensuração:** testar apenas encoders compatíveis detectados no FFmpeg do LAB (AMF/MF/D3D12VA em Windows AMD), primeiro com smoke curto e comparação de qualidade; benchmark total de 3 corridas só se a inicialização e áudio passarem. Medir separadamente a ocupação CPU do render e FFmpeg; não usar trace pesado nas corridas de parede.

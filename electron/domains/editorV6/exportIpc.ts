@@ -34,6 +34,10 @@ type EditorV6ExportIpcDependencies = {
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   getMotionCacheStats?: () => EditorV6MotionCacheStats
+  releaseMotionCacheScope?: (scope: string) => void
+  captureMode?: 'capturePage' | 'paint-event'
+  inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
+  onFfmpegProcessStarted?: (pid: number) => void
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
   resolveLibraryAudio: (id: string) => Promise<{ path: string; name: string; mimeType: string; extension: string; size: number }>
   resolveLibraryAsset: (id: string) => Promise<{ path: string; mimeType: string }>
@@ -43,7 +47,7 @@ type EditorV6ExportIpcLifecycle = {
   drain: () => Promise<void>
   getPendingWrites: () => Promise<unknown>[]
   resumeAfterFailedShutdown: () => void
-  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2, hairAnimation?: EditorV6HairMotionBundle, onFfmpegProcessStarted?: (pid: number) => void) => Promise<EditorV6ExportReport>
+  runIsolatedExport: (project: unknown, options: EditorV6ExportOptions, outputPath: string, reportPath: string, id: string, signal?: AbortSignal, progress?: (patch: Partial<EditorV6ExportStatus>) => void, motionPreparationConcurrency?: 1 | 2 | 3, hairAnimation?: EditorV6HairMotionBundle, onFfmpegProcessStarted?: (pid: number) => void) => Promise<EditorV6ExportReport>
 }
 const uuid = z.string().uuid()
 const terminal = (status: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(status.state)
@@ -60,7 +64,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     await publishJsonManifest({ files: fs, target: folderPreference, temporary: `${folderPreference}.${randomUUID()}.tmp`, value: { folder } })
   }
   const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
-  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
+  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, captureMode: deps.captureMode, inspectCapture: deps.inspectCapture })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = new Map<string, Job>()
   const pendingFileWrites = createPendingOperationTracker()
@@ -129,6 +133,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       ...(hairAnimation?.preparationProfile ? { hairPreparation: hairAnimation.preparationProfile } : {}),
       onFfmpegProcessStarted,
       getMotionCacheStats: deps.getMotionCacheStats,
+      releaseMotionCacheScope: deps.releaseMotionCacheScope,
       createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })
@@ -191,7 +196,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     jobs.set(id, job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))
     event.sender.once('destroyed', abort)
-    job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }, undefined, hairAnimation).then((report) => {
+    job.promise = runIsolatedExport(project, options, outputPath, reportPath, id, controller.signal, (patch) => { job.status = { ...job.status, ...patch } }, undefined, hairAnimation, deps.onFfmpegProcessStarted).then((report) => {
       const mouth = report.mouthAnimation
       const totalExportMilliseconds = report.milliseconds === undefined ? undefined : report.milliseconds + (report.hairPreparation?.totalMilliseconds ?? 0)
       const seconds = totalExportMilliseconds === undefined ? 'não medido' : `${(totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s`

@@ -175,7 +175,7 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editor, /const deleteStudio = async \([\s\S]*?trackEditorV6Operation\(async \(\) => \{[\s\S]*?deleteEditorV6Project/)
   assert.match(editor, /const exportPrint = \(\) => \{[\s\S]*?return trackEditorV6Operation\(async \(\) => \{[\s\S]*?flushEditorV6DocumentWrites\(\)[\s\S]*?saveEditorV6Print/)
   assert.match(editor, /const openPrints = \(\) => trackEditorV6Operation\(async \(\) =>/)
-  assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.importEditorV6ExportAudio/)
+  assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.linkEditorV6LibraryExportAudio/)
   assert.match(exportPanel, /trackOperation\(\(\) => runEditorV6ExportCommand\(/)
   assert.match(exportPanel, /trackOperation\(\(\) => cancelEditorV6ExportCommand\(/)
 })

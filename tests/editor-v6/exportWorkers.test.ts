@@ -37,9 +37,14 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
       setWindowOpenHandler: vi.fn(),
       id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
       invalidate: vi.fn(),
+      beginFrameSubscription: vi.fn((_onlyDirty: boolean, callback: (image: any) => void) => { (window.webContents as any).paintFrame = callback }),
+      endFrameSubscription: vi.fn(),
       executeJavaScript: vi.fn(async (script: string) => {
         const token = script.match(/,\s*(\d+)\)\s*$/)
-        if (token) window.paintToken = Number(token[1])
+        if (token) {
+          window.paintToken = Number(token[1])
+          ;(window.webContents as any).paintFrame?.(state.imageFor(320 + 24, 180, window.paintToken), { x: 0, y: 0, width: 344, height: 180 })
+        }
         return { reused: false, timings: {} }
       }),
       capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height, window.paintToken)),
@@ -55,10 +60,10 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture() {
+function fixture(captureMode?: 'capturePage' | 'paint-event') {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs' })
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode })
   const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: false } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
@@ -136,6 +141,32 @@ describe('export worker lifecycle', () => {
     expect(frame.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
     expect(contents.capturePage).toHaveBeenCalledTimes(1)
     worker.close(); factory.dispose()
+  })
+
+  it('uses a full-frame paint subscription and keeps the exact-token fence', async () => {
+    const { factory, payload, ready } = fixture('paint-event')
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const contents = state.windows[0].webContents
+    const window = state.windows[0]
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = script.match(/,\s*(\d+)\)\s*$/)
+      if (token) window.paintToken = Number(token[1])
+      contents.paintFrame(state.imageFor(payload.width + 24, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width + 24, height: payload.height })
+      return { reused: false, timings: {} }
+    })
+    contents.invalidate.mockImplementation(() => contents.paintFrame(state.imageFor(payload.width + 24, payload.height, window.paintToken), { x: 0, y: 0, width: payload.width + 24, height: payload.height }))
+    const frame = await worker.frame(17)
+    expect(contents.beginFrameSubscription).toHaveBeenCalledWith(false, expect.any(Function))
+    expect(contents.capturePage).not.toHaveBeenCalled()
+    expect(frame.bitmap).toHaveLength(payload.width * payload.height * 4)
+    expect(frame.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 1 })
+    expect(frame.timings?.paintWaitMs).toBeTypeOf('number')
+    expect(frame.timings?.capturePageMs).toBe(0)
+    worker.close()
+    expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1)
+    factory.dispose()
   })
 
   it('never returns a stale readback and cancels while waiting for the matching token', async () => {

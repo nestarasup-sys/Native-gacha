@@ -37,9 +37,10 @@ type Dependencies = {
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
-  motionPreparationConcurrency?: 1 | 2
+  motionPreparationConcurrency?: 1 | 2 | 3
   hairPreparation?: EditorV6HairPreparationProfile
   getMotionCacheStats?: () => EditorV6MotionCacheStats
+  releaseMotionCacheScope?: (scope: string) => void
   audioPath: (clip: EditorV6ExportAudio) => string | Promise<string>
   mediaPath: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   /** Test/diagnostic hook for measuring the external encoder without exposing it over IPC. */
@@ -65,7 +66,7 @@ function addPhaseTime(report: EditorV6ExportReport, phase: ExportPhase, started:
 const TIMING_BUCKET_MS = .1
 const TIMING_BUCKETS = 2001
 function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
-  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
+  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'paintWaitMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
 }
 function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
   if (!Number.isFinite(milliseconds) || milliseconds <= 0) return
@@ -96,13 +97,23 @@ function addFrameMetrics(target: EditorV6FrameMetrics, values: EditorV6FrameMetr
     target[metric] = (target[metric] ?? 0) + value
   }
 }
+const x264Preset = () => {
+  const stressX264Presets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']
+  const candidate = process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET
+  // Cold full-project A/B at 12 Mbps found ultrafast 6.4% faster with SSIM 0.9979,
+  // PSNR 52.8 dB, and identical decoded audio versus veryfast.
+  return process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && candidate && stressX264Presets.includes(candidate) ? candidate : 'ultrafast'
+}
+
 // Each Turbo part must use identical H.264 color signalling even when only
 // some parts contain a source video with its own color metadata.
 export const encodingArgs = (encoder: string, threads: number) => [
   '-c:v', encoder,
-  ...(encoder === 'libopenh264'
-    ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)]
-    : ['-b:v', '12M']),
+  ...(encoder === 'libx264'
+    ? ['-b:v', '12M', '-preset', x264Preset(), '-threads', String(threads)]
+    : encoder === 'libopenh264'
+      ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)]
+      : ['-b:v', '12M']),
   ...(encoder === 'h264_mf' ? ['-hw_encoding', '0'] : []),
   '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709',
   '-color_primaries', 'bt709', '-color_trc', 'bt709',
@@ -215,7 +226,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       try {
         if (speechInRange) {
           const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
-            signal: controller.signal, characters, bake: deps.bakeMotion,
+            signal: controller.signal, characters, bake: (request, signal) => deps.bakeMotion({ ...request, cacheScope: motionCacheScope }, signal),
             progress: (completed, total, name) => deps.progress({ state: 'preparing', frames: done, motionProgress: undefined, message: `Preparando boca · trecho ${part.index + 1}/${parts.length} · estado ${Math.min(completed + 1, total)}/${total} · ${name}…` })
           }, options.startFrame, Math.min(2, parallelism) as 1 | 2, testSettings.mouthConcurrency)
           renderProject = mouth.project
@@ -327,6 +338,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
   }, 500)
+  const motionCacheScope = randomUUID()
   let exportFailure: unknown
   try {
     deps.signal.throwIfAborted()
@@ -346,7 +358,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
                 planKeyHash: createHash('sha256').update(request.plan.key).digest('hex'), characterId: request.character.id,
                 characterFingerprint: createHash('sha256').update(JSON.stringify(request.character)).digest('hex') })
             }
-            return deps.bakeMotion(request, signal)
+            return deps.bakeMotion({ ...request, cacheScope: motionCacheScope }, signal)
           },
           progress: (completed, total, name) => {
             report.motionTransitionsRequired = total; report.motionTransitionsPrepared = completed
@@ -369,7 +381,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
     let encoder = ''
-    for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libopenh264'] : ['libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
+    for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libx264', 'libopenh264'] : ['libx264', 'libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: PartReport[]) => {
       if (new Set(parts.map((part) => part.encoder)).size !== 1) throw Error('As partes usaram codificadores diferentes.')
@@ -466,10 +478,11 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       if (!options.turbo || requestedParts.length < 2) throw error
       report.fallback = true
       deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })
-      if (encoder !== 'libopenh264' && !await testEncoder('libopenh264')) throw Error('O codificador seguro também não está disponível.')
+      const safeEncoder = encoder === 'libx264' || encoder === 'libopenh264' ? encoder : (await testEncoder('libx264') ? 'libx264' : await testEncoder('libopenh264') ? 'libopenh264' : '')
+      if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
       const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
       const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
-      report.validation = await finishMeasured(await renderAttempt(safeParts, 'libopenh264', 1))
+      report.validation = await finishMeasured(await renderAttempt(safeParts, safeEncoder, 1))
     }
     deps.signal.throwIfAborted()
     // The destination only changes after the candidate passes all validations.
@@ -498,6 +511,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     report.error = message(error)
     throw error
   } finally {
+    deps.releaseMotionCacheScope?.(motionCacheScope)
     clearInterval(memorySampler)
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)

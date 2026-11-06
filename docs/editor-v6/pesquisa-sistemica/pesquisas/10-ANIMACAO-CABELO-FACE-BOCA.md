@@ -76,3 +76,17 @@
 **Ainda não sabemos:** dados brutos de export A/B, quanto custa `composeHairFrame` em repouso, como a face invalida os rigs, frequência de eventos por bloco e memória por variante.
 
 **Relações com outras pesquisas:** [Arquitetura do app](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz de oportunidades](../MATRIZ_DE_OPORTUNIDADES.md) e [Fontes](../evidencias/FONTES-OFICIAIS.md).
+
+## Execução LAB — perfil de cabelo e preparação facial — 06/11/2026
+
+Perfil completo após adoção de `libx264 ultrafast`: cabelo posterior-only (slot 2) 3× levou 79,63/81,43/80,11s (mediana 80,11), com preparo hair 8,11–8,37s, motion 17,09–17,26s, renderização 50,78–52,28s e finalização 2,93–3,15s. O raster de hair foi preservado; comparação do MP4 integral contra `veryfast` teve SSIM 0,997842 e PSNR 52,763dB. Motion/preparo e render comum permanecem maiores que a composição mensurada do fio; próximo trabalho deve instrumentar os 42 motion bakes antes de mudar arquitetura.
+
+Motion detalhado: 39 transições, 37 bakes únicos, 2 reusos, 53 rigs/24 rigs reusados, nenhuma reconstrução, 16,43s com duas lanes. Um teste com três lanes não atingiu concorrência acima de 2 porque o projeto só tem duas sequências de personagem; 18,22s. Não promover concorrência 3 nesse projeto; manter reuso ordenado por personagem.
+
+- Baseline UI hair ON CPU/libx264: 82,44s mediana de 3; novo controle OFF 74,76s mediana de 3, porém o controle usa chamada direta do runner (diferença de harness). Perfil total: projeto de 2.394 frames, Turbo 1080p30, 4 clips de áudio, 2 lanes.
+- Cabelo em si: composição medida nos relatórios é pequena em soma de workers (sub-segundo por corrida no recorte observado); não somar samples concorrentes como wall. Preparação completa de hair entre 7,89–10,66s nas últimas amostras; renderer/preparo de rosto e crop aparecem relevantes.
+- `measureFaceModeCrop` usa `canvasFaceAlphaBounds`, antes escaneando bytes RGBA no JS. A leitura agora usa `Uint32Array` e máscara do alpha apropriada à endianness. A etapa passou de 4,38s para 3,72s mediana agregada (~15%) com a mesma caixa/limiar. Teste de bounds/alpha passou e três exports completos validaram saída.
+- Não foi removido nenhum renderer normal/hairless: inspeção mostrou que o renderer original mantém camadas estáticas com cabelo e é fonte da caixa facial completa; compartilhar o renderer hairless poderia cortar hair/alpha. Rejeitada essa otimização por risco visual.
+- Sem cache de atlas em disco entre exports; ver seção de execução na [Pesquisa 13](13-PERSISTENCIA-SQLITE-CAS-CACHE.md).
+
+**Pendências:** validar mais expressões/efeitos e `poseSlot`, executar ON/OFF com harness rigorosamente idêntico e perfilar 0/1/múltiplas reações antes de propor ROI. Paint permanece fora do caminho padrão pela divergência de foreground.

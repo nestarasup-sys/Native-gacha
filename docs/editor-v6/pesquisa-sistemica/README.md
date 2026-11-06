@@ -3,11 +3,11 @@
 **Início:** 06/11/2026 · **Branch-alvo:** `Dev-V2` · **Natureza:** pesquisa documental, experimentação isolada e plano incremental.  
 **Baseline de leitura da Pesquisa 01:** `c636ff03c80274eabed7892dc9d5fa0e8ad025c5`. Verificar o HEAD antes de cada nova rodada.
 
-> **Atualização de execução — 06/11/2026:** projeto atual **Teste de Importação — Personagens do Pacote**; [RELATO] exportação **com cabelo ON em 91 segundos (1min31s)**, sem OFF atual medido. Resultados antigos de 50s/9s são históricos de outro projeto. O usuário autorizou o Codex a **pesquisar, implementar, refatorar e testar exclusivamente numa cópia local com branch/BAT/porta/app-data próprios**, sem caches pesados entre exportações. **Antes de começar, seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md).**
+> **Atualização de execução — 06/11/2026:** projeto atual **Teste de Importação — Personagens do Pacote**; [RELATO] exportação **com cabelo ON em 91 segundos (1min31s)**, sem OFF atual medido. Resultados antigos de 50s/9s são históricos de outro projeto. O usuário autorizou o Codex a **pesquisar, implementar, refatorar e testar exclusivamente numa cópia local com branch/BAT/porta/app-data próprios**, sem caches pesados entre exportações. **Antes de começar, seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md) e a [diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md): livre escolha de CPU/GPU/AMF/NVENC/QSV e de backend, desde que exportação fria, qualidade e fallback melhorem.**
 
 ## Objetivo
 
-Pesquisar **o Native Gacha inteiro**, incluindo todos os produtores e consumidores de personagens, imagens, áudio, vídeo e dados, para decidir o futuro da arquitetura do Editor V6 sem comprometer o restante do aplicativo. A pesquisa não autoriza implementação automática nem reescrita geral. **O desempenho de exportação é uma prioridade, mas fluidez, continuidade entre módulos e integridade de dados também são requisitos.**
+Pesquisar **o Native Gacha inteiro**, incluindo todos os produtores e consumidores de personagens, imagens, áudio, vídeo e dados, para decidir o futuro da arquitetura do Editor V6 sem comprometer o restante do aplicativo. **No laboratório isolado o usuário autorizou pesquisa + implementação + testes progressivos**, sempre com evidência, paridade e rollback; não confundir essa autorização com permissão para alterar a instalação original. **O desempenho de exportação é uma prioridade, mas fluidez, continuidade entre módulos e integridade de dados também são requisitos.**
 
 A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFACTOR_EDITOR_V6_2026-11-06.md](../PESQUISA_CHROMIUM_REFACTOR_EDITOR_V6_2026-11-06.md). Este diretório é o **índice operacional** para aprofundá-la por subsistema, sem duplicar conclusões ou criar um segundo roadmap concorrente.
 
@@ -17,8 +17,9 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 2. Consultar [Mapa completo do aplicativo](MAPA_COMPLETO_DO_APLICATIVO.md) e [Inventário de tecnologias](INVENTARIO_DE_TECNOLOGIAS.md).
 3. Abrir [Pesquisa 01 — Arquitetura geral e integrações](pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md). **É o primeiro estudo com investigação efetiva de código.**
 4. Antes de testar uma solução, conferir [Matriz de oportunidades](MATRIZ_DE_OPORTUNIDADES.md), [Plano executável](PLANO_EXECUTAVEL.md) e [Registro de progresso](PROGRESSO_E_RESULTADOS.md).
-5. Para detalhes técnicos de uma hipótese, seguir o documento numerado em [pesquisas/](pesquisas/README.md). **Grupo A: estudos 02–05, 09–11, 13, 15–21 pesquisados no código e nas fontes oficiais; 06–08, 12 e 14 ainda são roteiros abertos. Benchmarks runtime permanecem pendentes.**
-6. Experimentos ficam em [experimentos/](experimentos/README.md); decisões aprovadas ficam em [decisoes/](decisoes/README.md); fontes e evidências ficam em [evidencias/](evidencias/README.md).
+5. Critério global do Codex: [Diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md), sem apego a encoder CPU ou arquitetura específica.
+6. Para detalhes técnicos de uma hipótese, seguir o documento numerado em [pesquisas/](pesquisas/README.md). **Grupo A: estudos 02–05, 09–11, 13, 15–21 pesquisados no código e nas fontes oficiais; 06–08, 12 e 14 ainda são roteiros abertos. Benchmarks runtime permanecem pendentes.**
+7. Experimentos ficam em [experimentos/](experimentos/README.md); decisões aprovadas ficam em [decisoes/](decisoes/README.md); fontes e evidências ficam em [evidencias/](evidencias/README.md).
 
 ## Estrutura e função de cada área
 
@@ -28,7 +29,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | `MAPA_COMPLETO_DO_APLICATIVO.md` | Fluxos e proprietários dos dados | Baseado em código, não em telas isoladas |
 | `INVENTARIO_DE_TECNOLOGIAS.md` | Bibliotecas atuais, APIs, alternativas e verificação de versões | Distinguir instalado, built-in, candidato |
 | `MATRIZ_DE_OPORTUNIDADES.md` | Hipóteses e prioridades condicionadas a medições | Não converter potencial em ganho medido |
-| `PLANO_EXECUTAVEL.md` | Backlog com dependências e gates | Experimento ≠ autorização de produção |
+| `PLANO_EXECUTAVEL.md` | Backlog com dependências e gates | Ganha quem reduzir tempo frio sem perda de qualidade, com fallback |
 | `PROGRESSO_E_RESULTADOS.md` | O que foi feito, falhou ou não foi possível medir | Nunca afirmar testes que não rodaram |
 | `pesquisas/` | 21 estudos temáticos | Um aprofundamento por vez, rastreável |
 | `experimentos/` | Protocolos A/B e relatórios sanitizados | Testes somente em cópias autorizadas |
@@ -82,9 +83,11 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 
 ## Critérios de segurança
 
-Não modificar perfil, assets ou projetos **originais**. Duplicar código e dados necessários fisicamente para LAB isolado e trabalhar somente na nova branch, novo BAT e porta exclusiva; ver [protocolo](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. Mudança de código, modelo persistido ou backend de produção exige aprovação e testes específicos.
+Não modificar perfil, assets ou projetos **originais**. Duplicar código e dados necessários fisicamente para LAB isolado e trabalhar somente na nova branch, novo BAT e porta exclusiva; ver [protocolo](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. O usuário autorizou **código e testes na branch do laboratório**; mudanças de schema, backend e arquitetura exigem gates de qualidade, compatibilidade e rollback. **Não fazer merge para `Dev-V2`** sem pedido explícito.
 
 ## Próxima ação
+
+**Codex:** seguir [Diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md), especialmente: alinhar perfil UI/harness; validar `paint-event`; depois medir preparação, composição e disputar encoders/backends sem tecnologia fixa. Continuar até fechar qualidade, build, testes e módulos dependentes.
 
 1. Fechar `AUD-001` com a inspeção dinâmica das fronteiras marcadas [A CONFIRMAR], sem acessar dados privados.
 2. Preparar `AUD-002`: A/B cabelo no **projeto vigente**, após verificar duração real, copiar assets e criar **ambiente frio** sem caches reaproveitados. Primeiro par diagnóstico, 3+ pares para candidato final.

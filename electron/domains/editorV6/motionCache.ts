@@ -25,7 +25,7 @@ async function readBoundedFile(path: string, maximumBytes: number): Promise<Buff
 }
 
 export function motionCacheKey(request: EditorV6MotionBakeRequest): string {
-  const key = [MOTION_CACHE_VERSION, request.plan.key, request.mouthScaleSamples ?? null, request.character]
+  const key = [MOTION_CACHE_VERSION, request.cacheScope ?? null, request.plan.key, request.mouthScaleSamples ?? null, request.character]
   return createHash('sha256').update(JSON.stringify(key)).digest('hex')
 }
 function validateCachedMotion(request: EditorV6MotionBakeRequest, result: EditorV6MotionBakeResult): EditorV6MotionBakeResult {
