@@ -3,6 +3,8 @@
 **Início:** 06/11/2026 · **Branch-alvo:** `Dev-V2` · **Natureza:** pesquisa documental, experimentação isolada e plano incremental.  
 **Baseline de leitura da Pesquisa 01:** `c636ff03c80274eabed7892dc9d5fa0e8ad025c5`. Verificar o HEAD antes de cada nova rodada.
 
+> **Atualização de execução — 06/11/2026:** projeto atual **Teste de Importação — Personagens do Pacote**; [RELATO] exportação **com cabelo ON em 91 segundos (1min31s)**, sem OFF atual medido. Resultados antigos de 50s/9s são históricos de outro projeto. O usuário autorizou o Codex a **pesquisar, implementar, refatorar e testar exclusivamente numa cópia local com branch/BAT/porta/app-data próprios**, sem caches pesados entre exportações. **Antes de começar, seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md).**
+
 ## Objetivo
 
 Pesquisar **o Native Gacha inteiro**, incluindo todos os produtores e consumidores de personagens, imagens, áudio, vídeo e dados, para decidir o futuro da arquitetura do Editor V6 sem comprometer o restante do aplicativo. A pesquisa não autoriza implementação automática nem reescrita geral. **O desempenho de exportação é uma prioridade, mas fluidez, continuidade entre módulos e integridade de dados também são requisitos.**
@@ -80,10 +82,10 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 
 ## Critérios de segurança
 
-Não modificar perfil, assets ou projetos pessoais. Não executar benchmark do projeto `editor v6 06` sem snapshot autorizado e backup verificado. Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. Mudança de código, modelo persistido ou backend de produção exige aprovação e testes específicos.
+Não modificar perfil, assets ou projetos **originais**. Duplicar código e dados necessários fisicamente para LAB isolado e trabalhar somente na nova branch, novo BAT e porta exclusiva; ver [protocolo](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). Não desabilitar validação IPC, migração, referência ou rollback. Não publicar relatório bruto de personagens, arquivos locais ou mídia privada. Não usar force push. Mudança de código, modelo persistido ou backend de produção exige aprovação e testes específicos.
 
 ## Próxima ação
 
 1. Fechar `AUD-001` com a inspeção dinâmica das fronteiras marcadas [A CONFIRMAR], sem acessar dados privados.
-2. Preparar `AUD-002`: protocolo A/B do cabelo (mesmo projeto e 300 frames) e autorização de uma cópia verificada.
+2. Preparar `AUD-002`: A/B cabelo no **projeto vigente**, após verificar duração real, copiar assets e criar **ambiente frio** sem caches reaproveitados. Primeiro par diagnóstico, 3+ pares para candidato final.
 3. Executar o A/B protegido em EXP-001; a Pesquisa 02 já foi aprofundada em código e documentação oficial. Em paralelo, iniciar 06/07/08 para completar domínio de fontes e referências.

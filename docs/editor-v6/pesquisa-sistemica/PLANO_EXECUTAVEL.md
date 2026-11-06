@@ -1,6 +1,6 @@
 # Plano executável — pesquisa → experimento → decisão → implementação
 
-**Regra central:** este backlog **não autoriza o Codex a reescrever o Editor V6**, tocar em projetos locais ou publicar código de produção. Cada item tem um gate e só muda de estado após evidência. O código continua na `Dev-V2`; nova rodada precisa confirmar HEAD e `git status` do checkout onde for executada.
+**Regra atual:** o usuário autoriza **pesquisa + implementação + testes iterativos** para melhorar o Editor V6 **e módulos conectados**, **somente** numa cópia local isolada com branch nova, BAT/porta novos e dados canônicos verificados. Não modificar app/dados originais nem dar push sem pedido. Seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md). **Exportação fria sem cache persistente pesado** e gates de qualidade obrigatórios.
 
 ## Fluxo de trabalho e estados
 
@@ -17,12 +17,12 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 - **Aceite:** todo fluxo prioritário possui UI→estado→preload→IPC→domínio→persistência→consumidor, com [A CONFIRMAR] explícito se não inspecionado.
 - **Proibido:** alterar schemas, IPC ou ownership para "completar" auditoria.
 
-### AUD-002 — Explicar o 50s/9s com mesma entrada
-- **Dependências:** snapshot autorizado e backup verificado do `editor v6 06`, hardware Windows 11, commit/working-tree registrados.
-- **Protocolo:** [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md). 3+3 corridas equivalentes, mesma duração/encoder/Turbo/áudio/fonte/cache. Medir **clique até MP4 finalizado**, somando preparo anterior ao job.
+### AUD-002 — Caracterizar exportação fria de 91s com cabelo ON no projeto atual
+- **Dependências:** projeto vigente **Teste de Importação — Personagens do Pacote**, copiado com seus dados canônicos e assets para LAB; [RELATO] **91s cabelo ON**, OFF não medido; duração real do projeto a confirmar.
+- **Protocolo:** [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md), **sem cache quente**. Medir primeiro 1 par frio para localizar o gargalo e repetir **3+ pares frios** somente para validar melhoria, mesmo projeto/duração/encoder/Turbo/áudio. Incluir pre-job no tempo clique→MP4 validado.
 - **Saída:** relatório sanitizado com fases, número de reações, contagem de reconstruções, cache, hardware, timecodes e hash do fixture.
 - **Aceite:** atribuir as diferenças a subetapas **sem somar tempos concorrentes como parede**.
-- **Bloqueio real:** script `benchmark-project-export.cjs` contém título fixo de outro projeto; não removê-lo nem apontá-lo diretamente para userData.
+- **Scripts:** `benchmark-project-export.cjs` e `backup-authorized-project.cjs` **já autorizam o projeto atual**. Revisar como copiam motion cache e sessão: manter guards e backup SHA-256, mas garantir que nenhum cache de export anterior aqueça o LAB.
 
 ### AUD-003 — Confirmar versão e capacidades do stack
 - **Fontes:** `package.json`, `package-lock.json`, EXE real, FFmpeg embutido, GPU/driver Windows.
@@ -45,7 +45,7 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 | A2-08 | Capabilities WebCodecs e PoC de MP4 muxado | [20](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | Só se encode for relevante; mux+áudio+codec são obrigatórios |
 | A2-09 | Build portátil e gates de contrato IPC/schema | [16](pesquisas/16-SEGURANCA-BUILD-E-DISTRIBUICAO.md) + [21](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | Todos os spikes promovidos: CSP, sandbox, Zod, ABI, FFmpeg, recovery |
 
-**Prioridade de execução:** A2-01 → A2-02 → A2-03; a possibilidade de outras intervenções depende dos tempos medidos. Uma pesquisa terminada não autoriza a implementação sem novo gate. A documentação de fontes oficiais não substitui teste do Electron/FFmpeg no EXE.
+**Prioridade de execução:** laboratório isolado → baseline fria A2-01 → A2-02 → A2-03; a possibilidade de outras intervenções depende dos tempos medidos. Uma pesquisa terminada não autoriza a implementação sem novo gate. A documentação de fontes oficiais não substitui teste do Electron/FFmpeg no EXE.
 
 ## Fase B — experimentos isolados (sem produção)
 

@@ -15,7 +15,7 @@
 
 - [ ] `npm run build`, typecheck, audit de fronteiras e testes Node/Vitest/Electron.
 - [ ] Benchmark Windows 11/AMD ou medição de memória/GPU/IPC em execução.
-- [ ] Execução no `editor v6 06`; não há acesso a cópia autorizada neste ambiente.
+- [ ] Execução no projeto vigente **Teste de Importação — Personagens do Pacote**: ainda não executada por esta auditoria GitHub (dados estão no Windows do usuário).
 - [ ] Inspeção completa de todas as implementações do repositório; foi feita árvore inteira e leitura dirigida.
 - [x] Grupo A: 15 estudos de código + documentação oficial publicados (02–05, 09–11, 13, 15–21), com experimentos ainda pendentes.
 - [ ] Pesquisas de domínio/alternativas 06, 07, 08, 12 e 14: roteiros abertos, aprofundamento ainda não realizado.
@@ -56,9 +56,17 @@
 
 **Status:** pesquisa estática e documental aprofundada; gargalo real dos 41s ainda não atribuído causalmente.
 
+## Atualização de baseline e escopo autorizado — 06/11/2026
+
+- **[RELATO ATUAL]** Projeto **Teste de Importação — Personagens do Pacote**, exportado **com animação de cabelo em 1min31s (91s)**. **OFF atual não medido**; duração/frame count não fornecidos.
+- **[RELATO HISTÓRICO]** ~50s ON/9s OFF foram de outro projeto/experimento. **Não comparar com 91s** nem supor tempo OFF atual.
+- [x] Publicado [protocolo de LAB](LABORATORIO_CODEX_EXPORTACAO_FRIA.md), com isolamento de app-data/SQLite/CAS/asset, branch nova, BAT exclusivo, porta 5199, execução fria e limpeza limitada a saídas temporárias de teste.
+- [x] [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md) retificado para a baseline vigente e condições frias.
+- [ ] **Pendente para Codex local:** duplicar projeto e dados no Windows, testar cold ON/OFF, validar MP4, pesquisar+implementar com progressos documentados. Esta atualização foi somente Markdown no GitHub.
+
 ## Observação histórica relevante
 
-**[RELATO]** Mesmos 10 segundos do mesmo projeto: export com animação capilar cerca de 50s e sem animação cerca de 9s. Isto equivale a diferença aproximada de 82%; **não** temos os relatórios brutos do A/B nessa rodada. Não tomar os 41s como tempo da física 120Hz, nem somar custos paralelos.
+**[RELATO HISTÓRICO — OUTRO PROJETO]** Vídeo antigo de 10s: cerca de 50s ON e 9s OFF. Não é comparável com o projeto vigente de **91s ON** e não sabemos seu tempo OFF. Não atribuir 41s à simulação 120Hz nem somar tempos paralelos.
 
 ## Publicação e privacidade
 
