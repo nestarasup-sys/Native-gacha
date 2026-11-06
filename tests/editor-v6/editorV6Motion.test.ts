@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { attachEditorV6Motion, editorV6MotionChangesHairGeometry, editorV6MotionPlan, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { attachEditorV6Motion, editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlan, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
@@ -71,6 +71,10 @@ describe('V6 motion scheduling and portable cache', () => {
     const expressionPlan = editorV6MotionPlan(track, pose, expressionBlock)!
     expect(expressionPlan).not.toBeNull()
     expect(editorV6MotionChangesHairGeometry(expressionPlan)).toBe(false)
+    const facePatch = { sprite: { x: 0, y: 0, width: 1, height: 1, atlasWidth: 1, atlasHeight: 1 }, x: 0, y: 0, width: 1, height: 1 }
+    const faceAtlas = { faceAssetId: crypto.randomUUID(), frames: expressionPlan.samples.map(sample => ({ offset: sample.offset, facePatch })) }
+    expect(editorV6MotionHasCompleteFaceAtlas(expressionPlan, faceAtlas)).toBe(true)
+    expect(editorV6MotionHasCompleteFaceAtlas(expressionPlan, { ...faceAtlas, frames: faceAtlas.frames.slice(1) })).toBe(false)
 
     const translatedBlock = { ...expressionBlock, state: { ...expressionBlock.state!, x: expressionBlock.state!.x + 1 } }
     const translatedPlan = editorV6MotionPlan(track, pose, translatedBlock)!

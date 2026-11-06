@@ -2,7 +2,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
-import { editorV6MotionChangesHairGeometry, editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
@@ -334,7 +334,12 @@ export async function prepareEditorV6HairMotionBundle(
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
 
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
-  const relevantPlans = selectEditorV6HairlessTransitionBakes(editorV6MotionPlans(project), exportOptions, editorV6MotionChangesHairGeometry)
+  const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
+  const exportMotionPlans = editorV6MotionPlans(project).filter(plan => motionBlocks.get(plan.blockId)?.incomingMotion?.key === plan.key)
+  const relevantPlans = selectEditorV6HairlessTransitionBakes(exportMotionPlans, exportOptions, plan => {
+    if (editorV6MotionChangesHairGeometry(plan)) return true
+    return !editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)
+  })
   if (relevantPlans.length) {
     const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
     // Reuse renderer material/provider caches only within this export's transition batch.

@@ -102,6 +102,16 @@ export function editorV6MotionChangesHairGeometry(plan: Pick<EditorV6MotionPlan,
   return signature(plan.from) !== signature(plan.to)
 }
 
+/** Expression-only hair composition is safe only when every transition sample
+ * has its own localized face patch; otherwise the full hairless atlas remains
+ * the compatibility path for the saved motion sprite. */
+export function editorV6MotionHasCompleteFaceAtlas(
+  plan: Pick<EditorV6MotionPlan, 'samples'>,
+  motion: Pick<EditorV6MotionAtlas, 'faceAssetId' | 'frames'> | undefined
+): boolean {
+  return Boolean(motion?.faceAssetId && plan.samples.every(sample => motion.frames.some(frame => frame.offset === sample.offset && frame.facePatch)))
+}
+
 const plansCache = new WeakMap<EditorV6Document['timeline'], EditorV6MotionPlan[]>()
 export function editorV6MotionPlans(document: EditorV6Document): EditorV6MotionPlan[] {
   const cached = plansCache.get(document.timeline)

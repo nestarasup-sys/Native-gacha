@@ -352,15 +352,20 @@ async function main() {
   let split: Awaited<ReturnType<typeof factory.create>> | undefined
   try {
     sequential = await factory.create(payload, new AbortController().signal)
-    const first = await sequential.frame(0)
-    const beforeTransition = await sequential.frame(22)
-    const transitionStart = await sequential.frame(23)
+    const captureFrame = async (frame: number) => {
+      const captured = await sequential!.frame(frame)
+      // Workers reuse their output buffer; retain a snapshot for later comparisons.
+      return { ...captured, bitmap: captured.bitmap ? Buffer.from(captured.bitmap) : undefined }
+    }
+    const first = await captureFrame(0)
+    const beforeTransition = await captureFrame(22)
+    const transitionStart = await captureFrame(23)
     const transitionMiddleFrames = []
-    for (let frame = 24; frame <= 28; frame += 1) transitionMiddleFrames.push(await sequential.frame(frame))
-    const transitionEnd = await sequential.frame(29)
-    const middle = await sequential.frame(30)
-    const afterTransition = await sequential.frame(31)
-    const last = await sequential.frame(60)
+    for (let frame = 24; frame <= 28; frame += 1) transitionMiddleFrames.push(await captureFrame(frame))
+    const transitionEnd = await captureFrame(29)
+    const middle = await captureFrame(30)
+    const afterTransition = await captureFrame(31)
+    const last = await captureFrame(60)
     assert(first.bitmap && beforeTransition.bitmap && transitionStart.bitmap && transitionEnd.bitmap && middle.bitmap && afterTransition.bitmap && last.bitmap, 'O worker não entregou os quadros capturados da animação de cabelo.')
     const saveCapture = (name: string, bitmap: Buffer, width = 320, height = 180) => writeFile(join(folder, name), execFileSync(ffmpeg, ['-v', 'error', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${width}x${height}`, '-i', 'pipe:0', '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', 'pipe:1'], { input: bitmap, windowsHide: true }))
     await Promise.all([
@@ -563,7 +568,7 @@ async function main() {
         for (const frame of frames) {
           const captured = await backgroundWorker.frame(frame)
           assert(captured.bitmap, `Não foi possível capturar o fundo ${background.name} no quadro ${frame}.`)
-          if (background.name === 'colored') geometryCaptures.set(frame, captured.bitmap)
+          if (background.name === 'colored') geometryCaptures.set(frame, Buffer.from(captured.bitmap))
           if (frame === 0) {
             backgroundChecks[background.name] = chromaticHairPixelCount(captured.bitmap)
             await saveCapture(`hair-background-${background.name}.png`, captured.bitmap)
@@ -663,8 +668,10 @@ async function main() {
     assert(!transitionStart.bitmap.equals(transitionEnd.bitmap), 'A geometria da cabeça deixou de acompanhar a troca de pose durante o atlas.')
     assert(!middle.bitmap.equals(afterTransition.bitmap), 'O balanço do cabelo não retomou após a troca de pose.')
     split = await factory.create(payload, new AbortController().signal)
-    const turboChunkStart = await split.frame(30)
-    const turboChunkEnd = await split.frame(60)
+    const turboChunkStartResult = await split.frame(30)
+    const turboChunkStart = { ...turboChunkStartResult, bitmap: turboChunkStartResult.bitmap ? Buffer.from(turboChunkStartResult.bitmap) : undefined }
+    const turboChunkEndResult = await split.frame(60)
+    const turboChunkEnd = { ...turboChunkEndResult, bitmap: turboChunkEndResult.bitmap ? Buffer.from(turboChunkEndResult.bitmap) : undefined }
     assert(turboChunkStart.bitmap && turboChunkEnd.bitmap, 'O worker Turbo não entregou os quadros de comparação.')
     await Promise.all([saveCapture('hair-frame-030-turbo.png', turboChunkStart.bitmap), saveCapture('hair-frame-060-turbo.png', turboChunkEnd.bitmap)])
     assert(middle.bitmap.equals(turboChunkStart.bitmap), 'O primeiro quadro de um trecho Turbo divergiu do render sequencial.')
