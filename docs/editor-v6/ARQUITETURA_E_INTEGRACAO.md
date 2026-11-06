@@ -171,3 +171,24 @@ Fontes oficiais consultadas:
 ## Próxima decisão técnica
 
 Antes de trocar a tecnologia gráfica, completar a linha de base de memória, abrir/salvar e playback com diferentes quantidades de personagens. A primeira medição de playback com quatro personagens reais está registrada em [TESTES_DE_ESTRESSE_OFFSCREEN.md](TESTES_DE_ESTRESSE_OFFSCREEN.md); ela revelou picos de tarefa longa na página e uma amostra interna de transição não observada por RAF, que são os próximos alvos de profiling. O carregamento sob demanda e a importação/exportação de vídeo já estão implementados. A gravação incremental dos assets, proxies/cache de preview e testes com codecs variados continuam pendentes.
+
+## Reconstrução experimental do motor de cena/exportação — 06/11/2026
+
+O usuário aprovou uma reconstrução progressiva do backend do Editor V6. A UI permanece em React para timeline, preview, personagens e ferramentas; regras da cena e exportação migram para um motor isolado por contrato:
+
+```mermaid
+flowchart LR
+  UI[React: comandos e progresso] --> ADAPTER[Adaptador do documento: validação e assets por ID]
+  ADAPTER --> PLAN[Compilador: plano imutável e quadros determinísticos]
+  PLAN --> ENGINE[Motor V6: cena, personagens, rosto, cabelo, vídeo e camadas]
+  ENGINE --> SURFACE[Superfície gráfica]
+  SURFACE --> CODEC[H.264 detectado em runtime]
+  CODEC --> MUX[FFmpeg: áudio, overlays, mux, ffprobe e fallback]
+  MUX --> MP4[MP4 validado]
+```
+
+**Fase inicial integrada:** `electron/domains/editorV6/exportIpc.ts` valida o documento com Zod antes de criar o job. `compileEditorV6RenderPlan.ts` assume a cópia isolada recebida no worker, congela sua estrutura sem duplicar os dados dos assets, resolve assets por ID, prepara os planos de movimento e avalia somente quadros inteiros válidos. `exportWorker.tsx` usa esse plano no caminho real, com `resolveEditorV6SceneAtFrame` como oráculo e `SceneSurface` SVG como compositor atual.
+
+**Ainda não reconstruído:** a composição final, a captura `capturePage`, a transferência BGRA e o encode/mux em FFmpeg permanecem em uso. O WebCodecs confirmou H.264 para 150 quadros sintéticos nesta versão do Electron, mas essa prova não inclui cena Native Gacha, cabelo RGBA, áudio, qualidade equivalente ou seleção física do encoder. Portanto ela não é uma melhoria de exportação e não habilita o novo caminho.
+
+**Próxima fronteira:** testar golden RGBA do `SceneSurface`, incluindo `foreignObject` com canvas de cabelo, rosto/boca, camada frontal, transparência, vídeo e poses. Depois extrair a renderização para o motor e ligar uma superfície aprovada a encoder com fila limitada. O FFmpeg continua responsável por áudio/mux/ffprobe e fallback até outra rota demonstrar todas essas funções. Nenhum cache pesado pode sobreviver ao job.

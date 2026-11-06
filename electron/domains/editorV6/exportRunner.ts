@@ -69,7 +69,10 @@ function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
   return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'paintWaitMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
 }
 function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return
+  // A zero-duration observation is still a sample: Windows timer resolution
+  // can quantize very small bitmap copies to 0 ms. Keep the count truthful and
+  // let its histogram report that the phase was below measurable resolution.
+  if (!Number.isFinite(milliseconds) || milliseconds < 0) return
   const stats = accumulators[phase], bucket = Math.min(TIMING_BUCKETS - 1, Math.floor(milliseconds / TIMING_BUCKET_MS))
   stats.count++; stats.totalMs += milliseconds; stats.maxMs = Math.max(stats.maxMs, milliseconds); stats.histogram[bucket]++
 }

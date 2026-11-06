@@ -32,7 +32,7 @@ async function main() {
   const colorParts = [join(folder, 'color-tagged.mp4'), join(folder, 'color-unknown.mp4')]
   for (const [index, path] of colorParts.entries()) {
     const metadata = index === 0 ? 'setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709' : 'setparams=range=unknown:colorspace=unknown:color_primaries=unknown:color_trc=unknown'
-    run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=0.1', '-vf', `${metadata},${editorV6OutputColorFilter}`, ...encodingArgs('libopenh264', 1), '-frames:v', '3', path])
+    run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=0.1', '-vf', `${metadata},${editorV6OutputColorFilter}`, ...encodingArgs('libx264', 1), '-frames:v', '3', path])
   }
   const colorProbes = await Promise.all(colorParts.map((path) => probeExportMedia(ffprobe, path, new AbortController().signal)))
   const hashes = colorProbes.map((probe) => probe.streams.find((stream) => stream.codec_type === 'video')?.extradata_hash)
@@ -96,7 +96,9 @@ async function main() {
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
   assert(report.attempts[0].parts.every((part) => Number.isFinite(part.startedAtOffsetMs) && Number.isFinite(part.finishedAtOffsetMs) && part.finishedAtOffsetMs! >= part.startedAtOffsetMs), 'O relatório não registrou intervalos monotônicos das partes.')
   assert(Math.max(...report.attempts[0].parts.map((part) => part.startedAtOffsetMs)) < Math.min(...report.attempts[0].parts.map((part) => part.finishedAtOffsetMs!)), 'Os intervalos do relatório não refletem a sobreposição real das partes paralelas.')
-  assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0 && (part.frameTiming?.capturePageMs?.samples ?? 0) > 0 && (part.frameTiming?.captureBitmapMs?.samples ?? 0) > 0), 'O relatório não separou renderização, espera RAF, capturePage e conversão/cópia do bitmap por quadro.')
+  const timingPhases = ['frameRoundTripMs', 'rafWaitMs', 'captureMs', 'capturePageMs', 'captureBitmapMs'] as const
+  const perPartTimingSamples = report.attempts[0].parts.map((part) => Object.fromEntries(timingPhases.map((phase) => [phase, part.frameTiming?.[phase]?.samples ?? 0])))
+  assert(perPartTimingSamples.every((timings) => timingPhases.every((phase) => timings[phase] > 0)), `O relatório não separou renderização, espera RAF, capturePage e conversão/cópia do bitmap por quadro: ${JSON.stringify(perPartTimingSamples)}`)
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
   assert(report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0) > 60, 'Quadros estáticos não foram reaproveitados.')
   const rgb = run(['-i', output, '-vf', "select='eq(n,39)+eq(n,40)+eq(n,41)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])

@@ -8,7 +8,7 @@ import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
@@ -16,10 +16,12 @@ import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
+import { compileEditorV6RenderPlan } from './engine/compileEditorV6RenderPlan'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
+  const renderPlan = compileEditorV6RenderPlan(project, { width, height })
   const rootElement = document.getElementById('root')!
   // Keep the render surface at the requested export dimensions. A small strip
   // beside it carries a per-frame compositor token and is cropped before the
@@ -79,7 +81,10 @@ async function initialize() {
   }
   // The document catalog is immutable during this worker's lifetime. Keep its
   // composition index separate from the small durable atlas cache.
-  const projectAssetIndex = new Map(project.assets.map(asset => [asset.id, asset]))
+  const projectAssetIndex = new Map(renderPlan.assetIds.flatMap(id => {
+    const asset = renderPlan.resolveAsset(id)
+    return asset ? [[id, asset] as const] : []
+  }))
   const assetsById = new Map(projectAssetIndex)
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
@@ -96,7 +101,7 @@ async function initialize() {
     return hairPoseRigs.get(`${element.id}:${poseSlot ?? 'base'}`) ?? direct
   }
   const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const motionPlans = editorV6MotionPlans(project)
+  const motionPlans = [...renderPlan.motionPlans]
   const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; physicsFrom?: EditorV6HairMotionRig; physicsTo?: EditorV6HairMotionRig; fromElement: typeof project.elements[number]; toElement: typeof project.elements[number]; atlas?: EditorV6HairMotionTransition }> = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map(transition => [`${transition.elementId}:${transition.key}`, transition]))
   const expressionOnlyPlansByElement = new Map<string, typeof motionPlans>()
@@ -116,7 +121,7 @@ async function initialize() {
     }
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
+    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples.map(sample => ({ offset: sample.offset, progress: sample.progress })), from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
   }
   // The worker owns one immutable export document. Pre-index only prepared interior
   // frames, keeping the first eligible transition when authored ranges overlap.
@@ -490,7 +495,7 @@ async function initialize() {
     // Two layered captures of the same frame share one immutable raw timeline
     // resolution. Head-path preparation consumes this same scene where possible.
     if (resolvedFrame !== frame || !resolvedRawScene) {
-      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame)
+      resolvedRawScene = renderPlan.evaluateFrame(frame)
       resolvedFrame = frame
     }
     const scene = applyMouthLoop(resolvedRawScene, frame)

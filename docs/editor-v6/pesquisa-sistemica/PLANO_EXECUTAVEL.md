@@ -212,3 +212,34 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 - Artefatos pesados da rodada interrompida foram removidos somente de um `isolated-app-data` marcado pelo próprio benchmark; relatórios leves preservados. Perfil canônico LAB e original não foram limpos.
 
 **Próxima causa a investigar:** composição/renderização continua 54,13–55,57s; motion 17,32–18,99s. Priorizar distribuição do tempo de FFmpeg CPU vs worker/render nas duas lanes e avaliar D3D12VA/Media Foundation somente com smoke de disponibilidade, mesma qualidade e fallback. ROI/captura paint continuam bloqueados por golden/paridade.
+
+## Motor V6 isolado — início da reconstrução, 06/11/2026
+
+**Direção agora escolhida pelo usuário:** manter React para comandos e feedback, e reconstruir progressivamente o caminho de cena/exportação atrás de contratos. Esta seção atualiza a antiga prioridade de pequenas otimizações do backend atual. Não autoriza trocar o renderer de produção sem paridade.
+
+### Fase ENG-01 — adaptador e plano determinístico (concluída no LAB)
+
+- O adaptador existente em `electron/domains/editorV6/exportIpc.ts` aplica `parseEditorV6ExportDocument` antes de começar o job; cada BrowserWindow de exportação recebe uma cópia IPC isolada e validada.
+- `compileEditorV6RenderPlan` assume propriedade dessa cópia no worker, congela sua estrutura sem duplicar strings Base64, indexa assets por ID e prepara motion plans uma vez.
+- `evaluateFrame(n)` aceita somente índices inteiros dentro do intervalo e usa o resolver atual como oráculo visual. O export worker agora consome esse plano; saída, captura e encoder atuais continuam iguais.
+- Testes verificam metadata, ownership/imutabilidade, lookup por ID, limites do quadro, determinismo e paridade antes/depois de uma transição de pose. Isto é uma fronteira arquitetural, **não** uma melhoria de velocidade comprovada.
+
+### Fase ENG-02 — superfície de cena e golden de pixels (próxima)
+
+- Separar `evaluateFrame` de `renderFrame` por uma interface de engine, sem depender de React ou estado da página. O `SceneSurface` atual permanece como implementação-oráculo.
+- Construir fixtures sintéticas representativas: fundos, personagens, olhos/rosto/boca, cabelo posterior RGBA em movimento e repouso, texto/balões, camadas e transparência. Medir comparação de pixels antes do encode.
+- Testar explicitamente o bloqueador de canvas: `SceneSurface` usa `foreignObject` com canvas de cabelo. Uma renderização SVG→Canvas que descarte esse conteúdo é inválida; determinar suporte com teste Electron antes de escolher implementação.
+- Não trocar a captura padrão nem mexer em `paint-event` até equivalência por quadro/camada, cancelamento, timeout e vídeo em camadas.
+
+### Fase ENG-03 — saída para encoder com fila limitada (pesquisa runtime inicial)
+
+- `scripts/editor-v6/spike-webcodecs-encoder.cjs` provou H.264 sintético no Electron 45.1.0/Chromium 156: 150 quadros 1080p30, encode/flush 1.569,8 ms, remux silencioso por stream copy e ffprobe 150/150. O perfil é novo por execução e o diretório temporário é removido.
+- Esse resultado não representa render da cena, qualidade comparável ao FFmpeg nem acelerador físico selecionado. Não comparar 1,57 s com os ~80 s do projeto real.
+- Para avançar, transferir quadros já renderizados ao VideoEncoder com backpressure, testar H.264/PTS e integrar áudio/mux por FFmpeg. Projetos com overlays de vídeo ou camadas que exijam composição posterior podem requerer recodificação ou fallback integral para o FFmpeg atual.
+- Fechar encoder/frame no sucesso, abort e falha; limitar queue/memória e manter fallback validado. Nenhum cache entre jobs.
+
+### Gates desta etapa
+
+- Passaram: `npm run typecheck`; `npm run audit:architecture`; 13 testes focados no novo plano/export worker/assets; `npm run test:editor-v6:export` (build + Electron, 81 quadros sintéticos, emenda Turbo/áudio e cenários de cancelamento/fallback); spike frio de 150 quadros H.264; `npm run test:editor-v6:integration -- --scope=all` (115 direcionados, Electron hair/scene, TypeScript, arquitetura, 366 testes completos + 1 skip e build).
+- A primeira tentativa de `test:editor-v6:export` parou no fixture de cor que solicitava `libopenh264`, encoder ausente no FFmpeg fornecido. O fixture foi ajustado para o `libx264` disponível e passou; o fallback de runtime não foi removido.
+- Sem ganho real de exportação alegado nesta etapa. Antes de uma implementação de composição/encoder tornar-se padrão: golden RGBA, benchmark frio do projeto inteiro (2.394 quadros, 1080p30, áudio), qualidade decodificada e teste de fallback.

@@ -1,6 +1,6 @@
 # Pesquisa 20 — WebCodecs: VideoFrame/VideoEncoder e limites da substituição do FFmpeg
 
-**Status:** PESQUISADA EM CÓDIGO + FONTES OFICIAIS; EXPERIMENTOS RUNTIME PENDENTES.  
+**Status:** PESQUISADA EM CÓDIGO + FONTES OFICIAIS; CAPACIDADE H.264 CONFIRMADA EM SMOKE SINTÉTICO; CENA REAL, ÁUDIO E GANHO PENDENTES.
 **Revisão estática:** `Dev-V2@5166de7`; **data:** 06/11/2026. Revalidar versões e HEAD antes de implementar. Este documento não declara benchmark realizado.
 
 ## Questão técnica e escopo
@@ -37,7 +37,11 @@
 
 5. **[FONTE OFICIAL] [Chrome WebCodecs](https://developer.chrome.com/docs/web-platform/best-practices/webcodecs)** — Encoding assíncrono em worker pode reduzir pressão sobre thread principal, mas requer controle da fila e callback output.
 
-6. **[FONTE OFICIAL] [FFprobe](https://ffmpeg.org/ffprobe.html)** — Contagem e integridade MP4 precisam ser verificadas independentemente do encoder.
+6. **[FONTE OFICIAL] [W3C WebCodecs](https://www.w3.org/TR/webcodecs/)** — `VideoEncoder`, filas e timestamps são recursos do codec; a aplicação ainda precisa gerir duração/PTS e saída.
+
+7. **[FONTE OFICIAL] [Registro AVC/H.264 para WebCodecs](https://www.w3.org/TR/webcodecs-avc-codec-registration/)** — Define o formato AVC dos chunks e configuração específica do encoder; não converte chunks em contêiner MP4.
+
+8. **[FONTE OFICIAL] [FFprobe](https://ffmpeg.org/ffprobe.html)** — Contagem e integridade MP4 precisam ser verificadas independentemente do encoder.
 
 **Limitação:** fontes consultadas cobrem a API pública atual, não o build Electron/Node instalado nem as milhões de linhas do motor upstream. Disponibilidade, licenças e formatos precisam de prova na versão empacotada.
 
@@ -65,15 +69,15 @@
 
 ## Protocolo experimental que falta executar
 
-1. **WC-01:** No EXE real, testar `typeof VideoEncoder`, `isConfigSupported` H.264 config, hardwareAcceleration preference e pixel formats.
+1. **WC-01 — parcial:** No Electron 45.1.0 / Chromium 156 do LAB, `VideoEncoder`/`VideoFrame` existem e `isConfigSupported` aceitou H.264 1920×1080. A configuração pediu `hardwareAcceleration: "prefer-hardware"`; a API não confirmou qual dispositivo físico codificou.
 
-2. **WC-02:** Codificar 150 frames de fixture RGBA estática, medir fila/encode/copy e registrar H.264 chunks; comparar com FFmpeg CPU para mesma qualidade/frames.
+2. **WC-02 — smoke sintético aprovado, comparação pendente:** [spike-webcodecs-encoder.cjs](../../../../scripts/editor-v6/spike-webcodecs-encoder.cjs) codificou 150 desenhos Canvas 1920×1080/30 em processo Electron novo e perfil temporário. Encode/flush: 1.569,8 ms; primeiro chunk: 453,3 ms; chunks H.264: 101.237 bytes; fila máxima: 5. FFmpeg remuxou por stream copy; FFprobe confirmou H.264, 150 quadros, 30/1, 5 s. A pasta temporária foi removida pelo supervisor.
 
-3. **WC-03:** Mux MP4 + áudio em PoC explícita, validar ffprobe, PTS, GOP, seams, áudio, faststart e cancelamento.
+3. **WC-03 — parcial:** MP4 silencioso e contagem foram validados; mux com áudio, PTS variável, seams, faststart, cancelamento e comparação de qualidade permanecem sem teste.
 
-4. **WC-04:** Testar overlay de `<video>` externo, hair RGBA e falha de encoder; sem perda de recursos após reset/recriação.
+4. **WC-04:** Testar a cena real com `SceneSurface`, inclusive hair RGBA em `foreignObject`, faces, alpha, texto, vídeo externo e falha/recriação do encoder; sem perda de recursos.
 
-5. **WC-05:** Calcular wall-clock incluindo desenho/captura/encode/mux/validação; rejeitar se não houver benefício sobre FFmpeg completo.
+5. **WC-05:** Comparar o mesmo projeto frio ponta a ponta (prep → render → encode → áudio/mux → validação) contra FFmpeg atual; rejeitar se não houver benefício com qualidade e integridade equivalentes.
 
 ## Riscos, compatibilidade e gates obrigatórios
 
@@ -85,6 +89,6 @@
 
 ## Próxima decisão
 
-**Veredito:** WebCodecs é opção de **segunda etapa**, após provar custo relevante do encode. Primeiro medir ciclo atual; depois PoC de 150 frames incluindo mux MP4 real e validação. Não prometer MP4 só com `VideoEncoder`.
+**Veredito atualizado:** H.264 e remux de um desenho sintético funcionam nesta instalação, então a opção é tecnicamente viável para um próximo protótipo. O tempo de 1,57 s **não é comparação** com o exportador: a cena era um Canvas simples, sem personagem real, cabelo, áudio ou overlay. WebCodecs continua fora do produto; primeiro é preciso medir a captura de cena real e provar paridade RGBA.
 
-**Verificações runtime deste documento:** **NÃO EXECUTADAS**. Ver [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md) e [Progresso](../PROGRESSO_E_RESULTADOS.md).
+**Próximo teste falsificável:** enviar o frame produzido pelo novo renderizador ao VideoEncoder sem materializar BGRA no processo main; comparar pixels pré-encode com captura atual, e depois medir MP4 completo com áudio. Ver [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md) e [Progresso](../PROGRESSO_E_RESULTADOS.md).

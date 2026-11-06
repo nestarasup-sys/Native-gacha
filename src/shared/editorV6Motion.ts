@@ -106,7 +106,7 @@ export function editorV6MotionChangesHairGeometry(plan: Pick<EditorV6MotionPlan,
  * has its own localized face patch; otherwise the full hairless atlas remains
  * the compatibility path for the saved motion sprite. */
 export function editorV6MotionHasCompleteFaceAtlas(
-  plan: Pick<EditorV6MotionPlan, 'samples'>,
+  plan: { samples: readonly Pick<EditorV6MotionPlan['samples'][number], 'offset'>[] },
   motion: Pick<EditorV6MotionAtlas, 'faceAssetId' | 'frames'> | undefined
 ): boolean {
   return Boolean(motion?.faceAssetId && plan.samples.every(sample => motion.frames.some(frame => frame.offset === sample.offset && frame.facePatch)))
