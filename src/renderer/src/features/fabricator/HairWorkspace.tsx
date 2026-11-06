@@ -731,23 +731,29 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
 
   return <section className="fabricator-workspace hair-dev-workspace" aria-label="Cabelos Dev">
     <header className="hair-dev-toolbar">
-      <span className="model-slot-logo"><Icon name="bow" /></span>
-      <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
-      <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview) || deformMode}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
-      <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle || deformMode} title={deformMode ? 'Conclua a deformação antes de salvar' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
-    </header>
-    <div className="hair-dev-body">
-      <aside className="hair-dev-library" aria-label="Biblioteca de cabelos">
-        <header><strong>Conjuntos de cabelo</strong><small>{currentHairStyles.length} salvos</small></header>
-        <div className="hair-dev-library-actions">
+      <div className="hair-dev-toolbar-brand">
+        <span className="model-slot-logo"><Icon name="bow" /></span>
+        <span><strong>Cabelos Dev</strong><small>Monte os cabelos para cada modelo</small></span>
+      </div>
+      <div className="hair-dev-toolbar-catalog" role="group" aria-label="Ações do catálogo de cabelos">
+        <div className="hair-dev-toolbar-set-heading"><strong>Conjuntos de cabelo</strong><small>{currentHairStyles.length} salvos</small></div>
+        <div className="hair-dev-toolbar-actions">
           <button type="button" onClick={startNewSet} disabled={loadingHair || loadingStyle || saving || deformMode}><Icon name="plus" /> Novo conjunto</button>
           <button type="button" onClick={() => setImportModalOpen(true)} disabled={!head || loadingHair || loadingStyle || saving || deformMode}><Icon name="plus" /> Importar</button>
           <button type="button" onClick={() => void deleteSelectedSet()} disabled={!activeStyleId || saving || loadingHair || loadingStyle || deformMode}><Icon name="trash" /> Excluir conjunto</button>
         </div>
+        <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
+      </div>
+      <div className="hair-dev-toolbar-model">
+        <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview) || deformMode}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>
+        <button className="hair-dev-save" onClick={() => void saveHair()} disabled={!hairWorkspace || (!hairWorkspace.front && !hairWorkspace.back && !hairWorkspace.fringe) || saving || loadingHair || loadingStyle || deformMode} title={deformMode ? 'Conclua a deformação antes de salvar' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações neste conjunto' : 'Salvar todas as peças como um conjunto'} type="button"><Icon name="check" />{saving ? 'Salvando…' : activeStyleId && activeStyleId !== 'legacy-workspace' ? 'Salvar alterações' : 'Salvar conjunto'}</button>
+      </div>
+    </header>
+    <div className="hair-dev-body">
+      <aside className="hair-dev-library" aria-label="Biblioteca de cabelos">
         <input ref={singleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSinglePiece(event)} />
         <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
         <input ref={threeStyleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importThreeStyleGrid(event)} />
-        <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
         <div className="hair-dev-set-gender">
           <span>Gênero do conjunto</span>
           <button
@@ -771,7 +777,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
           </div>
         </section>
         <section className="hair-dev-library-category hair-dev-set-catalog" aria-label="Catálogo de conjuntos">
-          <h3>Catálogo <small>{currentHairStyles.length}</small></h3>
+          <h3>Catálogo</h3>
           <div className="hair-dev-set-list" aria-busy={loadingHair || loadingHairCatalogPage || loadingStyle}>
             {hairCatalogPageView.visibleStyles.map((style) => {
               const details = hairDetails[`${modelSlot}:${style.id}`]
