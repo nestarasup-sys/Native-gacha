@@ -18,6 +18,7 @@ const singleMotionRun = process.argv.includes('--single-motion-run')
 const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
 const noHairControl = process.argv.includes('--no-hair-control')
 const motionConcurrency = argument('--motion-bake-concurrency=')
+const exportTestMode = argument('--export-test-mode=')
 const hairPresetSlot = argument('--hair-preset-slot=')
 const segmentStartFrameValue = argument('--start-frame=')
 const segmentDurationSecondsValue = argument('--duration-seconds=')
@@ -96,6 +97,9 @@ async function main() {
   const segmentStartFrame = segmentStartFrameValue === undefined ? 0 : Number(segmentStartFrameValue)
   const segmentDurationSeconds = segmentDurationSecondsValue === undefined ? (fullTimeline ? null : 20) : Number(segmentDurationSecondsValue)
   const repeatCount = repeatValue === undefined ? 1 : Number(repeatValue)
+  if (exportTestMode !== undefined && !['controle', 'captura-8'].includes(exportTestMode)) {
+    throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
+  }
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
     || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
@@ -162,6 +166,7 @@ async function main() {
     GACHA_EDITOR_V6_STRESS_AUTORUN: '1', GACHA_EDITOR_V6_STRESS_PROJECT_ID: manifest.id,
     ...(cacheProbe ? { GACHA_EDITOR_V6_STRESS_CACHE_PROBE: '1' } : {}),
     ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
+    ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),

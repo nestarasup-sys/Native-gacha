@@ -11,6 +11,7 @@ import type { CustomizerFaceAssetReference } from '../src/shared/customizerFaceA
 import type { FabricatorPoseReference } from '../src/shared/fabricatorPoseReferences'
 import type { EditorV6Document } from '../src/shared/editorV6'
 import { editorV6BenchmarkAudioMatchesExport, type EditorV6ExportOptions } from '../src/shared/editorV6Export'
+import { isEditorV6ExportTestMode } from '../src/shared/editorV6ExportTestModes'
 import type { EditorV6MotionCacheStats } from './domains/editorV6/motionCache'
 import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
@@ -1135,6 +1136,9 @@ app.whenReady().then(async () => {
       const motionConcurrencyValue = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
       const motionConcurrency = motionConcurrencyValue === '1' ? 1 : motionConcurrencyValue === '2' || motionConcurrencyValue === undefined ? 2 : null
       if (motionConcurrency === null) throw Error('A concorrência de bakes do benchmark precisa ser 1 ou 2.')
+      const exportTestModeValue = process.env.GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE
+      const exportTestMode = exportTestModeValue === undefined ? undefined : isEditorV6ExportTestMode(exportTestModeValue) ? exportTestModeValue : null
+      if (exportTestMode === null || exportTestMode !== undefined && !process.env.GACHA_VIDEO_STRESS_OFFSCREEN) throw Error('O modo de teste de exportação só aceita um modo conhecido no benchmark offscreen isolado.')
       // Keep worker variants grouped so one configuration cannot evict the other's cache mid-measurement.
       const modes = hairPreparationOnly ? [true] : hairPresetSlot !== null || noHairControl ? Array.from({ length: stressRepeatCount }, () => true) : singleMotionRun ? [false] : cacheProbe ? [false, false, false] : [false, false, false, true, true, true]
       let hairHarnessWindow: BrowserWindow | null = null
@@ -1225,7 +1229,7 @@ app.whenReady().then(async () => {
             : `run-${index + 1}-workers-${expectedExportWorkers}-motion-bakes-${motionConcurrency}`
           const outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
           const reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
-          const options: EditorV6ExportOptions = { startFrame, endFrame: startFrame + frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
+          const options: EditorV6ExportOptions = { startFrame, endFrame: startFrame + frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(exportTestMode ? { testMode: exportTestMode } : {}), ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
           let hairAnimation: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle | undefined
           let hairPreparationWallMs = 0
           let hairPreparationRendererMs = 0
