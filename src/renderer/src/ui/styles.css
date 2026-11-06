@@ -1837,6 +1837,9 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-set-pagination small { font-size:9px; }
 .hair-dev-preview { display:flex;flex-direction:column; }
 .hair-dev-preview-heading { min-height:32px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;border-bottom:1px solid #f1e9ee;color:#aa9ba5;font-size:10px;letter-spacing:.5px; }
+.hair-dev-face-reference { display:flex;align-items:center;gap:6px;color:#806c79;font-size:10px;letter-spacing:0; }
+.hair-dev-face-reference select { max-width:150px;padding:4px 7px;border:1px solid #e9dce4;border-radius:6px;background:#fff;color:#594653;font:inherit; }
+.hair-dev-face-overlay { position:absolute;inset:0;z-index:2;width:100%;height:100%;object-fit:fill;pointer-events:none;user-select:none;-webkit-user-drag:none; }
 .hair-dev-preview-stage { position:relative;min-height:220px;flex:1;display:flex;align-items:center;justify-content:center;overflow:hidden;background-image:linear-gradient(45deg,#0000000a 25%,transparent 25%),linear-gradient(-45deg,#0000000a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#0000000a 75%),linear-gradient(-45deg,transparent 75%,#0000000a 75%);background-size:18px 18px; }
 .hair-dev-head-stage { position:relative;width:min(72%,440px);max-height:93%;overflow:visible;transform-origin:center center;touch-action:none;user-select:none; }
 .hair-dev-head-base { position:absolute;inset:0;z-index:2;width:100%;height:100%;display:block;object-fit:fill;pointer-events:none;user-select:none;-webkit-user-drag:none; }

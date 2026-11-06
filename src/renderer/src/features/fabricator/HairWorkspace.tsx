@@ -6,6 +6,7 @@ import type { HairPartId } from '../../../../shared/customizer'
 import { hairCategories } from '../../../../shared/hairCategories'
 import { emptyHairTransform } from '../../../../shared/hairPersistence'
 import { HairPiecePreview as HairPiece } from './HairPiecePreview'
+import { HairFaceReference } from './HairFaceReference'
 import { HairDeformationPreview } from './HairDeformationPreview'
 import { HairImportModal } from './HairImportModal'
 import { HairGridReviewModal } from './HairGridReviewModal'
@@ -773,13 +774,14 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         </section>
       </aside>
       <section className="hair-dev-preview" aria-label="Prévia da cabeça">
-        <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
+        <div className="hair-dev-preview-heading"><strong>PRÉVIA DA CABEÇA</strong><span data-hair-face-reference-controls /><span>{head ? Math.round(head.width) + ' × ' + Math.round(head.height) : ''}</span></div>
         <div className="hair-dev-preview-stage" style={{ backgroundColor: background }} onWheel={(event) => { event.preventDefault(); setZoom((value) => Math.max(.5, Math.min(3, value * (event.deltaY < 0 ? 1.1 : .9)))) }}>
           {head && <div className="hair-dev-head-stage" style={{ aspectRatio: head.width + ' / ' + head.height, transform: 'scale(' + zoom + ')' }} onPointerMove={moveHair} onPointerUp={finishDrag} onPointerCancel={finishDrag}>
           {hairWorkspace?.back && visibleDraft('back') && (deformMode && selectedSide === 'back'
             ? <HairDeformationPreview side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('back', result)} onError={setError} />
             : <HairPiece side="back" asset={hairWorkspace.back} transform={hairWorkspace.transforms.back} head={head} selected={selectedSide === 'back'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('back', dataUrl)} />)}
             <img className="hair-dev-head-base" src={appearancePreviewForPart(head)} alt="Cabeça do modelo de referência" draggable={false} />
+            {project && <HairFaceReference project={project} head={head} />}
           {hairWorkspace?.front && visibleDraft('front') && (deformMode && selectedSide === 'front'
             ? <HairDeformationPreview side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} active={deformMode} radius={deformRadius} strength={deformStrength} disabled={saving || loadingHair || loadingStyle || processingChroma} onReadyChange={setDeformReady} onCommit={(result) => commitHairDeformation('front', result)} onError={setError} />
             : <HairPiece side="front" asset={hairWorkspace.front} transform={hairWorkspace.transforms.front} head={head} selected={selectedSide === 'front'} onPointerDown={startDrag} disabled={saving || loadingHair || loadingStyle || processingChroma || deformMode} onErase={(dataUrl) => updateHairPixels('front', dataUrl)} />)}
