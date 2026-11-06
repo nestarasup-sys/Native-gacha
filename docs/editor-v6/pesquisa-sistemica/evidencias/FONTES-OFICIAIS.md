@@ -62,6 +62,25 @@
 
 **Nota:** a Pesquisa 02 contém a aplicação de cada fonte ao código do Native Gacha e distingue inferências de features em produção. Arquitetura upstream histórica não é prova da implementação do Electron atual.
 
+## Pesquisa 03 aprofundada — Electron (06/11/2026)
+
+| Fonte oficial consultada | Aplicação no V6 / conclusão específica |
+|---|---|
+| https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering | GPU bitmap versus textura compartilhada, dirtyRect e ausência de frames quando inativo |
+| https://www.electronjs.org/docs/latest/api/web-contents | capturePage, paint, invalidate, startPainting/stopPainting, set/getFrameRate, stayHidden |
+| https://www.electronjs.org/docs/latest/api/browser-window | offscreen, backgroundThrottling, janela oculta |
+| https://www.electronjs.org/docs/latest/api/native-image | toBitmap retorna cópia e normaliza para sRGB por padrão desde Electron 43 |
+| https://www.electronjs.org/docs/latest/api/structures/offscreen-shared-texture | handle/metadata/cor/format/release e limites |
+| https://www.electronjs.org/docs/latest/api/shared-texture | Importação experimental de textura para VideoFrame; não é muxer MP4 |
+| https://www.electronjs.org/docs/latest/api/session | Partition sem persist: é sessão em memória |
+| https://www.electronjs.org/docs/latest/tutorial/ipc | Structured Clone e restrições de objetos DOM/Node |
+| https://www.electronjs.org/docs/latest/tutorial/process-model | Main/renderer/preload |
+| https://www.electronjs.org/docs/latest/tutorial/context-isolation | Bridge e limites de confiança |
+| https://www.electronjs.org/docs/latest/tutorial/security | Sandbox, IPC, CSP e restrição de origens |
+| https://www.electronjs.org/docs/latest/api/content-tracing | Trace Chromium em Perfetto protobuf no Electron atual |
+
+**Proveniência:** fonte oficial confrontada com código da revisão indicada no documento 03; **não houve** validação de recursos com o EXE Windows, benchmark ou PoC. Cuidado com ambiguidades da documentação sobre dirtyRect versus imagem inteira.
+
 ## Grupo B e fontes de alternativas ainda por aprofundar
 
 | Tema | Referência | Status |

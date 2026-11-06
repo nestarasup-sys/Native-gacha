@@ -24,6 +24,11 @@
 | CHROM-AUD-002 | Paint/raster/GPU são dominantes? | Chromium RenderingNG + código de captura | Trace Perfetto restrito após baseline | P1 | PESQUISADA / TRACE PENDENTE |
 | CHROM-SPIKE-001 | Boca pode mudar sem recompôr cabelo em repouso? | Canvas full-rig, visual keys e face patch | PoC de camada independente e golden RGBA | P0 | HIPÓTESE |
 | CHROM-SPIKE-003 | paint/dirtyRect reduz capturePage sem stale? | API Electron + token real | PoC frameId/dirtyRect 150/300 frames | P1 | HIPÓTESE CONDICIONAL |
+| ELE-AUD-001 | Qual custo de Electron offscreen versus pre-job? | [Pesquisa 03 aprofundada](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | 3+3 A/B ON/OFF, workerStart, IPC, capture, bitmap, write, total | P0 | PESQUISADA / NÃO MEDIDA |
+| ELE-AUD-002 | ColorSpace sRGB + BGRA/alpha são preservados? | [Pesquisa 03, seção 7](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | Golden RGBA; Electron >=43, DPI, token por layer | P0 | PESQUISADA / TESTE PENDENTE |
+| ELE-SPIKE-001 | paint/dirtyRect substitui capturePage com frameId? | [Pesquisa 03, seção 10](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | PoC de paint, 150/300 frames, 2 layers, cancelamento | P1 | HIPÓTESE CONDICIONAL |
+| ELE-SPIKE-002 | setFrameRate/stayHidden reduz espera/capturas? | [Pesquisa 03, seção 12](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | A/B cadência 30/60/90, stayHidden, cor e token | P2 | HIPÓTESE CONDICIONAL |
+| ELE-SPIKE-003 | Textura GPU compartilhada elimina readback real? | [Pesquisa 03, seção 11](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | PoC driver/encoder hardware, release/VRAM/fallback | P2 | PESQUISADA / PROTÓTIPO PENDENTE |
 | REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark e riscos | P1 | BLOQUEADO |
 
 **Critério de prioridade:** custo total evitável no **mesmo projeto**, probabilidade de preservar paridade, tamanho da mudança, risco de memória/dados/driver e manutenção. Não usar ranking como prova de ganho.

@@ -63,6 +63,8 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 
 **Pesquisa 02 aprofundada:** [Chromium/Blink/Viz/Skia — segunda rodada completa, capítulos 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md). Foi ampliada com mapa dos 12 estágios, código por frame, sincronização do token, ROI de cabelo, diagnóstico Perfetto, 11 experimentos e critérios de decisão. **Medição Windows ainda pendente.**
 
+**Pesquisa 03 aprofundada — Electron:** [estudo completo de BrowserWindow, offscreen, paint, capturePage, IPC, cor sRGB, sharedTexture e protocolos de teste](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md). A pesquisa documental está completa para as APIs utilizadas; **benchmarks Windows permanecem pendentes**.
+
 **Leitura recomendada por causalidade de exportação:** [10 Cabelo](pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md) → [04 Canvas/SVG](pesquisas/04-CANVAS-SVG-IMAGENS-ALPHA.md) → [03 Electron](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) → [11 FFmpeg](pesquisas/11-EXPORTADOR-FFMPEG-CODECS-AUDIO.md) → [15 Benchmark](pesquisas/15-PROFILING-BENCHMARK-QUALIDADE.md). Para performance da UI, [09 Timeline](pesquisas/09-EDITOR-V6-TIMELINE-PREVIA-ESTADO.md) + [18 React/estado](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md).
 
 ## Terminologia obrigatória

@@ -121,6 +121,41 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 - SharedTexture/D3D exige decisão/integração nativa separadas; `offscreen:true` atual não é zero-copy.
 
 
+
+### ELE-AUD-001 — Medir Electron offscreen no caminho atual
+
+- **Referência:** [Pesquisa 03 aprofundada, capítulos 1–25](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md). Não assumir que capturePage é o gargalo antes de medir.
+- **Entrada:** cópia autorizada, commit/dirty, 1080p30, 300 quadros, Turbo/encoder CPU, 3× hair ON + 3× OFF, pré-job de cabelo incluído no wall clock.
+- **Coletar:** workerStartupMs, ipcDrawMs, rafWaitMs, capturePageMs, captureBitmapMs, captureReadbacks/stale, hair/face/frame, ffmpegWriteMs, RSS e wall-clock. Separar as duas lanes e o pre-job.
+- **Gate:** custo atribuído por etapa e MP4/paridade preservados; não somar tempo de lanes como se fosse parede.
+
+### ELE-AUD-002 — Verificar cor, token, DPR e capacidades do Electron instalado
+
+- **Referência:** estudo 03, capítulos 6, 7, 15 e 18. A documentação informa que `NativeImage.toBitmap()` normaliza para sRGB por padrão desde o Electron 43.
+- **Experimento:** golden RGBA antes de H.264, tokens válidos/obsoletos, janela invisível, escala 1× e monitor DPI alto, alpha de background/foreground, `getFrameRate` e versões reais.
+- **Gate:** pixels corretamente ordenados BGRA, sRGB e alpha equivalentes ao baseline e nenhum quadro stale.
+
+### ELE-SPIKE-001 — Avaliar `paint` com dirtyRect, sem GPU sharedTexture
+
+- **Dependência:** ELE-AUD-001 demonstrar readback/capture relevante; [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md).
+- **Implementação:** PoC isolado push, buffer bounded, `dirtyRect` confirmado na versão Electron instalada, token da mesma imagem, event ordering, cancellation e 2 layers.
+- **Gate:** 150/300 frames exatos, sem stale, MP4 com mídia externa/áudio, memória estável e tempo **total** menor. Se não reduzir, rejeitar.
+
+### ELE-SPIKE-002 — Experimentos de cadência/visibilidade (sem produção)
+
+- Em ambiente isolado comparar 30/60/90 de `setFrameRate` e `capturePage stayHidden`, com mesma configuração de output 30fps.
+- **Gate:** nenhuma regressão de rAF/token, pixels, áudio ou tempo total; rejeitar se ganhos forem apenas em evento paint ou microbench.
+
+### ELE-SPIKE-003 — SharedTexture/VideoFrame e caminho GPU
+
+- **Dependências:** ELE-AUD-001 mostrar readback dominante, estudo 12 Windows/AMD, capacidade de driver/ABI e teste de cor.
+- Testar `offscreen.useSharedTexture`, `event.texture.textureInfo`, `release()`, formatos, imports, limites GPU, handlers nativos e possível integração com encoder AMF/Media Foundation.
+- **Gate:** pipeline do **MP4 completo** mais rápido incluindo mux/áudio, D3D sync correto, fallback CPU e nenhuma textura vazada. Não ativar flags experimentais em produção sem ADR.
+
+### ELE-ADR-001 — Decisão de backend de captura
+
+- Escolher **manter capturePage**, melhorar Canvas/ROI, `paint` ou GPU somente após baselines, golden color/alpha, vídeo layered e rollback. Registrar opção rejeitada.
+
 ## Fase C — decisões e implementação
 
 - `ADR-001`: escolher a intervenção com maior **ganho medido em parede** e paridade, listando alternativas rejeitadas.

@@ -44,6 +44,18 @@
 
 **Resultado:** estudo concluído na dimensão código+documentação, sem alegar que conhecemos o estágio causal dos 41s.
 
+## Rodada 4 — Pesquisa 03 aprofundada — Electron (06/11/2026)
+
+- [x] Mapeados UI BrowserWindow, motion workers, export workers, preloads, sessões, IPC, protocolo de mídia e ciclo de vida.
+- [x] Auditado o fluxo frame→executeJavaScript→rAF→token→capturePage→toBitmap→BGRA→FFmpeg, incluindo duas layers e reuso de buffers.
+- [x] Documentadas APIs oficiais Electron: offscreen GPU bitmap, paint/dirtyRect, shared texture experimental e sharedTexture/VideoFrame, setFrameRate, stayHidden, session, IPC e segurança.
+- [x] Identificada mudança oficial de NativeImage.toBitmap para sRGB padrão desde Electron 43, **ainda sem teste de paridade de cor**.
+- [x] Catalogados testes existentes e roteiro ELE-T0 até ELE-T11; atualizados plano e matriz.
+- [ ] **Não executados:** benchmark do Windows, testes unitários, experimentos paint/shared texture, smoke do EXE, RGBA golden e qualquer alteração de código do app.
+- [ ] Próxima ação autorizada apenas em ambiente de laboratório: ELE-AUD-001/002 e, se captura dominar, ELE-SPIKE-001.
+
+**Status:** pesquisa estática e documental aprofundada; gargalo real dos 41s ainda não atribuído causalmente.
+
 ## Observação histórica relevante
 
 **[RELATO]** Mesmos 10 segundos do mesmo projeto: export com animação capilar cerca de 50s e sem animação cerca de 9s. Isto equivale a diferença aproximada de 82%; **não** temos os relatórios brutos do A/B nessa rodada. Não tomar os 41s como tempo da física 120Hz, nem somar custos paralelos.
