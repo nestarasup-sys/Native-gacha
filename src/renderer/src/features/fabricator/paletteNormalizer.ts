@@ -114,7 +114,19 @@ function classifyPixel(red: number, green: number, blue: number, kind: PaletteAs
     return { role: gray.role, confidence: chroma >= 0.1 ? 'low' : 'medium' }
   }
 
-  if (kind === 'hair' && chroma >= 0.065) {
+  if (kind === 'hair') {
+    if (chroma < 0.065) {
+      const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
+      // AI sheets often compress white shine into mid-light grays. Keep those
+      // highlights in the light role instead of flattening them into the base.
+      const boundaries = [75, 137, 190]
+      const role: PaletteRole = luminance < boundaries[0] ? 'outline'
+        : luminance < boundaries[1] ? 'shadow'
+          : luminance < boundaries[2] ? 'base' : 'light'
+      const boundaryDistance = Math.min(...boundaries.map((boundary) => Math.abs(luminance - boundary)))
+      const confidence = boundaryDistance < 4 ? 'low' : boundaryDistance < 9 ? 'medium' : 'high'
+      return { role, confidence }
+    }
     const hue = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360
     if (hue >= 255 && hue <= 320) return { role: 'detail', confidence: 'high' }
   }
@@ -251,8 +263,25 @@ export function normalizePalettePixels(image: PalettePixelData, kind: PaletteAss
   const exactColors = new Set(palette.map(({ hex }) => Number.parseInt(hex.slice(1), 16)))
   const exactRoles = new Map<number, PaletteRole>(palette.map((entry) => [Number.parseInt(entry.hex.slice(1), 16), entry.role]))
   const chroma = removeDetectedChromaKey(data, width, height, colors, sensitivity, overrides)
+  const colorBins = new Map<string, { red: number; green: number; blue: number; weight: number }>()
+  for (let offset = 0; offset < data.length; offset += 4) {
+    const alpha = data[offset + 3]
+    if (alpha === 0 || exactRoles.has((data[offset] << 16) | (data[offset + 1] << 8) | data[offset + 2])) continue
+    const key = colorBinKey(data[offset], data[offset + 1], data[offset + 2])
+    const weight = alpha / 255
+    const bin = colorBins.get(key) ?? { red: 0, green: 0, blue: 0, weight: 0 }
+    bin.red += data[offset] * weight
+    bin.green += data[offset + 1] * weight
+    bin.blue += data[offset + 2] * weight
+    bin.weight += weight
+    colorBins.set(key, bin)
+  }
+  const classifications = new Map<string, { role: PaletteRole; confidence: PaletteSourceGroup['confidence']; sourceHex: string }>()
+  for (const [key, bin] of colorBins) {
+    const red = Math.round(bin.red / bin.weight), green = Math.round(bin.green / bin.weight), blue = Math.round(bin.blue / bin.weight)
+    classifications.set(key, { ...classifyPixel(red, green, blue, kind, sensitivity), sourceHex: colorHex(red, green, blue) })
+  }
   const groups = new Map<string, ColorGroupAccumulator>()
-  const classifications = new Map<string, { role: PaletteRole; confidence: PaletteSourceGroup['confidence'] }>()
   let visiblePixels = 0, uncertainPixels = 0
 
   for (let offset = 0; offset < data.length; offset += 4) {
@@ -264,8 +293,7 @@ export function normalizePalettePixels(image: PalettePixelData, kind: PaletteAss
     if (exactRole) continue
 
     const key = colorBinKey(red, green, blue)
-    let classified = classifications.get(key)
-    if (!classified) { classified = classifyPixel(red, green, blue, kind, sensitivity); classifications.set(key, classified) }
+    const classified = classifications.get(key)!
     const manualRole = palette.some((item) => item.role === overrides[key]) ? overrides[key] : undefined
     const role = manualRole ?? classified.role
     const uncertainChroma = chroma.detected && isGreenCandidate(red, green, blue, sensitivity) && !manualRole
@@ -274,7 +302,7 @@ export function normalizePalettePixels(image: PalettePixelData, kind: PaletteAss
     let group = groups.get(key)
     if (!group) {
       const groupChroma = chroma.preservedKeys.has(key) ? 'preserved' as const : undefined
-      group = { count: 0, sourceHex: colorHex(red, green, blue), roles: new Map(), uncertainPixels: 0, lowConfidencePixels: 0, ...(groupChroma ? { chroma: groupChroma } : {}) }
+      group = { count: 0, sourceHex: classified.sourceHex, roles: new Map(), uncertainPixels: 0, lowConfidencePixels: 0, ...(groupChroma ? { chroma: groupChroma } : {}) }
       groups.set(key, group)
     }
     group.count += 1

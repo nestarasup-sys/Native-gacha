@@ -62,6 +62,27 @@ test('hair maps the purple accent to the fifth secondary role', () => {
   assertVisibleColorsAreOfficial(image, 'hair')
 })
 
+test('pixels in the same shade group normalize independently of their scan order', () => {
+  const source = ['#858585', '#8F8F8F']
+  const normalize = (colors) => {
+    const image = pixels([colors.map((color) => rgba(color))])
+    const report = normalizePalettePixels(image, 'hair')
+    return { colors: Array.from(image.data).filter((_, index) => index % 4 !== 3), sourceHex: report.groups[0]?.sourceHex }
+  }
+  const forward = normalize(source)
+  const reversed = normalize([...source].reverse())
+  assert.deepEqual(forward.colors.slice(0, 3), reversed.colors.slice(3, 6))
+  assert.deepEqual(forward.colors.slice(3, 6), reversed.colors.slice(0, 3))
+  assert.equal(forward.sourceHex, reversed.sourceHex)
+})
+
+test('hair keeps pale grayscale highlights in the light role', () => {
+  const image = pixels([[rgba('#C4C0C0')]])
+  const report = normalizePalettePixels(image, 'hair')
+  assert.deepEqual(Array.from(image.data.slice(0, 3)), [226, 226, 226])
+  assert.equal(report.groups[0]?.role, 'light')
+})
+
 test('already standardized hair colors are left unchanged', () => {
   const image = pixels([[...PALETTES.hair.map(({ hex }) => rgba(hex))]])
   normalizePalettePixels(image, 'hair')
