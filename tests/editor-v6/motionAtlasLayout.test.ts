@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { chooseMotionAtlasLayout } from '../../src/renderer/src/features/editorV6/motion/motionAtlasLayout'
+import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from '../../src/renderer/src/features/editorV6/motion/motionAtlasLayout'
 
 describe('layout do atlas de movimento', () => {
   it('evita a grade 3x3 que desperdiça duas células nas sete amostras', () => {
@@ -22,6 +22,12 @@ describe('layout do atlas de movimento', () => {
     expect(layout.width * layout.ratio).toBeLessThanOrEqual(4096)
     expect(layout.height * layout.ratio).toBeLessThanOrEqual(4096)
     expect(layout.pixels * layout.ratio ** 2).toBeLessThanOrEqual(8_000_000)
+  })
+
+  it('mantém nativa a transição 3200×2514 que ultrapassava o limite antigo por 0,56%', () => {
+    const layout = chooseMotionAtlasLayout(1, 3200, 2514, 4096, MAX_MOTION_ATLAS_PIXELS)
+    expect(layout).toMatchObject({ columns: 1, rows: 1, width: 3200, height: 2514, pixels: 8_044_800, ratio: 1 })
+    expect(layout.pixels).toBeLessThanOrEqual(MAX_MOTION_ATLAS_PIXELS)
   })
 
   it('rejeita dimensões inválidas antes de procurar uma grade', () => {

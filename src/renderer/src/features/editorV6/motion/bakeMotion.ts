@@ -6,7 +6,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6Motio
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
 import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
-import { chooseMotionAtlasLayout } from './motionAtlasLayout'
+import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import { editorV6AlphaCropBounds } from './motionAlphaCrop'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
@@ -510,7 +510,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
     }
     const count = request.plan.samples.length
-    const maxAtlasPixels = Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000)
+    const maxAtlasPixels = Math.min(MAX_MOTION_ATLAS_PIXELS, request.maxAtlasPixels ?? MAX_MOTION_ATLAS_PIXELS)
     let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
     let layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
     let ratio = layout.ratio
