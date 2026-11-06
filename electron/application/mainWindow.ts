@@ -68,7 +68,8 @@ export function createMainWindowFactory(deps: MainWindowDependencies): () => Bro
       })
     })
 
-    const hairStressHarness = videoStressOffscreen && /^\d+$/.test(deps.env.GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT ?? '')
+    const hairStressHarness = videoStressOffscreen && (/^\d+$/.test(deps.env.GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT ?? '')
+      || deps.env.GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE === '1' && deps.env.GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL === '1')
     if (deps.rendererUrl) {
       const url = new URL(deps.rendererUrl)
       if (hairStressHarness) {

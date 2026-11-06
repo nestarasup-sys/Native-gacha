@@ -11,7 +11,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
   mouthLoop?: { startFrame: number; cycleFrames: number }
-  concurrency?: 1 | 2
+  concurrency?: 1 | 2 | 3
 }) {
   const began = performance.now()
   const characters = new Map(deps.characters.map((character) => [character.id, character]))
@@ -49,7 +49,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const groupedPlans = [...groups.values()]
   const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
-  const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2
+  const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2 | 3
   // Keep a character's sequence on one stable bake loop. A shared work-stealing
   // queue can send consecutive requests to separate Electron sessions and lose
   // endpoint-renderer reuse even when the groups are adjacent.

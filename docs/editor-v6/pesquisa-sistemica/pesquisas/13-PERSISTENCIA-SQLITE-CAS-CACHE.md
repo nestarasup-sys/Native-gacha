@@ -90,3 +90,17 @@ Como o Native Gacha mantém referências e durabilidade entre os módulos, e ond
 **[A CONFIRMAR]** Diferença real de tempo em dados canônicos/cached em projetos grandes, chaves corretas de todas as fontes e casos de recovery não cobertos pelas fixtures.
 
 **Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).
+
+## Decisão LAB — atlases de transição sem persistência — 06/11/2026
+
+O serviço Motion tinha um cache JSON de disco limitado a 768MiB/512 itens e permitia que exportações seguintes reutilizassem atlases. Em corridas frias foi observada escrita de cerca de 70MB. A política solicitada permite reutilização **dentro da mesma exportação**, mas não guardar atlases entre exports.
+
+As seis corridas completas equivalentes hair ON/OFF após correção do harness registraram 0 bytes gravados no cache de movimento. MP4s e perfis foram removidos após SSIM/PSNR/áudio; somente relatórios JSON pequenos permanecem na área de runs do LAB.
+
+- O serviço Electron não conecta mais `createMotionDiskCache`; por isso motion bakes do preview/export não leem nem gravam atlas em disco.
+- `runEditorV6Export` cria `cacheScope` UUID e o transporta na requisição validada por Zod. A identidade do cache de memória inclui o escopo; trabalhos iguais compartilham resultado durante a preparação corrente, mas não de preview/outro export.
+- Os bakes de motion e mouth loops carregam o mesmo escopo; a função de liberação elimina as chaves ao término completo do job em sucesso/falha/cancelamento. Cache em memória do preview permanece limitado pelo teto existente de 8 entradas/24MB; exportação não pode atingi-lo como hit.
+- Teste de chave verifica isolamento entre escopos; testes de motion/cache, schema e integração passaram. Três exports completos reportaram 0 bytes disk read/write.
+- O helper de cache em disco e seus testes unitários permanecem isolados, mas não há ligação do serviço do app com esse helper.
+
+Dados previamente existentes no cache original de usuário não são apagados automaticamente. O LAB não tinha diretório `app-data/cache/editor-v6-motion-v2`; o cache é ignorado no novo comportamento. A instalação/perfil original não foi lida nem alterada nesta etapa.

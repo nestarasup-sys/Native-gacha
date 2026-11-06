@@ -151,6 +151,7 @@ async function main() {
         : track) }
   }
   const mouthWorkerPayloads: Array<{ startFrame: number; cycleFrames: number; stateCount: number; assetCount: number; partStart: number; partEnd: number }> = []
+  const mouthExportScopes = new Set<string>(), releasedMouthExportScopes = new Set<string>()
   const bakeMouthLoop = async (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
     signal.throwIfAborted()
     const assetId = randomUUID()
@@ -160,7 +161,8 @@ async function main() {
   const mouthOutput = join(folder, 'many-mouth-loop-states.mp4')
   const mouthReport = await runEditorV6Export(mouthProject, { startFrame: 5, endFrame: 306, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: false, mouthLoopCycleFrames: 37 }, {
     ...base, id: randomUUID(), outputPath: mouthOutput, reportPath: join(folder, 'many-mouth-loop-states.report.json'),
-    getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
+    getCharacters: async () => [mouthCharacter], bakeMotion: (request, signal) => { assert(Boolean(request.cacheScope), 'O bake de boca não recebeu escopo frio da exportação.'); mouthExportScopes.add(request.cacheScope!); return bakeMouthLoop(request, signal) },
+    releaseMotionCacheScope: (scope) => { releasedMouthExportScopes.add(scope) },
     createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
       mouthWorkerPayloads.push({ startFrame: mouthLoops?.startFrame ?? -1, cycleFrames: mouthLoops?.cycleFrames ?? -1, stateCount: mouthLoops?.states.length ?? 0, assetCount: renderProject.assets.length, partStart: part.startFrame, partEnd: part.endFrame })
       return makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops)
@@ -169,6 +171,7 @@ async function main() {
   assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16 && mouthReport.mouthAnimation.preparationMilliseconds > 0, 'O export não preparou todos os estados da boca divididos entre os trechos ou não registrou o tempo de preparação.')
   assert(mouthReport.mouthAnimation.legacyPatchStates === 16 && mouthReport.mouthAnimation.isolatedStates === 0, 'O relatório não registrou os 16 estados de boca pelo caminho legado do fixture.')
   assert(mouthReport.options.mouthLoop === true, 'O exportador aceitou desligar o loop de boca por uma opção legada.')
+  assert(mouthExportScopes.size === 1 && releasedMouthExportScopes.has([...mouthExportScopes][0]), 'O cache de boca não permaneceu isolado numa exportação ou não foi liberado no fim.')
   assert(mouthWorkerPayloads.map((item) => item.stateCount).join(',') === '15,1', 'Cada trecho recebeu estados de boca fora do seu próprio intervalo.')
   assert(mouthWorkerPayloads.map((item) => item.assetCount).join(',') === '17,3', 'O worker recebeu atlas de boca de outros trechos do export.')
   assert(mouthWorkerPayloads.every((item) => item.startFrame === 5 && item.cycleFrames === 37), 'O ciclo da boca reiniciou em uma emenda do export.')

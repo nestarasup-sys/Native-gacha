@@ -177,3 +177,29 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas, URLs oficiais e versões, lacunas, experimentos falsificáveis e decisão de próxima rodada. Uma refatoração só está feita com diff, build, testes, benchmark real, validação de paridade e relatório. Não existe "concluído por intenção".
 
 [Estado real](PROGRESSO_E_RESULTADOS.md).
+
+## Execução LAB — 06/11/2026
+
+- Perfil de benchmark UI equivalente, caminho command+IPC, projeto inteiro e cache/processo frios: concluído, com 3 amostras cada em CPU/libx264 e Auto/AMF. Medianas e qualidade estão em [Progresso](PROGRESSO_E_RESULTADOS.md), [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md) e [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md).
+- Correção aceita: escolha CPU suportava apenas libopenh264 ausente no FFmpeg empacotado; adicionar libx264 resolveu o erro. CPU/libx264 mediana 82,44s vs AMF 84,83s no projeto e hardware avaliados; manter CPU como default local, sem retirar Auto.
+- Paint não promovido: smoke teve maior tempo e SHA diferente na camada frontal. Medida de espera paint separada e capturePage segue padrão.
+- Sobreposição de escrita pipe/captura foi medida em smoke e revertida por lentidão e cópia adicional de frame.
+- [x] Equivalência OFF corrigida: controle usa `runEditorV6ExportCommand` + IPC start/status, sessão e processo novos. Três corridas de projeto inteiro incluem 2.394 frames, áudio, perfil CPU e zero escrita de cache.
+- [x] A/B x264 `veryfast`/`ultrafast` com taxa 12Mbps no projeto completo, ON e OFF; validação SSIM/PSNR/áudio integral antes de promover o preset rápido.
+- Pendências P0 restantes: golden RGBA integral de `paint-event`, vídeo layered, resize/timeout/cancelamento; validar preset em outro projeto/hardware. Paint continua opt-in.
+- Próxima intervenção: Motion (mediana ~17,1s no cabelo ON) e renderização comum (~51,2s), usando profiling por lane e mudanças limitadas. Não iniciar ROI sem prova de hotspot e golden.
+- Último teste de concorrência: 3 lanes Motion com 37 planos únicos continuaram em pico 2 (só dois personagens) e levaram 18,22s; 4 render workers reduziram render 51,20→50,92s e elevaram RSS a 1.060MiB, sem ganho de parede contra 80,11s (variação < ruído). Não ativar; padrão continua 2/2. Usar terceira lane somente em outro projeto com 3+ personagens.
+- Limite atual: não foi estabelecida comparação válida contra o relato de 91s, pois as configurações originais são desconhecidas. Esta atualização ainda não fecha o critério global de conclusão.
+
+## Rodada causal e cache por exportação — 06/11/2026
+
+- [x] Controles hair OFF completos 3× no projeto/UI-alvo, 2.394 quadros, 1080p30, CPU/libx264, áudio: 74,76 / 74,29 / 76,88s, mediana 74,76s. É um controle via runner direto, portanto exclui a camada de comando da UI; não reportar como diferença pura de cabelo sem essa limitação.
+- [x] Eliminado o cache persistente de atlas de movimento no serviço Electron. Antes, export fria escrevia ~70 MB no cache de perfil. Agora cada export gera `cacheScope` UUID, isola memória de exportações anteriores, permite deduplicação ao longo de todo o job (motion e mouth loops) e libera as entradas ao concluir/falhar; o serviço não lê/escreve atlas em disco.
+- [x] Corrida pós-isolamento sem alteração do crop: 86,54s mediana em 3 corridas; usada como grupo de comparação local, não como ganho.
+- [x] `canvasFaceAlphaBounds` mudou a leitura RGBA byte-a-byte para palavras RGBA alinhadas, com seleção explícita do byte alpha por endianness. Mesmo corte/limiar >8. Regressão de alpha transparente/limiar/limites passou.
+- [x] 3 exports completos após a otimização: 80,94 / 87,85 / 82,13s, mediana 82,13s; preparo hair 7,89 / 10,66 / 8,20s (mediana 8,20); crop 3,67 / 4,81 / 3,72s (mediana 3,72). Grupo anterior de 3: crop 4,38 / 4,52 / 4,15s (mediana 4,38). Redução local mediana de ~15%; tempo total similar à baseline inicial 82,44s e a dispersão impede atribuir ~5% de ganho à mudança.
+- Todos os exports finais passaram contagem 2.394, H.264 1920×1080 30fps e áudio; zero bytes lidos/escritos no cache de movimento. Pico RSS Main 846,7–971,2 MiB nas 3 corridas.
+- [x] Suite integrada Windows: 25 arquivos/115 direcionados, suíte completa 65 arquivos/361 testes + 1 skip, Electron hair/scene offscreen, typecheck, auditoria (713 arquivos, zero imports ausentes/violações) e build passaram.
+- Artefatos pesados da rodada interrompida foram removidos somente de um `isolated-app-data` marcado pelo próprio benchmark; relatórios leves preservados. Perfil canônico LAB e original não foram limpos.
+
+**Próxima causa a investigar:** composição/renderização continua 54,13–55,57s; motion 17,32–18,99s. Priorizar distribuição do tempo de FFmpeg CPU vs worker/render nas duas lanes e avaliar D3D12VA/Media Foundation somente com smoke de disponibilidade, mesma qualidade e fallback. ROI/captura paint continuam bloqueados por golden/paridade.

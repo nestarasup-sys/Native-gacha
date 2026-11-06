@@ -162,6 +162,8 @@ describe('export worker lifecycle', () => {
     expect(contents.capturePage).not.toHaveBeenCalled()
     expect(frame.bitmap).toHaveLength(payload.width * payload.height * 4)
     expect(frame.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 1 })
+    expect(frame.timings?.paintWaitMs).toBeTypeOf('number')
+    expect(frame.timings?.capturePageMs).toBe(0)
     worker.close()
     expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1)
     factory.dispose()

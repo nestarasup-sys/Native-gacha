@@ -1,5 +1,6 @@
 const fs = require('node:fs/promises')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { spawn } = require('node:child_process')
 const http = require('node:http')
 
@@ -16,7 +17,8 @@ const cacheProbe = process.argv.includes('--cache-probe')
 const singleMotionRun = process.argv.includes('--single-motion-run')
 const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
 const noHairControl = process.argv.includes('--no-hair-control')
-const motionConcurrency = argument('--motion-bake-concurrency=')
+const motionConcurrency = argument('--motion-bake-concurrency=') ?? '2'
+const renderWorkers = argument('--render-workers=')
 const exportTestMode = argument('--export-test-mode=')
 const hairPresetSlot = argument('--hair-preset-slot=')
 const segmentStartFrameValue = argument('--start-frame=')
@@ -27,7 +29,12 @@ const authorizedProjectTitle = 'Teste de Importação — Personagens do Pacote'
 const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
 const captureModeValue = argument('--capture-mode=')
+const uiExportProfile = process.argv.includes('--ui-export-profile')
+const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument('--hair-preset-file='))
+const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
+const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
+const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
 const MAX_RUN_OUTPUT_BYTES = 2 * 1024 ** 3
 const MIN_FREE_SPACE_BYTES = 3 * 1024 ** 3
 const reuseRendererServer = process.argv.includes('--reuse-renderer-server')
@@ -85,24 +92,59 @@ function verifyExistingRenderer(origin) {
 }
 
 async function directoryBytes(directory) {
+  let entries
+  try { entries = await fs.readdir(directory, { withFileTypes: true }) }
+  catch (error) { if (error?.code === 'ENOENT') return 0; throw error }
   let total = 0
-  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+  for (const entry of entries) {
     const target = path.join(directory, entry.name)
     if (entry.isDirectory()) total += await directoryBytes(target)
-    else if (entry.isFile()) total += (await fs.stat(target)).size
-    else throw Error(`A saída do benchmark contém um tipo de arquivo não suportado: ${entry.name}`)
+    else if (entry.isFile()) {
+      try { total += (await fs.stat(target)).size }
+      catch (error) { if (error?.code !== 'ENOENT') throw error }
+    } else throw Error('A saída do benchmark contém um tipo de arquivo não suportado: ' + entry.name)
   }
   return total
+}
+async function cleanupGeneratedRun(outputFolder, { retainMp4 = false } = {}) {
+  const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
+  let realRoot, realOutput
+  try {
+    realRoot = await fs.realpath(allowedRunsRoot)
+    realOutput = await fs.realpath(outputFolder)
+  } catch (error) { if (error?.code === 'ENOENT') return; throw error }
+  if (!inside(realRoot, realOutput) || realRoot === realOutput) throw Error('Recusa de limpeza: a saída não está dentro da raiz real de execuções do LAB.')
+  const markerPath = path.join(realOutput, '.v6-benchmark-run.json')
+  let marker
+  try { marker = JSON.parse(await fs.readFile(markerPath, 'utf8')) }
+  catch (error) { if (error?.code === 'ENOENT') return; throw error }
+  if (marker.schemaVersion !== 1 || marker.runId !== path.basename(realOutput)) throw Error('Recusa de limpeza: o marcador não pertence a esta execução do benchmark.')
+  const isolatedData = path.join(realOutput, 'isolated-app-data')
+  try {
+    const info = await fs.lstat(isolatedData)
+    if (info.isSymbolicLink() || !info.isDirectory()) throw Error('Recusa de limpeza: isolated-app-data não é uma pasta física regular.')
+    await fs.rm(isolatedData, { recursive: true, force: false })
+  } catch (error) { if (error?.code !== 'ENOENT') throw error }
+  async function removeHeavyOutputs(directory) {
+    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name)
+      if (entry.isSymbolicLink()) throw Error('Recusa de limpeza: link simbólico em saída gerada.')
+      if (entry.isDirectory()) await removeHeavyOutputs(target)
+      else if (entry.isFile() && !['.json', '.txt'].includes(path.extname(entry.name).toLowerCase()) && !(retainMp4 && path.extname(entry.name).toLowerCase() === '.mp4')) await fs.rm(target, { force: false })
+      else if (!entry.isFile()) throw Error('Recusa de limpeza: tipo de entrada não regular em saída gerada.')
+    }
+  }
+  await removeHeavyOutputs(realOutput)
 }
 
 async function main() {
   const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
   if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe && !singleMotionRun)
     && !hairPresetSlot && !noHairControl
-    || singleMotionRun && !['1', '2'].includes(motionConcurrency)
+    || singleMotionRun && !['1', '2', '3'].includes(motionConcurrency)
     || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || noHairControl || process.argv.includes('--compare-workers'))
     || noHairControl && (hairPresetSlot || cacheProbe || singleMotionRun || hairPreparationOnly || process.argv.includes('--compare-workers'))) {
-    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control)')
+    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2|3 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control) [--render-workers=2|4]')
   }
   if (!Number.isInteger(rendererPort) || rendererPort < 1024 || rendererPort > 65535) throw Error('--renderer-port precisa ser uma porta local válida.')
   if (argument('--session-data=') !== undefined) throw Error('Reutilizar sessão Electron não é permitido no protocolo frio; cada execução cria uma sessão nova.')
@@ -116,6 +158,15 @@ async function main() {
     throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
   }
   if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
+  if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
+  if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
+  if (renderWorkers && !['2', '4'].includes(renderWorkers)) throw Error('--render-workers aceita 2 ou 4 no harness Turbo.')
+  if (renderWorkers && process.argv.includes('--compare-workers')) throw Error('--render-workers não se combina com --compare-workers.')
+  if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(x264Preset)) throw Error('--x264-preset aceita ultrafast, superfast, veryfast, faster, fast ou medium.')
+  if (retainMp4ForQuality && (!uiExportProfile || !(hairPresetSlot || noHairControl) || hairPreparationOnly || repeatValue && repeatValue !== '1')) throw Error('--retain-mp4-for-quality exige uma única exportação completa do perfil UI.')
+  if (uiExportProfile && (hairPreparationOnly || hairPresetSlot && (Number(hairPresetSlot) !== 2 || !hairPresetFile) || !hairPresetSlot && !noHairControl)) {
+    throw Error('--ui-export-profile exige Preset 2 salvo para cabelo ativo ou --no-hair-control para o controle sem cabelo.')
+  }
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
     || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
@@ -124,6 +175,7 @@ async function main() {
     throw Error('Benchmark de cabelo aceita --start-frame=, --duration-seconds= e --repeat=1..3; janela e repetição não se aplicam ao perfil somente de preparação.')
   }
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
+  const allowedPresetRoot = path.join(root, 'out', 'editor-v6-stress', 'preferences')
   const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
   if (!immutableSources.every((source) => inside(verifiedBackupRoot, source))
     || !(inside(verifiedBackupRoot, sourceMotionCache) || inside(allowedRunsRoot, sourceMotionCache))) {
@@ -132,6 +184,16 @@ async function main() {
   if (!inside(allowedRunsRoot, outputFolder) || outputFolder === allowedRunsRoot
     || sources.some((source) => inside(source, outputFolder) || inside(outputFolder, source))) {
     throw Error('A pasta de resultados precisa ficar isolada das fontes verificadas.')
+  }
+  let uiPreset = null
+  if (uiExportProfile && hairPresetSlot) {
+    const resolvedPresetPath = await fs.realpath(hairPresetFile)
+    if (!inside(allowedPresetRoot, resolvedPresetPath)) throw Error('O preset UI deve estar na área local isolada out/editor-v6-stress/preferences.')
+    const presetStats = await fs.stat(resolvedPresetPath)
+    if (!presetStats.isFile() || presetStats.size > 32_768) throw Error('O arquivo de preset UI deve ser um JSON pequeno e regular.')
+    const presetEnvelope = JSON.parse(await fs.readFile(resolvedPresetPath, 'utf8'))
+    if (presetEnvelope.slot !== 2 || !presetEnvelope.preset || typeof presetEnvelope.preset !== 'object') throw Error('O arquivo não contém o preset 2 salvo na interface.')
+    uiPreset = presetEnvelope.preset
   }
 
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
@@ -152,6 +214,11 @@ async function main() {
 
   await fs.mkdir(path.dirname(outputFolder), { recursive: true })
   await fs.mkdir(outputFolder, { recursive: false })
+  const canonicalOutput = await fs.realpath(outputFolder)
+  if (!inside(await fs.realpath(allowedRunsRoot), canonicalOutput) || (await fs.lstat(outputFolder)).isSymbolicLink()) {
+    throw Error('A pasta de saída não é um diretório físico canônico dentro da raiz de execuções do LAB.')
+  }
+  await fs.writeFile(path.join(outputFolder, '.v6-benchmark-run.json'), JSON.stringify({ schemaVersion: 1, runId: path.basename(canonicalOutput), createdAt: new Date().toISOString() }), { flag: 'wx' })
   const disk = await fs.statfs(outputFolder)
   if (disk.bavail * disk.bsize < MIN_FREE_SPACE_BYTES) throw Error('O benchmark foi interrompido: são necessários pelo menos 3 GiB livres na unidade de saída.')
   // Resolve a run-folder junction before Electron's canonical-path check.
@@ -170,6 +237,9 @@ async function main() {
   await fs.cp(charactersPath, charactersTarget, { errorOnExist: true, force: false })
   await fs.cp(fabricatorFolder, path.join(profile, 'fabricator'), { recursive: true, errorOnExist: true, force: false })
   await fs.cp(sourceMotionCache, path.join(profile, 'cache', 'editor-v6-motion-v2'), { recursive: true, errorOnExist: true, force: false })
+  // The UI's fixed-folder preference avoids an interactive Save As dialog.
+  // Point that same IPC path at this run's disposable output directory.
+  await fs.writeFile(path.join(profile, 'editor-v6-export-folder.json'), JSON.stringify({ folder: outputFolder }), { flag: 'wx' })
   const rendererOrigin = `http://127.0.0.1:${rendererPort}`
   const rendererServer = reuseRendererServer
     ? (await verifyExistingRenderer(rendererOrigin), { origin: rendererOrigin, close: async () => {} })
@@ -180,6 +250,11 @@ async function main() {
     ...(singleMotionRun ? { GACHA_EDITOR_V6_STRESS_SINGLE_MOTION_RUN: '1', GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency } : {}),
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
+    ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
+    GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
+    GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
+    GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
+    ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
@@ -227,18 +302,27 @@ async function main() {
       || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
     : noHairControl
     ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
+      || uiExportProfile && summary.profile !== 'editor-v6-ui-default-no-hair'
+      || uiExportProfile && summary.x264Preset !== x264Preset
+      || summary.motionConcurrency !== Number(motionConcurrency)
+      || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
+      || summary.requestedEncoder !== encoder
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || !Number.isFinite(run.milliseconds) || run.milliseconds <= 0 || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0
         || !Number.isFinite(run.exportWallMs) || run.exportWallMs < run.milliseconds
-        || !Number.isFinite(run.clickToValidatedWallMs) || run.clickToValidatedWallMs !== run.exportWallMs
+        || !Number.isFinite(run.clickToValidatedWallMs) || (uiExportProfile ? run.clickToValidatedWallMs < run.exportWallMs : run.clickToValidatedWallMs !== run.exportWallMs)
         || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
+      || summary.requestedEncoder !== encoder
+      || summary.motionConcurrency !== Number(motionConcurrency)
+      || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)
+      || uiExportProfile && (summary.profile !== 'editor-v6-ui-default' || summary.hairPoseReactionOnly !== true || summary.hairPosteriorOnly !== true)
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
-        || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
+        || run.requestedEncoder !== encoder || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
         || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
     : singleMotionRun
     ? summary.benchmarkKind !== 'motion-concurrency-single' || summary.runs?.length !== 1
@@ -256,18 +340,15 @@ async function main() {
   if (hairPreparationOnly && (await fs.readdir(outputFolder)).some((name) => name.toLowerCase().endsWith('.mp4'))) {
     throw Error(`O perfil de preparação não deveria gerar MP4. Revise ${outputFolder}.`)
   }
-  // Retain lightweight evidence only. The run's Electron profile and generated
-  // media are disposable copies owned by this benchmark directory.
-  await fs.rm(path.join(outputFolder, 'isolated-app-data'), { recursive: true, force: true })
-  async function removeGeneratedBinaryOutputs(directory) {
-    for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-      const target = path.join(directory, entry.name)
-      if (entry.isDirectory()) await removeGeneratedBinaryOutputs(target)
-      else if (!['.json', '.txt'].includes(path.extname(entry.name).toLowerCase())) await fs.rm(target, { force: true })
-    }
-  }
-  await removeGeneratedBinaryOutputs(outputFolder)
-  console.log(`Comparação completa: ${summaryPath}`)
+  // Retain only a small run marker and JSON/text evidence after validation.
+  await cleanupGeneratedRun(outputFolder, { retainMp4: retainMp4ForQuality })
+  if (retainMp4ForQuality) console.log('MP4 temporário para comparação visual: ' + path.join(outputFolder, (await fs.readdir(outputFolder)).find((name) => name.toLowerCase().endsWith('.mp4')) ?? '(não encontrado)'))
+  console.log('Comparação completa: ' + summaryPath)
 }
 
-main().catch((error) => { console.error('[V6 project benchmark] Falha:', error); process.exitCode = 1 })
+main().catch(async (error) => {
+  console.error('[V6 project benchmark] Falha:', error)
+  try { await cleanupGeneratedRun(outputFolder) }
+  catch (cleanupError) { console.error('[V6 project benchmark] Falha ao limpar temporários próprios:', cleanupError) }
+  process.exitCode = 1
+})

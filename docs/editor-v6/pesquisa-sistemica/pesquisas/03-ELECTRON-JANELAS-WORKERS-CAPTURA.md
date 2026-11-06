@@ -756,3 +756,15 @@ O benchmark frio mostrou captura como custo relevante após a preparação: em t
 O LAB agora usa `beginFrameSubscription(false, callback)` para manter a `NativeImage` mais recente e entrega pixels somente quando o token lateral corresponde exatamente ao frame solicitado; incompatibilidade invalida a imagem e retorna ao fluxo existente de retry. A leitura de pixels usa o mesmo conversor BGRA e buffer reutilizado. O modo `capturePage` continua selecionável para comparação/fallback. Em smoke com hashes RGBA esparsos, frames 0/29/30/149 coincidiram; export curto validou 150 frames, 1080p30 e áudio. Ainda falta golden completo, cancelamento/resize sob estresse e uma distribuição empacotada.
 
 Electron documenta subscription offscreen com imagem integral quando `onlyDirty=false` e callback assíncrono; o fluxo mantém a confirmação de token como barreira contra frame anterior. [Offscreen rendering](https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering) · [webContents API](https://www.electronjs.org/docs/latest/api/web-contents).
+
+## Atualização LAB equivalente à UI — 06/11/2026
+
+O controle sem cabelo também carrega o renderer em uma rota de harness explícita, instala a ponte de exportação e usa o mesmo command→IPC start/status da UI ON. `mainWindow` reconhece essa rota somente com stress offscreen + perfil UI + flag no-hair; o harness encerra Electron com status do resultado. Smoke de 20s e 3 exports completos passaram; contagem/áudio/caches foram validados. Isso corrige a diferença metodológica do runner direto anterior.
+
+Concorrência de render: uma exportação completa com quatro workers terminou em 80,18s, fase render 50,92s, pico RSS Main 1.060MiB; o perfil promovido com dois workers mediu mediana 80,11s e fase render 51,20s. O pequeno deslocamento fica dentro da dispersão e consome mais memória. Quatro workers seguem opt-in no harness, sem promoção ao app.
+
+A nova comparação de captura executou perfil UI slot 2/posterior-only, 1080p30/Turbo/áudio, processo e sessão frios. Em 150 frames, `capturePage`/CPU levou 13,63s e `paint-event`/CPU 14,20s; ambos MP4s passaram ffprobe. O smoke não estabelece paridade RGBA completa: as duas capturas do quadro amostrado incluem uma camada base com SHA igual e uma camada frontal com SHA diferente. Paint ficou opt-in; `capturePage` segue caminho normal até a discrepância do foreground ser localizada.
+
+A implementação agora registra `paintWaitMs` separadamente de `capturePageMs`, mantém fence de token e rejeita exceções do callback em Promise pendente. Testes unitários de worker/bitmap: 13 passaram, incluindo exact-token, stale retry/cancelamento, fechamento da subscription e `paintWaitMs` numérico; ainda faltam erro/timeout/resize e stress layered-video.
+
+O profiling frio completo, no perfil UI, mediu mediana clique→MP4 84,83s em AMF e 82,44s em libx264, com 2.394 frames e áudio. CapturePage individual acumulado entre lanes ~16,6–17,7s, bitmap ~4,7–5,0s; IPC draw ~14,7–16,4s e round-trip ~39,2–41,3s (acumulados concorrentes, não parede). Paint não foi retestado em 3 corridas completas, dado o smoke mais lento e a divergência de hash.

@@ -14,7 +14,7 @@ export type EditorV6MotionPlan = {
   blockId: string; elementId: string; characterId: string; key: string; startFrame: number; endFrame: number
   from: EditorV6Element; to: EditorV6Element; samples: Array<{ offset: number; progress: number; faceMode?: EditorV6FaceRenderMode }>
 }
-export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number }
+export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number; /** Unique export-local cache scope. Scoped bakes never touch persistent cache. */ cacheScope?: string }
 export type EditorV6MotionBakeResult = {
   asset: EditorV6Asset
   faceAsset?: EditorV6Asset

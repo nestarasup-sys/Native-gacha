@@ -10,6 +10,12 @@ export type EditorV6ExportAudio = {
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
 export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+/** Single source of truth for the Editor V6 Export panel's user-facing default profile. */
+export const EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT = 2
+export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
+  width: 1920, height: 1080, turbo: true, forceTurbo1080: true, encoder: 'cpu',
+  mouthLoop: true, mouthLoopCycleFrames: 30, hairPoseReactionOnly: true, hairPosteriorOnly: true
+} as const satisfies Omit<EditorV6ExportOptions, 'startFrame' | 'endFrame' | 'hairAnimationPresetSlot'>
 /** Keep the UI encoder selector aligned with the validated IPC contract. */
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
@@ -70,7 +76,7 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
 export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
+export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels' | 'captureReadbacks' | 'captureStaleReadbacks', number>>
 /** A real-project export may legitimately contain audio even with animated hair.
  * The benchmark must verify its MP4 output, not assume a silent test scene.

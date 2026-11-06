@@ -7,6 +7,7 @@ import type { TrimmedImage } from '../../characters/transparentImageTrim'
 // dimensions twice to characters with customized proportions.
 export const EDITOR_V6_FACE_RENDER_VERSION = 10
 const AUTO_FACE_MODES: EditorV6FaceRenderMode[] = ['idle', 'blink', 'talk', 'talk-blink']
+const IMAGE_DATA_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
 export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../../characters/editorV6CharacterRenderer').prepareSavedCharacterRenderer>>
 
 export { sceneFaceModeForElement as editorV6FaceModeForElement } from '../../characters/sceneFaceMode.ts'
@@ -21,12 +22,23 @@ export function canvasFaceAlphaBounds(source: HTMLCanvasElement): Pick<TrimmedIm
   let pixels: Uint8ClampedArray
   try { pixels = context.getImageData(0, 0, source.width, source.height).data } catch { return null }
   let left = source.width, top = source.height, right = -1, bottom = -1
-  for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) {
-    if (pixels[(y * source.width + x) * 4 + 3] <= 8) continue
-    if (x < left) left = x
-    if (x > right) right = x
-    if (y < top) top = y
-    if (y > bottom) bottom = y
+  const packed = new Uint32Array(pixels.buffer, pixels.byteOffset, pixels.byteLength / 4)
+  if (IMAGE_DATA_LITTLE_ENDIAN) {
+    for (let y = 0, offset = 0; y < source.height; y++, offset += source.width) for (let x = 0; x < source.width; x++) {
+      if ((packed[offset + x] >>> 24) <= 8) continue
+      if (x < left) left = x
+      if (x > right) right = x
+      if (y < top) top = y
+      if (y > bottom) bottom = y
+    }
+  } else {
+    for (let y = 0, offset = 0; y < source.height; y++, offset += source.width) for (let x = 0; x < source.width; x++) {
+      if ((packed[offset + x] & 0xff) <= 8) continue
+      if (x < left) left = x
+      if (x > right) right = x
+      if (y < top) top = y
+      if (y > bottom) bottom = y
+    }
   }
   if (right < left || bottom < top) return null
   const width = right - left + 1

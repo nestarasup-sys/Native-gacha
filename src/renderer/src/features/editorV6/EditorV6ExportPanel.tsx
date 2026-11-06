@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
-import { type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { EDITOR_V6_DEFAULT_EXPORT_PROFILE, EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, hairMotionPosteriorOnlyPreset, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
@@ -12,7 +12,7 @@ import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import type { EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
 
 // Perfil padrão de exportação do Editor V6. As melhorias futuras devem evoluir este caminho.
-const DEFAULT_EXPORT_SETTINGS = { width: 1920, height: 1080, turbo: true, forceTurbo1080: true, encoder: 'cpu', mouthLoop: true, mouthLoopCycleFrames: 30, hairPoseReactionOnly: true, hairPosteriorOnly: true } as const
+const DEFAULT_EXPORT_SETTINGS = EDITOR_V6_DEFAULT_EXPORT_PROFILE
 let rememberedJob: EditorV6ExportStatus | null = null
 const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
 export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequired, onClose, onExitEditor, onChange, onActivity, trackOperation, prepareHair = prepareEditorV6HairMotionBundle }: { project: EditorV6Document; open: boolean; characterSourceRefreshRequired: boolean; onClose: () => void; onExitEditor: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T>; prepareHair?: typeof prepareEditorV6HairMotionBundle }) {
@@ -26,7 +26,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [job, setJob] = useState(rememberedJob)
   const [exportFolder, setExportFolder] = useState<string | null>(null)
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, ...DEFAULT_EXPORT_SETTINGS })
-  const [hairPresetSlot, setHairPresetSlot] = useState(2)
+  const [hairPresetSlot, setHairPresetSlot] = useState(EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
   const [editingHairPreset, setEditingHairPreset] = useState(false)

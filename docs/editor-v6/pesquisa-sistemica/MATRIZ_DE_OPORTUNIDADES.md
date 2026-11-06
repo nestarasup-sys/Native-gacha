@@ -5,13 +5,13 @@
 | ID | Problema/pergunta | Evidência disponível | Hipótese / experimento | Prioridade | Estado |
 |---|---|---|---|---|---|
 | AUD-001 | Mapa completo de dependências? | Pesquisa 01 e árvore do repo | Confirmar links restantes, runtime e decisões de ownership | P0 | PESQUISADO EM CÓDIGO / RUNTIME PENDENTE |
-| AUD-002 | Por que cabelo ON demora? | [RELATO] 91s; laboratório: 3 frias ON com cabelo mediana 116,32s; controle sem cabelo 68,01s | Medir preparação→MP4, comparar fases e manter OFF como controle | P0 | PRIMEIRO A/B FRIO MEDIDO; DIFERENTE DO RELATO |
+| AUD-002 | Por que cabelo ON demora? | OFF ultrafast mediana 68,83s; ON 80,11s; Motion 16,43–18,22s e render ~51s | Próximo: reduzir custo do bake sem quebrar reuso por personagem; analisar UI/timeline comum | P0 | PERFIL E 3+3 UI COMPLETOS; CANDIDATOS 3/4 LANES REJEITADOS |
 | EXP-CAB-001 | Personagem redesenhado apesar de cabelo em repouso? | `composeHairFrame` + preparação dupla do hair | Instrumentar 0 / 1 / múltiplas reações | P0 | HIPÓTESE |
 | EXP-CAB-002 | RGBA ROI/camada posterior substitui full canvas? | Código WebGL→Canvas→SVG e reação 29 frames | Spike ROI com alpha + oclusão | P0 | HIPÓTESE |
-| EXP-CHAR-001 | Preparações/representações repetidas entre módulos? | Renderizador normal/sem cabelo + fontes compartilhadas | Revisão de materiais e cache por identidade completa | P1 | HIPÓTESE |
-| EXP-ELE-001 | `capturePage` é gargalo residual? | A/B 3+3 frias: mediana de captura acumulada por lanes 105,81s vs 95,53s; parede 116,32s vs 110,47s | Manter `paint-event`, ampliar paridade RGBA e variância em corridas futuras | P1 | GANHO MODESTO MEDIDO; PROMOVIDO NO LAB COM RESSALVAS |
+| EXP-CHAR-001 | Preparações/representações repetidas entre módulos? | Crop alfa alinhado 4,38→3,997s mediana local; sem ganho total robusto isolado | Rever preparação/render por revisão/identidade; preservar vínculo vivo de personagens | P1 | SCAN MANTIDO; GANHO LOCAL ~8,7%; GLOBAL NÃO CONCLUSIVO |
+| EXP-ELE-001 | `capturePage` é gargalo residual? | Smoke UI frio 5s: capturePage 13,63s vs paint-event 14,20s; fundo hash igual, camada frontal difere | Localizar divergência; manter capturePage padrão | P1 | PAINT OPT-IN; SEM EQUIVALÊNCIA RGBA |
 | EXP-ELE-002 | Shared texture D3D evita readback? | Disponível na API Electron, não ativo | PoC nativo isolado (após EXP-ELE-001) | P2 | HIPÓTESE |
-| EXP-FFM-001 | Qual encoder/backend entrega o MP4 correto mais rápido a frio? | UI tem CPU como padrão; LAB usou auto/AMF; 91s do usuário não são comparação direta | Competição CPU/AMF/NVENC/QSV/Media Foundation/alternativas compatíveis, qualidade/mux/fallback/tempo total | P0 | PESQUISA E BENCHMARK CONTROLADO PENDENTES |
+| EXP-FFM-001 | Qual encoder/backend entrega o MP4 correto mais rápido a frio? | Preset x264 `ultrafast` 3+3 ON/OFF; SSIM integral ≥0,99784, PSNR ≥52,76dB; PCM idêntico | Manter libx264/12Mbps com preset ultrafast; Auto/AMF e fallback ficam disponíveis | P0 | PROMOVIDO NO LAB; A/B INTEGRAL PASSOU |
 | EXP-RAS-001 | DrawPlan nativo pode renderizar subconjunto com paridade? | Protótipo possui `unsupported` | Cenas reais com bloqueadores explícitos | P2 | HIPÓTESE |
 | EXP-UI-001 | Clock/timeline re-renderizam desnecessariamente? | RAF e virtualização já presentes | Trace de scrub/scroll/drag real | P1 | HIPÓTESE |
 | EXP-DATA-001 | Cache/salvamento atravessam ownership? | JSON, CAS, SQLite, refs | Mapear chaves de revisão e recuperação | P1 | HIPÓTESE |
@@ -36,3 +36,13 @@
 **Observação importante:** no modo `hairPoseReactionOnly`, `selectEditorV6HairlessTransitionBakes` já evita um segundo bake das transições; priorizar outras formas de duplicidade antes de culpar essa operação (ver `motion/hairBakeBatch.ts`).
 
 [Plano detalhado](PLANO_EXECUTAVEL.md) · [Pesquisa 01](pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
+
+## Atualização de resultado — 06/11/2026
+
+| ID | Evidência atualizada | Decisão |
+|---|---|---|
+| AUD-002 | OFF via comando UI/IPC 70,55/73,53/75,90s; cabelo ON ultrafast 79,63/81,43/80,11s; 2.394 frames + áudio. | Equivalência UI corrigida; a diferença mediana (~10,74s) inclui preparo/composição hair, não é só custo do warp. |
+| EXP-CAB-001 | Com cabelo, preparo ~8,20s mediano; draw de hair no export soma <1s nos relatórios, sem contar lanes como parede. | CPU concentrada no pré-preparo facial/renderer e composição geral, não no warp de hair medido; ROI sem prova ainda. |
+| EXP-CHAR-001 | `measureFaceModeCrop` 4,38s mediana pré-candidato; medida mais recente 3,997s. | Mantido: ~8,7% menos tempo agregado dessa etapa, crop/pixels preservados; sem ganho global isolado comprovado. |
+| EXP-DATA-001 | Cache persistente escrevia cerca de 70MB por cold export; serviço agora usa `cacheScope` único, sem I/O de atlas em disco e limpa memória ao final da preparação. | Mantido por requisito de segurança/frieza; zero leitura/gravação em 3 exports finais. |
+| EXP-ELE-001 | `capturePage` permanece padrão; paint 14,20s vs 13,63s em smoke e hash de foreground difere. | Paint opt-in até paridade integral. |

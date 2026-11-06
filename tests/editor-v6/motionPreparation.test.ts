@@ -108,6 +108,10 @@ describe('transition preparation reuse', () => {
       [{ characterId: 'alpha' }], [{ characterId: 'beta' }], [{ characterId: 'alpha' }],
       [{ characterId: 'gamma' }], [{ characterId: 'alpha' }], [{ characterId: 'beta' }]
     ], 2)).toEqual([[0, 2, 4], [1, 5, 3]])
+    expect(editorV6MotionBakeLaneAssignments([
+      [{ characterId: 'alpha' }], [{ characterId: 'beta' }], [{ characterId: 'gamma' }],
+      [{ characterId: 'alpha' }], [{ characterId: 'beta' }], [{ characterId: 'gamma' }]
+    ], 3)).toEqual([[0, 3], [1, 4], [2, 5]])
   })
   it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
     const { project, character } = fixture()
@@ -466,6 +470,8 @@ describe('transition preparation reuse', () => {
       await cache.write(keyedRequest, result)
       const tighterBudget = { ...keyedRequest, maxAtlasPixels: 6 }
       expect(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 100_000 })).toBe(motionCacheKey({ ...keyedRequest, maxAtlasPixels: 200_000 }))
+      expect(motionCacheKey({ ...keyedRequest, cacheScope: crypto.randomUUID() })).not.toBe(motionCacheKey(keyedRequest))
+      expect(editorV6MotionMemoryCacheKey({ ...keyedRequest, cacheScope: crypto.randomUUID() })).not.toBe(editorV6MotionMemoryCacheKey(keyedRequest))
       expect(editorV6MotionMemoryCacheKey({ ...keyedRequest, maxAtlasPixels: 100_000 })).not.toBe(editorV6MotionMemoryCacheKey({ ...keyedRequest, maxAtlasPixels: 200_000 }))
       await expect(cache.read(tighterBudget)).resolves.toBeUndefined()
       await expect(cache.write(request, { ...result, motion: { ...result.motion, key: 'another-transition' } })).rejects.toThrow('não corresponde à requisição')
