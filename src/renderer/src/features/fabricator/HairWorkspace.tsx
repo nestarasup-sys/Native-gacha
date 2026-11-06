@@ -748,11 +748,18 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         <input ref={fileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importSheet(event)} />
         <input ref={threeStyleFileInputRef} className="hair-dev-file" type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void importThreeStyleGrid(event)} />
         <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
-        <label className="hair-dev-set-gender">Gênero do conjunto<select value={hairGender ?? 'legacy'} disabled={loadingStyle || saving || deformMode} onChange={(event) => { setHairGender(event.target.value === 'legacy' ? null : event.target.value as CharacterGender); setDirty(true) }}>
-          {hairGender === null && <option value="legacy">Sem filtro · conjunto antigo</option>}
-          <option value="female">Feminino</option>
-          <option value="male">Masculino</option>
-        </select></label>
+        <div className="hair-dev-set-gender">
+          <span>Gênero do conjunto</span>
+          <button
+            className={`hair-dev-gender-toggle ${hairGender ?? 'legacy'}`}
+            type="button"
+            disabled={loadingStyle || saving || deformMode}
+            aria-pressed={hairGender === null ? undefined : hairGender === 'male'}
+            aria-label={`Gênero do conjunto: ${hairGender === 'male' ? 'Masculino' : hairGender === 'female' ? 'Feminino' : 'todos (conjunto antigo)'}. Clique para ${hairGender === 'female' ? 'Masculino' : 'Feminino'}`}
+            title={hairGender === null ? 'Conjunto antigo sem filtro de gênero' : 'Clique para alternar o gênero do conjunto'}
+            onClick={() => { setHairGender((current) => current === 'female' ? 'male' : 'female'); setDirty(true) }}
+          >{hairGender === 'male' ? 'Masculino' : hairGender === 'female' ? 'Feminino' : 'Todos · antigo'}</button>
+        </div>
         {hairGender === null && <small className="hair-dev-gender-legacy-note">Conjunto antigo sem gênero: continua visível para todos.</small>}
         <small className="hair-dev-library-hint">Importe peças para o mesmo conjunto. O botão Salvar grava todas juntas.</small>
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
