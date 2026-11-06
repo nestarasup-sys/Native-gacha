@@ -33,6 +33,17 @@
 
 **Consolidação:** o grande gargalo a explicar é `hair ON ~50s` contra `hair OFF ~9s` para 10s de vídeo, [RELATO]. O perfil padrão já dispensa segundo bake de transições hairless; as suspeitas de material/face/Canvas/Bitmap continuam [HIPÓTESE]. Não culpar automaticamente 120Hz ou FFmpeg.
 
+## Rodada 3 — Pesquisa 02 aprofundada (06/11/2026)
+
+- [x] Investigação específica do Chromium/Blink/cc/Viz, RenderingNG (12 fases, property trees, tiles), Skia, VideoNG, SVG/foreignObject, Canvas e APIs do Electron.
+- [x] Leitura dirigida de `SceneSurface.tsx`, `exportWorker.tsx`, `exportWorkers.ts`, `exportHairMeshRenderer.ts`, `editorV6HairMotionPreparation.ts`, `exportCaptureBitmap.ts` e `exportRunner.ts`.
+- [x] Protocolo CHROM-AUD-001/002 e spikes condicionais de ROI, `paint`, GPU; referências oficiais linkadas no estudo.
+- [x] Nota de atualização: Electron 45+ grava traces `contentTracing` em Perfetto protobuf, **não** no JSON legado.
+- [ ] A/B experimental Windows/cópia autorizada, DevTools e trace Perfetto real: **NÃO EXECUTADO**.
+- [ ] Prototipagem, alteração de renderer e qualquer benchmark: **NÃO EXECUTADOS**.
+
+**Resultado:** estudo concluído na dimensão código+documentação, sem alegar que conhecemos o estágio causal dos 41s.
+
 ## Observação histórica relevante
 
 **[RELATO]** Mesmos 10 segundos do mesmo projeto: export com animação capilar cerca de 50s e sem animação cerca de 9s. Isto equivale a diferença aproximada de 82%; **não** temos os relatórios brutos do A/B nessa rodada. Não tomar os 41s como tempo da física 120Hz, nem somar custos paralelos.

@@ -94,6 +94,33 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 - Mapear escritor/leitor por domínio, cross-domain references, cache invalidation, recuperação após crash.
 - Aceite: invariantes e testes de recuperação; não fazer migração real só para mensurar.
 
+
+### CHROM-AUD-001 — Evidência causal Chromium/Blink/Viz para hair ON/OFF
+
+- **Estudo técnico completo:** [Pesquisa 02 aprofundada](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md), capítulos 7–21, na revisão GitHub atual.
+- **Pré-requisito:** snapshot autorizado, build e hash da fixture, [EXP-001](experimentos/EXP-001-CABELO-ON-OFF.md), baseline OFF/ON incluindo hair pre-job anterior ao Main; 3+3 amostras, 1080p30, Turbo CPU.
+- **Coletar:** hairPreparationBeforeJobMs, hairRasterFrames e pixels em repouso vs reação, faceComposition, hairCanvasBlitMs, React commit, rAF wait, capturePage/Bitmap, retry/token, FFmpeg write, wall-clock e memória.
+- **Resultado necessário:** atribuir diferença a fases **sem somar durações de workers concorrentes como parede**, com caso de 0/1/várias reações. Se hipótese cair, não iniciar o spike dependente.
+
+### CHROM-AUD-002 — Trace de rendering Chromium sem alterar baseline
+
+- Depende de CHROM-AUD-001; Electron `contentTracing.getCategories()` no build instalado, `startRecording/stopRecording` com categorias confirmadas, sessão curta e trace **Perfetto protobuf (Electron 45+)**. Não usar tutoriais JSON obsoletos nem `['*']` por padrão.
+- Cruzar JS, Blink style/layout/paint, raster/Skia, cc, Viz, GPU, readback e token de frame. Trace é ferramenta de diagnóstico com overhead: executar **depois** do A/B sem trace.
+- Resultado: evento por frame, problema evidenciado, alternativas/riscos e relatório sanitizado; nunca publicar trace bruto com mídia/paths.
+
+### CHROM-SPIKE-001/002 — Descoberta em repouso e cabelo RGBA/ROI
+
+- **Dependências:** CHROM-AUD-001/002 provar custo de Canvas/recomposição; estudo 10/04 e [EXP-003](experimentos/EXP-003-ROI-CABELO.md).
+- PoC fora do export default: base sem cabelo posterior + back hair RGBA + oclusão da cabeça + face/mouth independente, 0/1/várias reações de 29 quadros.
+- **Aceite:** RGBA golden antes de H.264, MP4 total menor incluindo preparações, sem cabelo duplo/recortes, flipX/roupa/face, duas lanes, memória limitada. Se não cumprir, rejeitar.
+
+### CHROM-SPIKE-003 — CapturePage vs Paint com confirmação de token
+
+- **Depende:** CHROM-AUD-001 provar tempo significativo de captura; [EXP-002](experimentos/EXP-002-CAPTURA-OFFSCREEN.md).
+- PoC `paint` + dirtyRect acumulado + frameId comprovado + token lateral e layers, 150/300 frames, abort/resize/DPR, sem stale frame.
+- SharedTexture/D3D exige decisão/integração nativa separadas; `offscreen:true` atual não é zero-copy.
+
+
 ## Fase C — decisões e implementação
 
 - `ADR-001`: escolher a intervenção com maior **ganho medido em parede** e paridade, listando alternativas rejeitadas.

@@ -42,6 +42,26 @@
 | Zod basics | https://zod.dev/basics | 21 | runtime parsing |
 | SQLite WAL | https://www.sqlite.org/wal.html | 13 | one writer/checkpoint |
 
+## Leitura aprofundada da Pesquisa 02 em 06/11/2026
+
+| Tema | Fonte oficial efetivamente consultada | Evidência |
+|---|---|---|
+| RenderingNG e 12 fases | https://developer.chrome.com/docs/chromium/renderingng-architecture | Etapas, processos e fases que podem ser puladas |
+| Data structures/tiles/property trees | https://developer.chrome.com/docs/chromium/renderingng-data-structures | Property trees, display lists, tiles, compositor frames |
+| Chromium GPU compositing (histórico) | https://www.chromium.org/developers/design-documents/gpu-accelerated-compositing-in-chrome/ | Command buffer/sync; arquitetura antiga |
+| VideoNG | https://developer.chrome.com/docs/chromium/videong | Pipeline vídeo e superfície Viz |
+| Skia | https://skia.org/docs/user/api/ | SkCanvas, SkSurface, SkImage, SkPicture |
+| Electron offscreen & sharedTexture | https://www.electronjs.org/docs/latest/tutorial/offscreen-rendering | GPU bitmap vs shared texture e dirtyRect |
+| Electron trace | https://www.electronjs.org/docs/latest/api/content-tracing | **Electron 45+: Perfetto protobuf** |
+| Electron texture metadata | https://www.electronjs.org/docs/latest/api/structures/offscreen-shared-texture | release, pixel format, timestamp |
+| Chrome DevTools | https://developer.chrome.com/docs/devtools/performance/reference | Main/GPU/Raster/Frames |
+| SVG foreignObject | https://developer.mozilla.org/en-US/docs/Web/SVG/Reference/Element/foreignObject | HTML dentro do SVG |
+| Canvas drawImage | https://developer.mozilla.org/en-US/docs/Web/API/CanvasRenderingContext2D/drawImage | Cropping e superfícies |
+| CSS containment | https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/contain | Confinamento e clipping |
+| CSS will-change | https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/will-change | Hints e riscos de VRAM |
+
+**Nota:** a Pesquisa 02 contém a aplicação de cada fonte ao código do Native Gacha e distingue inferências de features em produção. Arquitetura upstream histórica não é prova da implementação do Electron atual.
+
 ## Grupo B e fontes de alternativas ainda por aprofundar
 
 | Tema | Referência | Status |

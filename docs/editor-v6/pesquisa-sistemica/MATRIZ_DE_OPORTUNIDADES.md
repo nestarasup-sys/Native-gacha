@@ -20,6 +20,10 @@
 | EXP-NODE-001 | Raw BGRA e IPC fazem cópias evitáveis? | [Pesquisa 19](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) | Contar bytes/pipe/capture; manter backpressure | P1 | PESQUISADA / NÃO MEDIDA |
 | EXP-WC-001 | WebCodecs pode melhorar encoder completo? | [Pesquisa 20](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | PoC VideoEncoder+MP4 mux+áudio+ffprobe | P2 | PESQUISADA / NÃO MEDIDA |
 | EXP-BUILD-001 | Startup/packaging/contratos limitam experimentos? | [Pesquisa 21](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | Build portátil+ABI+CSP/IPC regressão | P1 | PESQUISADA / NÃO MEDIDA |
+| CHROM-AUD-001 | Em qual etapa Chromium/cabelo se perde o tempo? | [Pesquisa 02, seções 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md) | A/B pré-job+worker com 0/1/múltiplas reações | P0 | PESQUISADA / SEM MEDIÇÃO |
+| CHROM-AUD-002 | Paint/raster/GPU são dominantes? | Chromium RenderingNG + código de captura | Trace Perfetto restrito após baseline | P1 | PESQUISADA / TRACE PENDENTE |
+| CHROM-SPIKE-001 | Boca pode mudar sem recompôr cabelo em repouso? | Canvas full-rig, visual keys e face patch | PoC de camada independente e golden RGBA | P0 | HIPÓTESE |
+| CHROM-SPIKE-003 | paint/dirtyRect reduz capturePage sem stale? | API Electron + token real | PoC frameId/dirtyRect 150/300 frames | P1 | HIPÓTESE CONDICIONAL |
 | REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark e riscos | P1 | BLOQUEADO |
 
 **Critério de prioridade:** custo total evitável no **mesmo projeto**, probabilidade de preservar paridade, tamanho da mudança, risco de memória/dados/driver e manutenção. Não usar ranking como prova de ganho.
