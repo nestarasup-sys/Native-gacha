@@ -1,6 +1,6 @@
 # Matriz de oportunidades — hipóteses rastreáveis
 
-**Status:** priorização inicial de leitura e desenho experimental. **Nenhum ganho deste arquivo é medição nova.**
+**Status:** atualizada após pesquisa estática do Grupo A (15 estudos; testes dinâmicos pendentes). Priorização de leitura e desenho experimental. **Nenhum ganho deste arquivo é medição nova.**
 
 | ID | Problema/pergunta | Evidência disponível | Hipótese / experimento | Prioridade | Estado |
 |---|---|---|---|---|---|
@@ -15,6 +15,11 @@
 | EXP-RAS-001 | DrawPlan nativo pode renderizar subconjunto com paridade? | Protótipo possui `unsupported` | Cenas reais com bloqueadores explícitos | P2 | HIPÓTESE |
 | EXP-UI-001 | Clock/timeline re-renderizam desnecessariamente? | RAF e virtualização já presentes | Trace de scrub/scroll/drag real | P1 | HIPÓTESE |
 | EXP-DATA-001 | Cache/salvamento atravessam ownership? | JSON, CAS, SQLite, refs | Mapear chaves de revisão e recuperação | P1 | HIPÓTESE |
+| EXP-IMG-001 | Sharp/libvips vs Canvas em preparação estática? | [Pesquisa 17](pesquisas/17-SHARP-LIBVIPS-NORMALIZACAO-IMAGENS.md) | A/B de atlas/ROI frio incluindo IPC, alpha e CPU | P1 | PESQUISADA / NÃO MEDIDA |
+| EXP-STATE-001 | Selectors e snapshots React estão causando commits extras? | [Pesquisa 18](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md) | Perf de scrub/face/seek + identidade props | P1 | PESQUISADA / NÃO MEDIDA |
+| EXP-NODE-001 | Raw BGRA e IPC fazem cópias evitáveis? | [Pesquisa 19](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) | Contar bytes/pipe/capture; manter backpressure | P1 | PESQUISADA / NÃO MEDIDA |
+| EXP-WC-001 | WebCodecs pode melhorar encoder completo? | [Pesquisa 20](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | PoC VideoEncoder+MP4 mux+áudio+ffprobe | P2 | PESQUISADA / NÃO MEDIDA |
+| EXP-BUILD-001 | Startup/packaging/contratos limitam experimentos? | [Pesquisa 21](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | Build portátil+ABI+CSP/IPC regressão | P1 | PESQUISADA / NÃO MEDIDA |
 | REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark e riscos | P1 | BLOQUEADO |
 
 **Critério de prioridade:** custo total evitável no **mesmo projeto**, probabilidade de preservar paridade, tamanho da mudança, risco de memória/dados/driver e manutenção. Não usar ranking como prova de ganho.

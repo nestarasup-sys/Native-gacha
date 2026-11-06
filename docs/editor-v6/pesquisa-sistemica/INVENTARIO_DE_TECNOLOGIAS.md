@@ -64,3 +64,13 @@ Outras declarações de tipos: `@types/better-sqlite3`, `@types/react`, `@types/
 - [Chromium RenderingNG](https://developer.chrome.com/docs/chromium/renderingng-architecture) — fases da renderização.
 
 **Pendente:** registrar `process.versions` do EXE real Windows, os binários FFmpeg/ffprobe de produção e capabilities AMD/GPU; não inferir disponibilidade de API por versão npm aproximada.
+
+## Grupo A — estudos publicados na rodada 2
+
+- **Runtime gráfico:** [02 Chromium](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md), [03 Electron](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md), [04 Canvas/SVG](pesquisas/04-CANVAS-SVG-IMAGENS-ALPHA.md), [05 WebGL](pesquisas/05-GPU-WEBGL-WEBGPU-NATIVO.md), [10 animação de cabelo](pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md).
+- **Editor e estado:** [09 timeline/preview](pesquisas/09-EDITOR-V6-TIMELINE-PREVIA-ESTADO.md), [18 React/Zustand/Immer](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md).
+- **Preparação de imagem:** [17 Sharp/libvips](pesquisas/17-SHARP-LIBVIPS-NORMALIZACAO-IMAGENS.md).
+- **Vídeo/dados:** [11 FFmpeg](pesquisas/11-EXPORTADOR-FFMPEG-CODECS-AUDIO.md), [19 Node/streams](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md), [20 WebCodecs](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md), [13 SQLite/CAS](pesquisas/13-PERSISTENCIA-SQLITE-CAS-CACHE.md).
+- **Controle/medição/build:** [15 profiling](pesquisas/15-PROFILING-BENCHMARK-QUALIDADE.md), [16 segurança](pesquisas/16-SEGURANCA-BUILD-E-DISTRIBUICAO.md), [21 Vite/TS/Zod](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md).
+
+**Status:** pesquisas estáticas/publicações oficiais **concluídas quanto ao escopo das interfaces abordadas**. Versão exata dos binários, custos reais, ganhos, drivers e paridade dependem de experimentos autorizados. O Grupo B e os estudos de domínio 06–08, 12 e 14 continuam abertos.

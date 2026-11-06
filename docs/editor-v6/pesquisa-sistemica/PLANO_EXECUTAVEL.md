@@ -29,6 +29,24 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 - **Medir:** `process.versions`, WebGL/WebGL2, WebCodecs disponíveis, tamanho de textura, uso de offscreen/paint, FFmpeg `-encoders` e `-buildconf`.
 - **Aceite:** capacidade verificada com checks, não deduzida de documentação "latest".
 
+## Fase A2 — Resultados de pesquisa do Grupo A (somente decisões de investigação)
+
+**Estado:** 15 estudos concluídos na dimensão estática/documental (02–05, 09–11, 13, 15–21); **zero protótipos ou benchmarks executados**. Evidência verificável no código e documentação primária. Estudos 06–08, 12 e 14 ainda são roteiros.
+
+| Ordem | Trabalho executável | Base | Dependências / critério de saída |
+|---|---|---|---|
+| A2-01 | Profiling seguro de hair ON/OFF com relatório do **preparo pré-job** | [10](pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md) + [15](pesquisas/15-PROFILING-BENCHMARK-QUALIDADE.md) | Fixture autorizado, 3+3 corridas, total clique→MP4 |
+| A2-02 | Traçar `composeHairFrame` e `hairRasterPixels` em repouso/transição | [04](pesquisas/04-CANVAS-SVG-IMAGENS-ALPHA.md) + [05](pesquisas/05-GPU-WEBGL-WEBGPU-NATIVO.md) | Somente depois A2-01; distinguir 0/1/muitas reações |
+| A2-03 | PoC de cabelo posterior RGBA ROI sob oclusão correta | [10](pesquisas/10-ANIMACAO-CABELO-FACE-BOCA.md) | RGBA paridade e ganho prep+render, não duplicar cabelo |
+| A2-04 | Captura offscreen `capturePage` vs `paint` em 150 frames | [03](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | Só se captura aparecer no perfil; frame token e dirty rect |
+| A2-05 | Medir pipeline FFmpeg: pipe/encode/mux/probe | [11](pesquisas/11-EXPORTADOR-FFMPEG-CODECS-AUDIO.md) + [19](pesquisas/19-NODE-IPC-STREAMS-BUFFERS.md) | Mesmo encoder CPU, validação H.264/áudio, 150/300 frames |
+| A2-06 | Benchmark da preparação de materiais estáticos Sharp × Canvas | [17](pesquisas/17-SHARP-LIBVIPS-NORMALIZACAO-IMAGENS.md) | Se preparo de assets for dominante; PNG/crop/alpha iguais |
+| A2-07 | Perfil de React/estado e staleness de face | [09](pesquisas/09-EDITOR-V6-TIMELINE-PREVIA-ESTADO.md) + [18](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md) | Métrica de UI + renderer; preservar undo/redo e relógio |
+| A2-08 | Capabilities WebCodecs e PoC de MP4 muxado | [20](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | Só se encode for relevante; mux+áudio+codec são obrigatórios |
+| A2-09 | Build portátil e gates de contrato IPC/schema | [16](pesquisas/16-SEGURANCA-BUILD-E-DISTRIBUICAO.md) + [21](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | Todos os spikes promovidos: CSP, sandbox, Zod, ABI, FFmpeg, recovery |
+
+**Prioridade de execução:** A2-01 → A2-02 → A2-03; a possibilidade de outras intervenções depende dos tempos medidos. Uma pesquisa terminada não autoriza a implementação sem novo gate. A documentação de fontes oficiais não substitui teste do Electron/FFmpeg no EXE.
+
 ## Fase B — experimentos isolados (sem produção)
 
 ### EXP-CAB-001 — Cabelo em repouso, zero recomposição induzida

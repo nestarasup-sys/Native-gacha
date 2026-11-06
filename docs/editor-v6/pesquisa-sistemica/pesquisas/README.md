@@ -1,15 +1,20 @@
-# Trilhas de pesquisa por subsistema
+# Trilhas de pesquisa por subsistema — situação real
 
-A [Pesquisa 01 — Arquitetura e integrações](01-ARQUITETURA-GERAL-E-INTEGRACOES.md) é a **primeira rodada aprofundada**: código lido, fronteiras mapeadas, fontes oficiais e lacunas explícitas. Estudos `02` a `16` são **roteiros de investigação**, NÃO pesquisas concluídas.
+**06/11/2026:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md) cobre arquitetura; estudos do **Grupo A** 02–05, 09–11, 13, 15–21 foram aprofundados com code paths, funções, documentação oficial, hipóteses, riscos e protocolos de experimento. **NENHUM desses estudos executou benchmark no Windows.**
 
-O índice completo e status de cada estudo estão no [README principal](../README.md). O trabalho novo segue o protocolo abaixo:
+**Abertos:** [06 Fabricador](06-FABRICADOR-MODELOS-POSES-ROUPAS.md), [07 Customizador](07-CUSTOMIZADOR-PERSONAGENS-E-REUSO.md), [08 Studio/Roteiros](08-STUDIO-ROTEIROS-BIBLIOTECAS.md), [12 Windows/AMD](12-WINDOWS-AMD-AMF-DIRECT3D.md) e [14 Motores alternativos](14-MOTORES-ALTERNATIVOS.md). São roteiros técnicos preparados, não estudos aprofundados.
 
-1. Confirmar `git status`/HEAD e diferenças locais; ler `AGENTS.md`.
-2. Entrar pela pergunta técnica concreta, não pelo nome atraente de uma tecnologia.
-3. Pesquisar **fluxo completo** (origem, consumer, IPC, persistência, renderização, segurança) e documentação oficial.
-4. Medir quando houver hipótese de desempenho; usar cópia de projeto autorizada e preservar qualidade.
-5. Registrar limites, alternativas e evidências; atualizar matriz, plano e log de progresso.
-6. Só marcar `PESQUISADA` após documentar código, fontes, conclusão falsificável e limites.
-7. Só marcar `MEDIDA` com hardware, revisão, caso real, ambiente, métricas, amostras e resultados verificáveis.
+O [índice central](../README.md) é a fonte canônica de status e links para os **21 estudos**. Não duplicar o mesmo tema em novos documentos sem necessidade; atualizar a trilha existente ou criar ADR/experimento, se for outra forma de artefato.
 
-**Convenção:** mantenha um estudo por tecnologia/domínio, com links para os módulos do app. Não crie relatórios duplicados a cada sessão. Atualize o estudo existente e os índices centrais.
+## Protocolo de pesquisa
+
+1. Confirmar `git status`, branch e HEAD no checkout usado; ler `AGENTS.md` e dependências reais.
+2. Percorrer cadeia funcional completa: **UI → estado → preload/IPC → serviço → arquivo/banco → consumidores → exportação**, quando aplicável.
+3. Registrar funções/arquivos de código, fontes oficiais com data, versão relevante, limitações e hipóteses falsificáveis.
+4. Se a hipótese envolve tempo, usar cópia autorizada, cenário controlado e relatório de ponta a ponta; marcar **NÃO MEDIDO** até execução.
+5. Confrontar custos de qualidade, drivers Windows, uso de memória, backup/recovery e segurança entre módulos.
+6. Atualizar [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Plano](../PLANO_EXECUTAVEL.md), [Progresso](../PROGRESSO_E_RESULTADOS.md) e [Fontes](../evidencias/FONTES-OFICIAIS.md).
+
+**Critério:** `PESQUISADA` não significa `VALIDADA` em runtime e `MEDIDA` exige dados e ambiente. Não chamar um URL listado de fonte consultada até realmente abrir/confrontar o conteúdo.
+
+[Modelo reutilizável](MODELO_PESQUISA.md).
