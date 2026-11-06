@@ -71,7 +71,7 @@ test('sem permitir o outro gênero, oculta só as camisas opostas e mantém cal�
   assert.deepEqual(ids(forFemale, 'shirt'), ['female-set', 'legacy-set'])
   assert.deepEqual(ids(forFemale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
   assert.deepEqual(ids(forFemale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
-  assert.deepEqual(ids(forMale, 'shirt'), ['male-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'shirt'), ['male-set'])
   assert.deepEqual(ids(forMale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
   assert.deepEqual(ids(forMale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
   assert.deepEqual(ids(getCandidates('male', true), 'shirt'), ['male-set', 'female-set', 'legacy-set'])

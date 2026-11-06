@@ -184,8 +184,9 @@ function wardrobePanelComponentMatchesGender(
   genderFilter: WardrobePanelGenderFilter | undefined
 ): boolean {
   if (!genderFilter || component.category !== 'camisa' || genderFilter.showOtherGender) return true
-  if (summary.previewGender !== 'female' && summary.previewGender !== 'male') return true
-  return summary.previewGender === genderFilter.gender
+  // Roupas DEV opens untagged legacy sets as female, so shirts follow that same default.
+  const setGender = summary.previewGender === 'male' ? 'male' : 'female'
+  return setGender === genderFilter.gender
 }
 
 export function wardrobePanelCandidates(
