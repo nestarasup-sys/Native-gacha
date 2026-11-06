@@ -30,6 +30,7 @@
 | ELE-SPIKE-002 | setFrameRate/stayHidden reduz espera/capturas? | [Pesquisa 03, seção 12](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | A/B cadência 30/60/90, stayHidden, cor e token | P2 | HIPÓTESE CONDICIONAL |
 | ELE-SPIKE-003 | Textura GPU compartilhada elimina readback real? | [Pesquisa 03, seção 11](pesquisas/03-ELECTRON-JANELAS-WORKERS-CAPTURA.md) | PoC driver/encoder hardware, release/VRAM/fallback | P2 | PESQUISADA / PROTÓTIPO PENDENTE |
 | REF-001 | Qual arquitetura implementar? | Depende dos experimentos anteriores | ADR comparando opções com benchmark frio, qualidade e riscos, sem preferência por CPU/AMF | P1 | BLOQUEADO |
+| LAB-001 | Branch do laboratório pode validar sem trocar para Dev-V2? | Integração completa passou na branch LAB; doctor exige Dev-V2; 2 fixtures da suíte refactor estão desatualizadas | Corrigir doctor para permitir apenas branch LAB ou Dev-V2; atualizar fixtures contra fluxo real de picker/importação | P0 | HANDOFF 06/11: APP BUILD/INTEGRAÇÃO OK; SUÍTE AMPLA COM 2 TESTES PENDENTES |
 
 **Critério de prioridade:** custo total evitável no **mesmo projeto**, probabilidade de preservar paridade, tamanho da mudança, risco de memória/dados/driver e manutenção. Não usar ranking como prova de ganho.
 

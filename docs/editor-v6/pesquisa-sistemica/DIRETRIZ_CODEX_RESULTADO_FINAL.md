@@ -42,3 +42,7 @@
 - Verificações: integração Windows, suíte completa, Electron hair/scene offscreen, typecheck, auditoria de arquitetura e build aprovados; detalhes no [progresso](PROGRESSO_E_RESULTADOS.md).
 
 **Limite para declarar resultado final:** ainda faltam A/B intercalado do scan e encoder, prova de golden RGBA completa, validação ampliada de áudio/vídeo/cancelamento, outros cenários/projetos e avaliação integrada de timeline/preview. O LAB está funcional para avaliação, mas esta evidência não encerra a refatoração global.
+
+### Handoff de continuidade — 06/11/2026
+
+Usuário pediu pausar a otimização adicional e deixar o contexto documentado para retomada. O laboratório está funcional e a integração/build passaram; isso não significa que a refatoração geral esteja concluída. Ver o ponto de retomada, arquivos locais que não podem ser descartados, falhas restantes da suíte ampla e próximo ciclo em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md) e [PLANO_EXECUTAVEL.md](PLANO_EXECUTAVEL.md). A branch permanece `refactor/editor-v6-cold-lab`; nunca trocar para `Dev-V2` para executar testes do LAB. `paint-event` permanece opt-in até golden RGBA no mesmo estado renderizado. Não modificar dados originais nem incluir diagnósticos/mídia em commits.

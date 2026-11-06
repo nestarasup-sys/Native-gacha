@@ -176,6 +176,15 @@ Toda mudança exige: owner, arquivos, dependências, entradas autorizadas, condi
 
 Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas, URLs oficiais e versões, lacunas, experimentos falsificáveis e decisão de próxima rodada. Uma refatoração só está feita com diff, build, testes, benchmark real, validação de paridade e relatório. Não existe "concluído por intenção".
 
+## Retomada segura — estado em 06/11/2026
+
+1. Começar na pasta irmã `C:\TRABALHO 2\OUTROS\GACHA EM C++-V6-LAB`; confirmar branch `refactor/editor-v6-cold-lab`, `git status`, `HEAD` e `origin` antes de editar. Não limpar/resetar o diff local: ver o handoff em [PROGRESSO_E_RESULTADOS.md](PROGRESSO_E_RESULTADOS.md).
+2. Validação integrada aprovada nessa branch com `npm run test:editor-v6:integration -- --scope=all`; build, typecheck e arquitetura também passaram. A suíte `test:refactor` tem duas expectativas de fixture de mídia antigas; corrigir após confirmar fluxo e adicionar cobertura do comando que grava após o picker.
+3. Ajustar `scripts/editor-v6/rapid-gates-windows.cjs`/doctor e seu teste para suportar explicitamente o branch do laboratório, sem trocar checkout: hoje o doctor interrompe ao exigir `Dev-V2`.
+4. `paint-event` permanece opt-in até prova de pixels no mesmo worker/estado; não promover apenas por velocidade. O benchmark só é elegível após captura controlada, cancelamento/layered video e saída completa validados.
+5. Ao retomar os ciclos de otimização, medir primeiro o custo frio dominante de preparação/render (Motion ~17s, render ~51s na última configuração) e então escolher intervenção. Manter padrão de 2 lanes, x264 `ultrafast` a 12Mbps no LAB, cache pesado apenas dentro do job e limpeza restrita a temporários marcados pelo LAB.
+6. Alterações de código do usuário ainda sem commit devem ser revisadas individualmente e mantidas. Criar commits seletivos, sem incluir perfis, app-data, mídia ou diagnósticos acidentais; push somente para a branch do LAB, nunca merge em `Dev-V2`.
+
 [Estado real](PROGRESSO_E_RESULTADOS.md).
 
 ## Execução LAB — 06/11/2026
