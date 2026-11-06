@@ -21,7 +21,7 @@ import { useModelAppearanceTarget, useModelPartAppearancePreview } from './Model
 import { getHairWorkspaceCatalogPage, hairStyleDetailMatchesSummary, hairStyleSummary, loadHairWorkspaceCatalogPage, retainHairWorkspaceStyleDetails } from './hairWorkspaceCatalog'
 
 type HairDrag = { pointerId: number; side: HairSide; clientX: number; clientY: number; x: number; y: number }
-type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker' }
+type HairGridReview = { sourceImageDataUrl: string; fileName: string; tolerance: number; mode: 'auto' | 'green' | 'checker'; gender: CharacterGender }
 const defaultCategories = defaultHairCategoriesBySide
 
 function nameFromFile(file: File): string {
@@ -121,6 +121,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null)
   const singleFileInputRef = useRef<HTMLInputElement | null>(null)
   const threeStyleFileInputRef = useRef<HTMLInputElement | null>(null)
+  const pendingImportGenderRef = useRef<CharacterGender>('female')
   const hairGridPreviewRequestRef = useRef(0)
   const hairGridPreviewTimerRef = useRef<number | null>(null)
   const dragRef = useRef<HairDrag | null>(null)
@@ -311,6 +312,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const mode = hairWorkspace.chromaMode ?? 'auto'
       const { front, back } = await processHairSheet(sourceImageDataUrl, tolerance, mode)
       updateWorkspace((current) => ({ ...current, front, back, categoryBySide: { ...current.categoryBySide, front: 'rearHair', back: 'backHair' }, sourceImageDataUrl, sourceImageSaved: true, sourceAppliesToDraft: true, chromaTolerance: tolerance, chromaMode: mode, transforms: { ...current.transforms, front: initialTransform('front', head, front), back: initialTransform('back', head, back) } }))
+      setHairGender(pendingImportGenderRef.current)
       if (!activeStyleId && !styleName.trim()) setStyleName(nameFromFile(file))
       setSelectedCategory(selectedCategory === 'backHair' ? 'backHair' : 'rearHair')
       setNotice('Folha separada dentro do conjunto: posterior, traseiro e franja ficam juntos ao salvar.')
@@ -336,7 +338,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const mode = hairWorkspace.chromaMode ?? 'auto'
       const paddingPercent = 4
       const result = await processThreeStyleHairGrid(sourceImageDataUrl, tolerance, mode, paddingPercent)
-      setHairGridReview({ sourceImageDataUrl, fileName: nameFromFile(file), tolerance, mode })
+      setHairGridReview({ sourceImageDataUrl, fileName: nameFromFile(file), tolerance, mode, gender: pendingImportGenderRef.current })
       setHairGridPreviewStyles(result.styles)
       setHairGridPaddingPercent(paddingPercent)
       setHairGridSplits(result.splits)
@@ -398,7 +400,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       for (let index = 0; index < styles.length; index += 1) {
         const workspace = workspaceFromHairGridStyle(modelSlot, head, styles[index], review.tolerance, review.mode)
         const name = `${review.fileName} ${index + 1}`.slice(0, 80)
-        const detail = await saveStyle(workspace, name, null)
+        const detail = await saveStyle(workspace, name, null, review.gender)
         imported.push({ detail, workspace })
       }
 
@@ -452,6 +454,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       const asset = { dataUrl: imageAsPng(image), width: image.naturalWidth, height: image.naturalHeight }
       const side = selectedSide
       updateWorkspace((current) => ({ ...current, [side]: asset, categoryBySide: { ...current.categoryBySide, [side]: selectedCategory }, sourceAppliesToDraft: false, transforms: { ...current.transforms, [side]: initialTransform(side, head, asset) } }))
+      setHairGender(pendingImportGenderRef.current)
       if (!activeStyleId && !styleName.trim()) setStyleName(nameFromFile(file))
       setNotice(`${category.label} importado para o conjunto. Ajuste a peça e salve o conjunto inteiro.`)
     } catch (reason) { setNotice(''); setError(reason instanceof Error ? reason.message : 'Não foi possível importar a peça de cabelo.') }
@@ -585,8 +588,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     finally { setSaving(false) }
   }
 
-  async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined): Promise<HairStyle> {
-    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, gender: hairGender ?? undefined, existing: existingOverride }, {
+  async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined, genderOverride: CharacterGender | undefined = hairGender ?? undefined): Promise<HairStyle> {
+    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, gender: genderOverride, existing: existingOverride }, {
       saveHairStyle: (slot, style, assets) => window.desktop.fabricator.saveHairStyle(slot, style, assets),
       createId: () => crypto.randomUUID(),
       now: () => new Date().toISOString()
@@ -863,11 +866,12 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       </section>
     </div>
     {importModalOpen && <HairImportModal
+      initialGender="female"
       disabled={!head || loadingHair || loadingStyle || saving}
       onClose={() => setImportModalOpen(false)}
-      onImportSingle={() => { setImportModalOpen(false); singleFileInputRef.current?.click() }}
-      onImportPairSheet={() => { setImportModalOpen(false); fileInputRef.current?.click() }}
-      onImportThreeStyleGrid={() => { setImportModalOpen(false); threeStyleFileInputRef.current?.click() }}
+      onImportSingle={(gender) => { pendingImportGenderRef.current = gender; setImportModalOpen(false); singleFileInputRef.current?.click() }}
+      onImportPairSheet={(gender) => { pendingImportGenderRef.current = gender; setImportModalOpen(false); fileInputRef.current?.click() }}
+      onImportThreeStyleGrid={(gender) => { pendingImportGenderRef.current = gender; setImportModalOpen(false); threeStyleFileInputRef.current?.click() }}
     />}
     {hairGridReview && hairGridPreviewStyles && <HairGridReviewModal
       sourceImageDataUrl={hairGridReview.sourceImageDataUrl}

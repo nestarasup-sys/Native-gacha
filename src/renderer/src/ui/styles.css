@@ -1792,6 +1792,11 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-gender-toggle:disabled { opacity:.55;cursor:not-allowed; }
 .hair-dev-gender-toggle:focus-visible { outline:2px solid #442067;outline-offset:2px; }
 .hair-dev-import-modal { width:min(520px,100%); }
+.hair-dev-import-gender { display:grid;gap:7px;padding:10px 11px;border:1px solid #eadde5;border-radius:9px;background:#fbf8fa;color:#7b6774;font-size:10px;font-weight:750; }
+.hair-dev-import-gender-options { display:grid;grid-template-columns:1fr 1fr;gap:8px; }
+.hair-dev-import-gender .hair-dev-gender-toggle { width:auto; }
+.hair-dev-import-gender .hair-dev-gender-toggle:not(.active) { opacity:.58;box-shadow:none; }
+.hair-dev-import-gender .hair-dev-gender-toggle.active { box-shadow:0 0 0 2px #fff,0 0 0 4px #806893; }
 .hair-dev-import-modal .pose-model-option:disabled { opacity:.55;cursor:not-allowed; }
 .hair-grid-review-backdrop { z-index:125; }
 .hair-grid-review-modal { width:min(1080px,100%);max-height:min(94vh,900px); }
