@@ -179,19 +179,23 @@ export async function prepareEditorV6HairMotionBundle(
   const [{ prepareSavedCharacterRenderer, createPreparedGachaWardrobePair }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])
-  for (const [groupKey, group] of groups) {
+  // Pose renderers are independent, while their source/material promises are
+  // shared through the bounded export-local caches above. Prepare at most two
+  // pose groups at once to overlap renderer construction without an unbounded
+  // canvas/texture memory spike.
+  await mapConcurrentItems([...groups.entries()], async ([groupKey, group]) => {
     if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
     const character = group.character
-    stageStarted = performance.now()
+    let groupStageStarted = performance.now()
     const resolved = await resolveSavedCharacterSource(character, await rawSources.sourceFor(character))
-    reportStage('resolveSavedCharacterSource', stageStarted)
+    reportStage('resolveSavedCharacterSource', groupStageStarted)
     const appearance = character.customization.hairAppearance
     const references = appearance?.modelSlot === resolved.modelSlot ? hairAppearanceStyleIds(appearance) : []
-    if (!references.length) continue
+    if (!references.length) return
     const styleIds = [...new Set(references.map(reference => reference.id))]
-    stageStarted = performance.now()
+    groupStageStarted = performance.now()
     const loadedStyles = await Promise.all(styleIds.map(async id => [id, await currentExportReuse.loadStyle(resolved.modelSlot, id, () => window.desktop.fabricator.loadHairStyle(resolved.modelSlot, id))] as const))
-    reportStage('loadHairStyles', stageStarted)
+    reportStage('loadHairStyles', groupStageStarted)
     const styles = new Map(loadedStyles)
     const sourceHeadPart = resolved.source.parts.find(part => /cabe[çc]a|head/i.test(part.name))
     const targetHeadPart = resolved.artwork.parts.find(part => part.id === sourceHeadPart?.id)
@@ -202,14 +206,21 @@ export async function prepareEditorV6HairMotionBundle(
     // of THIS pose. Both compose their own character body buffers.
     const wardrobePair = createPreparedGachaWardrobePair()
     const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache, wardrobePair }
-    stageStarted = performance.now()
-    const [originalRenderer, hairlessRenderer] = await Promise.all([
+    groupStageStarted = performance.now()
+    const rendererResults = await Promise.allSettled([
       prepareSavedCharacterRenderer(character, renderSource),
       prepareSavedCharacterRenderer(hairless, renderSource)
     ])
-    reportStage('prepareCharacterRenderers', stageStarted)
+    const rendererFailure = rendererResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
+    if (rendererFailure) {
+      for (const result of rendererResults) if (result.status === 'fulfilled') result.value.dispose()
+      wardrobePair.clear()
+      throw rendererFailure.reason
+    }
+    const [originalRenderer, hairlessRenderer] = rendererResults.map((result) => (result as PromiseFulfilledResult<Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>>).value)
+    reportStage('prepareCharacterRenderers', groupStageStarted)
     try {
-      stageStarted = performance.now()
+      groupStageStarted = performance.now()
       const descriptors: EditorV6HairMotionLayer[] = []
       for (const [index, reference] of references.entries()) {
         const style = styles.get(reference.id), original = style?.[reference.side], baseTransform = style?.transforms[reference.side]
@@ -248,8 +259,8 @@ export async function prepareEditorV6HairMotionBundle(
           phase: index * 1.2 + (reference.side === 'back' ? 0 : 1.2)
         })
       }
-      if (!descriptors.length) continue
-      reportStage('prepareHairLayers', stageStarted)
+      if (!descriptors.length) return
+      reportStage('prepareHairLayers', groupStageStarted)
 
       const poseSurfaceKey = JSON.stringify([groupKey, character.updatedAt, appearance?.modelSlot, appearance?.parts, character.customization.partOverrides])
       let baseSurfaceId: string | undefined, overlaySurfaceId: string | null | undefined
@@ -269,12 +280,12 @@ export async function prepareEditorV6HairMotionBundle(
         const faceRenderKey = editorV6HairFaceSurfaceKey(faceKey, mode, hideMouthForExportLoop)
         const existingFaceSurfaceId = faceSurfacesByInput.get(faceRenderKey)
         let sourceCrop = cropByFace.get(faceKey)
-        stageStarted = performance.now()
+        groupStageStarted = performance.now()
         const [originalFrame, splitFrame] = await Promise.all([
           sourceCrop ? Promise.resolve(null) : originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
           existingFaceSurfaceId ? Promise.resolve(null) : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
         ])
-        reportStage('renderHairlessFaceTarget', stageStarted)
+        reportStage('renderHairlessFaceTarget', groupStageStarted)
         if (!sourceCrop) {
           // Snapshots use the union of face modes, not the bounds of one frame.
           const cropStarted = performance.now()
@@ -299,10 +310,10 @@ export async function prepareEditorV6HairMotionBundle(
         let faceSurfaceId = existingFaceSurfaceId
         if (!faceSurfaceId) {
           if (!splitFrame) throw Error('A camada do rosto não foi preparada.')
-          stageStarted = performance.now()
+          groupStageStarted = performance.now()
           faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, canvasDataUrl(splitFrame.face))
           faceSurfacesByInput.set(faceRenderKey, faceSurfaceId)
-          reportStage('serializeFaceSurface', stageStarted)
+          reportStage('serializeFaceSurface', groupStageStarted)
         }
         rigs.push({
           elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
@@ -315,7 +326,8 @@ export async function prepareEditorV6HairMotionBundle(
         })
       }
     } finally { originalRenderer.dispose(); hairlessRenderer.dispose(); wardrobePair.clear() }
-  }
+  }, isCancelled, 2)
+  if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
   materialCache.clear()
   currentExportReuse.clear()
   rawSources.clear()
