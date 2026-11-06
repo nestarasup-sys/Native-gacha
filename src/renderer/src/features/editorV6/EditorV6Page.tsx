@@ -70,6 +70,8 @@ export function EditorV6Page() {
   const upsertEditorV6Summary = useEditorV6Store((state) => state.upsertSummary)
   const removeEditorV6Summary = useEditorV6Store((state) => state.removeSummary)
   const [loading, setLoading] = useState(true)
+  const [creatingProject, setCreatingProject] = useState(false)
+  const creatingProjectRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
@@ -288,7 +290,17 @@ export function EditorV6Page() {
     setError,
     trackOperation: trackEditorV6Operation
   })
-  const createStudio = projectCreation.createStudio
+  const createStudio = async () => {
+    if (creatingProjectRef.current) return
+    creatingProjectRef.current = true
+    setCreatingProject(true)
+    try {
+      await projectCreation.createStudio()
+    } finally {
+      creatingProjectRef.current = false
+      setCreatingProject(false)
+    }
+  }
   const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => projectCreation.duplicateStudio(sourceSummary)
 
   useEffect(() => {
@@ -955,7 +967,7 @@ export function EditorV6Page() {
     <main className="studio-page" aria-label="Editor V6">
       <header className="studio-page-header"><h1>EDITOR V6</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações do Editor V6">
-        <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading} type="button"><Icon name="plus" />Criar</button>
+        <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
         <button className="studio-action" onClick={() => setReactImportOpen(true)} disabled={loading || !availableCharactersReady} type="button"><Icon name="download" />Importar JSON</button>
       </div>
       {reactImportOpen && <EditorV6ReactImportDialog characters={availableCharacters} onClose={() => setReactImportOpen(false)} onSave={writeEditorV6Document} onImported={(project) => { upsertEditorV6Summary(editorV6ProjectSummary(project)); setSelectedId(project.id); setActiveEditorV6Id(project.id); setSaved(true); setReactImportOpen(false); setError(null) }} />}

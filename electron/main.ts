@@ -636,7 +636,10 @@ async function registerFabricatorHandlers(): Promise<void> {
     ipcMain, assertTrustedSender,
     list: () => listEditorV6s(),
     read: (id) => readEditorV6(id),
-    write: (document) => coordinateVideoReferenceChange(() => writeEditorV6(document)),
+    // Document persistence already coordinates reference checks and publication.
+    // Wrapping it here would re-enter the same serialized coordinator and wait
+    // on itself, leaving saves (including project creation) pending forever.
+    write: (document) => writeEditorV6(document),
     remove: (id) => removeEditorV6(id),
     assertPoseReferencesAvailable: assertEditorV6PoseReferencesAvailable,
     coordinatePoseReferenceChange,
