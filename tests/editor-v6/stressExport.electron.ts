@@ -174,10 +174,11 @@ async function main() {
       })
       const expectedParallelism = runTurbo ? 2 : 1
       if (report.state !== 'completed' || report.totalFrames !== project.timeline.durationFrames || report.motionTransitionsRequired !== 0 || report.motionTransitionsPrepared !== 0 || report.attempts[0]?.parallelism !== expectedParallelism) throw Error(`A exportação terminou com dados inesperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, transitionsRequired: report.motionTransitionsRequired, transitionsPrepared: report.motionTransitionsPrepared, parallelism: report.attempts[0]?.parallelism })}`)
-      const probe = report.validation as { streams?: Array<{ codec_type: string; nb_read_frames?: string | number; r_frame_rate?: string; duration?: string }>; format?: { duration?: string } }
+      const probe = report.validation as { streams?: Array<{ codec_type: string; nb_read_frames?: string | number; nb_read_packets?: string | number; has_b_frames?: number; r_frame_rate?: string; duration?: string }>; format?: { duration?: string } }
       const video = probe.streams?.find((stream) => stream.codec_type === 'video')
       const audio = probe.streams?.find((stream) => stream.codec_type === 'audio')
-      if (Number(video?.nb_read_frames) !== project.timeline.durationFrames || video?.r_frame_rate !== '30/1' || audio || report.audioClips !== 0) throw Error('A exportação silenciosa perdeu quadros, taxa de quadros ou incluiu uma faixa de áudio.')
+      const validatedVideoFrames = video?.nb_read_frames ?? (Number(video?.has_b_frames ?? 0) === 0 ? video?.nb_read_packets : undefined)
+      if (Number(validatedVideoFrames) !== project.timeline.durationFrames || video?.r_frame_rate !== '30/1' || audio || report.audioClips !== 0) throw Error('A exportação silenciosa perdeu quadros, taxa de quadros ou incluiu uma faixa de áudio.')
 
       const frameBytes = width * height * 3
       const motionChecks = visibleMotionPlans.map((plan) => {

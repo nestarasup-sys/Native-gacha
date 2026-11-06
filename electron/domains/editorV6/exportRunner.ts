@@ -17,10 +17,11 @@ import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
-type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; nb_read_frames?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
+type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; has_b_frames?: number; nb_read_frames?: string; nb_read_packets?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
 export type MediaProbe = { streams: StreamProbe[]; format: { duration?: string } }
-export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count = false): Promise<MediaProbe> {
-  const result = await runExportCommand(ffprobe, ['-v', 'error', ...(count ? ['-count_frames'] : []), '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
+export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count: boolean | 'packets' = false): Promise<MediaProbe> {
+  const countArgs = count === 'packets' ? ['-count_packets'] : count ? ['-count_frames'] : []
+  const result = await runExportCommand(ffprobe, ['-v', 'error', ...countArgs, '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
   return JSON.parse(result.stdout) as MediaProbe
 }
 type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs'
@@ -412,16 +413,27 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
           if (failed?.status === 'rejected') throw failed.reason
         }
       }
-      const [validationResult, seamResult] = await Promise.allSettled([
-        probeExportMedia(deps.ffprobe, candidate, deps.signal, true),
+      const [packetProbeResult, seamResult] = await Promise.allSettled([
+        probeExportMedia(deps.ffprobe, candidate, deps.signal, 'packets'),
         validateSeams()
       ])
-      if (validationResult.status === 'rejected') throw validationResult.reason
+      if (packetProbeResult.status === 'rejected') throw packetProbeResult.reason
       if (seamResult.status === 'rejected') throw seamResult.reason
-      const validation = validationResult.value
+      let validation = packetProbeResult.value
+      const packetVideo = validation.streams.find((stream) => stream.codec_type === 'video')
+      // Every encoded part was frame-count validated before stream-copy join.
+      // With the configured no-B-frame H.264 profile, one video packet is one
+      // displayed frame; count packets to validate the joined MP4 without
+      // decoding the whole movie a second time. Keep the strict decoded-frame
+      // check as fallback for unusual containers/profiles or bad packet counts.
+      if (Number(packetVideo?.nb_read_packets) !== totalFrames || Number(packetVideo?.has_b_frames ?? 0) !== 0) {
+        validation = await probeExportMedia(deps.ffprobe, candidate, deps.signal, true)
+      }
       report.validation = validation
       const video = validation.streams.find((stream) => stream.codec_type === 'video')
-      if (!video || Number(video.nb_read_frames) !== totalFrames || video.width !== options.width || video.height !== options.height || video.r_frame_rate !== '30/1' || !Number.isFinite(Number(video.duration)) || Math.abs(Number(video.duration) - totalFrames / 30) > 1 / 30 + .001) throw Error('O arquivo final não passou na validação de quadros, resolução, FPS ou duração.')
+      const validatedFrames = video?.nb_read_frames === undefined && Number(video?.has_b_frames ?? 0) === 0
+        ? video?.nb_read_packets : video?.nb_read_frames
+      if (!video || Number(validatedFrames) !== totalFrames || video.width !== options.width || video.height !== options.height || video.r_frame_rate !== '30/1' || !Number.isFinite(Number(video.duration)) || Math.abs(Number(video.duration) - totalFrames / 30) > 1 / 30 + .001) throw Error('O arquivo final não passou na validação de quadros, resolução, FPS ou duração.')
       if (audio.length) {
         const sound = validation.streams.find((stream) => stream.codec_type === 'audio')
         if (!sound || !Number.isFinite(Number(sound.duration)) || Math.abs(Number(sound.duration) - totalFrames / 30) > .05) throw Error('O arquivo final perdeu ou truncou a trilha de áudio.')

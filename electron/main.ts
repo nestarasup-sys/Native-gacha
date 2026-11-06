@@ -1284,15 +1284,16 @@ app.whenReady().then(async () => {
           if (processSampler) await sampleProcesses()
           const cacheAfterExport = editorV6MotionService!.getCacheStats()
           const motionCacheTotal = Object.fromEntries(Object.keys(cacheAfterExport).map((key) => [key, cacheAfterExport[key as keyof EditorV6MotionCacheStats] - cacheBeforeExport[key as keyof EditorV6MotionCacheStats]])) as EditorV6MotionCacheStats
-          const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; r_frame_rate?: string; width?: number; height?: number }> } | undefined)?.streams ?? []
+          const streams = (report.validation as { streams?: Array<{ codec_type?: string; nb_read_frames?: string | number; nb_read_packets?: string | number; has_b_frames?: number; r_frame_rate?: string; width?: number; height?: number }> } | undefined)?.streams ?? []
           const video = streams.find((stream) => stream.codec_type === 'video')
+          const validatedVideoFrames = video?.nb_read_frames ?? (Number(video?.has_b_frames ?? 0) === 0 ? video?.nb_read_packets : undefined)
           const audio = streams.some((stream) => stream.codec_type === 'audio')
           // Real projects may have music/video sound even with animated hair.
           // Validate the actual mixed output; do not assume a silent fixture.
           const audioValid = hairPresetSlot !== null
             ? editorV6BenchmarkAudioMatchesExport(report.audioClips, audio)
             : report.audioClips >= 1 && audio
-          if (report.state !== 'completed' || report.totalFrames !== frameCount || Number(video?.nb_read_frames) !== frameCount
+          if (report.state !== 'completed' || report.totalFrames !== frameCount || Number(validatedVideoFrames) !== frameCount
             || video?.r_frame_rate !== '30/1' || video.width !== options.width || video.height !== options.height
             || report.motionTransitionsPrepared !== report.motionTransitionsRequired
             || hairPresetSlot === null && (!report.motionTransitionsRequired || !report.mouthAnimation || report.mouthAnimation.skippedStates || report.mouthAnimation.staleStates || report.videoInputs < 1)
@@ -1300,7 +1301,7 @@ app.whenReady().then(async () => {
             || !audioValid
             || singleMotionRun && (!report.motionPreparation || report.motionPreparation.maxConcurrentBakes !== Math.min(motionConcurrency, report.motionPreparation.unique)
               || !report.motionCache || report.motionCache.rasterized !== report.motionTransitionsRequired || report.motionCache.diskHits !== 0)) {
-            throw Error(`A rodada ${index + 1} não preservou os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: video?.nb_read_frames, fps: video?.r_frame_rate, width: video?.width, height: video?.height, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, hairRigs: hairAnimation?.rigs.length, hairCompositionSamples: report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming?.hairCompositionMs?.samples ?? 0), mouth: report.mouthAnimation, audioClips: report.audioClips, audio })}`)
+            throw Error(`A rodada ${index + 1} não preservou os estados esperados: ${JSON.stringify({ state: report.state, frames: report.totalFrames, videoFrames: validatedVideoFrames, fps: video?.r_frame_rate, width: video?.width, height: video?.height, motionRequired: report.motionTransitionsRequired, motionPrepared: report.motionTransitionsPrepared, hairRigs: hairAnimation?.rigs.length, hairCompositionSamples: report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming?.hairCompositionMs?.samples ?? 0), mouth: report.mouthAnimation, audioClips: report.audioClips, audio })}`)
           }
           if (hairPresetSlot !== null) {
             const timing = report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming)

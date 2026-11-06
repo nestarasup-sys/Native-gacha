@@ -44,6 +44,13 @@ test('rejects incomplete MP4 or fallback, even when wall time improves', () => {
   const fallback=fixture();fallback.fallback=true
   assert.equal(compareExportReport(fakeBaseline,fallback).compatible,false)
 })
+test('accepts the decoded packet count emitted by fast no-B-frame validation', () => {
+  const candidate=fixture()
+  candidate.validation.streams[0]={codec_type:'video',codec_name:'h264',width:1920,height:1080,has_b_frames:0,nb_read_packets:'309'}
+  assert.equal(compareExportReport(fakeBaseline,candidate).compatible,true)
+  candidate.validation.streams[0].nb_read_packets='308'
+  assert.equal(compareExportReport(fakeBaseline,candidate).compatible,false)
+})
 test('sanitized reference refuses a fabricated project hash and accepts a locally verified ID', () => {
   assert.equal(baseline.project_id_sha256, null)
   assert.ok(compareExportReport(baseline, fixture()).reasons.some(reason => reason.includes('--reference-report')))

@@ -40,7 +40,8 @@ function compareExportReport(baseline, report) {
     eq('partes Turbo', attempts[0].parts?.length, c.workers)
   }
   const video = report.validation?.streams?.find(stream => stream.codec_type === 'video')
-  eq('quadros MP4 verificados', Number(video?.nb_read_frames ?? -1), c.total_frames)
+  const validatedFrames = video?.nb_read_frames ?? (Number(video?.has_b_frames ?? -1) === 0 ? video?.nb_read_packets : -1)
+  eq('quadros MP4 verificados', Number(validatedFrames), c.total_frames)
   eq('largura MP4', video?.width, c.resolution[0])
   eq('altura MP4', video?.height, c.resolution[1])
   eq('codec MP4', video?.codec_name, 'h264')
