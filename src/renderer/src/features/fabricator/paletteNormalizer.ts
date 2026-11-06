@@ -45,7 +45,8 @@ export const PALETTES: Record<PaletteAssetKind, PaletteColorRole[]> = {
     { role: 'outline', label: 'Contorno', hex: '#2B2B2B' },
     { role: 'shadow', label: 'Sombra', hex: '#6B6B6B' },
     { role: 'base', label: 'Cor base', hex: '#A8A8A8' },
-    { role: 'light', label: 'Luz', hex: '#E2E2E2' }
+    { role: 'light', label: 'Luz', hex: '#E2E2E2' },
+    { role: 'detail', label: 'Cor secundária', hex: '#8C7BFF' }
   ]
 }
 
@@ -111,6 +112,11 @@ function classifyPixel(red: number, green: number, blue: number, kind: PaletteAs
     if (hue >= 235 - huePadding && hue <= 330 + huePadding) return { role: 'detail', confidence: 'high' }
     const gray = nearestRoleInPalette(red, green, blue, palette.filter(({ role }) => role === 'outline' || role === 'shadow' || role === 'base'))
     return { role: gray.role, confidence: chroma >= 0.1 ? 'low' : 'medium' }
+  }
+
+  if (kind === 'hair' && chroma >= 0.065) {
+    const hue = (Math.atan2(lab[2], lab[1]) * 180 / Math.PI + 360) % 360
+    if (hue >= 255 && hue <= 320) return { role: 'detail', confidence: 'high' }
   }
 
   const shades = kind === 'hair'

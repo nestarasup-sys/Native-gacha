@@ -12,7 +12,7 @@ export const defaultCharacterColorOverrides: CharacterPaletteOverrides = {
   outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#55C5D4', detail: '#8C7BFF'
 }
 export const defaultCharacterHairColorOverrides = {
-  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2'
+  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2', detail: '#8C7BFF'
 } satisfies CharacterPaletteOverrides
 
 export function normalizeCharacterColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
@@ -37,7 +37,7 @@ export function normalizeCharacterHairColorOverrides(colors?: CharacterColorOver
     shadow: current?.shadow ?? legacy?.fade ?? defaultCharacterHairColorOverrides.shadow,
     base: current?.base ?? defaultCharacterHairColorOverrides.base,
     light: current?.light ?? legacy?.highlight ?? defaultCharacterHairColorOverrides.light,
-    ...(current?.detail === undefined ? {} : { detail: current.detail })
+    detail: current?.detail ?? defaultCharacterHairColorOverrides.detail
   }
 }
 export function setCharacterHairColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {

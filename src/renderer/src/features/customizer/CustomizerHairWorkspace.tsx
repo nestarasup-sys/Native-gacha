@@ -131,7 +131,7 @@ export function CustomizerHairWorkspace({
                 const local = Boolean(appearance?.partColors?.[part.id]) && localPieceColors[color.id] !== globalColorOverrides[color.id]
                 return <label key={color.id} className={local ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as import('react').CSSProperties} title={`${color.label} de ${part.label} · ${local ? 'ajuste individual' : 'paleta geral'}`}>
                 <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!hasCharacter || !asset} onFocus={() => onActiveColorRoleChange(color.id)} onChange={(event) => void onSetPartColor(part.id, color.id, event.target.value)} />
-                <span aria-hidden="true">{color.id === 'detail' ? 'D' : color.id === 'light' ? 'CS' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>
+                <span aria-hidden="true">{color.id === 'detail' ? 'CS' : color.id === 'light' ? 'L' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>
               </label>
               })}
             </div>

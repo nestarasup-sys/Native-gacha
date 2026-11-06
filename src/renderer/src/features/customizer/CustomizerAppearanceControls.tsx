@@ -16,7 +16,8 @@ export const customizerHairColorControls: Array<{ id: CharacterPaletteRole; labe
   { id: 'outline', label: 'Contorno', fallback: defaultCharacterHairColorOverrides.outline },
   { id: 'shadow', label: 'Sombra', fallback: defaultCharacterHairColorOverrides.shadow },
   { id: 'base', label: 'Cor base', fallback: defaultCharacterHairColorOverrides.base },
-  { id: 'light', label: 'Luz', fallback: defaultCharacterHairColorOverrides.light }
+  { id: 'light', label: 'Luz', fallback: defaultCharacterHairColorOverrides.light },
+  { id: 'detail', label: 'Cor secundária', fallback: defaultCharacterHairColorOverrides.detail }
 ]
 
 const originalHairPalettePresets: Array<{ name: string; colors: HairColorOverrides }> = [
@@ -49,7 +50,7 @@ export const hairPalettePresets: Array<{ name: string; colors: CharacterPaletteO
 
 export const customizerHairPalettePresets: Array<{ name: string; colors: CharacterPaletteOverrides }> = originalHairPalettePresets.map(({ name, colors }) => ({
   name,
-  colors: { outline: colors.outline, shadow: colors.fade, base: colors.base, light: colors.highlight }
+  colors: { outline: colors.outline, shadow: colors.fade, base: colors.base, light: colors.highlight, detail: defaultCharacterHairColorOverrides.detail }
 }))
 
 export function characterWardrobePresetSwatchGradient(colors: CharacterPaletteOverrides): string {
@@ -64,7 +65,8 @@ export function characterHairPaletteSwatchGradient(colors: CharacterPaletteOverr
   const shadow = colors.shadow ?? '#6B6B6B'
   const base = colors.base ?? '#A8A8A8'
   const light = colors.light ?? '#E2E2E2'
-  return `linear-gradient(115deg, ${outline} 0 20%, ${shadow} 20% 40%, ${base} 40% 70%, ${light} 70%)`
+  const secondary = colors.detail ?? defaultCharacterHairColorOverrides.detail
+  return `linear-gradient(115deg, ${outline} 0 16%, ${shadow} 16% 32%, ${base} 32% 55%, ${light} 55% 78%, ${secondary} 78%)`
 }
 
 export function NoseOpacityControl({ value, disabled, onChange }: { value: number; disabled: boolean; onChange: (value: number) => void }) {
