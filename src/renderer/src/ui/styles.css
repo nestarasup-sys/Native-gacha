@@ -1775,7 +1775,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-library-actions button:last-child { border-color:#dc9ab6;background:#fff2f7;color:#a84370; }
 .hair-dev-library-actions button:disabled { opacity:.5;cursor:not-allowed; }
 .hair-dev-library-actions svg { width:14px;height:14px; }
-.hair-dev-library-hint { color:#9e8994;font-size:9px;line-height:1.4; }
 .hair-dev-set-name { display:grid;gap:4px;color:#7b6774;font-size:9px;font-weight:700; }
 .hair-dev-set-name input { width:100%;min-width:0;height:29px;padding:0 7px;border:1px solid #eadde5;border-radius:6px;color:#54444f;font-size:10px; }
 .hair-dev-set-gender { display:grid;gap:4px;color:#7b6774;font-size:9px;font-weight:700; }
@@ -1787,7 +1786,6 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .hair-dev-gender-toggle:active:not(:disabled) { transform:translateY(1px); }
 .hair-dev-gender-toggle:disabled { opacity:.55;cursor:not-allowed; }
 .hair-dev-gender-toggle:focus-visible { outline:2px solid #442067;outline-offset:2px; }
-.hair-dev-gender-legacy-note { color:#9e8994;font-size:9px;line-height:1.35; }
 .hair-dev-import-modal { width:min(520px,100%); }
 .hair-dev-import-modal .pose-model-option:disabled { opacity:.55;cursor:not-allowed; }
 .hair-grid-review-backdrop { z-index:125; }

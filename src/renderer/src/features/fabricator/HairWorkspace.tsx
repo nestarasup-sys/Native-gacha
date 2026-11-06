@@ -760,8 +760,6 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
             onClick={() => { setHairGender((current) => current === 'female' ? 'male' : 'female'); setDirty(true) }}
           >{hairGender === 'male' ? 'Masculino' : hairGender === 'female' ? 'Feminino' : 'Todos · antigo'}</button>
         </div>
-        {hairGender === null && <small className="hair-dev-gender-legacy-note">Conjunto antigo sem gênero: continua visível para todos.</small>}
-        <small className="hair-dev-library-hint">Importe peças para o mesmo conjunto. O botão Salvar grava todas juntas.</small>
         <nav className="hair-dev-library-tabs" aria-label="Categorias da biblioteca" role="tablist">
           {hairCategories.map((item) => <button key={item.id} type="button" role="tab" aria-selected={selectedCategory === item.id} className={selectedCategory === item.id ? 'active' : ''} disabled={deformMode} onClick={() => { setSelectedCategory(item.id); if (hairWorkspace?.[item.side] && hairWorkspace.categoryBySide?.[item.side] !== item.id) updateWorkspace((current) => ({ ...current, categoryBySide: { ...current.categoryBySide, [item.side]: item.id } })) }}>{item.label}</button>)}
         </nav>
