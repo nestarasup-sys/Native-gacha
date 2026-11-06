@@ -152,7 +152,7 @@ window.renderEditorV6ExportFrame(frameAbsoluto, layer, paintToken)
 - `frameAbsoluto` é convertido com `Math.round`; não é o tempo da GPU, nem o número de `paint` recebidos.
 - `layer` é `undefined`, `background` ou `foreground` no caso de vídeo externo.
 - `paintToken` é contador positivo de 24 bits controlado pela janela.
-- A chamada retorna ``EditorV6RenderFrameResult`` com `reused`, `layerReused`, timings e métricas.
+- A chamada retorna `EditorV6RenderFrameResult` com `reused`, `layerReused`, timings e métricas.
 - O tempo para aguardar esta chamada vira `ipcDrawMs`, mas contém **JS + React + espera de imagens + rAF**; não é "custo de serialização IPC puro".
 
 ### 5.2 Renderer produz e sinaliza
@@ -719,7 +719,7 @@ Os links abaixo apontam ao `sha` da revisão da pesquisa; conferir mudanças loc
 | Electron contentTracing | https://www.electronjs.org/docs/latest/api/content-tracing | Trace **Perfetto protobuf**, depois de `app.ready` |
 | Node Streams | https://nodejs.org/api/stream.html | Backpressure e lifecycle de pipe do FFmpeg |
 
-**Fontes primárias não são medições.** A documentação `latest` pode descrever novas APIs experimentais que não existem ou não funcionam na versão instalada. Executar ``process.versions`` e feature detection no build Windows real.
+**Fontes primárias não são medições.** A documentação `latest` pode descrever novas APIs experimentais que não existem ou não funcionam na versão instalada. Executar `process.versions` e feature detection no build Windows real.
 
 ## 25. Conclusão técnica e próximas entregas
 
