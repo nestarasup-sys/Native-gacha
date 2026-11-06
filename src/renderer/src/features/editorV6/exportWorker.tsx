@@ -12,13 +12,13 @@ import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
-import { compileEditorV6RenderPlan } from './engine/compileEditorV6RenderPlan'
+import { compileEditorV6ScenePlan } from '../../../../shared/editorV6ScenePlan'
 import { createReactSvgFrameSurface } from './adapters/reactSvgFrameSurface'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
   const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
-  const renderPlan = compileEditorV6RenderPlan(project, { width, height })
+  const renderPlan = compileEditorV6ScenePlan(project, { width, height })
   const rootElement = document.getElementById('root')!
   const frameSurface = new URLSearchParams(window.location.search).get('sceneSurface') === 'canvas2d'
     ? (await import('./adapters/canvas2dWithSvgFallbackFrameSurface')).createCanvas2dWithSvgFallbackFrameSurface(rootElement, width, height)

@@ -187,7 +187,7 @@ flowchart LR
   MUX --> MP4[MP4 validado]
 ```
 
-**Fase inicial integrada:** `electron/domains/editorV6/exportIpc.ts` valida o documento com Zod antes de criar o job. `compileEditorV6RenderPlan.ts` assume a cópia isolada recebida no worker, congela sua estrutura sem duplicar os dados dos assets, resolve assets por ID, prepara os planos de movimento e avalia somente quadros inteiros válidos. `exportWorker.tsx` usa esse plano no caminho real, com `resolveEditorV6SceneAtFrame` como oráculo e `SceneSurface` SVG como compositor atual.
+**Fase inicial integrada:** `electron/domains/editorV6/exportIpc.ts` valida o documento com Zod antes de criar o job. `src/shared/editorV6ScenePlan.ts` recebe a cópia isolada enviada ao worker, congela sua estrutura sem duplicar os dados Base64 dos assets, resolve assets por ID, prepara os planos de movimento e avalia somente quadros inteiros válidos. `exportWorker.tsx` usa esse plano no caminho real, com `resolveEditorV6SceneAtFrame` como oráculo e `SceneSurface` SVG como compositor atual.
 
 **Ainda não reconstruído:** a composição final, a captura `capturePage`, a transferência BGRA e o encode/mux em FFmpeg permanecem em uso. O WebCodecs confirmou H.264 para 150 quadros sintéticos nesta versão do Electron, mas essa prova não inclui cena Native Gacha, cabelo RGBA, áudio, qualidade equivalente ou seleção física do encoder. Portanto ela não é uma melhoria de exportação e não habilita o novo caminho.
 
@@ -202,3 +202,11 @@ flowchart LR
 **Fatia de readback avaliada:** em 3 processos Electron novos, 7 quadros sintéticos 1920×1080 por processo, readback TypedArray + conversão BGRA mediu mediana 18,31ms contra 18,60ms em `capturePage` + `NativeImage` + crop; MessagePort clone mediu 20,02ms. Os 21 pares tiveram hash idêntico e os tokens dinâmicos passaram. O delta direto (<2%) ficou dentro da variação; captura permanece padrão. O benchmark não cobre personagem/cabelo, alpha transparente, vídeo, áudio, encoder ou parede completa.
 
 **Próxima fatia do motor:** perfilar o uso de CPU entre Renderer, Main e FFmpeg e testar alocação de threads x264 com A/B frio completo antes de reescrever readback. O projeto Canvas2D de diagnóstico totalizou 81,63s Main, 59,04s em render e alcançou 502% de CPU no FFmpeg; esse caminho segue rejeitado frente a SVG. Preservar a fila/backpressure e comparar saída decodificada, áudio, memória, vídeo, mux e fallback.
+
+### Atualização ENG-04 — plano compartilhado e resolução por intervalos esparsos
+
+O compilador vive agora em `src/shared/editorV6ScenePlan.ts`, sem depender da página ou de React. O índice guarda somente fronteiras de blocos e eventos que alteram a semântica da cena (pose/motion atlas, fala, mídia, fundo e blink); não cria uma tabela com todos os quadros. Para timelines sob o limite de 50.000 eventos, uma cena lógica é reutilizada dentro do mesmo segmento estável. Se ultrapassar o limite, o motor desliga esse reuso e consulta o resolvedor canônico em cada quadro.
+
+O motor ainda não substitui o renderer/captura/encoder: `exportWorker.tsx` mantém preparação de cabelo e face, a surface SVG continua responsável pelos pixels, `capturePage` entrega BGRA ao FFmpeg, e FFmpeg continua juntando áudio e overlays e validando o MP4. A fronteira foi movida para o shared; a prévia React ainda consulta o resolver compartilhado diretamente para evitar compilar/clonar estado em cada edição. Migração de preview fica condicionada a profiling de interação.
+
+O teste de cena compara 300 quadros com a função canônica, cobrindo pose, atlas, fala/balão vinculado, blink, fundo e vídeo; também valida o fallback limitado para 1.000.000 de quadros. Um cold export completo do projeto autorizado passou com 2.394f/1080p30, cabelo posterior Preset 2, `libx264 ultrafast`, duas lanes e áudio: 88,51s clique→validado, 79,49s Main, 58,00s render e 18,22s motion. O valor é uma amostra sem alegação de ganho; os 1,438s agregados de scene-resolution vêm de workers concorrentes e não são parede. A saída passou validação de contagem, H.264 e áudio; nenhum MP4 foi retido para comparação visual decodificada.

@@ -64,7 +64,7 @@ export function hasEditorV6CharacterSpeechOverlap(timeline: EditorV6Timeline, ch
 
 /** Stable per-character schedule: a brief blink every 2.7–3.7 seconds. */
 const blinkScheduleCache = new Map<string, { period: number; phase: number; length: number; secondBlink: boolean }>()
-export function isEditorV6BlinkFrame(projectId: string, characterId: string, frame: number): boolean {
+function editorV6BlinkSchedule(projectId: string, characterId: string) {
   const key = `${projectId}:${characterId}`
   let schedule = blinkScheduleCache.get(key)
   if (!schedule) {
@@ -74,8 +74,36 @@ export function isEditorV6BlinkFrame(projectId: string, characterId: string, fra
     blinkScheduleCache.set(key, schedule)
     if (blinkScheduleCache.size > 2048) blinkScheduleCache.delete(blinkScheduleCache.keys().next().value!)
   }
+  return schedule
+}
+
+export function isEditorV6BlinkFrame(projectId: string, characterId: string, frame: number): boolean {
+  const schedule = editorV6BlinkSchedule(projectId, characterId)
   const cycleFrame = ((frame + schedule.phase) % schedule.period + schedule.period) % schedule.period
   return cycleFrame < schedule.length || schedule.secondBlink && cycleFrame >= schedule.period - 3
+}
+
+/**
+ * Returns the frames where the deterministic blink state changes. Scene plans
+ * use these sparse boundaries to reuse a resolved scene between facial events
+ * without materializing a record for every frame.
+ */
+export function editorV6BlinkChangeFrames(projectId: string, characterId: string, frameCount: number): number[] {
+  if (!Number.isSafeInteger(frameCount) || frameCount < 1) return []
+  const schedule = editorV6BlinkSchedule(projectId, characterId)
+  const changes = new Set<number>()
+  const add = (frame: number) => { if (frame > 0 && frame < frameCount) changes.add(frame) }
+  for (let cycle = -1; ; cycle += 1) {
+    const start = cycle * schedule.period - schedule.phase
+    if (start >= frameCount) break
+    add(start)
+    add(start + schedule.length)
+    if (schedule.secondBlink) {
+      add(start + schedule.period - 3)
+      add(start + schedule.period)
+    }
+  }
+  return [...changes].sort((a, b) => a - b)
 }
 
 export function editorV6FaceModeAtFrame(projectId: string, timeline: EditorV6Timeline, characterId: string, frame: number): EditorV6FaceRenderMode | undefined {

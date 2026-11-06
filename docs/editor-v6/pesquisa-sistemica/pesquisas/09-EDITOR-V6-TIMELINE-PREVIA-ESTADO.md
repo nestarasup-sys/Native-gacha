@@ -90,3 +90,11 @@ Quais atualizações de estado e de DOM acontecem em playback, scrub, drag, face
 **[A CONFIRMAR]** Custos reais de playback longo, seek em vídeo de biblioteca, React tree update sob stress e efeitos de flags de diagnóstico; sem dados não há ganho quantitativo.
 
 **Rastreabilidade:** [Pesquisa 01](01-ARQUITETURA-GERAL-E-INTEGRACOES.md), [Plano executável](../PLANO_EXECUTAVEL.md), [Matriz](../MATRIZ_DE_OPORTUNIDADES.md), [Fontes oficiais](../evidencias/FONTES-OFICIAIS.md).
+
+## Atualização experimental — compilador compartilhado do motor V6
+
+O export worker usa `src/shared/editorV6ScenePlan.ts` para avaliar a cena a partir de um snapshot validado e isolado. O índice é esparso: eventos de blocos, troca de pose, amostras de atlas, fala, vídeo/fundo e blink determinístico marcam intervalos; não é uma prévia rasterizada nem um cache persistente. Um segmento reutiliza a mesma lista de elementos resolvida, enquanto o quadro atual muda. A preparação de cabelo continua sendo feita por quadro no renderer.
+
+**Verificação:** paridade em todos os 300 quadros da fixture com o resolver canônico, incluindo balão anexado, face/blink e vídeo; `frameIndex` desliga reuso acima de 50.000 fronteiras e mantém a resolução direta válida. Isso testa determinismo, não resposta visual ou fluidez real da UI. A prévia React não foi migrada para o plano nesta etapa: o compilador atual transfere a posse do snapshot e congelá-lo seria incorreto durante edição; a alternativa exigiria snapshot compartilhado imutável com custo de compilação medido no drag/scrub.
+
+**Medição real do motor:** um processo/sessão frios exportaram 2.394 quadros com cabelo Preset 2, áudio e vídeo em 88,51s clique→MP4 validado. A cena foi encaminhada ao compositor atual; não foi retido um MP4 anterior/depois para comparação de pixels. O resultado confirma integração e formato, sem declarar aceleração.

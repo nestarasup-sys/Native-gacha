@@ -243,6 +243,16 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 - Para avançar, transferir quadros já renderizados ao VideoEncoder com backpressure, testar H.264/PTS e integrar áudio/mux por FFmpeg. Projetos com overlays de vídeo ou camadas que exijam composição posterior podem requerer recodificação ou fallback integral para o FFmpeg atual.
 - Fechar encoder/frame no sucesso, abort e falha; limitar queue/memória e manter fallback validado. Nenhum cache entre jobs.
 
+### Fase ENG-04 — plano de cena compartilhado e índice esparso por quadro (implementado no LAB)
+
+- O compilador saiu de `src/renderer/src/features/editorV6/engine` e foi para `src/shared/editorV6ScenePlan.ts`, sem importar React ou detalhes da feature. O Main continua sendo o adaptador confiável: `exportIpc.ts` valida o documento antes de criar a janela de exportação; o worker recebe sua própria cópia IPC e transfere a propriedade ao compilador.
+- O plano cria lookup de assets por ID, lista de movimento congelada e índice esparso de mudanças de bloco, fundo, vídeo, fala, amostras de atlas e blink determinístico. Não pré-renderiza nem armazena um registro por quadro. Enquanto o quadro pedido permanece no mesmo intervalo, reutiliza a cena lógica resolvida e atualiza apenas o índice `frame`; cabelo/raster/superfície continuam executando para cada quadro.
+- O índice é limitado a 50.000 fronteiras. Se a estimativa excede esse limite, a avaliação desativa o reuso e chama o resolver canônico em cada quadro; timeline longa continua funcional sem crescimento ilimitado de memória.
+- `exportWorker.tsx` usa `compileEditorV6ScenePlan` no caminho de produção. `resolveEditorV6SceneAtFrame` continua sendo o oráculo, e SVG → `capturePage` → BGRA → FFmpeg continua sendo o renderer/caminho de compatibilidade.
+- Teste focado compara todos os 300 quadros de uma fixture com troca de pose, motion atlas, fala/balão ligado, blink, fundo e overlay de vídeo; valida reutilização somente dentro do segmento e verifica fallback de um projeto sintético com 1.000.000 de quadros. Não há dados nem caches entre exportações.
+- Um cold export integral do projeto autorizado passou: 2.394f, 1920×1080/30, preset UI 2 posterior-only, libx264 ultrafast, 2 workers, 4 faixas de áudio e 4 vídeos; click→MP4 validado 88,51s; Main export 79,49s; motion 18,22s; render 58,00s; Main RSS pico 1.120,8 MiB; zero bytes escritos no cache Motion. O relatório JSON leve permaneceu; MP4 e `isolated-app-data` foram removidos pelo harness.
+- Esta é uma amostra, não demonstra melhoria ponta a ponta. `sceneResolutionMs` agregado dos workers foi 1,438s (não é wall time); render e preparação continuam muito maiores. O MP4 passou ffprobe/áudio, mas não foi retido para comparação decodificada com um golden anterior. Nenhuma alteração de backend ou qualidade de encoder foi feita.
+
 ### Gates desta etapa
 
 - Fase 1 passou: `npm run typecheck`; `npm run audit:architecture`; 13 testes focados no novo plano/export worker/assets; `npm run test:editor-v6:export` (build + Electron, 81 quadros sintéticos, emenda Turbo/áudio e cenários de cancelamento/fallback); spike frio de 150 quadros H.264; `npm run test:editor-v6:integration -- --scope=all` (115 direcionados, Electron hair/scene, TypeScript, arquitetura, 366 testes completos + 1 skip e build).
@@ -252,8 +262,8 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 
 ### Próximo ciclo mensurável
 
-1. O microbenchmark direto Canvas→main foi concluído a 1080p em 3 processos Electron novos. TypedArray + conversão RGBA→BGRA empatou com `capturePage` dentro da variação; MessagePort com clone foi mais lento. Não integrar esse caminho.
-2. Próximo experimento: testar alocação de threads do x264 em smoke curto e A/B frio completo. Use a mesma cena, encoder, bitrate, qualidade, áudio, workers e processo frio; candidate só é aceito se reduzir clique→MP4 validado.
-3. Em paralelo, manter visíveis os maiores estágios medidos (render comum e motion). Coletar tempo por part/lane, encoder e peak RSS; somas de timings em partes concorrentes não são wall time.
-4. Se o perfil de CPU não apontar margem de threads, voltar ao hotspot de preparo dos 37 bakes de movimento e verificar custo por pedido antes de mudar reuso por personagem. Não elevar concorrência nem mudar resolução/qualidade para obter um número melhor.
-5. Avaliar WebCodecs/shared texture só com um resultado que atravesse composição real, vídeo, áudio, mux, backpressure, fallback e validação MP4; depois compartilhar o plano determinístico com preview/timeline por IDs.
+1. O microbenchmark direto Canvas→main terminou em empate com `capturePage`; não integrar esse caminho. O plano ENG-04 já coloca a avaliação de cena atrás de um contrato compartilhado e reproduzível.
+2. Próximo experimento de desempenho: alocação de threads do x264, pois um exporte real amostrou pico de 498% CPU no FFmpeg. Fazer smoke curto e comparar exportações frias em processos/sessões separados, mantendo cena, preset, bitrate, áudio, workers e qualidade; só aceitar mudança se clique→MP4 validado melhorar sem piorar qualidade.
+3. O exporte atual mediu 58,00s de render, 18,22s de motion e 1,438s agregados de scene-resolution. Medir custo real por worker/lane e separar Renderer/FFmpeg; não atacar primeiro o resolver que já não domina.
+4. Depois, extrair o frame engine/compositor do bootstrap do worker por interfaces, sem mover política de UI para o motor. Cada extração precisa de equivalência integral e fallback antes de trocar o caminho padrão.
+5. Usar WebCodecs/shared texture somente após uma prova com composição real, vídeo, áudio, mux, backpressure, qualidade e fallback em processo frio. Preservar o pipeline SVG/capturePage/FFmpeg enquanto oráculo.
