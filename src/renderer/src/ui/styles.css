@@ -2929,7 +2929,7 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 
 .v6-motion-range { position: absolute; bottom: 1px; height: 7px; background: repeating-linear-gradient(135deg, #f9b84a 0 3px, #9a681a 3px 6px); z-index: 3; pointer-events: none; }
 
-.v6-video-picker-backdrop { z-index: 1605; }
+.v6-library-picker-backdrop { position:fixed;inset:0;z-index:1605;display:grid;place-items:center;padding:18px;background:#21182b70;backdrop-filter:blur(3px); }
 .v6-video-picker { width:min(760px,100%);max-height:min(760px,92vh);display:flex;flex-direction:column;overflow:hidden;border:1px solid #e5dced;border-radius:15px;background:#fff;box-shadow:0 22px 75px #20152c42; }
 .v6-video-picker>header { display:flex;align-items:flex-start;justify-content:space-between;gap:14px;padding:19px 21px 14px;border-bottom:1px solid #eee8f2; }
 .v6-video-picker>header span { color:#8b6db0;font-size:10px;font-weight:850;letter-spacing:1px; }
