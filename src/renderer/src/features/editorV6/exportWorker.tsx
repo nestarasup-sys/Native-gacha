@@ -408,7 +408,9 @@ async function initialize() {
     for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.baseSurfaceId)
     drawSurface(rig.faceSurfaceId)
-    for (const piece of rig.layers) if (piece.side !== 'back') drawHairPiece(context, rig, piece, element, frame, timings)
+    for (const piece of rig.layers) if (piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
+    drawSurface(rig.eyesAboveRearHairSurfaceId ?? null)
+    for (const piece of rig.layers) if (piece.side !== 'back' && !piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.overlaySurfaceId)
     metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
     metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height
@@ -448,7 +450,9 @@ async function initialize() {
     for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
     drawAtlasSurface(transition.atlas!.behindFaceSurfaceId)
     drawAtlasSurface(transition.atlas!.faceSurfaceId)
-    for (const piece of rig.layers) if (piece.side !== 'back') drawHairPiece(context, rig, piece, element, frame, timings)
+    for (const piece of rig.layers) if (piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
+    drawAtlasSurface(transition.atlas!.eyesAboveRearHairSurfaceId ?? null)
+    for (const piece of rig.layers) if (piece.side !== 'back' && !piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
     drawAtlasSurface(transition.atlas!.overlaySurfaceId)
     metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
     metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height

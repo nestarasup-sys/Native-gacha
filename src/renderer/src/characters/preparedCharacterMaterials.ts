@@ -5,7 +5,8 @@ import type { HairAppearanceLayerLoader, HairLayerReference } from './characterL
 
 export type GachaReusableMaterials = Readonly<{
   backStyles: HairLayerReference[]
-  frontStyles: HairLayerReference[]
+  posteriorStyles: HairLayerReference[]
+  fringeStyles: HairLayerReference[]
   wardrobeDetails: Record<string, WardrobeSet>
 }>
 /** A single export/bake session owns this bounded cache and disposes it after
@@ -49,7 +50,7 @@ async function loadGachaReusableMaterials(
     loadHairAppearanceLayers(hairAppearance, modelSlot, 'fringe', {}, assetProvider),
     sharedWardrobe ?? loadWardrobeDetails(character, modelSlot, assetProvider)
   ])
-  return { backStyles, frontStyles: [...posteriorStyles, ...fringeStyles], wardrobeDetails }
+  return { backStyles, posteriorStyles, fringeStyles, wardrobeDetails }
 }
 
 function wardrobeMaterialsKey(character: CustomizerCharacter, modelSlot: number): string {
@@ -103,7 +104,7 @@ export async function loadPreparedCharacterMaterials(
   if (!wardrobe) {
     wardrobe = remember(cache, wardrobeKey,
       loadWardrobeDetails(character, modelSlot, assetProvider)
-        .then(wardrobeDetails => ({ backStyles: [], frontStyles: [], wardrobeDetails })))
+        .then(wardrobeDetails => ({ backStyles: [], posteriorStyles: [], fringeStyles: [], wardrobeDetails })))
   }
   const request = loadGachaReusableMaterials(character, modelSlot, assetProvider,
     loadHairAppearanceLayers, wardrobe.then(materials => materials.wardrobeDetails))

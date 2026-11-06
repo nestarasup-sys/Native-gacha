@@ -24,7 +24,7 @@ type CharacterFaceCatalogImageLoaders = {
 
 export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalogImageLoaders, isBlinkMode: (mode?: FaceCatalogRenderMode) => boolean) {
   const { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage } = loaders
-  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>, mouthLayer: FaceCatalogMouthLayer = 'all'): Promise<void> {
+  async function drawFaceCatalogOverlay(context: CanvasRenderingContext2D, artwork: CatalogArtwork, source: FabricatorProject, items: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>>, appearance: CustomizerFaceAppearance, skinTone?: string, studioFaceTransforms?: FaceCatalogTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: FaceCatalogRenderMode, resolveClosedEye?: ClosedEyeAssetResolver, headOverrides: CustomizerCharacter['customization']['partOverrides'] = {}, highlightedHeadId?: string | null, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator, wardrobePalettes?: Partial<Record<CustomizerWardrobePaletteKey, CharacterColorOverrides>>, mouthLayer: FaceCatalogMouthLayer = 'all', eyesAboveRearHairContext?: CanvasRenderingContext2D): Promise<void> {
     const sourceHead = source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     const targetHead = artwork.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
     if (!sourceHead || !targetHead || sourceHead.width <= 0 || sourceHead.height <= 0) return
@@ -46,6 +46,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       'mouth-open': appearance.mouthOpen ? appearance.mouthOpenCatalogId : undefined
     }
     for (const element of faceElementOrder) {
+      const elementContext = element.startsWith('eye') && eyesAboveRearHairContext ? eyesAboveRearHairContext : context
       if (mouthLayer === 'without-mouth' && element === 'mouth') continue
       if (mouthLayer === 'mouth-only' && element !== 'mouth') continue
       if (element.startsWith('brow') && !appearance.eyebrows) continue
@@ -107,12 +108,12 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
         const width = piece.width * transform.scaleX / sourceHead.width * targetHead.width * (studioTransform?.width ?? 100) / 100
         const height = piece.height * transform.scaleY / sourceHead.height * targetHead.height * (studioTransform?.height ?? 100) / 100
-        context.save()
-        if (sheet === 'nose') context.globalAlpha = Math.min(1, Math.max(0, appearance.noseOpacity ?? item.opacity ?? 1))
-        context.translate(x, y)
-        context.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
-        drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === element, width, height)
-        context.restore()
+        elementContext.save()
+        if (sheet === 'nose') elementContext.globalAlpha = Math.min(1, Math.max(0, appearance.noseOpacity ?? item.opacity ?? 1))
+        elementContext.translate(x, y)
+        elementContext.rotate((targetHead.rotation + transform.rotation + (studioTransform?.rotation ?? 0)) * Math.PI / 180)
+        drawPreviewImageWithHalo(elementContext, image, -width / 2, -height / 2, highlightedHeadId === element, width, height)
+        elementContext.restore()
         if (element === 'mouth') {
           mouthBlushPlacement = {
             x: localX,
@@ -164,6 +165,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
     let pupilClipCanvas: HTMLCanvasElement | null = null
     for (const part of layerOrder) {
       const category = part.startsWith('eye') ? 'eye' : part.startsWith('pupil') ? 'pupil' : 'eyebrow'
+      const partContext = (category === 'eye' || category === 'pupil') && eyesAboveRearHairContext ? eyesAboveRearHairContext : context
       const isRight = part.endsWith('right')
       if (blinking && category === 'pupil') continue
       const asset = category === 'eye' && blinking ? closedEyeAssets.get(part) ?? loaded.get(part) : loaded.get(part)
@@ -228,7 +230,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       try {
         const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors, { preserveNearWhite: true, allowNearWhiteRoles: selectedPart.manualColorRoles })
         if (category === 'pupil' && pupilEyeClip) {
-          if (!pupilClipCanvas) { pupilClipCanvas = createCharacterCanvas(); pupilClipCanvas.width = context.canvas.width; pupilClipCanvas.height = context.canvas.height }
+          if (!pupilClipCanvas) { pupilClipCanvas = createCharacterCanvas(); pupilClipCanvas.width = partContext.canvas.width; pupilClipCanvas.height = partContext.canvas.height }
           const clipped = pupilClipCanvas.getContext('2d')
           if (clipped) {
             clipped.clearRect(0, 0, pupilClipCanvas.width, pupilClipCanvas.height)
@@ -248,17 +250,18 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
             clipped.rotate((targetHead.rotation + pupilEyeClip.transform.rotation) * Math.PI / 180)
             if (pupilEyeClip.flipX) clipped.scale(-1, 1)
             clipped.drawImage(eyeMask, -eyeWidth / 2, -eyeHeight / 2, eyeWidth, eyeHeight); clipped.restore()
-            drawPreviewImageWithHalo(context, pupilClipCanvas, 0, 0, highlightedHeadId === part)
+            drawPreviewImageWithHalo(partContext, pupilClipCanvas, 0, 0, highlightedHeadId === part)
           }
         } else {
-          context.save(); context.translate(x, y); context.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
-          if (Boolean(transform.flipX) !== (isRight && !asset.rightSidePositioned)) context.scale(-1, 1)
-          drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === part, width, height); context.restore()
+          partContext.save(); partContext.translate(x, y); partContext.rotate((targetHead.rotation + drawRotation) * Math.PI / 180)
+          if (Boolean(transform.flipX) !== (isRight && !asset.rightSidePositioned)) partContext.scale(-1, 1)
+          drawPreviewImageWithHalo(partContext, image, -width / 2, -height / 2, highlightedHeadId === part, width, height); partContext.restore()
         }
       } catch { /* Keep the rest of the face visible if one component asset is unavailable. */ }
     }
     const detailOrder: FaceDetailKind[] = ['facial-shadow', 'blush', 'eye-highlight-left', 'eye-highlight-right']
     for (const kind of detailOrder) {
+      const detailContext = kind.startsWith('eye-highlight') && eyesAboveRearHairContext ? eyesAboveRearHairContext : context
       const id = appearance.faceDetails?.[kind]
       if (!id) continue
       const asset = await loadComponent(id)
@@ -276,9 +279,9 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       try {
         const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[kind] })
-        context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
-        if (transform.flipX) context.scale(-1, 1)
-        drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === kind, width, height); context.restore()
+        detailContext.save(); detailContext.translate(x, y); detailContext.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
+        if (transform.flipX) detailContext.scale(-1, 1)
+        drawPreviewImageWithHalo(detailContext, image, -width / 2, -height / 2, highlightedHeadId === kind, width, height); detailContext.restore()
       } catch { /* Keep the rest of the face visible if one detail asset is unavailable. */ }
     }
     // Paint mouth blush after the mouth bitmap so its position and rotation stay visible.

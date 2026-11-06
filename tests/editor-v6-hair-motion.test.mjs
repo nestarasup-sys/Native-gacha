@@ -24,12 +24,12 @@ test('recomposição preserva largura, altura e centro do recorte com escala e e
 const validBundle = () => ({
   presetSlot: 2,
   preset: structuredClone(FIRST_HAIR_MOTION_PRESET),
-  surfaces: [{ id: 'body', dataUrl: 'data:image/png;base64,AA==' }, { id: 'face', dataUrl: 'data:image/png;base64,AA==' }],
+  surfaces: [{ id: 'body', dataUrl: 'data:image/png;base64,AA==' }, { id: 'face', dataUrl: 'data:image/png;base64,AA==' }, { id: 'eyes', dataUrl: 'data:image/png;base64,AA==' }],
   textures: [{ id: 'hair', dataUrl: 'data:image/png;base64,AA==' }],
   rigs: [{
     elementId: 'element-1', assetId: 'asset-1', characterId: 'character-1',
     poseSlot: 1,
-    baseSurfaceId: 'body', faceSurfaceId: 'face', overlaySurfaceId: null,
+    baseSurfaceId: 'body', faceSurfaceId: 'face', eyesAboveRearHairSurfaceId: 'eyes', overlaySurfaceId: null,
     artworkWidth: 100, artworkHeight: 200, outputWidth: 100, outputHeight: 200,
     shapeScaleX: 1, shapeScaleY: 1,
     sourceCrop: { left: 0, top: 0, width: 80, height: 180 },
@@ -44,6 +44,10 @@ test('validates export-only hair layers and their cross-references', () => {
   assert.equal(parsed.presetSlot, 2)
   assert.deepEqual(parsed.preset, FIRST_HAIR_MOTION_PRESET)
   assert.equal(parsed.rigs[0].layers[0].textureId, 'hair')
+  assert.equal(parsed.rigs[0].eyesAboveRearHairSurfaceId, 'eyes')
+  const legacyBundle = validBundle()
+  delete legacyBundle.rigs[0].eyesAboveRearHairSurfaceId
+  assert.equal(parseEditorV6HairMotionBundle(legacyBundle).rigs[0].eyesAboveRearHairSurfaceId, undefined)
   const invalid = validBundle()
   invalid.rigs[0].layers[0].textureId = 'missing'
   assert.throws(() => parseEditorV6HairMotionBundle(invalid), /imagem de cabelo preparada/i)
@@ -62,7 +66,7 @@ test('bundle valida atlas de transição sem cabelo e preserva referências de f
   const bundle = validBundle()
   bundle.motionTransitions = [{
     elementId: 'element-1', key: 'motion-key', startFrame: 10, endFrame: 12,
-    behindFaceSurfaceId: 'body', faceSurfaceId: 'face', overlaySurfaceId: null, faceAtlasSurfaceId: null,
+    behindFaceSurfaceId: 'body', faceSurfaceId: 'face', eyesAboveRearHairSurfaceId: 'eyes', overlaySurfaceId: null, faceAtlasSurfaceId: null,
     frames: [{
       offset: -1,
       sprite: { x: 0, y: 0, width: 20, height: 30, atlasWidth: 20, atlasHeight: 30 },
@@ -77,6 +81,9 @@ test('bundle valida atlas de transição sem cabelo e preserva referências de f
   const missingSurface = structuredClone(bundle)
   missingSurface.motionTransitions[0].faceSurfaceId = 'missing'
   assert.throws(() => parseEditorV6HairMotionBundle(missingSurface), /camada de pose sem cabelo/i)
+  const missingRaisedEyes = structuredClone(bundle)
+  missingRaisedEyes.motionTransitions[0].eyesAboveRearHairSurfaceId = 'missing'
+  assert.throws(() => parseEditorV6HairMotionBundle(missingRaisedEyes), /camada de pose sem cabelo/i)
   const duplicateFrame = structuredClone(bundle)
   duplicateFrame.motionTransitions[0].frames.push(duplicateFrame.motionTransitions[0].frames[0])
   assert.throws(() => parseEditorV6HairMotionBundle(duplicateFrame), /quadros duplicados/i)

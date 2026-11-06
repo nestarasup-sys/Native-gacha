@@ -58,6 +58,7 @@ export function isValidCustomizerFaceAppearance(value: unknown): value is Custom
     && (appearance.setId === undefined || validWardrobeId(appearance.setId))
     && catalogIds.every((id) => id === undefined || id === null || validFaceCatalogId(id))
     && componentsValid && transformsValid && faceDetailsValid && headExtrasValid && linksValid && partColorsValid && hasSelection
+    && (appearance.eyesAboveRearHair === undefined || typeof appearance.eyesAboveRearHair === 'boolean')
     && [0, 1, 2].includes(appearance.eyeState)
     && typeof appearance.eyebrows === 'boolean'
     && Number.isInteger(appearance.noseIndex) && appearance.noseIndex >= 0 && appearance.noseIndex <= 5

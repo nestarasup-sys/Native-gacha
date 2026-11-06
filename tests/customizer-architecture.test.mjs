@@ -71,6 +71,18 @@ test('workspace facial de catálogo fica isolado da página e gravação via cal
   assert.match(workspace, /customizer-face-layout-catalog/)
 })
 
+test('cartão de olhos expõe e salva a preferência de camada acima do cabelo posterior', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerFaceAssemblyWorkspace.tsx', import.meta.url), 'utf8')
+  ])
+  assert.match(page, /<CustomizerFaceAssemblyWorkspace\b/)
+  assert.match(page, /onSetVariant=\{setFaceCatalogVariant\}/)
+  assert.match(workspace, /customizer-face-eye-layer-toggle/)
+  assert.match(workspace, /checked=\{Boolean\(appearance\?\.eyesAboveRearHair\)\}/)
+  assert.match(workspace, /onSetVariant\(\{ eyesAboveRearHair: event\.target\.checked \}\)/)
+})
+
 test('workspace de cabelos fica isolado e recebe dados e ações pela página', async () => {
   const [page, workspace] = await Promise.all([
     readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
@@ -113,6 +125,11 @@ test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos'
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, gender: 'unknown' } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)
   assert.equal(isValidCustomizerFaceAppearance(null), false)
+  const faceWithEyes = { modelSlot: 1, eyeCatalogId: 'eyes-1', eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false }
+  assert.equal(isValidCustomizerFaceAppearance(faceWithEyes), true, 'A ausência da nova preferência mantém os personagens existentes compatíveis')
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: true }), true)
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: false }), true)
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: 'yes' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), id: '../../escape' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), hair: 'red' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, modelSlot: 11 } }), false)

@@ -25,13 +25,21 @@ type Props = {
   onSetColor: (part: FaceComponentPartId, role: HairColorRole, value: string) => void | Promise<void>
   onApplyPalette: (part: FaceComponentPartId, colors: HairColorOverrides) => void | Promise<void>
   onResetColors: (part: FaceLibraryPartId) => void | Promise<void>
+  onSetVariant: (patch: Partial<CustomizerFaceAppearance>) => void | Promise<void>
 }
 
 export function CustomizerFaceAssemblyWorkspace({
   selectedModelSlot, loading, selectedPart, selectedPage, faceCatalogModel, faceComponentAssets,
   faceComponentDetails, appearance, hasCharacter, onSelectPart, onSelectPage, onChoosePart,
-  onClearPart, onSetColor, onApplyPalette, onResetColors
+  onClearPart, onSetColor, onApplyPalette, onResetColors, onSetVariant
 }: Props) {
+  const hasSelectedEye = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId
+    || appearance?.components?.['eye-left']?.assetId || appearance?.components?.['eye-right']?.assetId)
+  const renderEyeLayerToggle = () => <label className="customizer-face-eye-layer-toggle" title="Desenha olhos, pupilas e destaques acima do cabelo posterior">
+    <input type="checkbox" checked={Boolean(appearance?.eyesAboveRearHair)} disabled={!hasCharacter || selectedModelSlot === null || (!hasSelectedEye && !appearance?.eyesAboveRearHair)} onChange={(event) => void onSetVariant({ eyesAboveRearHair: event.target.checked })} />
+    <span>Olhos e pupilas acima do cabelo posterior</span>
+  </label>
+
   const renderParts = () => <div className="customizer-hair-layout customizer-face-layout">
     {customizerFaceParts.map((part) => {
       const options = faceCatalogModel.optionsForCategory(part.category)
@@ -124,6 +132,6 @@ export function CustomizerFaceAssemblyWorkspace({
     {selectedPart ? renderLibrary()
       : selectedModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para carregar olhos e sobrancelhas do Fabricador Dev.</div>
       : loading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
-        : renderParts()}
+        : <>{renderEyeLayerToggle()}{renderParts()}</>}
   </section>
 }

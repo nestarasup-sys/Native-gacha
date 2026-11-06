@@ -704,6 +704,7 @@ export function CustomizerPage() {
               onSetColor={setFacePartColor}
               onApplyPalette={applyFacePartPalette}
               onResetColors={resetFacePartColors}
+              onSetVariant={setFaceCatalogVariant}
             />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && <CustomizerFaceCatalogWorkspace
               selectedModelSlot={selectedCatalogModelSlot}

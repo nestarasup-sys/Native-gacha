@@ -150,6 +150,8 @@ export type CustomizerFaceAppearance = {
   eyebrowRightCatalogId?: string | null
   /** Character-only recoloring for each independently selected facial feature. */
   partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
+  /** Paints eyes, pupils and eye highlights above the posterior hair layer. */
+  eyesAboveRearHair?: boolean
   /** New single-image face assets selected independently for this character. */
   components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides; manualColorRoles?: HairColorRole[] }>>
   /** Character-owned placement for pieces from catalog sheets. */
