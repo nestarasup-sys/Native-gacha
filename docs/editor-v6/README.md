@@ -37,3 +37,8 @@
 - [Relatório de evolução de 2026-10-22](../architecture/RELATORIO_EVOLUCAO_2026-10-22.md)
 
 **Regra de leitura:** um teste escrito ou um workflow configurado não significa que a execução passou. Relatórios de benchmark histórico não comprovam desempenho da branch experimental. O estado consolidado deve ser atualizado somente com evidência observável de CI ou execução local.
+
+## Programa de pesquisa sistêmica (06/11/2026)
+
+- [Índice, 16 trilhas e plano executável: Native Gacha inteiro / Editor V6](pesquisa-sistemica/README.md).
+- [Primeira pesquisa concluída no código: arquitetura geral e integrações](pesquisa-sistemica/pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
