@@ -1,5 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { publishEditorV6Output } from '../../electron/domains/editorV6/exportRunner'
+import { encodingArgs, publishEditorV6Output } from '../../electron/domains/editorV6/exportRunner'
+
+describe('codificação do Editor V6', () => {
+  it('configura o Media Foundation com perfil H.264 numérico e codificação de software', () => {
+    const args = encodingArgs('h264_mf', 4)
+    expect(args).toContain('100')
+    expect(args.slice(args.indexOf('-profile:v') + 1, args.indexOf('-profile:v') + 2)).toEqual(['100'])
+    expect(args.slice(args.indexOf('-hw_encoding') + 1, args.indexOf('-hw_encoding') + 2)).toEqual(['0'])
+    expect(args).toContain('yuv420p')
+  })
+})
 
 describe('publicação do MP4 do Editor V6', () => {
   it('guarda o MP4 validado com nome alternativo se o destino estiver bloqueado', async () => {

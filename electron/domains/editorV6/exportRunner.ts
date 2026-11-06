@@ -98,7 +98,17 @@ function addFrameMetrics(target: EditorV6FrameMetrics, values: EditorV6FrameMetr
 }
 // Each Turbo part must use identical H.264 color signalling even when only
 // some parts contain a source video with its own color metadata.
-export const encodingArgs = (encoder: string, threads: number) => ['-c:v', encoder, ...(encoder === 'libopenh264' ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)] : ['-b:v', '12M']), '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-profile:v', 'high', '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000']
+export const encodingArgs = (encoder: string, threads: number) => [
+  '-c:v', encoder,
+  ...(encoder === 'libopenh264'
+    ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)]
+    : ['-b:v', '12M']),
+  ...(encoder === 'h264_mf' ? ['-hw_encoding', '0'] : []),
+  '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709',
+  '-color_primaries', 'bt709', '-color_trc', 'bt709',
+  '-profile:v', encoder === 'h264_mf' ? '100' : 'high',
+  '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000'
+]
 export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
 const MOUTH_LOOP_BATCH_FRAMES = 300
 function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
@@ -359,7 +369,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
     let encoder = ''
-    for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'libopenh264'] : ['libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
+    for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libopenh264'] : ['libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: PartReport[]) => {
       if (new Set(parts.map((part) => part.encoder)).size !== 1) throw Error('As partes usaram codificadores diferentes.')
