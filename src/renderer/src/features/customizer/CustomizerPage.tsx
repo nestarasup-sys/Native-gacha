@@ -174,7 +174,9 @@ export function CustomizerPage() {
   const [originalSkinTone, setOriginalSkinTone] = useState<string | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
-  const [selectedFrontHairUrl, setSelectedFrontHairUrl] = useState<string | null>(null)
+  const [selectedEyesAboveRearHairUrl, setSelectedEyesAboveRearHairUrl] = useState<string | null>(null)
+  const [selectedPosteriorHairUrl, setSelectedPosteriorHairUrl] = useState<string | null>(null)
+  const [selectedFringeUrl, setSelectedFringeUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const previewLoadRequest = useRef(0)
@@ -388,6 +390,7 @@ export function CustomizerPage() {
     expressionEffects: standardExpressionEffects,
     highlight: activeFacePreviewHighlight,
     setSelectedFaceUrl,
+    setSelectedEyesAboveRearHairUrl,
     setCatalogError
   })
 
@@ -404,7 +407,8 @@ export function CustomizerPage() {
     highlight: activeHairPreviewHighlight,
     setHairDetails: setActiveHairDetails,
     setSelectedArtworkUrl,
-    setSelectedFrontHairUrl,
+    setSelectedPosteriorHairUrl,
+    setSelectedFringeUrl,
     setCatalogError
   })
 
@@ -609,7 +613,9 @@ export function CustomizerPage() {
     previewBackground,
     wardrobeUrl: selectedWardrobeUrl,
     faceUrl: selectedFaceUrl,
-    frontHairUrl: selectedFrontHairUrl,
+    posteriorHairUrl: selectedPosteriorHairUrl,
+    eyesAboveRearHairUrl: selectedEyesAboveRearHairUrl,
+    fringeUrl: selectedFringeUrl,
     wardrobeAboveHairUrl: selectedWardrobeAboveHairUrl,
     onPreviewBackgroundChange: setPreviewBackground,
     onBeginPan: beginCustomizerPreviewPan,

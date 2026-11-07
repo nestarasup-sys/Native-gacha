@@ -49,11 +49,29 @@ test('as duas telas do Customizador usam uma única superfície de prévia', asy
 
   const layers = [
     'customizer-selected-artwork', 'customizer-wardrobe-overlay', 'customizer-face-overlay',
-    'customizer-front-hair-overlay', 'customizer-wardrobe-above-hair-overlay'
+    'customizer-posterior-hair-overlay', 'customizer-eyes-above-rear-hair-overlay',
+    'customizer-fringe-overlay', 'customizer-wardrobe-above-hair-overlay'
   ]
   const layerOffsets = layers.map((layer) => surface.indexOf(layer))
   assert.ok(layerOffsets.every((offset) => offset >= 0))
   assert.deepEqual(layerOffsets, [...layerOffsets].sort((left, right) => left - right))
+})
+
+test('customizer preview separates raised eyes between posterior hair and fringe', async () => {
+  const [facePreview, faceHook, hairHook, styles] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/customizerFacePreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/useCustomizerFacePreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/useCustomizerHairPreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/ui/styles.css', import.meta.url), 'utf8')
+  ])
+  assert.match(facePreview, /appearance\.eyesAboveRearHair \? document\.createElement\('canvas'\)/)
+  assert.match(facePreview, /eyesAboveRearHairContext \?\? undefined/)
+  assert.match(faceHook, /setSelectedEyesAboveRearHairUrl\(eyesAboveRearHairUrl\)/)
+  assert.match(hairHook, /setSelectedPosteriorHairUrl\(posteriorHairUrl\)/)
+  assert.match(hairHook, /setSelectedFringeUrl\(fringeUrl\)/)
+  assert.match(styles, /customizer-posterior-hair-overlay[^\n]*z-index:4/)
+  assert.match(styles, /customizer-eyes-above-rear-hair-overlay[^\n]*z-index:5/)
+  assert.match(styles, /customizer-fringe-overlay[^\n]*z-index:6/)
 })
 
 test('workspace facial de catálogo fica isolado da página e gravação via callbacks', async () => {
