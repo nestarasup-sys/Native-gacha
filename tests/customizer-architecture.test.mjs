@@ -99,6 +99,9 @@ test('cartão de olhos expõe e salva a preferência de camada acima do cabelo p
   assert.match(workspace, /customizer-face-eye-layer-toggle/)
   assert.match(workspace, /checked=\{Boolean\(appearance\?\.eyesAboveRearHair\)\}/)
   assert.match(workspace, /onSetVariant\(\{ eyesAboveRearHair: event\.target\.checked \}\)/)
+  assert.match(workspace, /part\.id === 'eye-left' && renderEyeLayerToggle\(\)/)
+  assert.match(workspace, /<span>Olhos \+ pupilas ↑<\/span>/)
+  assert.doesNotMatch(workspace, /renderEyeLayerToggle\(\)\}\{renderParts\(\)/)
 })
 
 test('workspace de cabelos fica isolado e recebe dados e ações pela página', async () => {

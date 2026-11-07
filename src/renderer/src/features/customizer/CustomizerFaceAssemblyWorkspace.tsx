@@ -37,7 +37,7 @@ export function CustomizerFaceAssemblyWorkspace({
     || appearance?.components?.['eye-left']?.assetId || appearance?.components?.['eye-right']?.assetId)
   const renderEyeLayerToggle = () => <label className="customizer-face-eye-layer-toggle" title="Desenha olhos, pupilas e destaques acima do cabelo posterior">
     <input type="checkbox" checked={Boolean(appearance?.eyesAboveRearHair)} disabled={!hasCharacter || selectedModelSlot === null || (!hasSelectedEye && !appearance?.eyesAboveRearHair)} onChange={(event) => void onSetVariant({ eyesAboveRearHair: event.target.checked })} />
-    <span>Olhos e pupilas acima do cabelo posterior</span>
+    <span>Olhos + pupilas ↑</span>
   </label>
 
   const renderParts = () => <div className="customizer-hair-layout customizer-face-layout">
@@ -65,7 +65,7 @@ export function CustomizerFaceAssemblyWorkspace({
       }
 
       return <article className={`customizer-hair-piece customizer-face-piece customizer-face-piece-${part.id}`} key={part.id}>
-        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void onResetColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
+        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{part.id === 'eye-left' && renderEyeLayerToggle()}{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void onResetColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={'Abrir biblioteca de ' + part.label} title={'Abrir biblioteca de ' + part.label} onClick={() => { onSelectPage(0); onSelectPart(part.id) }} type="button">
@@ -132,6 +132,6 @@ export function CustomizerFaceAssemblyWorkspace({
     {selectedPart ? renderLibrary()
       : selectedModelSlot === null ? <div className="customizer-catalog-empty">Escolha um modelo para carregar olhos e sobrancelhas do Fabricador Dev.</div>
       : loading ? <div className="customizer-catalog-empty">Carregando catálogo facial…</div>
-        : <>{renderEyeLayerToggle()}{renderParts()}</>}
+        : renderParts()}
   </section>
 }
