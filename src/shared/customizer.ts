@@ -43,6 +43,14 @@ export function normalizeCharacterHairColorOverrides(colors?: CharacterColorOver
 export function setCharacterHairColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {
   return { ...normalizeCharacterHairColorOverrides(colors), [role]: value }
 }
+/** Stores one per-piece hair override without filling the other roles with palette defaults. */
+export function setCharacterHairColorRoleOverride(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterColorOverrides {
+  const next = { ...colors } as CharacterColorOverrides & Record<string, string | undefined>
+  if (role === 'shadow') delete next.fade
+  if (role === 'light') delete next.highlight
+  next[role] = value
+  return next
+}
 export function hasStandardCharacterColorRoles(colors?: CharacterColorOverrides | null): boolean {
   return !!colors && ('shadow' in colors || 'light' in colors || 'detail' in colors)
 }

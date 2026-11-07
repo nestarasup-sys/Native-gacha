@@ -4,6 +4,7 @@ import {
   defaultCharacterColorOverrides,
   defaultCharacterHairColorOverrides,
   normalizeCharacterHairColorOverrides,
+  setCharacterHairColorRoleOverride,
   setCharacterHairColorRole
 } from '../src/shared/customizer.ts'
 
@@ -48,5 +49,34 @@ test('changing a hair role keeps the light and purple secondary defaults', () =>
     base: '#A8A8A8',
     light: '#E2E2E2',
     detail: '#8C7BFF'
+  })
+})
+
+test('changing one hair piece role leaves the other roles inherited from the global palette', () => {
+  const global = {
+    outline: '#101010',
+    shadow: '#202020',
+    base: '#303030',
+    light: '#F0F0F0',
+    detail: '#8060FF'
+  }
+  const partOverride = setCharacterHairColorRoleOverride(undefined, 'detail', '#FF40A0')
+
+  assert.deepEqual(partOverride, { detail: '#FF40A0' })
+  assert.deepEqual({ ...global, ...partOverride }, {
+    outline: '#101010',
+    shadow: '#202020',
+    base: '#303030',
+    light: '#F0F0F0',
+    detail: '#FF40A0'
+  })
+})
+
+test('changing one hair piece role preserves its other explicit overrides and legacy values', () => {
+  assert.deepEqual(setCharacterHairColorRoleOverride({ fade: '#404040', base: '#707070', highlight: '#E0E0E0' }, 'detail', '#A060FF'), {
+    fade: '#404040',
+    base: '#707070',
+    highlight: '#E0E0E0',
+    detail: '#A060FF'
   })
 })

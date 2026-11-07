@@ -118,7 +118,12 @@ export function CustomizerHairWorkspace({
         const asset = selected ? details[`${selected.modelSlot}:${selected.id}`]?.[part.side] : null
         const rawPieceColors = resolvedHairColors(appearance, part.id)
         const pieceColors = normalizeCharacterHairColorOverrides(rawPieceColors)
-        const localPieceColors = normalizeCharacterHairColorOverrides(appearance?.partColors?.[part.id])
+        const localPartColors = appearance?.partColors?.[part.id]
+        const hasLocalRole = (role: CharacterPaletteRole) => Boolean(localPartColors && (
+          role in localPartColors
+          || role === 'shadow' && 'fade' in localPartColors
+          || role === 'light' && 'highlight' in localPartColors
+        ))
         const chooseAt = (index: number) => {
           const slot = wrapSlotIndex(index, slotCount)
           void onChooseStyle(part.id, slot === 0 ? null : options[slot - 1])
@@ -141,7 +146,7 @@ export function CustomizerHairWorkspace({
             <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseRelative(1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>
               {customizerHairColorControls.map((color) => {
-                const local = Boolean(appearance?.partColors?.[part.id]) && localPieceColors[color.id] !== globalColorOverrides[color.id]
+                const local = hasLocalRole(color.id) && pieceColors[color.id] !== globalColorOverrides[color.id]
                 return <label key={color.id} className={local ? 'local' : ''} style={{ '--hair-color-swatch': pieceColors[color.id] ?? color.fallback } as import('react').CSSProperties} title={`${color.label} de ${part.label} · ${local ? 'ajuste individual' : 'paleta geral'}`}>
                 <input type="color" aria-label={`${color.label} de ${part.label}`} value={pieceColors[color.id] ?? color.fallback} disabled={!hasCharacter || !asset} onFocus={() => onActiveColorRoleChange(color.id)} onChange={(event) => void onSetPartColor(part.id, color.id, event.target.value)} />
                 <span aria-hidden="true">{color.id === 'detail' ? 'CS' : color.id === 'light' ? 'L' : color.id === 'shadow' ? 'S' : color.id === 'outline' ? 'C' : 'B'}</span>

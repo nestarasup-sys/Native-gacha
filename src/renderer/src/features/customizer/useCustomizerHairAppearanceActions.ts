@@ -1,6 +1,6 @@
 /** Ações de aparência do cabelo; alterações ficam na instância do personagem. */
 import type { MutableRefObject } from 'react'
-import { normalizeCharacterHairColorOverrides, setCharacterHairColorRole } from '../../../../shared/customizer'
+import { normalizeCharacterHairColorOverrides, setCharacterHairColorRole, setCharacterHairColorRoleOverride } from '../../../../shared/customizer'
 import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPaletteRole, CustomizerCharacter, HairPartId } from '../../../../shared/customizer'
 import type { CharacterPatch } from './useCustomizerCharacterCommands'
 import { customizerHairParts } from '../../characters/characterRenderer'
@@ -54,7 +54,7 @@ export function useCustomizerHairAppearanceActions(deps: {
     const previous = current.customization.hairAppearance
     const sameModel = previous?.modelSlot === selectedModelSlot
     const partColors = { ...(sameModel ? previous?.partColors : undefined) }
-    partColors[part] = setCharacterHairColorRole(partColors[part], role, value)
+    partColors[part] = setCharacterHairColorRoleOverride(partColors[part], role, value)
     await saveCharacterCustomization({ hairAppearance: { ...(sameModel ? previous : undefined), modelSlot: selectedModelSlot, partColors } })
   }
 
