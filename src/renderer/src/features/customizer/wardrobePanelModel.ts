@@ -28,7 +28,12 @@ export const accessoryWardrobePanels: WardrobePanel[] = [
 export const torsoAccessoryWardrobePanels: WardrobePanel[] = [
   { id: 'belt', label: 'Cinto e acessório', category: 'cinto', side: null }
 ]
-export const torsoAccessoryEmptySlotCount = 5
+
+/** Empty visual slots keep each wardrobe grid at six cards without creating selectable pieces. */
+export function emptyWardrobePanelSlotNumbers(panelCount: number): number[] {
+  const occupied = Number.isFinite(panelCount) ? Math.max(0, Math.floor(panelCount)) : 0
+  return Array.from({ length: Math.max(0, 6 - occupied) }, (_, index) => occupied + index + 1)
+}
 export const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },
   { id: 'shorts-right', label: 'Bermuda', category: 'calca', side: null, source: ['shorts'] },

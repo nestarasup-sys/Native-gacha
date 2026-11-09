@@ -9,7 +9,7 @@ import {
   upperWardrobePageTwoPanels,
   accessoryWardrobePanels,
   torsoAccessoryWardrobePanels,
-  torsoAccessoryEmptySlotCount,
+  emptyWardrobePanelSlotNumbers,
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex,
@@ -351,7 +351,10 @@ test('acessórios de tronco ficam no cartão próprio da aba Acessórios', () =>
 
   assert.equal(panel.label, 'Cinto e acessório')
   assert.equal(panel.category, 'cinto')
-  assert.equal(torsoAccessoryEmptySlotCount, 5)
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(1), [2, 3, 4, 5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(4), [5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(0), [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(6), [])
   assert.deepEqual(index.get(panel.id)?.map((candidate) => candidate.component.id), ['belt'])
 })
 

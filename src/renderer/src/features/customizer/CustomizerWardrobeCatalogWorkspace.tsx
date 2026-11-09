@@ -4,7 +4,7 @@ import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPalet
 import { Icon } from '../../ui/components/Icon'
 import { characterWardrobePresetSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
 import { WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { isWardrobePanelCandidateSelected, torsoAccessoryEmptySlotCount } from './wardrobePanelModel'
+import { emptyWardrobePanelSlotNumbers, isWardrobePanelCandidateSelected } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 
 type WardrobePanelCandidateIndex = ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]>
@@ -102,11 +102,9 @@ export function CustomizerWardrobeCatalogWorkspace({
   }
 
   function renderPanels() {
-    const torsoAccessoryOnly = panels.length === 1 && panels[0].id === 'belt'
-    const emptyTorsoAccessorySlots = torsoAccessoryOnly
-      ? Array.from({ length: torsoAccessoryEmptySlotCount }, (_, index) => index + 2)
-      : []
-    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${torsoAccessoryOnly ? ' torso-accessory-only' : ''}${section === 'Superior' && pageTwo ? ' page-two' : ''}${section === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${section.toLowerCase()} · página ${page}`}>
+    const torsoAccessoryGrid = panels.length === 1 && panels[0].id === 'belt'
+    const emptySlotNumbers = emptyWardrobePanelSlotNumbers(panels.length)
+    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${torsoAccessoryGrid ? ' torso-accessory-grid' : ''}${section === 'Superior' && pageTwo ? ' page-two' : ''}${section === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${section.toLowerCase()} · página ${page}`}>
       {panels.map((panel) => {
         const candidates = candidatesByPanel.get(panel.id) ?? []
         const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, wardrobeGroups, faceAppearance))
@@ -164,9 +162,9 @@ export function CustomizerWardrobeCatalogWorkspace({
           </div>
         </article>
       })}
-      {emptyTorsoAccessorySlots.map((slotNumber) => <article className="customizer-hair-piece customizer-wardrobe-accessory-placeholder" key={`torso-accessory-empty-${slotNumber}`} aria-label={`Acessório ${slotNumber} vazio`}>
-        <header><strong>Acessório {slotNumber}</strong></header>
-        <div className="customizer-wardrobe-accessory-placeholder-content"><Icon name="plus" /><span>Vazio</span></div>
+      {emptySlotNumbers.map((slotNumber) => <article className="customizer-hair-piece customizer-wardrobe-empty-slot" key={`wardrobe-empty-${slotNumber}`} aria-label={`Espaço vazio ${slotNumber}`}>
+        <header><strong>{torsoAccessoryGrid ? `Acessório ${slotNumber}` : `Vazio ${slotNumber}`}</strong></header>
+        <div className="customizer-wardrobe-empty-slot-content"><Icon name="plus" /><span>Vazio</span></div>
       </article>)}
     </div>
   }

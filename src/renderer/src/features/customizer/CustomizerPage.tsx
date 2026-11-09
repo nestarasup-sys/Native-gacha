@@ -517,15 +517,18 @@ export function CustomizerPage() {
   }), [faceCatalogItems, faceCatalogDetails, faceComponentAssets, faceComponentDetails, activeFaceAppearance])
   const wardrobePanelSelection = useMemo(() => {
     const clothesAccessories = selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'accessories'
+    const emptyClothesTab = selectedCustomizerTopTab === 'roupas'
+      && (clothesPanelTab === 'hats' || clothesPanelTab === 'other' || clothesPanelTab === 'extra')
     const headExtras = selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra'
-    const page = clothesAccessories || headExtras ? 1 : clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
+    const page = clothesAccessories || emptyClothesTab || headExtras ? 1 : clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
     const pageTwo = page === 2
     let panels: WardrobePanel[]
     if (headExtras) panels = accessoryWardrobePanels
     else if (clothesAccessories) panels = torsoAccessoryWardrobePanels
+    else if (emptyClothesTab) panels = []
     else if (clothingSection === 'Inferior') panels = pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
     else panels = pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
-    const section: 'Superior' | 'Inferior' = clothesAccessories || headExtras ? 'Superior' : clothingSection
+    const section: 'Superior' | 'Inferior' = clothesAccessories || emptyClothesTab || headExtras ? 'Superior' : clothingSection
     return { page, pageTwo, panels, section }
   }, [clothesPanelTab, clothingSection, headPanelTab, lowerWardrobePage, selectedCustomizerTopTab, upperWardrobePage])
   const wardrobePanelCandidateIndex = useMemo(() => {
@@ -644,7 +647,7 @@ export function CustomizerPage() {
               />
             </div>
           </section>
-          <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'accessories' || clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
+          <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
             <div className={`customizer-models-sidebar-nav${selectedCustomizerTopTab === 'roupas' ? ' customizer-models-sidebar-nav-clothes' : ''}`}>
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
@@ -669,7 +672,7 @@ export function CustomizerPage() {
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             </div>
-            <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'accessories' || clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
+            <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
             {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && <CustomizerHairWorkspace
               modelSlot={selectedCatalogModelSlot}
@@ -741,7 +744,7 @@ export function CustomizerPage() {
             />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
-            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'accessories' || clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
+            {selectedCustomizerTopTab === 'roupas' && clothesPanelTab !== 'adjust' && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
             {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker
               models={availableModels}
