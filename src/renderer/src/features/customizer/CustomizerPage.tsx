@@ -88,9 +88,9 @@ export function CustomizerPage() {
     charactersLoading, charactersError, setCharactersError,
     characterSaveState, setCharacterSaveState
   } = useCustomizerCharacterRoster()
-  const [dialogMode, setDialogMode] = useState<'create' | 'rename' | null>(null)
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit' | null>(null)
   const [nameDraft, setNameDraft] = useState('')
-  const [newCharacterGender, setNewCharacterGender] = useState<CharacterGender>('female')
+  const [dialogCharacterGender, setDialogCharacterGender] = useState<CharacterGender>('female')
   const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
@@ -182,6 +182,18 @@ export function CustomizerPage() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const previewLoadRequest = useRef(0)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  function openCharacterDialog(mode: 'create' | 'edit') {
+    setCharactersError('')
+    if (mode === 'create') {
+      setNameDraft('')
+      setDialogCharacterGender('female')
+    } else {
+      if (!selectedCharacter) return
+      setNameDraft(selectedCharacter.name)
+      setDialogCharacterGender(selectedCharacter.customization.gender ?? 'female')
+    }
+    setDialogMode(mode)
+  }
   const { selectCharacter, createCharacter, deleteCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
     charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
     setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
@@ -469,9 +481,15 @@ export function CustomizerPage() {
     try {
       if (dialogMode === 'create') {
         const initialHeadSize = newCharacterHeadSizePreference.enabled ? newCharacterHeadSizePreference.value : undefined
-        await createCharacter(name, initialHeadSize, newCharacterGender)
-      } else if (dialogMode === 'rename' && selectedCharacter) {
-        await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
+        await createCharacter(name, initialHeadSize, dialogCharacterGender)
+      } else if (dialogMode === 'edit' && selectedCharacter) {
+        const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+        await saveCharacter({
+          ...currentCharacter,
+          name,
+          customization: { ...currentCharacter.customization, gender: dialogCharacterGender },
+          updatedAt: new Date().toISOString()
+        })
       }
       setDialogMode(null)
     } catch (reason) {
@@ -853,10 +871,13 @@ export function CustomizerPage() {
               <p className="eyebrow">SUA COLEÇÃO</p>
               <h2>Personagens <span>{characters.length.toString().padStart(2, '0')}</span></h2>
             </div>
-            {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
-            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => { setNameDraft(''); setNewCharacterGender('female'); setDialogMode('create') }} type="button">
-              <Icon name="plus" />
-            </button>
+            <div className="roster-actions">
+              {selectedCharacter && <button className="icon-button roster-edit-button" aria-label="Editar personagem" title="Editar nome e gênero" onClick={() => openCharacterDialog('edit')} type="button"><Icon name="edit" /></button>}
+              {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
+              <button className="icon-button add-button" aria-label="Adicionar personagem" title="Adicionar personagem" onClick={() => openCharacterDialog('create')} type="button">
+                <Icon name="plus" />
+              </button>
+            </div>
           </div>
           <label className="roster-search">
             <Icon name="search" />
@@ -874,9 +895,13 @@ export function CustomizerPage() {
                 } as React.CSSProperties}
                 onClick={() => selectCharacter(character.id)}
                 aria-pressed={selectedCharacter?.id === character.id}
+                aria-label={`${character.name}, ${character.customization.gender === 'male' ? 'masculino' : 'feminino'}`}
               >
                 <RenderedCharacterPortrait className="customizer-character-headshot" character={character} />
-                <span>{character.name}</span>
+                <span className="character-card-meta">
+                  <span className="character-card-name">{character.name}</span>
+                  <span className="character-card-gender">{character.customization.gender === 'male' ? 'Masculino' : 'Feminino'}</span>
+                </span>
               </button>
             ))}
             {charactersLoading && <p className="empty-roster">Carregando personagens…</p>}
@@ -895,7 +920,7 @@ export function CustomizerPage() {
               identity={
                 <div className="preview-title customizer-preview-identity">
                   <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-                  <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
+                  <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome e gênero do personagem" title="Editar personagem" disabled={!selectedCharacter} onClick={() => openCharacterDialog('edit')} type="button"><Icon name="edit" /></button></h1>
                 </div>
               }
             />
@@ -922,13 +947,16 @@ export function CustomizerPage() {
       {dialogMode && <div className="character-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialogMode(null) }}>
         <form className="character-dialog" onSubmit={(event) => void submitCharacterDialog(event)} aria-labelledby="character-dialog-title">
           <p className="eyebrow">SUA COLEÇÃO</p>
-          <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Renomear personagem'}</h2>
+          <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Editar personagem'}</h2>
           <label htmlFor="character-name">Nome</label>
           <input id="character-name" autoFocus maxLength={80} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Ex.: Chloe" />
-          {dialogMode === 'create' && <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
-            <button className={'customizer-model-gender-button female' + (newCharacterGender === 'female' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'female'} onClick={() => setNewCharacterGender('female')}>Feminino</button>
-            <button className={'customizer-model-gender-button male' + (newCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'male'} onClick={() => setNewCharacterGender('male')}>Masculino</button>
-          </div>}
+          <div className="character-dialog-gender">
+            <span>Gênero</span>
+            <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
+              <button className={'customizer-model-gender-button female' + (dialogCharacterGender === 'female' ? ' active' : '')} type="button" aria-pressed={dialogCharacterGender === 'female'} onClick={() => setDialogCharacterGender('female')}>Feminino</button>
+              <button className={'customizer-model-gender-button male' + (dialogCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={dialogCharacterGender === 'male'} onClick={() => setDialogCharacterGender('male')}>Masculino</button>
+            </div>
+          </div>
           {charactersError && <p className="character-dialog-error" role="alert">{charactersError}</p>}
           <div className="character-dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialogMode(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!nameDraft.trim() || savingCharacter}>{savingCharacter ? 'Salvando…' : 'Salvar'}</button></div>
         </form>
