@@ -23,6 +23,7 @@ export function selectSimpleExportEntries(
   categoryId: string | 'all' | 'uncategorized'
 ): BaseVideoSimpleExportEntry[] {
   return entries
+    .filter(({ details }) => details.videoNumber !== undefined && Boolean(details.description?.trim()))
     .filter(({ details }) => categoryId === 'all' || (categoryId === 'uncategorized' ? !details.categoryId : details.categoryId === categoryId))
     .sort((left, right) => {
       const leftNumber = left.details.videoNumber

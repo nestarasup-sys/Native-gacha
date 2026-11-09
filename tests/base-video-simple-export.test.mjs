@@ -5,14 +5,15 @@ import { formatSimpleVideoExport, selectSimpleExportEntries } from '../src/rende
 const item = (id, createdAt = '2026-01-01T00:00:00.000Z') => ({ id, name: `${id}.mp4`, mimeType: 'video/mp4', extension: 'mp4', size: 100, durationFrames: 600, createdAt, available: true })
 const details = (videoId, patch = {}) => ({ videoId, description: '', timeline: 'unspecified', ...patch })
 
-test('export simples filtra todas as categorias e sem categoria, incluindo rascunhos', () => {
+test('export simples inclui apenas vídeos publicados com descrição principal e aplica o filtro de categoria', () => {
   const entries = [
-    { item: item('draft'), details: details('draft') },
-    { item: item('categorized'), details: details('categorized', { videoNumber: 9, categoryId: 'cat' }), category: { id: 'cat', name: 'Ação', color: '#111', createdAt: '' } },
-    { item: item('earlier'), details: details('earlier', { videoNumber: 2 }) }
+    { item: item('draft'), details: details('draft', { description: 'Rascunho ainda não publicado.' }) },
+    { item: item('empty'), details: details('empty', { videoNumber: 3, description: '   ' }) },
+    { item: item('categorized'), details: details('categorized', { videoNumber: 9, categoryId: 'cat', description: 'Descrição principal preenchida.' }), category: { id: 'cat', name: 'Ação', color: '#111', createdAt: '' } },
+    { item: item('earlier'), details: details('earlier', { videoNumber: 2, description: 'Outra descrição principal.' }) }
   ]
-  assert.deepEqual(selectSimpleExportEntries(entries, 'all').map(({ item: entry }) => entry.id), ['earlier', 'categorized', 'draft'])
-  assert.deepEqual(selectSimpleExportEntries(entries, 'uncategorized').map(({ item: entry }) => entry.id), ['earlier', 'draft'])
+  assert.deepEqual(selectSimpleExportEntries(entries, 'all').map(({ item: entry }) => entry.id), ['earlier', 'categorized'])
+  assert.deepEqual(selectSimpleExportEntries(entries, 'uncategorized').map(({ item: entry }) => entry.id), ['earlier'])
   assert.deepEqual(selectSimpleExportEntries(entries, 'cat').map(({ item: entry }) => entry.id), ['categorized'])
 })
 
