@@ -35,8 +35,8 @@ export const customizerClothesTabs = [
 export function clothesAdjustmentDefinitions(tab: Exclude<(typeof customizerClothesTabs)[number]['id'], 'adjust'>) {
   if (tab === 'upper') return clothingCategories.Superior
   if (tab === 'lower') return clothingCategories.Inferior
-  if (tab === 'accessories') return clothingCategories.Superior.filter((item) => item.id === 'oculos' || item.id === 'acessorio-cabeca')
-  if (tab === 'other') return clothingCategories.Superior.filter((item) => item.id === 'luvas' || item.id === 'capa' || item.id === 'cinto' || item.id === 'saia-superior')
+  if (tab === 'accessories') return clothingCategories.Superior.filter((item) => item.id === 'cinto')
+  if (tab === 'other') return clothingCategories.Superior.filter((item) => item.id === 'luvas' || item.id === 'capa' || item.id === 'saia-superior')
   return []
 }
 

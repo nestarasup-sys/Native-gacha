@@ -18,12 +18,15 @@ export const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
-  { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
   { id: 'skirt', label: 'Saia superior', category: 'saia-superior', side: null, source: ['saia'] }
 ]
 export const accessoryWardrobePanels: WardrobePanel[] = [
   { id: 'glasses', label: 'Óculos', category: 'oculos', side: null },
   { id: 'head-accessory', label: 'Acessório de cabeça', category: 'acessorio-cabeca', side: null }
+]
+/** Torso accessories have their own Roupas > Acessórios slot, separate from head extras. */
+export const torsoAccessoryWardrobePanels: WardrobePanel[] = [
+  { id: 'belt', label: 'Cinto e acessório', category: 'cinto', side: null }
 ]
 export const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },

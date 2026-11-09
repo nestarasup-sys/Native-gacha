@@ -1,5 +1,5 @@
 import { useEffect, type Dispatch, type MutableRefObject, type SetStateAction } from 'react'
-import type { FabricatorProject, WardrobeComponent, WardrobeSet } from '../../../../../shared/fabricator'
+import type { FabricatorProject, WardrobeCategory, WardrobeComponent, WardrobeSet } from '../../../../../shared/fabricator'
 import { usePaletteImport } from '../usePaletteImport'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { createWardrobeTorsoGridComponents } from './wardrobeGridImport'
@@ -57,7 +57,7 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
     setImportPickerOpen, setJoinJointsMode, clearDeformationSession
   } = options
 
-  const importSheet = async (file?: File) => {
+  const importSheet = async (file?: File, categoryOverride?: WardrobeCategory) => {
     if (!file || !model || processing || saving || openingSet) return
     if (!sourceReady) { setError('Aguarde a referência corporal carregar antes de importar a folha.'); return }
     if (!/\.(png|jpe?g|webp)$/i.test(file.name)) { setError('Use uma imagem PNG, JPG ou WebP.'); return }
@@ -78,7 +78,7 @@ export function useWardrobeSheetEditing(options: UseWardrobeSheetEditingOptions)
         setProcessing(false); worker.terminate(); workerRef.current = null
         if (message.type === 'error') { setError(message.message); return }
         if (!message.pieces.length) { setError('Não encontrei peças visíveis. Confira se a folha tem transparência entre as peças.'); return }
-        const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model)
+        const components = createWardrobeComponentsFromProcessedSheet(message.pieces, message.width, message.height, referenceModel ?? model, categoryOverride)
         const unbound = components.filter((component) => !component.attachedPartId)
         if (unbound.length) {
           setError(`${unbound.length} peça(s) sem osso correspondente na referência original. Selecione o osso de cada peça antes de salvar; não faremos um encaixe arbitrário.`)

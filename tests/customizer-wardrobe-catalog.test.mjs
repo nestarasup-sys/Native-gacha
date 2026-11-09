@@ -8,6 +8,7 @@ import {
   upperWardrobePanels,
   upperWardrobePageTwoPanels,
   accessoryWardrobePanels,
+  torsoAccessoryWardrobePanels,
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex,
@@ -170,6 +171,7 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     ...upperWardrobePanels,
     ...upperWardrobePageTwoPanels,
     ...accessoryWardrobePanels,
+    ...torsoAccessoryWardrobePanels,
     ...lowerWardrobePanels,
     ...lowerWardrobePageTwoPanels
   ]
@@ -328,6 +330,27 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   assert.equal(shoeGroups[0].renderBehindShinClothing, undefined)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
+})
+
+test('acessórios de tronco ficam no cartão próprio da aba Acessórios', () => {
+  const panel = torsoAccessoryWardrobePanels[0]
+  const beltSet = {
+    id: 'torso-accessories', modelSlot: 1, modelName: 'Modelo', name: 'Acessórios', width: 20, height: 20,
+    components: [{ id: 'belt', name: 'Cinto e acessório', category: 'cinto', attachedPartId: 'hip', x: 0, y: 0, width: 10, height: 5, rotation: 0, dataUrl: 'data:image/png;base64,AA==' }],
+    updatedAt: '2026-10-29T00:00:00.000Z'
+  }
+  const index = createWardrobePanelCandidateIndex({
+    panels: torsoAccessoryWardrobePanels,
+    selectedModelSlot: 1,
+    wardrobeSets: [{ ...summary(beltSet.id), componentCount: 1 }],
+    wardrobeDetails: { '1:torso-accessories': beltSet },
+    faceComponentAssets: [],
+    faceComponentDetails: {}
+  })
+
+  assert.equal(panel.label, 'Cinto e acessório')
+  assert.equal(panel.category, 'cinto')
+  assert.deepEqual(index.get(panel.id)?.map((candidate) => candidate.component.id), ['belt'])
 })
 
 test('prévia da roupa desenha todas as partes agrupadas no mesmo candidato', async () => {

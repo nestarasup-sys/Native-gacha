@@ -102,7 +102,8 @@ export function CustomizerWardrobeCatalogWorkspace({
   }
 
   function renderPanels() {
-    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${section === 'Superior' && pageTwo ? ' page-two' : ''}${section === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${section.toLowerCase()} · página ${page}`}>
+    const torsoAccessoryOnly = panels.length === 1 && panels[0].id === 'belt'
+    return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${torsoAccessoryOnly ? ' torso-accessory-only' : ''}${section === 'Superior' && pageTwo ? ' page-two' : ''}${section === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${section.toLowerCase()} · página ${page}`}>
       {panels.map((panel) => {
         const candidates = candidatesByPanel.get(panel.id) ?? []
         const selectedIndex = candidates.findIndex((candidate) => isWardrobePanelCandidateSelected(candidate, panel, wardrobeGroups, faceAppearance))
