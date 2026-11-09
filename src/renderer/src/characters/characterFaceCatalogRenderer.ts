@@ -8,6 +8,7 @@ import { eyeInteriorMaskSource } from '../ui/image/eyeInteriorMask'
 import { createCharacterCanvas } from './canvasSurface'
 import { drawPreviewImageWithHalo } from './characterCanvasDrawing'
 import { alignMouthTransformToClosedBase, faceElementOrder, transferEyeCloseAdjustment, type ClosedEyeAssetResolver } from './characterFaceCatalogSupport'
+import { loadAssetColorModeImage } from './assetColorMode'
 import type { CatalogArtwork } from './characterSourceResolver'
 import type { HairTintOptions } from './characterImageTint'
 
@@ -98,9 +99,11 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         const catalogPalettePart: FacePalettePartId | undefined = sheet === 'nose' ? 'nose' : sheet.startsWith('mouth') ? 'mouth' : undefined
         const catalogPalette = catalogPalettePart ? appearance.facePalettes?.[catalogPalettePart] : undefined
         const noseTone = appearance.noseSkinTone ?? skinTone
-        const image = sheet === 'nose'
+        const colors = appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette
+        const tintOptions = catalogPalette ? { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[catalogPalettePart!] } : undefined
+        const image = sheet === 'nose' && !catalogPalette
           ? noseTone ? await loadSkinTintedImage(piece.dataUrl, noseTone) : await loadCachedImage(piece.dataUrl)
-          : await loadHairTintedImage(piece.dataUrl, appearance.partColors?.[element as 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right'] ?? catalogPalette, catalogPalette ? { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[catalogPalettePart!] } : undefined)
+          : await loadAssetColorModeImage(piece.dataUrl, colors, item.colorMode, 'asset-colors', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage }, tintOptions)
         const localX = transform.x / sourceHead.width * targetHead.width + (studioTransform?.x ?? 0) / 100 * targetHead.width
         const localY = transform.y / sourceHead.height * targetHead.height + (studioTransform?.y ?? 0) / 100 * targetHead.height
         const radians = targetHead.rotation * Math.PI / 180
@@ -228,7 +231,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       const width = sourceWidth / sourceHead.width * targetHead.width
       const height = sourceHeight / sourceHead.height * targetHead.height
       try {
-        const image = await loadHairTintedImage(asset.dataUrl, selectedPart.colors, { preserveNearWhite: true, allowNearWhiteRoles: selectedPart.manualColorRoles })
+        const image = await loadAssetColorModeImage(asset.dataUrl, selectedPart.colors, asset.colorMode, 'asset-colors', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage }, { preserveNearWhite: true, allowNearWhiteRoles: selectedPart.manualColorRoles })
         if (category === 'pupil' && pupilEyeClip) {
           if (!pupilClipCanvas) { pupilClipCanvas = createCharacterCanvas(); pupilClipCanvas.width = partContext.canvas.width; pupilClipCanvas.height = partContext.canvas.height }
           const clipped = pupilClipCanvas.getContext('2d')
@@ -278,7 +281,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       try {
-        const image = await loadHairTintedImage(asset.dataUrl, appearance.facePalettes?.[kind], { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[kind] })
+        const image = await loadAssetColorModeImage(asset.dataUrl, appearance.facePalettes?.[kind], asset.colorMode, 'asset-colors', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage }, { preserveNearWhite: true, allowNearWhiteRoles: appearance.facePaletteManualRoles?.[kind] })
         detailContext.save(); detailContext.translate(x, y); detailContext.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
         if (transform.flipX) detailContext.scale(-1, 1)
         drawPreviewImageWithHalo(detailContext, image, -width / 2, -height / 2, highlightedHeadId === kind, width, height); detailContext.restore()
@@ -304,7 +307,7 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       try {
         const paletteKey: CustomizerWardrobePaletteKey = extraName === 'glasses' ? 'glasses' : 'head-accessory'
-        const image = await loadCharacterTintedImage(asset.dataUrl, wardrobePalettes?.[paletteKey])
+        const image = await loadAssetColorModeImage(asset.dataUrl, wardrobePalettes?.[paletteKey], asset.colorMode, 'fixed-palette', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage })
         context.save(); context.translate(x, y); context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
         if (transform.flipX) context.scale(-1, 1)
         drawPreviewImageWithHalo(context, image, -width / 2, -height / 2, highlightedHeadId === (extraName === 'glasses' ? 'oculos' : 'acessorio-cabeca'), width, height); context.restore()

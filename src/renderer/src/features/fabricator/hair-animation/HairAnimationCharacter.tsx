@@ -7,6 +7,7 @@ import { HairMotionMesh } from './HairMotionMesh'
 import { hairAnimationGeometry } from './hairAnimationGeometry'
 import type { HairMotionSettings } from './hairMotionPhysics'
 import type { HairSide } from '../hairWorkspaceModel'
+import { loadAssetColorModeImage } from '../../../characters/assetColorMode'
 
 type Layer = { part: HairPartId; side: HairSide; asset: HairAsset; transform: HairTransform }
 type Preview = { dataUrl: string; overlayDataUrl?: string; eyesAboveRearHairDataUrl?: string; width: number; height: number; artworkWidth: number; artworkHeight: number; scaleX: number; scaleY: number; sourceHead: ModelPart; targetHead: ModelPart; layers: Layer[] }
@@ -19,7 +20,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
     let cancelled = false
     setPreview(null); setError('')
     void (async () => {
-      const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
+      const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, loadHairTintedImage, resolvedHairColors }] = await Promise.all([
         import('../../../characters/editorV6CharacterRenderer'), import('../../../characters/characterRenderer')
       ])
       if (cancelled) return
@@ -65,7 +66,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
         const colors = resolvedHairColors(appearance, part)
         let dataUrl = original.dataUrl
         if (Object.keys(colors).length) {
-          const image = await loadCharacterTintedImage(original.dataUrl, colors)
+          const image = await loadAssetColorModeImage(original.dataUrl, colors, style?.colorMode, 'fixed-palette', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage })
           const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
           const context = canvas.getContext('2d')
           if (!context) throw new Error('Não foi possível aplicar as cores do cabelo.')

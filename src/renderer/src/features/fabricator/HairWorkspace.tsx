@@ -1,7 +1,7 @@
 import { projectForOriginalPreview } from '../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from './models/useModelSourceRefresh'
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type Dispatch, type PointerEvent, type SetStateAction } from 'react'
-import type { FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData } from '../../../../shared/fabricator'
+import type { FabricatorAssetColorMode, FabricatorProject, FabricatorSlotSummary, HairStyle, HairStyleSummary, HairTransform, HairWorkspace as HairWorkspaceData } from '../../../../shared/fabricator'
 import type { CharacterGender, HairPartId } from '../../../../shared/customizer'
 import { hairCategories } from '../../../../shared/hairCategories'
 import { emptyHairTransform } from '../../../../shared/hairPersistence'
@@ -15,6 +15,7 @@ import { runHairProcessor, type HairProcessorCut } from './hairProcessorClient'
 import { saveHairStyleDraft } from './hairStyleSaveCommand'
 import { defaultHairCategoriesBySide, headPart, initialTransform, emptyHairWorkspace, hairStyleSides, removeHairSide, categoriesForHairStyle, preserveHairFit, workspaceFromHairGridStyle, workspaceFromHairStyle, type HairAsset, type HairGridStyle, type HairSide } from './hairWorkspaceModel'
 import { Icon } from '../../ui/components/Icon'
+import { AssetColorModeToggle } from './AssetColorModeToggle'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
 import { usePaletteImport } from './usePaletteImport'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
@@ -94,6 +95,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [hairCatalogPage, setHairCatalogPage] = useState(0)
   const [styleName, setStyleName] = useState('')
   const [hairGender, setHairGender] = useState<CharacterGender | null>('female')
+  const [hairColorMode, setHairColorMode] = useState<FabricatorAssetColorMode>('fixed-palette')
   const [selectedCategory, setSelectedCategory] = useState<HairPartId>('rearHair')
   const [loadingModels, setLoadingModels] = useState(true)
   const [loadingProject, setLoadingProject] = useState(false)
@@ -199,6 +201,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     hairStyleRequestRef.current += 1
     setStyleName('')
     setHairGender('female')
+    setHairColorMode('fixed-palette')
     legacyWorkspaceRef.current = null
     setProject(null)
     setHairWorkspace(null)
@@ -234,6 +237,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setActiveStyleId(legacy.id)
         setStyleName(legacy.name)
         setHairGender(legacy.gender ?? null)
+        setHairColorMode(legacy.colorMode ?? 'fixed-palette')
         const firstSide = hairStyleSides(legacy)[0]
         const firstCategory = firstSide ? categoriesForHairStyle(legacy)[firstSide] : undefined
         if (firstCategory) setSelectedCategory(firstCategory)
@@ -243,6 +247,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setActiveStyleId(null)
         setStyleName('')
         setHairGender('female')
+        setHairColorMode('fixed-palette')
       }
       setDirty(false)
     }).catch((reason: unknown) => {
@@ -436,6 +441,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setActiveStyleId(first.detail.id)
     setStyleName(first.detail.name)
     setHairGender(first.detail.gender ?? null)
+    setHairColorMode(first.detail.colorMode ?? 'fixed-palette')
     setSelectedCategory('rearHair')
     legacyWorkspaceRef.current = null
     setDirty(false)
@@ -577,6 +583,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setActiveStyleId(detail.id)
       setStyleName(detail.name)
       setHairGender(detail.gender ?? null)
+      setHairColorMode(detail.colorMode ?? 'fixed-palette')
       legacyWorkspaceRef.current = null
       setDirty(false)
       window.dispatchEvent(new Event('fabricator:assets-updated'))
@@ -588,8 +595,8 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     finally { setSaving(false) }
   }
 
-  async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined, genderOverride: CharacterGender | undefined = hairGender ?? undefined): Promise<HairStyle> {
-    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, gender: genderOverride, existing: existingOverride }, {
+  async function saveStyle(workspace: HairWorkspaceData, styleNameOverride = styleName, existingOverride: HairStyleSummary | null | undefined = activeStyleId && activeStyleId !== 'legacy-workspace' ? activeStyleSummary : undefined, genderOverride: CharacterGender | undefined = hairGender ?? undefined, colorModeOverride = hairColorMode): Promise<HairStyle> {
+    return saveHairStyleDraft({ workspace, modelSlot, styleName: styleNameOverride, gender: genderOverride, colorMode: colorModeOverride, existing: existingOverride }, {
       saveHairStyle: (slot, style, assets) => window.desktop.fabricator.saveHairStyle(slot, style, assets),
       createId: () => crypto.randomUUID(),
       now: () => new Date().toISOString()
@@ -622,6 +629,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setActiveStyleId(style.id)
       setStyleName(style.name)
       setHairGender(style.gender ?? null)
+      setHairColorMode(style.colorMode ?? 'fixed-palette')
       setDirty(false)
       const firstSide = hairStyleSides(style)[0]
       const firstCategory = firstSide ? workspace.categoryBySide?.[firstSide] : undefined
@@ -648,6 +656,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       setActiveStyleId(null)
       setStyleName('')
       setHairGender('female')
+      setHairColorMode('fixed-palette')
       legacyWorkspaceRef.current = null
       window.dispatchEvent(new Event('fabricator:assets-updated'))
       setNotice(`Conjunto “${activeStyleSummary.name}” e seus arquivos foram excluídos.`)
@@ -697,6 +706,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         setActiveStyleId(null)
         setStyleName('')
         setHairGender('female')
+        setHairColorMode('fixed-palette')
         setDirty(false)
         legacyWorkspaceRef.current = null
         window.dispatchEvent(new Event('fabricator:assets-updated'))
@@ -718,6 +728,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     setActiveStyleId(null)
     setStyleName('')
     setHairGender('female')
+    setHairColorMode('fixed-palette')
     setDirty(false)
     setError('')
     setNotice('Novo conjunto iniciado. Importe as peças e salve quando estiver pronto.')
@@ -746,6 +757,7 @@ export function HairWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
           <button type="button" onClick={() => void deleteSelectedSet()} disabled={!activeStyleId || saving || loadingHair || loadingStyle || deformMode}><Icon name="trash" /> Excluir conjunto</button>
         </div>
         <label className="hair-dev-set-name">Nome do conjunto<input maxLength={80} value={styleName} placeholder="Ex.: Cabelo longo" disabled={loadingStyle || saving || deformMode} onChange={(event) => { setStyleName(event.target.value); setDirty(true) }} /></label>
+        <AssetColorModeToggle value={hairColorMode} disabled={loadingStyle || saving || deformMode || !hairWorkspace} onChange={(colorMode) => { if (hairColorMode === colorMode) return; setHairColorMode(colorMode); setDirty(true) }} />
       </div>
       <div className="hair-dev-toolbar-model">
         <label>Modelo de referência<select value={modelSlot} onChange={(event) => { if (dirty && !window.confirm('Há alterações não salvas. Descartar e trocar de modelo?')) return; cancelHairGridReview(); setImportModalOpen(false); setModelSlot(Number(event.target.value)) }} disabled={loadingModels || saving || loadingStyle || Boolean(hairGridReview) || deformMode}>{models.map((model, index) => model && <option key={model.slot} value={model.slot}>Modelo {String(index + 1).padStart(2, '0')} · {model.name}</option>)}</select></label>

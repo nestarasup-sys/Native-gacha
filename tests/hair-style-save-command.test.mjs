@@ -51,6 +51,7 @@ test('salva metadados e binários separados, preservando IDs, datas e opções e
   assert.equal(saved.front.dataUrl, undefined)
   assert.equal(saved.front.hasDeformationOriginal, true)
   assert.equal(saved.sourceImageSaved, true)
+  assert.equal(saved.colorMode, 'fixed-palette')
   assert.equal(saved.sourceAppliesToDraft, false)
   assert.equal(saved.chromaTolerance, 64)
   assert.equal(saved.chromaMode, 'green')
@@ -94,6 +95,19 @@ test('preserva o gênero salvo e mantém conjuntos antigos sem gênero quando re
 
   assert.equal(saves[0].gender, 'female')
   assert.equal(Object.hasOwn(saves[1], 'gender'), false)
+})
+
+test('salva o modo escolhido e preserva o modo de um conjunto quando o editor não envia outro', async () => {
+  const saves = []
+  for (const input of [
+    { workspace: workspace(), modelSlot: 2, styleName: 'Cores originais', colorMode: 'asset-colors' },
+    { workspace: workspace(), modelSlot: 2, styleName: 'Mantém cores', existing: { id: 'legacy-mode', colorMode: 'asset-colors' } }
+  ]) {
+    await saveHairStyleDraft(input, {
+      saveHairStyle: async (_slot, style) => saves.push(style), createId: () => 'new-style', now: () => '2026-11-01T12:00:00.000Z'
+    })
+  }
+  assert.deepEqual(saves.map((style) => style.colorMode), ['asset-colors', 'asset-colors'])
 })
 
 test('cópia original ausente é bloqueada antes de chamar o repositório', async () => {

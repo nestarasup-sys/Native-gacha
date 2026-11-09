@@ -60,6 +60,7 @@ export function CustomizerFaceCatalogWorkspace({
     const selectedId = faceCatalogModel.selectedIdForPart(part.id)
     const selectedIndex = choices.findIndex((choice) => faceCatalogModel.isChoiceSelected(part.id, choice))
     const selected = selectedIndex >= 0 ? choices[selectedIndex] : null
+    const selectedColorMode = selected?.summary.colorMode ?? 'asset-colors'
     const selectedSlot = selectedIndex >= 0 ? selectedIndex + 1 : 0
     const slotCount = choices.length + 1
     const colors = appearance?.facePalettes?.[part.id] ?? {}
@@ -81,7 +82,7 @@ export function CustomizerFaceCatalogWorkspace({
       <div className="customizer-hair-piece-selector customizer-face-layout-selector">
         <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseAt(selectedSlot - 1)} disabled={!choices.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
         <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} type="button" onClick={() => { onSelectPage(0); onSelectPart(part.id) }}>
-          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: appearance?.facePaletteManualRoles?.[part.id] }} skinTone={part.id === 'nose' ? skinTone : undefined} opacity={part.id === 'nose' ? appearance?.noseOpacity ?? catalogOpacity : 1} alt={selected.summary.name} />}
+          {selected && <HairAssetPreview source={selected.type === 'catalog' ? selected.piece.dataUrl : selected.asset.dataUrl} colors={colors} colorMode={selectedColorMode} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: appearance?.facePaletteManualRoles?.[part.id] }} skinTone={part.id === 'nose' && !Object.keys(colors).length ? skinTone : undefined} opacity={part.id === 'nose' ? appearance?.noseOpacity ?? catalogOpacity : 1} alt={selected.summary.name} />}
         </button>
         <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseAt(selectedSlot + 1)} disabled={!choices.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
         <div className={`customizer-hair-piece-colors${part.id === 'nose' ? ' customizer-nose-piece-colors' : ''}`} aria-label={`Cores de ${part.label}`}>

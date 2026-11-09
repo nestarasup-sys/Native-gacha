@@ -6,6 +6,7 @@ import type {
   FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceElementKind,
   FaceSet, FaceSetSave, FaceSheetKind
 } from '../../../src/shared/fabricator'
+import { isFabricatorAssetColorMode } from '../../../src/shared/fabricator'
 
 type CatalogSaveOptions = {
   folder: string
@@ -116,6 +117,7 @@ export function createFabricatorFaceStorage(deps: Dependencies) {
       'mouth-closed': ['mouth'], 'mouth-open': ['mouth']
     }
     if (!deps.isValidModelSlot(modelSlot) || item?.schemaVersion !== 1 || item.modelSlot !== modelSlot || !deps.isValidFaceCatalogId(item.id)
+      || (item.colorMode !== undefined && !isFabricatorAssetColorMode(item.colorMode))
       || !faceSheetKinds.includes(item.category) || item.sheet?.kind !== item.category
       || typeof item.name !== 'string' || !item.name.trim() || item.name.length > 120
       || !Array.isArray(item.pieces) || item.pieces.length > 60 || !item.transforms || typeof item.transforms !== 'object'
@@ -208,7 +210,7 @@ export function createFabricatorFaceStorage(deps: Dependencies) {
         await deps.recoverCatalogManifest(folder, join(folder, 'images'))
         try {
           const item = JSON.parse(await readFile(join(folder, 'item.json'), 'utf8')) as FaceCatalogItemSave
-          if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, updatedAt: item.updatedAt, pieceCount: item.pieces.length })
+          if (validFaceCatalogItem(modelSlot, item) && item.id === entry.name.slice(5)) items.set(item.id, { id: item.id, modelSlot, category: item.category, name: item.name, ...(item.colorMode ? { colorMode: item.colorMode } : {}), updatedAt: item.updatedAt, pieceCount: item.pieces.length })
         } catch { /* Incomplete catalog items are hidden. */ }
       }
     } catch (reason) { if (!isMissing(reason)) throw reason }
@@ -241,6 +243,7 @@ export function createFabricatorFaceStorage(deps: Dependencies) {
       && deps.isValidWardrobeId(asset.id) && ['eye', 'pupil', 'eye-closed', 'eyebrow', 'eye-highlight-left', 'eye-highlight-right', 'blush', 'facial-shadow', 'head-extra'].includes(asset.kind)
       && typeof asset.name === 'string' && asset.name.trim().length > 0 && asset.name.length <= 120
       && Number.isFinite(asset.width) && Number.isFinite(asset.height) && asset.width > 0 && asset.height > 0 && asset.width * asset.height <= 32_000_000
+      && (asset.colorMode === undefined || isFabricatorAssetColorMode(asset.colorMode))
       && (asset.rightSidePositioned === undefined || typeof asset.rightSidePositioned === 'boolean')
       && (asset.pairId === undefined || deps.isValidWardrobeId(asset.pairId))
       && Boolean(transform) && [transform.x, transform.y, transform.scaleX, transform.scaleY, transform.rotation].every(Number.isFinite)

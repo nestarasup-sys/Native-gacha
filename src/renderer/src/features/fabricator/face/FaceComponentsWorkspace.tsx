@@ -1,8 +1,9 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import type { FaceAssetKind, FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
+import type { FaceAssetKind, FaceCatalogItem, FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceComponentKind, FaceDetailKind, FaceGuideProfile, FaceGuideSettings, FaceTransform, FabricatorAssetColorMode, FabricatorProject, FabricatorSlotSummary, ModelPart } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
+import { AssetColorModeToggle } from '../AssetColorModeToggle'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { useEyeInteriorMasks } from '../../../ui/hooks/useEyeInteriorMasks'
 import { registerPendingWriteFlusher } from '../../../ui/pendingPersistence'
@@ -561,10 +562,28 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
   function persistComponentAsset(next: FaceComponentAsset) {
     componentDetailsRef.current = { ...componentDetailsRef.current, [next.id]: next }
     setDetails((items) => ({ ...items, [next.id]: next }))
+    setAssets((items) => items.map((item) => item.id === next.id ? { ...item, colorMode: next.colorMode, updatedAt: next.updatedAt } : item))
     queueSave(`component:${next.modelSlot}:${next.id}`, () => {
       const { dataUrl, ...saved } = next
       return window.desktop.fabricator.saveFaceComponentAsset(next.modelSlot, saved, dataUrl)
     })
+  }
+
+  function updateSelectedColorMode(colorMode: FabricatorAssetColorMode) {
+    if (selectedCatalogItem) {
+      const original = catalogDetailsRef.current[selectedCatalogItem.id] ?? selectedCatalogItem
+      if (original.colorMode === colorMode) return
+      const next: FaceCatalogItem = { ...original, colorMode, updatedAt: new Date().toISOString() }
+      catalogDetailsRef.current = { ...catalogDetailsRef.current, [next.id]: next }
+      const updateCatalog = (items: typeof noseCatalog) => items.map((item) => item.id === next.id ? { ...item, colorMode, updatedAt: next.updatedAt } : item)
+      if (next.category === 'nose') { setNoseDetails((items) => ({ ...items, [next.id]: next })); setNoseCatalog(updateCatalog) }
+      else { setMouthDetails((items) => ({ ...items, [next.id]: next })); setMouthCatalog(updateCatalog) }
+      queueSave(`catalog:${next.modelSlot}:${next.id}`, () => window.desktop.fabricator.saveFaceCatalogItem(next.modelSlot, faceCatalogItemForSave(next), faceCatalogImagesForSave(next)))
+      return
+    }
+    const current = activeComponent ?? activeFaceDetail ?? selectedAsset
+    if (!current || current.colorMode === colorMode) return
+    persistComponentAsset({ ...current, colorMode, updatedAt: new Date().toISOString() })
   }
 
   function normalizeRightAsset(asset: FaceComponentAsset): FaceComponentAsset {
@@ -822,6 +841,7 @@ export function FaceComponentsWorkspace({ mode, baseModelSlot }: { mode: FaceWor
         </section>}
         {head && selectedTransform && (activeComponent || selectedCatalogItem || activeFaceDetail) ? <>
           {!componentPair && <div className="face-component-current"><img src={activeComponent?.dataUrl ?? activeFaceDetail?.dataUrl ?? selectedCatalogPiece?.dataUrl} alt="" /><span><strong>{activeComponent?.name ?? activeFaceDetail?.name ?? selectedCatalogItem?.name}</strong></span></div>}
+          <AssetColorModeToggle value={selectedCatalogItem?.colorMode ?? activeFaceDetail?.colorMode ?? activeComponent?.colorMode ?? selectedAsset?.colorMode ?? 'asset-colors'} disabled={busy} onChange={updateSelectedColorMode} />
           {selectedCatalogItem && <label className="face-component-variant">Variante<select value={selectedCatalogItem.category === 'nose' ? selectedCatalogItem.selectedNose : selectedCatalogItem.selectedExpression} onChange={(event) => updateCatalogVariant(Number(event.target.value))}>{selectedCatalogItem.pieces.map((piece) => <option key={piece.id} value={piece.index}>{selectedCatalogItem.category === 'nose' ? 'Nariz' : 'Expressão'} {String(piece.index + 1).padStart(2, '0')}</option>)}</select></label>}
           {componentPair && <strong className="face-component-individual-title">{moveTogether[componentPair.kind] ? 'Rotação individual' : followsOpenEye ? 'Altura e rotação' : 'Ajuste individual'} · {selectedPart.endsWith('right') ? 'direita' : 'esquerda'}</strong>}
           <FaceTransformControls head={head} transform={selectedTransform} sourceWidth={selectedSourceWidth} sourceHeight={selectedSourceHeight} pupil={activeComponent?.kind === 'pupil'} moveTogether={componentPair ? moveTogether[componentPair.kind] : false} followEyes={followsOpenEye} opacity={selectedCatalogItem?.category === 'nose' ? selectedCatalogItem.opacity ?? 1 : undefined} onChange={updateTransform} onOpacityChange={updateCatalogOpacity} onReset={resetSelectedTransform} />

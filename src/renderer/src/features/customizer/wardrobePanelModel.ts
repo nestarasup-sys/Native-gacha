@@ -271,8 +271,8 @@ export function wardrobePanelCandidates(
       const asset = faceComponentDetails[summary.id]
       if (!asset || asset.kind !== 'head-extra') return []
       const component: WardrobeSet['components'][number] = { id: asset.id, name: asset.name, category: 'oculos', attachedPartId: 'head', x: 0, y: 0, width: asset.width, height: asset.height, rotation: asset.defaultTransform.rotation, dataUrl: asset.dataUrl }
-      const set: WardrobeSet = { schemaVersion: 1, edition: 2, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
-      const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
+      const set: WardrobeSet = { schemaVersion: 1, edition: 2, colorMode: asset.colorMode, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
+      const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, ...(set.colorMode ? { colorMode: set.colorMode } : {}), updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
       return [{ summary: wardrobeSummary, set, component, components: [component], headExtraAsset: asset }]
     })
   return [...headExtraCandidates, ...wardrobeCandidates]

@@ -25,15 +25,17 @@ async function fixture(t) {
 
 test('lista roupas em ordem, ignora manifestos errados e não modifica a biblioteca', async t => {
   const { catalog, put, pathForModel } = await fixture(t)
-  await put('camisa', { previewGender: 'male' })
+  await put('camisa', { previewGender: 'male', colorMode: 'asset-colors' })
   await put('calca', { edition: undefined, components: [], updatedAt: '2026-10-23T00:00:00Z' })
   await put('fora', { modelSlot: 2 })
   await put('invalido', { edition: 3 })
+  await put('modo-invalido', { colorMode: 'automatic' })
   const original = await readFile(join(pathForModel(1), 'set-camisa', 'wardrobe.json'))
   assert.deepEqual((await catalog.list(1)).map(x => ({id:x.id,edition:x.edition,count:x.componentCount})), [
     {id:'calca',edition:1,count:0}, {id:'camisa',edition:2,count:1}
   ])
   assert.equal((await catalog.list(1)).find(x => x.id === 'camisa').previewGender, 'male')
+  assert.equal((await catalog.list(1)).find(x => x.id === 'camisa').colorMode, 'asset-colors')
   assert.equal((await catalog.list(1)).find(x => x.id === 'calca').previewGender, undefined)
   assert.deepEqual(await readFile(join(pathForModel(1), 'set-camisa', 'wardrobe.json')), original)
   assert.deepEqual(await catalog.list(2), [])

@@ -68,7 +68,7 @@ export function CustomizerHairWorkspace({
           const asset = details[`${summary.modelSlot}:${summary.id}`]?.[part.side]
           const isSelected = summary.id === selectedId
           return <button className={`customizer-hair-library-item${isSelected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={`Selecionar ${summary.name}`} aria-pressed={isSelected} type="button" onClick={() => void onChooseStyle(part.id, summary)}>
-            {asset ? <HairAssetPreview source={asset.dataUrl} colors={resolvedHairColors(appearance, part.id)} fixedPalette alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="bow" /></span>}
+            {asset ? <HairAssetPreview source={asset.dataUrl} colors={resolvedHairColors(appearance, part.id)} colorMode={summary.colorMode ?? 'fixed-palette'} alt="" /> : <span className="customizer-hair-library-placeholder"><Icon name="bow" /></span>}
           </button>
         })}
         {!options.length && <p className="customizer-hair-library-empty">Nenhuma peça salva nesta categoria.</p>}
@@ -141,7 +141,7 @@ export function CustomizerHairWorkspace({
           <div className="customizer-hair-piece-selector">
             <button aria-label={`Peça anterior: ${part.label}`} onClick={() => chooseRelative(-1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <button className="customizer-hair-piece-preview" aria-label={`Abrir biblioteca de ${part.label}`} title={`Abrir biblioteca de ${part.label}`} onClick={() => { onSetLibraryPage(0); onSetLibraryPart(part.id) }} type="button">
-              {asset ? <HairAssetPreview source={asset.dataUrl} colors={rawPieceColors} fixedPalette alt={selected?.name ?? ''} /> : null}
+              {asset ? <HairAssetPreview source={asset.dataUrl} colors={rawPieceColors} colorMode={selected?.colorMode ?? 'fixed-palette'} alt={selected?.name ?? ''} /> : null}
             </button>
             <button aria-label={`Próxima peça: ${part.label}`} onClick={() => chooseRelative(1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
             <div className="customizer-hair-piece-colors" aria-label={`Cores de ${part.label}`}>

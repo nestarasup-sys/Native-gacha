@@ -3096,5 +3096,13 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .editor-v7-status>span:first-child { flex:1; }
 .editor-v7-status button { padding:5px 8px;border:1px solid #e7dbe7;border-radius:5px;background:white;color:#875471;font-size:10px;cursor:pointer; }
 .editor-v7-error { padding:9px 12px;border:1px solid #edc6c6;border-radius:7px;background:#fff6f5;color:#a63d3d;font-size:11px; }
+.fabricator-color-mode { display:grid;grid-template-columns:1fr 1fr;gap:4px;min-width:210px;padding:3px;border:1px solid #e9e2e8;border-radius:8px;background:#f0eef0; }
+.fabricator-color-mode button { min-height:28px;padding:4px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:#7d747d;font-size:10px;font-weight:750;white-space:nowrap;cursor:pointer; }
+.fabricator-color-mode button.selected { border-color:#d7b3cb;background:#fff;color:#9a4779;box-shadow:0 1px 3px #30203212; }
+.fabricator-color-mode button:disabled { opacity:.55;cursor:not-allowed; }
+.hair-dev-toolbar-catalog>.fabricator-color-mode { grid-column:1/-1;justify-self:end;width:min(320px,100%);margin-top:0; }
+.wardrobe-toolbar>.fabricator-color-mode { min-width:190px; }
+.face-components-controls>.fabricator-color-mode { width:100%;min-width:0;margin:4px 0; }
+.head-extras-workspace .face-components-controls>.fabricator-color-mode { margin:0 0 5px; }
 @media(max-width:850px) { .editor-v7-page { padding:12px; }.editor-v7-workspace { grid-template-columns:minmax(0,1fr) 190px; }.editor-v7-inspector { padding:10px; } }
 @media(max-width:620px) { .editor-v7-header { align-items:flex-start;flex-direction:column; }.editor-v7-workspace { grid-template-columns:1fr; }.editor-v7-inspector { order:2; }.editor-v7-preview-frame { width:calc(100% - 20px); }.editor-v7-timeline-panel { grid-template-columns:1fr; }.editor-v7-timeline-layers { grid-column:1; } }

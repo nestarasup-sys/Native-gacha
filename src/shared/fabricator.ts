@@ -161,6 +161,8 @@ export type WardrobeComponent = {
 }
 export type WardrobeSet = {
   schemaVersion: 1
+  /** Absent on legacy sets; their existing fixed-palette behavior remains active. */
+  colorMode?: FabricatorAssetColorMode
   /** Corpo exibido apenas como referência de encaixe no Roupas DEV. */
   previewGender?: WardrobePreviewGender
   /** Importador usado para identificar conjuntos criados por uma grade de roupas. */
@@ -180,8 +182,13 @@ export type WardrobeSetSave = Omit<WardrobeSet, 'components'> & { components: Ar
 /** Listing warnings expose only the affected set and reason, never file paths or contents. */
 export type WardrobeCatalogListing = { sets: WardrobeSetSummary[]; issues: Array<{ id: string; reason: string }> }
 
-export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt' | 'importKind' | 'previewGender'> & { edition: WardrobeEdition; componentCount: number }
+export type WardrobeSetSummary = Pick<WardrobeSet, 'id' | 'modelSlot' | 'modelName' | 'name' | 'updatedAt' | 'importKind' | 'previewGender' | 'colorMode'> & { edition: WardrobeEdition; componentCount: number }
 export type WardrobeAssetSave = { id: string; dataUrl: string }
+/** Recoloring source used by Fabricator assets in the Customizer. */
+export type FabricatorAssetColorMode = 'fixed-palette' | 'asset-colors'
+export function isFabricatorAssetColorMode(value: unknown): value is FabricatorAssetColorMode {
+  return value === 'fixed-palette' || value === 'asset-colors'
+}
 export type FaceSheetKind = 'eyes' | 'eyebrows' | 'nose' | 'mouth-closed' | 'mouth-open'
 export type FaceElementKind = 'eye-left' | 'eye-right' | 'brow-left' | 'brow-right' | 'nose' | 'mouth'
 export type FaceTransform = { x: number; y: number; scaleX: number; scaleY: number; rotation: number; flipX?: boolean }
@@ -213,7 +220,7 @@ export type FaceDetailKind = 'eye-highlight-left' | 'eye-highlight-right' | 'blu
 export type FaceAssetKind = FaceComponentKind | FaceDetailKind | 'head-extra'
 export type FaceGuideProfile = 'eyes' | 'face' | 'head-extras' | 'shared'
 export type FaceGuideSettings = { visible: boolean; verticalX: number; horizontalY: number; lowerHorizontalY: number; angle: number }
-export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceAssetKind; name: string; width: number; height: number; defaultTransform: FaceTransform; rightSidePositioned?: boolean; pairId?: string; updatedAt: string; dataUrl: string }
+export type FaceComponentAsset = { schemaVersion: 1; id: string; modelSlot: number; kind: FaceAssetKind; name: string; width: number; height: number; defaultTransform: FaceTransform; rightSidePositioned?: boolean; pairId?: string; colorMode?: FabricatorAssetColorMode; updatedAt: string; dataUrl: string }
 export type FaceComponentAssetSave = Omit<FaceComponentAsset, 'dataUrl'>
 export type FaceComponentAssetSummary = Omit<FaceComponentAsset, 'dataUrl' | 'defaultTransform'>
 /** One imported facial sheet and its cropped variants, stored independently for the Customizer catalog. */
@@ -223,6 +230,7 @@ export type FaceCatalogItem = {
   modelSlot: number
   category: FaceSheetKind
   name: string
+  colorMode?: FabricatorAssetColorMode
   sheet: FaceSheet
   pieces: FacePiece[]
   transforms: Partial<Record<FaceElementKind, FaceTransform>>
@@ -238,7 +246,7 @@ export type FaceCatalogItemSave = Omit<FaceCatalogItem, 'sheet' | 'pieces'> & {
   sheet: Omit<FaceSheet, 'dataUrl'>
   pieces: Array<Omit<FacePiece, 'dataUrl'>>
 }
-export type FaceCatalogItemSummary = Pick<FaceCatalogItem, 'id' | 'modelSlot' | 'category' | 'name' | 'updatedAt'> & { pieceCount: number }
+export type FaceCatalogItemSummary = Pick<FaceCatalogItem, 'id' | 'modelSlot' | 'category' | 'name' | 'updatedAt' | 'colorMode'> & { pieceCount: number }
 export type FaceExpressionSelections = {
   eyes: Record<'left' | 'right', string | null>
   pupils: Record<'left' | 'right', string | null>
@@ -353,6 +361,8 @@ export type HairStyle = {
   id: string
   modelSlot: number
   name: string
+  /** Absent on legacy styles; their existing fixed-palette behavior remains active. */
+  colorMode?: FabricatorAssetColorMode
   /** Absent on older sets; these remain visible for both character genders. */
   gender?: import('./customizer').CharacterGender
   /** Absent on legacy styles, which remain visible in every compatible category. */
