@@ -34,5 +34,7 @@ test('Roupas Dev oferece o importador e o Customizador conecta a categoria ao ca
   assert.match(fabricator, /importSheet\(event\.target\.files\?\.\[0\], 'cinto'\)/)
   assert.match(customizer, /clothesPanelTab === 'accessories' \|\| clothesPanelTab === 'upper' \|\| clothesPanelTab === 'lower'.*CustomizerWardrobeCatalogWorkspace/s)
   assert.match(catalogWorkspace, /torso-accessory-only/)
+  assert.match(catalogWorkspace, /emptyTorsoAccessorySlots\.map\(\(slotNumber\) => <article/)
+  assert.match(catalogWorkspace, /aria-label=\{`Acessório \$\{slotNumber\} vazio`\}/)
   assert.match(navigation, /if \(tab === 'accessories'\) return clothingCategories\.Superior\.filter\(\(item\) => item\.id === 'cinto'\)/)
 })

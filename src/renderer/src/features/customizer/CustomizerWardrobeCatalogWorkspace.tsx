@@ -4,7 +4,7 @@ import type { CharacterColorOverrides, CharacterPaletteOverrides, CharacterPalet
 import { Icon } from '../../ui/components/Icon'
 import { characterWardrobePresetSwatchGradient, hairColorControls, hairPalettePresets } from './CustomizerAppearanceControls'
 import { WardrobePanelCandidatePreview } from './CustomizerAssetPreviews'
-import { isWardrobePanelCandidateSelected } from './wardrobePanelModel'
+import { isWardrobePanelCandidateSelected, torsoAccessoryEmptySlotCount } from './wardrobePanelModel'
 import type { WardrobePanel, WardrobePanelCandidate } from './wardrobePanelModel'
 
 type WardrobePanelCandidateIndex = ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]>
@@ -103,6 +103,9 @@ export function CustomizerWardrobeCatalogWorkspace({
 
   function renderPanels() {
     const torsoAccessoryOnly = panels.length === 1 && panels[0].id === 'belt'
+    const emptyTorsoAccessorySlots = torsoAccessoryOnly
+      ? Array.from({ length: torsoAccessoryEmptySlotCount }, (_, index) => index + 2)
+      : []
     return <div className={`customizer-hair-layout customizer-upper-wardrobe-layout${torsoAccessoryOnly ? ' torso-accessory-only' : ''}${section === 'Superior' && pageTwo ? ' page-two' : ''}${section === 'Inferior' && pageTwo ? ' lower-page-two' : ''}`} aria-label={`Peças de roupa ${section.toLowerCase()} · página ${page}`}>
       {panels.map((panel) => {
         const candidates = candidatesByPanel.get(panel.id) ?? []
@@ -161,6 +164,10 @@ export function CustomizerWardrobeCatalogWorkspace({
           </div>
         </article>
       })}
+      {emptyTorsoAccessorySlots.map((slotNumber) => <article className="customizer-hair-piece customizer-wardrobe-accessory-placeholder" key={`torso-accessory-empty-${slotNumber}`} aria-label={`Acessório ${slotNumber} vazio`}>
+        <header><strong>Acessório {slotNumber}</strong></header>
+        <div className="customizer-wardrobe-accessory-placeholder-content"><Icon name="plus" /><span>Vazio</span></div>
+      </article>)}
     </div>
   }
 

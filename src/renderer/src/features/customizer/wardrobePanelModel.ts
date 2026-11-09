@@ -28,6 +28,7 @@ export const accessoryWardrobePanels: WardrobePanel[] = [
 export const torsoAccessoryWardrobePanels: WardrobePanel[] = [
   { id: 'belt', label: 'Cinto e acessório', category: 'cinto', side: null }
 ]
+export const torsoAccessoryEmptySlotCount = 5
 export const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },
   { id: 'shorts-right', label: 'Bermuda', category: 'calca', side: null, source: ['shorts'] },
