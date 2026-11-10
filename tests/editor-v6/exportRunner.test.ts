@@ -23,7 +23,7 @@ describe('codificação do Editor V6', () => {
     expect(args).toContain('yuv420p')
   })
 
-  it('aloca threads x264 com a margem medida, limita em 8 e só permite override no harness frio', () => {
+  it('mantém o padrão x264 em até 8 e restringe overrides de 1 a 12 ao harness frio', () => {
     vi.stubEnv('GACHA_VIDEO_STRESS_OFFSCREEN', '0')
     vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '2')
     expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(8)
@@ -34,6 +34,10 @@ describe('codificação do Editor V6', () => {
     expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(2)
     expect(editorV6EncoderThreads('libopenh264', 2, 12)).toBe(6)
     vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '9')
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(9)
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '12')
+    expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(12)
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_X264_THREADS', '13')
     expect(editorV6EncoderThreads('libx264', 2, 12)).toBe(8)
   })
 })

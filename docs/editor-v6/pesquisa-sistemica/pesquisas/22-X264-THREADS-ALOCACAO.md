@@ -27,21 +27,28 @@ O smoke indicava throughput sintético maior até 6 threads, mas não representa
 - Um export integral frio de 8 threads validou 2.394/2.394 quadros, 4 vídeos, 4 faixas de áudio e cache Motion com zero gravações. Clique→MP4 = **76,34 s**, Main = 67,85 s, Motion = 16,33 s, render = 48,43 s, finalização = 2,76 s. A comparação integral arquivada com a alocação antiga de 6 threads ficou em 88,51 s (79,49 s Main), diferença observada de 13,7%; é uma amostra de cada condição e a execução integral de 8 threads ocorreu depois de mais leituras, então não atribuir todo o ganho ao encoder.
 - **Decisão:** manter o ganho conservador observado no par cruzado: para `libx264`, alocar `floor(availableParallelism / lanes × 4/3)`, limitado a 1–8. Outros encoders mantêm a divisão anterior. No host de 12 processadores lógicos e duas lanes, a interface escolhe 8 threads. Override manual segue apenas para o harness frio.
 
+## Triagem 8 versus 10 threads — 10/11/2026
+
+- Ampliei temporariamente a faixa do override isolado para até 12 threads; a fórmula normal continua limitada a 8. Testei 10 threads em 600 quadros frios, mesma cópia, cabelo/preset, 1080p30, áudio, 2 lanes e x264 `ultrafast`/12Mbps. A execução validou 600/600 + áudio em 26,09s clique→MP4 (Main 20,85s; Motion 5,00s; render 14,06s; preparação de cabelo 4,90s; soma de `ffmpegWriteMs` 14,42s).
+- O controle posterior de 8 threads validou as mesmas condições em 27,74s (Main 22,62s; Motion 6,11s; render 14,83s; cabelo 4,77s; soma de `ffmpegWriteMs` 14,76s). Uma amostra anterior de 8 threads tinha 22,91s (Main 18,14s). A amplitude de wall acompanha sobretudo Motion/render; o delta somado de write entre 10 e 8 foi apenas 0,33s e soma espera por worker, portanto não isola tempo de encode.
+- A primeira tentativa com 10 foi corretamente rejeitada pelo validador: usou binário `out/main` anterior à alteração e o relatório marcou 8 threads. Após `npm run build`, a execução nova registrou 10 e passou. MP4s/perfis temporários foram limpos pelo harness; só relatórios JSON leves permaneceram.
+- **Decisão:** evidência insuficiente e ruidosa para mudar o padrão ou afirmar que 10 é mais rápido. O padrão continua em 8 e não houve teste de qualidade decodificada. A faixa de 1–12 threads é somente um instrumento de triagem no harness; não usar 9–12 sem novo A/B frio pareado. Prioridade volta a render/preparação, não à busca cega de mais threads.
+
 ## Instrumentação adicionada no LAB
 
 - `exportRunner.ts` aplica a nova margem automática proporcional somente a `libx264`, com limite de 8. `GACHA_EDITOR_V6_STRESS_X264_THREADS` continua isolado ao harness; encoders alternativos não recebem a margem.
-- `benchmark-project-export.cjs` aceita `--x264-threads=1..8`, exige `--encoder=cpu` e remove qualquer override herdado do ambiente se o argumento não for passado. Assim, a condição sem override continua usando a alocação automática.
+- `benchmark-project-export.cjs` aceita `--x264-threads=1..12` somente no processo offscreen, exige `--encoder=cpu` e remove override herdado se o argumento não for passado. A alocação normal continua limitada a 8; 9–12 são apenas diagnóstico.
 - O relatório registra `encoderThreads` efetivamente usados em cada tentativa. Uma rodada experimental com override é rotulada como `stress-custom`, sem ser confundida com o perfil integral padrão da interface.
 - O preset/bitrate de usuário não mudou; a configuração automática de threads x264 passa a refletir a medição real.
 
 ## Próxima validação
 
-1. Repetir ao menos uma exportação integral após a mudança automática para observar o comportamento sem override explícito.
+1. Não elevar o padrão acima de 8: a triagem 8/10 foi ruidosa, e a comparação só deve ser retomada com pares frios repetidos e período de host sem concorrência perceptível.
 2. Monitorar tempo e responsividade em máquinas com menos de 12 processadores lógicos; a fórmula é proporcional e limitada a 8, mas ainda precisa de validação em hardware inferior.
 3. Prosseguir com a captura/transferência e o render comum, que seguem dominantes; 76 s ainda está muito acima da meta de 30 s.
 
 ## Verificações de instrumentação
 
-- `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportRunner.test.ts`: 5/5 passou; cobre x264 12/2→8, divisão proporcional em 12/4 e 8/2, limite 8, encoders alternativos e override restrito ao harness.
+- `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportRunner.test.ts`: 6/6 passou; cobre padrão x264 limitado a 8, overrides 9/12 válidos apenas no harness e rejeição de 13.
 - `npm run typecheck`, `npm run build`, `npm run test:editor-v6:export` (81 quadros, emenda, áudio, fallback, cancelamento e full HD) e `npm run audit:architecture` (722 arquivos, 0 violações) passaram.
 - Pilotos e export integral passaram pela validação interna. Os dois MP4 usados no SSIM/PSNR (~30MB cada) continuam nas pastas `quality-x264-threads6-20s` e `quality-x264-threads8-20s`; a tentativa de removê-los foi bloqueada pela política da execução, então ficaram temporários no LAB, nunca no `app-data` ou no projeto canônico.

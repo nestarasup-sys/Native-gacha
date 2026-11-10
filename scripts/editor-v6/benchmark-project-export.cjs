@@ -165,7 +165,7 @@ async function main() {
   if (!['svg', 'canvas2d'].includes(sceneSurface)) throw Error('--scene-surface aceita svg ou canvas2d.')
   if (sceneSurface === 'canvas2d' && (!uiExportProfile || hairPreparationOnly || !(hairPresetSlot || noHairControl))) throw Error('Canvas2D experimental exige uma exportação completa do perfil UI em processo isolado.')
   if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
-  if (x264ThreadsValue !== undefined && (!/^[1-8]$/.test(x264ThreadsValue) || encoder !== 'cpu')) throw Error('--x264-threads aceita 1 a 8 e exige --encoder=cpu.')
+  if (x264ThreadsValue !== undefined && (!/^(?:[1-9]|1[0-2])$/.test(x264ThreadsValue) || encoder !== 'cpu')) throw Error('--x264-threads aceita 1 a 12 e exige --encoder=cpu.')
   if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
   if (renderWorkers && !['2', '4', '6', '8'].includes(renderWorkers)) throw Error('--render-workers aceita 2, 4, 6 ou 8 no harness Turbo.')
   if (hairPreparationWorkers && (!['1', '2', '3', '4'].includes(hairPreparationWorkers) || uiExportProfile)) throw Error('--hair-prep-workers aceita 1, 2, 3 ou 4 somente no caminho de preparo isolado; o perfil UI ignora essa instrumentação.')

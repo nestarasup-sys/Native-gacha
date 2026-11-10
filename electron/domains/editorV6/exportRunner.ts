@@ -132,7 +132,7 @@ export function editorV6EncoderThreads(encoder: string, renderParallelism: numbe
   const defaultThreads = Math.max(1, Math.min(8, Math.floor(Math.max(1, cpuCount) / laneCount * encoderThreadFactor)))
   const candidate = Number(process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS)
   if (encoder === 'libx264' && process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
-    && Number.isSafeInteger(candidate) && candidate >= 1 && candidate <= 8) return candidate
+    && Number.isSafeInteger(candidate) && candidate >= 1 && candidate <= 12) return candidate
   return defaultThreads
 }
 export function editorV6MotionPreparationConcurrency(fallback: 1 | 2 | 3): 1 | 2 | 3 {
