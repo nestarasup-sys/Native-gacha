@@ -1,5 +1,5 @@
-import type { HairPartId } from '../../../../shared/customizer'
-import type { HairAsset, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace } from '../../../../shared/fabricator'
+import type { CharacterGender, HairPartId } from '../../../../shared/customizer'
+import type { FabricatorAssetColorMode, HairAsset, HairStyle, HairStyleAsset, HairStyleSave, HairStyleSummary, HairWorkspace } from '../../../../shared/fabricator'
 import { hairCategories, type HairAssetSide } from '../../../../shared/hairCategories'
 import { normalizeHairTransforms } from '../../../../shared/hairPersistence'
 import { defaultHairCategoriesBySide } from './hairWorkspaceModel'
@@ -9,6 +9,8 @@ export type HairStyleSaveCommandInput = {
   workspace: HairWorkspace
   modelSlot: number
   styleName: string
+  gender?: CharacterGender
+  colorMode?: FabricatorAssetColorMode
   existing?: HairStyleSummary | null
 }
 
@@ -40,6 +42,8 @@ export async function saveHairStyleDraft(
   const existing = input.existing ?? undefined
   const id = existing?.id ?? dependencies.createId()
   const now = dependencies.now()
+  const gender = input.gender ?? existing?.gender
+  const colorMode = input.colorMode ?? existing?.colorMode ?? 'fixed-palette'
   const front = workspace.front
   const back = workspace.back
   const fringe = workspace.fringe ?? null
@@ -49,6 +53,8 @@ export async function saveHairStyleDraft(
     id,
     modelSlot,
     name: styleName.trim().slice(0, 80),
+    colorMode,
+    ...(gender ? { gender } : {}),
     categoryBySide: Object.fromEntries((['front', 'back', 'fringe'] as const)
       .filter((side) => Boolean(workspace[side]))
       .map((side) => [side, workspace.categoryBySide?.[side] ?? defaultHairCategoriesBySide[side]])) as Partial<Record<HairAssetSide, HairPartId>>,

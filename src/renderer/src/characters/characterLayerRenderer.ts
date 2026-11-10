@@ -11,6 +11,7 @@ import { faceElementOrder } from './characterFaceCatalogSupport'
 import { isModelBodyPart } from './skinTint'
 import { drawEnabledBodyJointBridges } from './bodyJointBridge'
 import { loadCharacterPartImages } from './characterPartDecodeBatch'
+import { loadAssetColorModeImage } from './assetColorMode'
 
 export type HairCatalogSide = 'front' | 'back'
 export type HairLayerSide = HairCatalogSide | 'fringe'
@@ -26,12 +27,14 @@ export type HairAppearanceLayerLoader = (
 export type CharacterLayerImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadCharacterTintedImage: (source: string, overrides: CharacterColorOverrides | undefined) => Promise<HTMLImageElement>
+  loadHairTintedImage: (source: string, overrides: import('../../../shared/customizer').HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
   loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
 }
 
 export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders) {
-  const { loadCachedImage, loadCharacterTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
+  const { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
+  const colorLoaders = { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage }
 
   const customizerHairParts = hairCategories
 
@@ -165,7 +168,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
         const y = targetHead.y + targetHead.height / 2 + (localX - targetHead.width / 2) * Math.sin(radians) + (localY - targetHead.height / 2) * Math.cos(radians)
         const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
         const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
-        const image = await loadCharacterTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
+        const image = await loadAssetColorModeImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part), layer.style.colorMode, 'fixed-palette', colorLoaders)
         context.save()
         context.translate(x * scale, y * scale)
         context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)
@@ -235,7 +238,7 @@ export function createCharacterLayerRenderer(loaders: CharacterLayerImageLoaders
       const width = asset.width * transform.scaleX / sourceHead.width * targetHead.width
       const height = asset.height * transform.scaleY / sourceHead.height * targetHead.height
       try {
-        const image = await loadCharacterTintedImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part))
+        const image = await loadAssetColorModeImage(asset.dataUrl, resolvedHairColors(hairAppearance, layer.part), layer.style.colorMode, 'fixed-palette', colorLoaders)
         context.save()
         context.translate(x * scale, y * scale)
         context.rotate((targetHead.rotation + transform.rotation) * Math.PI / 180)

@@ -56,7 +56,7 @@ export function guessWardrobeName(category: WardrobeCategory, x: number, width: 
   if (category === 'camisa') return 'Camisa'
   if (category === 'jaqueta') return 'Jaqueta'
   if (category === 'capa') return 'Capa'
-  if (category === 'cinto') return 'Cinto'
+  if (category === 'cinto') return 'Cinto e acessório'
   if (category === 'oculos') return 'Óculos'
   if (category === 'acessorio-cabeca') return 'Acessório de cabeça'
   if (category === 'saia') return 'Saia'

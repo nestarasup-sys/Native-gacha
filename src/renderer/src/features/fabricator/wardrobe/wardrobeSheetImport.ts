@@ -1,4 +1,4 @@
-import type { FabricatorProject, WardrobeComponent } from '../../../../../shared/fabricator'
+import type { FabricatorProject, WardrobeCategory, WardrobeComponent } from '../../../../../shared/fabricator'
 import { suggestWardrobeBone } from './boneSelection'
 import { guessWardrobeCategory, guessWardrobeName, wardrobeSheetContentBounds } from './wardrobeAutoDetection'
 import type { WardrobeProcessorPiece } from './wardrobeProcessorProtocol'
@@ -17,11 +17,12 @@ export function createWardrobeComponentsFromProcessedSheet(
   pieces: WardrobeProcessorPiece[],
   imageWidth: number,
   imageHeight: number,
-  referenceModel: Pick<FabricatorProject, 'width' | 'height' | 'parts'>
+  referenceModel: Pick<FabricatorProject, 'width' | 'height' | 'parts'>,
+  categoryOverride?: WardrobeCategory
 ): WardrobeComponent[] {
   const contentBounds = wardrobeSheetContentBounds(pieces, imageWidth, imageHeight)
   return pieces.map((piece) => {
-    const category = guessWardrobeCategory(piece, contentBounds)
+    const category = categoryOverride ?? guessWardrobeCategory(piece, contentBounds)
     const contentCenterX = piece.x + piece.width / 2 - contentBounds.x
     const bone = suggestWardrobeBone(category, contentCenterX, contentBounds.width, referenceModel).bone
     const { png, ...metadata } = piece

@@ -11,7 +11,9 @@ type CustomizerPreviewSurfaceProps = {
   emptyArtworkMessage?: string
   wardrobeUrl: string | null
   faceUrl: string | null
-  frontHairUrl: string | null
+  posteriorHairUrl: string | null
+  eyesAboveRearHairUrl: string | null
+  fringeUrl: string | null
   wardrobeAboveHairUrl: string | null
   identity?: ReactNode
   backButton?: { label: string; onClick: () => void }
@@ -35,7 +37,9 @@ export function CustomizerPreviewSurface({
   emptyArtworkMessage,
   wardrobeUrl,
   faceUrl,
-  frontHairUrl,
+  posteriorHairUrl,
+  eyesAboveRearHairUrl,
+  fringeUrl,
   wardrobeAboveHairUrl,
   identity,
   backButton,
@@ -73,7 +77,9 @@ export function CustomizerPreviewSurface({
       {artworkUrl ? <img className="customizer-selected-artwork" src={artworkUrl} alt={artworkLabel} /> : !previewLoading && emptyArtworkMessage && <div className="customizer-no-artwork"><Icon name="body" /><span>{emptyArtworkMessage}</span></div>}
       {wardrobeUrl && artworkUrl && <img className="customizer-wardrobe-overlay" src={wardrobeUrl} alt="Roupas do personagem" draggable={false} />}
       {faceUrl && artworkUrl && <img className="customizer-face-overlay" src={faceUrl} alt="Rosto do personagem" draggable={false} />}
-      {frontHairUrl && artworkUrl && <img className="customizer-front-hair-overlay" src={frontHairUrl} alt="Cabelo posterior e franja frontal" draggable={false} />}
+      {posteriorHairUrl && artworkUrl && <img className="customizer-posterior-hair-overlay" src={posteriorHairUrl} alt="Cabelo posterior" draggable={false} />}
+      {eyesAboveRearHairUrl && artworkUrl && <img className="customizer-eyes-above-rear-hair-overlay" src={eyesAboveRearHairUrl} alt="Olhos e pupilas acima do cabelo posterior" draggable={false} />}
+      {fringeUrl && artworkUrl && <img className="customizer-fringe-overlay" src={fringeUrl} alt="Franja frontal" draggable={false} />}
       {wardrobeAboveHairUrl && artworkUrl && <img className="customizer-wardrobe-above-hair-overlay" src={wardrobeAboveHairUrl} alt="Óculos e acessórios de cabeça por cima dos cabelos" draggable={false} />}
       {previewLoading && <div className="customizer-preview-loading">Carregando prévia…</div>}
     </div>

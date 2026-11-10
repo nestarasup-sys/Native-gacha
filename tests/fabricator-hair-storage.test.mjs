@@ -75,7 +75,10 @@ test('rascunho e conjunto de cabelo preservam PNGs, estilos e caminho legado', a
     { id: 'front', dataUrl: png('style-front') },
     { id: 'source', dataUrl: png('style-source') }
   ])
-  assert.equal((await storage.readHairStyle(1, 'style-1')).front.dataUrl, png('style-front'))
+  const loadedOldStyle = await storage.readHairStyle(1, 'style-1')
+  assert.equal(loadedOldStyle.front.dataUrl, png('style-front'))
+  assert.equal(loadedOldStyle.gender, undefined)
+  assert.equal(loadedOldStyle.colorMode, undefined)
   assert.equal((await storage.readHairStyle(1, 'style-1', true)).sourceImageDataUrl, png('style-source'))
 
   await storage.writeLegacyHairCatalogState(1, 'dismissed')
@@ -98,4 +101,26 @@ test('persistência capilar rejeita entradas inválidas sem publicar manifestos'
   }
   await assert.rejects(storage.writeHairStyle(1, invalid, [{ id: 'front', dataUrl: png('never-written') }]), /Estilo de cabelo inválido/)
   assert.equal(await storage.readHairStyle(1, 'bad-style'), null)
+
+  const invalidGender = {
+    ...invalid,
+    id: 'bad-gender',
+    gender: 'nonbinary',
+    transforms: { front: transform(), back: transform() }
+  }
+  await assert.rejects(storage.writeHairStyle(1, invalidGender, [{ id: 'front', dataUrl: png('never-written') }]), /Estilo de cabelo inválido/)
+  assert.equal(await storage.readHairStyle(1, 'bad-gender'), null)
+})
+
+test('conjuntos de cabelo aceitam modo conhecido e rejeitam valores inválidos', async t => {
+  const { storage } = await createFixture(t)
+  const style = {
+    schemaVersion: 1, id: 'palette-style', modelSlot: 1, name: 'Paleta do asset', colorMode: 'asset-colors',
+    front: { width: 10, height: 8 }, back: null, fringe: null,
+    transforms: { front: transform(), back: transform() },
+    createdAt: '2026-10-29T00:00:00.000Z', updatedAt: '2026-10-29T00:00:00.000Z'
+  }
+  await storage.writeHairStyle(1, style, [{ id: 'front', dataUrl: png('hair') }])
+  assert.equal((await storage.readHairStyle(1, style.id)).colorMode, 'asset-colors')
+  await assert.rejects(storage.writeHairStyle(1, { ...style, id: 'invalid-mode', colorMode: 'automatic' }, [{ id: 'front', dataUrl: png('invalid') }]), /Estilo de cabelo inválido/)
 })

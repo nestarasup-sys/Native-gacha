@@ -76,7 +76,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const result = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, provider, undefined, capture => {
     serializedTransitionLayers = {
       frames: capture.frames,
-      dataUrls: [capture.behindFace, capture.face, capture.inFrontOfFace].filter((canvas): canvas is HTMLCanvasElement => Boolean(canvas)).map(canvas => canvas.toDataURL('image/png'))
+      dataUrls: [capture.behindFace, capture.face, capture.posteriorHair, capture.inFrontOfFace, capture.eyesAboveRearHair].filter((canvas): canvas is HTMLCanvasElement => Boolean(canvas)).map(canvas => canvas.toDataURL('image/png'))
     }
   })
   HTMLCanvasElement.prototype.getContext = original
@@ -310,6 +310,27 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const components = new Map([eye, closedEye, pupil, extra].map(asset => [asset.id, asset]))
   const hiProvider = { ...facialProvider, loadHairStyle: async () => hair, listFaceComponentAssets: async (_slot: number, kind: string) => kind === 'eye-closed' ? [closedEye] : [], loadFaceComponentAsset: async (_slot: number, id: string) => components.get(id) ?? null, loadWardrobeSet: async () => wardrobe, loadFabricatorSlot: async () => hiSource, loadFabricatorPose: async () => hiSource, loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === hiOpenMouth.id ? hiOpenMouth : hiMouth } as CharacterRenderAssetProvider
   const hiAppearance = { ...appearance, mouthClosedCatalogId: hiMouth.id, mouthOpenCatalogId: hiOpenMouth.id, headExtras: { glasses: extra.id }, components: { 'eye-left': { assetId: eye.id }, 'pupil-left': { assetId: pupil.id } } }
+  const overlapHair: HairStyle = { ...hair, id: 'synthetic-posterior-hair', transforms: { ...hair.transforms, front: { x: 110, y: 130, scaleX: 1, scaleY: 1, rotation: 0 } } }
+  const overlapFringe: HairStyle = { ...hair, id: 'synthetic-front-fringe', front: null, fringe: { dataUrl: png('#22cc44'), width: 90, height: 30 }, transforms: { ...hair.transforms, fringe: { x: 170, y: 130, scaleX: 1, scaleY: 1, rotation: 0 } } }
+  const overlapProvider = { ...hiProvider, loadHairStyle: async (_slot: number, id: string) => id === overlapFringe.id ? overlapFringe : overlapHair } as CharacterRenderAssetProvider
+  const layerAppearance = { modelSlot: 1, eyeState: 0 as const, eyebrows: false, noseIndex: 0, expressionIndex: 0, mouthOpen: false, components: { 'eye-left': { assetId: eye.id }, 'pupil-left': { assetId: pupil.id } } }
+  const layerCharacter = { ...character, customization: { ...character.customization, faceAppearance: layerAppearance, hairAppearance: { modelSlot: 1, parts: { rearHair: overlapHair.id, frontHair: overlapFringe.id } } } }
+  const underHairRenderer = await prepareSavedCharacterRenderer(layerCharacter, { source: hiSource, artwork: hiSource, assetProvider: overlapProvider })
+  const aboveHairRenderer = await prepareSavedCharacterRenderer({ ...layerCharacter, customization: { ...layerCharacter.customization, faceAppearance: { ...layerAppearance, eyesAboveRearHair: true } } }, { source: hiSource, artwork: hiSource, assetProvider: overlapProvider })
+  try {
+    const underHair = await underHairRenderer.renderToCanvas(layerAppearance)
+    const aboveAppearance = { ...layerAppearance, eyesAboveRearHair: true }
+    const aboveHair = await aboveHairRenderer.renderToCanvasWithLayers(aboveAppearance)
+    const pixelAt = (canvas: HTMLCanvasElement, x: number, y: number) => Array.from(canvas.getContext('2d', { willReadFrequently: true })!.getImageData(x, y, 1, 1).data)
+    const coveredPixel = pixelAt(underHair.canvas, 270, 170)
+    const raisedPixel = pixelAt(aboveHair.canvas, 270, 170)
+    const fringePixel = pixelAt(aboveHair.canvas, 290, 170)
+    const raisedLayerPixel = pixelAt(aboveHair.layers.eyesAboveRearHair!, 270, 170)
+    assert(coveredPixel[0] > 130 && coveredPixel[1] < 110 && coveredPixel[2] > 130, 'Posterior hair should cover the eyes when the option is disabled')
+    assert(raisedPixel[0] > 120 && raisedPixel[1] < 80 && raisedPixel[2] < 100 && raisedPixel[3] > 240, 'The eyes and pupil should render above posterior hair when enabled')
+    assert(fringePixel[1] > 150 && fringePixel[0] < 80, 'Fringe should remain in front of the raised eyes')
+    assert(raisedLayerPixel[0] > 120 && raisedLayerPixel[1] < 80 && raisedLayerPixel[2] < 100, 'The raised eye layer should be preserved for Editor V6 motion compositing')
+  } finally { underHairRenderer.dispose(); aboveHairRenderer.dispose() }
   const hiCharacter = { ...character, customization: { ...character.customization, faceAppearance: hiAppearance,
     hairAppearance: { modelSlot: 1, parts: { frontHair: hair.id } },
     proportions: { ...defaultCharacterProportions, head: 110 }, bodyDimensions: { ...defaultCharacterBodyDimensions, thighsWidth: 125, torsoWidth: 108 },
@@ -371,7 +392,8 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     const withoutHair = await bakeFaceModeAssets('Synthetic hairless', hairlessRenderer, hiAppearance, {}, undefined, 'idle')
     assert(withoutHair.crop && expectedBaseCrop.top < withoutHair.crop.top, 'The fixture must have different bounds with and without hair')
   } finally { hairlessRenderer.dispose() }
-  const exportBase: EditorV6Element = { ...expressionFrom, assetId: 'synthetic-hair-base', width: 18, height: 82, faceTransforms: {}, activeFaceMode: 'idle' }
+  const exportEyesAppearance = { ...hiAppearance, eyesAboveRearHair: true }
+  const exportBase: EditorV6Element = { ...expressionFrom, assetId: 'synthetic-hair-base', width: 18, height: 82, faceAppearance: exportEyesAppearance, faceTransforms: {}, activeFaceMode: 'idle' }
   const exportTarget: EditorV6Element = { ...exportBase, assetId: 'synthetic-hair-expression', activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
   const hairTimeline = createEditorV6Timeline([exportBase])
   hairTimeline.durationFrames = 40
@@ -389,6 +411,14 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     const prepared = await prepareEditorV6HairMotionBundle(hairProject, 1, FIRST_HAIR_MOTION_PRESET, { startFrame: 0, endFrame: 40, width: 1280, height: 720, turbo: false, encoder: 'cpu' })
     const baseRig = prepared.rigs.find(rig => rig.assetId === exportBase.assetId)!
     const targetRig = prepared.rigs.find(rig => rig.assetId === exportTarget.assetId)!
+    const raisedEyeSurface = prepared.surfaces.find(surface => surface.id === baseRig.eyesAboveRearHairSurfaceId)
+    assert(Boolean(raisedEyeSurface), 'The Editor V6 hair rig did not prepare a surface above posterior hair')
+    const raisedEyeImage = await image(raisedEyeSurface!.dataUrl)
+    const raisedEyeCanvas = document.createElement('canvas'); raisedEyeCanvas.width = raisedEyeImage.naturalWidth; raisedEyeCanvas.height = raisedEyeImage.naturalHeight
+    const raisedEyeContext = raisedEyeCanvas.getContext('2d')!; raisedEyeContext.drawImage(raisedEyeImage, 0, 0)
+    const exportRaisedPixel = Array.from(raisedEyeContext.getImageData(270, 170, 1, 1).data)
+    assert(exportRaisedPixel[0] > 120 && exportRaisedPixel[1] < 80 && exportRaisedPixel[2] < 100, 'The Editor V6 hair export surface lost the raised eye and pupil overlay')
+    raisedEyeCanvas.width = raisedEyeCanvas.height = 1
     assert(JSON.stringify(baseRig.sourceCrop) === JSON.stringify({ left: expectedBaseCrop.left, top: expectedBaseCrop.top, width: expectedBaseCrop.width, height: expectedBaseCrop.height }), 'The prepared hair rig did not use the saved face-mode union')
     assert(JSON.stringify(targetRig.sourceCrop) === JSON.stringify({ left: expectedTargetCrop.left, top: expectedTargetCrop.top, width: expectedTargetCrop.width, height: expectedTargetCrop.height }), 'The expression rig did not use the saved face-mode union')
     assert(!prepared.motionTransitions?.length, 'An expression-only change unnecessarily baked a hairless body transition')

@@ -25,6 +25,7 @@ import {
   upperWardrobePanels,
   upperWardrobePageTwoPanels,
   accessoryWardrobePanels,
+  torsoAccessoryWardrobePanels,
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex
@@ -39,7 +40,7 @@ import { useCustomizerFacePreview } from './useCustomizerFacePreview'
 import { useCustomizerFaceCatalog } from './useCustomizerFaceCatalog'
 import { useCustomizerHairPreview } from './useCustomizerHairPreview'
 import { useCustomizerHairCatalog } from './useCustomizerHairCatalog'
-import { getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
+import { filterCustomizerHairStylesByGender, getCustomizerHairLibraryPage, retainCustomizerHairDetailsForModel } from './customizerHairCatalog'
 import { useCustomizerHairLibraryPage } from './useCustomizerHairLibraryPage'
 import { CustomizerHairWorkspace } from './CustomizerHairWorkspace'
 import { useCustomizerWardrobePreview } from './useCustomizerWardrobePreview'
@@ -87,9 +88,9 @@ export function CustomizerPage() {
     charactersLoading, charactersError, setCharactersError,
     characterSaveState, setCharacterSaveState
   } = useCustomizerCharacterRoster()
-  const [dialogMode, setDialogMode] = useState<'create' | 'rename' | null>(null)
+  const [dialogMode, setDialogMode] = useState<'create' | 'edit' | null>(null)
   const [nameDraft, setNameDraft] = useState('')
-  const [newCharacterGender, setNewCharacterGender] = useState<CharacterGender>('female')
+  const [dialogCharacterGender, setDialogCharacterGender] = useState<CharacterGender>('female')
   const [savingCharacter, setSavingCharacter] = useState(false)
   const [activeModule, setActiveModule] = useState<string | null>(null)
   const [selectedCustomizerTopTab, setSelectedCustomizerTopTab] = useState('corpo')
@@ -164,6 +165,8 @@ export function CustomizerPage() {
   }, [setHairDetails])
   const { headPanelTab, headCategorySelection, selectHeadTab } = useCustomizerHeadNavigation()
   const [activeHairColorRole, setActiveHairColorRole] = useState<CharacterPaletteRole>('base')
+  const [showOtherGenderHair, setShowOtherGenderHair] = useState(false)
+  const [showOtherGenderClothes, setShowOtherGenderClothes] = useState(false)
   const [selectedClothing, setSelectedClothing] = useState<SelectedWardrobeComponent | null>(null)
   const [selectedWardrobeUrl, setSelectedWardrobeUrl] = useState<string | null>(null)
   const [selectedWardrobeAboveHairUrl, setSelectedWardrobeAboveHairUrl] = useState<string | null>(null)
@@ -172,11 +175,25 @@ export function CustomizerPage() {
   const [originalSkinTone, setOriginalSkinTone] = useState<string | null>(null)
   const [selectedArtworkUrl, setSelectedArtworkUrl] = useState<string | null>(null)
   const [selectedFaceUrl, setSelectedFaceUrl] = useState<string | null>(null)
-  const [selectedFrontHairUrl, setSelectedFrontHairUrl] = useState<string | null>(null)
+  const [selectedEyesAboveRearHairUrl, setSelectedEyesAboveRearHairUrl] = useState<string | null>(null)
+  const [selectedPosteriorHairUrl, setSelectedPosteriorHairUrl] = useState<string | null>(null)
+  const [selectedFringeUrl, setSelectedFringeUrl] = useState<string | null>(null)
   const [selectedArtworkLabel, setSelectedArtworkLabel] = useState('')
   const [previewLoading, setPreviewLoading] = useState(true)
   const previewLoadRequest = useRef(0)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  function openCharacterDialog(mode: 'create' | 'edit') {
+    setCharactersError('')
+    if (mode === 'create') {
+      setNameDraft('')
+      setDialogCharacterGender('female')
+    } else {
+      if (!selectedCharacter) return
+      setNameDraft(selectedCharacter.name)
+      setDialogCharacterGender(selectedCharacter.customization.gender ?? 'female')
+    }
+    setDialogMode(mode)
+  }
   const { selectCharacter, createCharacter, deleteCharacter, saveCharacter, saveCharacterCustomization } = useCustomizerCharacterCommands({
     charactersRef, characterSaveQueue, setCharacters, selectedCharacter,
     setSelectedCharacterId, setActiveModule, setCharactersError, setCharacterSaveState,
@@ -252,9 +269,14 @@ export function CustomizerPage() {
   const customizerPreviewStyle = { ...previewStyle, '--preview-zoom': customizerPreviewZoom, '--preview-pan-x': `${customizerPreviewPan.x}px`, '--preview-pan-y': `${customizerPreviewPan.y}px` } as import('react').CSSProperties
   const characterFaceAppearance = selectedCharacter?.customization.faceAppearance
   const characterHairAppearance = selectedCharacter?.customization.hairAppearance
+  const selectedCharacterGender = selectedCharacter?.customization.gender ?? 'female'
+  const eligibleHairStyles = useMemo(
+    () => filterCustomizerHairStylesByGender(hairStyles, selectedCharacterGender, showOtherGenderHair),
+    [hairStyles, selectedCharacterGender, showOtherGenderHair]
+  )
   const hairLibraryPageView = useMemo(
-    () => getCustomizerHairLibraryPage(hairStyles, hairLibraryPart, hairLibraryPage),
-    [hairStyles, hairLibraryPart, hairLibraryPage]
+    () => getCustomizerHairLibraryPage(eligibleHairStyles, hairLibraryPart, hairLibraryPage),
+    [eligibleHairStyles, hairLibraryPart, hairLibraryPage]
   )
   const activeHairStyleIds = useMemo(() => {
     const ids = new Set(hairLibraryPageView.visibleStyles.map((style) => style.id))
@@ -381,6 +403,7 @@ export function CustomizerPage() {
     expressionEffects: standardExpressionEffects,
     highlight: activeFacePreviewHighlight,
     setSelectedFaceUrl,
+    setSelectedEyesAboveRearHairUrl,
     setCatalogError
   })
 
@@ -397,7 +420,8 @@ export function CustomizerPage() {
     highlight: activeHairPreviewHighlight,
     setHairDetails: setActiveHairDetails,
     setSelectedArtworkUrl,
-    setSelectedFrontHairUrl,
+    setSelectedPosteriorHairUrl,
+    setSelectedFringeUrl,
     setCatalogError
   })
 
@@ -457,9 +481,15 @@ export function CustomizerPage() {
     try {
       if (dialogMode === 'create') {
         const initialHeadSize = newCharacterHeadSizePreference.enabled ? newCharacterHeadSizePreference.value : undefined
-        await createCharacter(name, initialHeadSize, newCharacterGender)
-      } else if (dialogMode === 'rename' && selectedCharacter) {
-        await saveCharacter({ ...selectedCharacter, name, updatedAt: new Date().toISOString() })
+        await createCharacter(name, initialHeadSize, dialogCharacterGender)
+      } else if (dialogMode === 'edit' && selectedCharacter) {
+        const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+        await saveCharacter({
+          ...currentCharacter,
+          name,
+          customization: { ...currentCharacter.customization, gender: dialogCharacterGender },
+          updatedAt: new Date().toISOString()
+        })
       }
       setDialogMode(null)
     } catch (reason) {
@@ -504,15 +534,21 @@ export function CustomizerPage() {
     appearance: activeFaceAppearance
   }), [faceCatalogItems, faceCatalogDetails, faceComponentAssets, faceComponentDetails, activeFaceAppearance])
   const wardrobePanelSelection = useMemo(() => {
-    const page = clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
+    const clothesAccessories = selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'accessories'
+    const emptyClothesTab = selectedCustomizerTopTab === 'roupas'
+      && (clothesPanelTab === 'hats' || clothesPanelTab === 'other' || clothesPanelTab === 'extra')
+    const headExtras = selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra'
+    const page = clothesAccessories || emptyClothesTab || headExtras ? 1 : clothingSection === 'Inferior' ? lowerWardrobePage : upperWardrobePage
     const pageTwo = page === 2
-    const panels = selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra'
-      ? accessoryWardrobePanels
-      : clothingSection === 'Inferior'
-        ? pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
-        : pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
-    return { page, pageTwo, panels }
-  }, [clothingSection, headPanelTab, lowerWardrobePage, selectedCustomizerTopTab, upperWardrobePage])
+    let panels: WardrobePanel[]
+    if (headExtras) panels = accessoryWardrobePanels
+    else if (clothesAccessories) panels = torsoAccessoryWardrobePanels
+    else if (emptyClothesTab) panels = []
+    else if (clothingSection === 'Inferior') panels = pageTwo ? lowerWardrobePageTwoPanels : lowerWardrobePanels
+    else panels = pageTwo ? upperWardrobePageTwoPanels : upperWardrobePanels
+    const section: 'Superior' | 'Inferior' = clothesAccessories || emptyClothesTab || headExtras ? 'Superior' : clothingSection
+    return { page, pageTwo, panels, section }
+  }, [clothesPanelTab, clothingSection, headPanelTab, lowerWardrobePage, selectedCustomizerTopTab, upperWardrobePage])
   const wardrobePanelCandidateIndex = useMemo(() => {
     const panels = [...wardrobePanelSelection.panels]
     if (wardrobeLibraryPanel && !panels.some((panel) => panel.id === wardrobeLibraryPanel.id)) {
@@ -524,15 +560,16 @@ export function CustomizerPage() {
       wardrobeSets,
       wardrobeDetails,
       faceComponentAssets,
-      faceComponentDetails
+      faceComponentDetails,
+      wardrobeGenderFilter: { gender: selectedCharacterGender, showOtherGender: showOtherGenderClothes }
     })
-  }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
+  }, [faceComponentAssets, faceComponentDetails, selectedCatalogModelSlot, selectedCharacterGender, showOtherGenderClothes, wardrobeDetails, wardrobeLibraryPanel, wardrobePanelSelection.panels, wardrobeSets])
   const wardrobeCatalogWorkspaceProps = {
     loading: wardrobeLoading,
     catalogError,
     unavailableWardrobeSetCount: unavailableWardrobeSetKeys.length,
     repairingUnavailableLinks: repairingWardrobeLinks,
-    section: clothingSection,
+    section: wardrobePanelSelection.section,
     page: wardrobePanelSelection.page,
     pageTwo: wardrobePanelSelection.pageTwo,
     panels: wardrobePanelSelection.panels,
@@ -601,7 +638,9 @@ export function CustomizerPage() {
     previewBackground,
     wardrobeUrl: selectedWardrobeUrl,
     faceUrl: selectedFaceUrl,
-    frontHairUrl: selectedFrontHairUrl,
+    posteriorHairUrl: selectedPosteriorHairUrl,
+    eyesAboveRearHairUrl: selectedEyesAboveRearHairUrl,
+    fringeUrl: selectedFringeUrl,
     wardrobeAboveHairUrl: selectedWardrobeAboveHairUrl,
     onPreviewBackgroundChange: setPreviewBackground,
     onBeginPan: beginCustomizerPreviewPan,
@@ -626,7 +665,7 @@ export function CustomizerPage() {
               />
             </div>
           </section>
-          <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
+          <section className={`customizer-models-sidebar${selectedCustomizerTopTab === 'roupas' ? ' customizer-models-sidebar-clothes-upper' : ''}`} aria-label="Categorias de personalização">
             <div className={`customizer-models-sidebar-nav${selectedCustomizerTopTab === 'roupas' ? ' customizer-models-sidebar-nav-clothes' : ''}`}>
             <nav className="customizer-top-tabs" aria-label="Áreas do Customizar" role="tablist">
               {customizerTopTabs.map((tab) => <button
@@ -651,7 +690,7 @@ export function CustomizerPage() {
               {customizerOtherTabs.map((tab) => <button key={tab.id} className={otherPanelTab === tab.id ? 'active' : ''} onClick={() => setOtherPanelTab(tab.id)} aria-selected={otherPanelTab === tab.id} role="tab" type="button"><Icon name={tab.icon} /><span>{tab.label}</span></button>)}
             </nav>}
             </div>
-            <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower' || clothesPanelTab === 'adjust') ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
+            <div className={`customizer-sidebar-scroll-content${selectedCustomizerTopTab === 'cabeca' && (headPanelTab === 'hair' || headPanelTab === 'eyes' || headPanelTab === 'face') ? ' customizer-sidebar-scroll-content-hair' : ''}${selectedCustomizerTopTab === 'roupas' ? ' customizer-sidebar-scroll-content-clothes-upper' : ''}`} aria-label={`Conteúdo de ${customizerTopTabs.find((tab) => tab.id === selectedCustomizerTopTab)?.label ?? 'personalização'}`}>
             {catalogError && <p className="customizer-catalog-error" role="alert">{catalogError}</p>}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'hair' && <CustomizerHairWorkspace
               modelSlot={selectedCatalogModelSlot}
@@ -659,7 +698,11 @@ export function CustomizerPage() {
               loading={hairLoading}
               appearance={characterHairAppearance?.modelSlot === selectedCatalogModelSlot ? characterHairAppearance : undefined}
               styles={hairStyles}
+              eligibleStyles={eligibleHairStyles}
               details={hairDetails}
+              gender={selectedCharacterGender}
+              showOtherGenderHair={showOtherGenderHair}
+              onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
               libraryPart={hairLibraryPart}
               libraryPageLoading={hairLibraryPageLoading}
               libraryPageView={hairLibraryPageView}
@@ -692,6 +735,7 @@ export function CustomizerPage() {
               onSetColor={setFacePartColor}
               onApplyPalette={applyFacePartPalette}
               onResetColors={resetFacePartColors}
+              onSetVariant={setFaceCatalogVariant}
             />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'face' && <CustomizerFaceCatalogWorkspace
               selectedModelSlot={selectedCatalogModelSlot}
@@ -718,7 +762,7 @@ export function CustomizerPage() {
             />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'extra' && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'cabeca' && headPanelTab === 'adjust' && renderAdjustmentPicker('head')}
-            {selectedCustomizerTopTab === 'roupas' && (clothesPanelTab === 'upper' || clothesPanelTab === 'lower') && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
+            {selectedCustomizerTopTab === 'roupas' && clothesPanelTab !== 'adjust' && <CustomizerWardrobeCatalogWorkspace {...wardrobeCatalogWorkspaceProps} />}
             {selectedCustomizerTopTab === 'roupas' && clothesPanelTab === 'adjust' && renderAdjustmentPicker('clothes')}
             {selectedCustomizerTopTab === 'modelos' && <CustomizerModelPicker
               models={availableModels}
@@ -727,6 +771,10 @@ export function CustomizerPage() {
               gender={selectedCharacter?.customization.gender ?? 'female'}
               genderDisabled={!selectedCharacter}
               onGenderChange={(gender) => { void saveCharacterCustomization({ gender }) }}
+              showOtherGenderHair={showOtherGenderHair}
+              onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
+              showOtherGenderClothes={showOtherGenderClothes}
+              onShowOtherGenderClothesChange={(show) => { setShowOtherGenderClothes(show); setWardrobeLibraryPage(0) }}
               loading={catalogLoading}
               onSelect={(model) => void selectCatalogModel(model)}
             />}
@@ -823,10 +871,13 @@ export function CustomizerPage() {
               <p className="eyebrow">SUA COLEÇÃO</p>
               <h2>Personagens <span>{characters.length.toString().padStart(2, '0')}</span></h2>
             </div>
-            {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
-            <button className="icon-button add-button" aria-label="Adicionar personagem" onClick={() => { setNameDraft(''); setNewCharacterGender('female'); setDialogMode('create') }} type="button">
-              <Icon name="plus" />
-            </button>
+            <div className="roster-actions">
+              {selectedCharacter && <button className="icon-button roster-edit-button" aria-label="Editar personagem" title="Editar nome e gênero" onClick={() => openCharacterDialog('edit')} type="button"><Icon name="edit" /></button>}
+              {selectedCharacter && <button className="icon-button roster-delete-button" aria-label={'Excluir ' + selectedCharacter.name} title="Excluir personagem" onClick={() => void deleteSelectedCharacter()} type="button"><Icon name="trash" /></button>}
+              <button className="icon-button add-button" aria-label="Adicionar personagem" title="Adicionar personagem" onClick={() => openCharacterDialog('create')} type="button">
+                <Icon name="plus" />
+              </button>
+            </div>
           </div>
           <label className="roster-search">
             <Icon name="search" />
@@ -844,9 +895,13 @@ export function CustomizerPage() {
                 } as React.CSSProperties}
                 onClick={() => selectCharacter(character.id)}
                 aria-pressed={selectedCharacter?.id === character.id}
+                aria-label={`${character.name}, ${character.customization.gender === 'male' ? 'masculino' : 'feminino'}`}
               >
                 <RenderedCharacterPortrait className="customizer-character-headshot" character={character} />
-                <span>{character.name}</span>
+                <span className="character-card-meta">
+                  <span className="character-card-name">{character.name}</span>
+                  <span className="character-card-gender">{character.customization.gender === 'male' ? 'Masculino' : 'Feminino'}</span>
+                </span>
               </button>
             ))}
             {charactersLoading && <p className="empty-roster">Carregando personagens…</p>}
@@ -865,7 +920,7 @@ export function CustomizerPage() {
               identity={
                 <div className="preview-title customizer-preview-identity">
                   <p className="eyebrow">CUSTOMIZAR <span>/</span> PERSONAGEM</p>
-                  <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome do personagem" disabled={!selectedCharacter} onClick={() => { setNameDraft(selectedCharacter?.name ?? ''); setDialogMode('rename') }} type="button"><Icon name="edit" /></button></h1>
+                  <h1><span className="customizer-preview-character-name">{selectedCharacter?.name ?? (charactersLoading ? 'Carregando personagens…' : 'Crie um personagem')}</span><button className="rename-button" aria-label="Editar nome e gênero do personagem" title="Editar personagem" disabled={!selectedCharacter} onClick={() => openCharacterDialog('edit')} type="button"><Icon name="edit" /></button></h1>
                 </div>
               }
             />
@@ -892,13 +947,16 @@ export function CustomizerPage() {
       {dialogMode && <div className="character-dialog-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialogMode(null) }}>
         <form className="character-dialog" onSubmit={(event) => void submitCharacterDialog(event)} aria-labelledby="character-dialog-title">
           <p className="eyebrow">SUA COLEÇÃO</p>
-          <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Renomear personagem'}</h2>
+          <h2 id="character-dialog-title">{dialogMode === 'create' ? 'Novo personagem' : 'Editar personagem'}</h2>
           <label htmlFor="character-name">Nome</label>
           <input id="character-name" autoFocus maxLength={80} value={nameDraft} onChange={(event) => setNameDraft(event.target.value)} placeholder="Ex.: Chloe" />
-          {dialogMode === 'create' && <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
-            <button className={'customizer-model-gender-button female' + (newCharacterGender === 'female' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'female'} onClick={() => setNewCharacterGender('female')}>Feminino</button>
-            <button className={'customizer-model-gender-button male' + (newCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={newCharacterGender === 'male'} onClick={() => setNewCharacterGender('male')}>Masculino</button>
-          </div>}
+          <div className="character-dialog-gender">
+            <span>Gênero</span>
+            <div className="customizer-model-gender-band" role="group" aria-label="Gênero do personagem">
+              <button className={'customizer-model-gender-button female' + (dialogCharacterGender === 'female' ? ' active' : '')} type="button" aria-pressed={dialogCharacterGender === 'female'} onClick={() => setDialogCharacterGender('female')}>Feminino</button>
+              <button className={'customizer-model-gender-button male' + (dialogCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={dialogCharacterGender === 'male'} onClick={() => setDialogCharacterGender('male')}>Masculino</button>
+            </div>
+          </div>
           {charactersError && <p className="character-dialog-error" role="alert">{charactersError}</p>}
           <div className="character-dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialogMode(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!nameDraft.trim() || savingCharacter}>{savingCharacter ? 'Salvando…' : 'Salvar'}</button></div>
         </form>

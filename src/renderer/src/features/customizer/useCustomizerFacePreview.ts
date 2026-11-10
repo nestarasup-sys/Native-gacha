@@ -7,6 +7,7 @@ import type { CatalogArtwork } from '../../characters/characterRenderer'
 import type { StandardExpressionEffects } from '../../characters/standardExpressionEffects'
 import { characterRenderSize } from './renderResolution'
 import { renderCustomizerFacePreview } from './customizerFacePreview'
+import type { CustomizerFacePreviewImages } from './customizerFacePreview'
 import { preparePreviewImage } from './customizerPreviewImages'
 
 type PreviewExtent = { width: number; height: number; density: number }
@@ -25,11 +26,12 @@ export function useCustomizerFacePreview(deps: {
   expressionEffects: StandardExpressionEffects
   highlight: string | null
   setSelectedFaceUrl: Dispatch<SetStateAction<string | null>>
+  setSelectedEyesAboveRearHairUrl: Dispatch<SetStateAction<string | null>>
   setCatalogError: Dispatch<SetStateAction<string>>
 }) {
   const {
     appearance, catalogDetails, legacyFaceDetails, artwork, source, skinTone, headOverrides,
-    previewExtent, zoom, expressionEffects, highlight, setSelectedFaceUrl, setCatalogError
+    previewExtent, zoom, expressionEffects, highlight, setSelectedFaceUrl, setSelectedEyesAboveRearHairUrl, setCatalogError
   } = deps
 
   useEffect(() => {
@@ -47,11 +49,12 @@ export function useCustomizerFacePreview(deps: {
     }
     if (!artwork || !source || !appearance || (!hasCatalogSelection && !face)) {
       setSelectedFaceUrl(null)
+      setSelectedEyesAboveRearHairUrl(null)
       return
     }
 
     const maxSize = characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, zoom, previewExtent.density)
-    const render = hasCatalogSelection
+    const render: Promise<CustomizerFacePreviewImages> = hasCatalogSelection
       ? renderCustomizerFacePreview({
         artwork,
         source,
@@ -64,13 +67,18 @@ export function useCustomizerFacePreview(deps: {
         highlightedHeadId: highlight
       })
       : renderFaceOverlay(artwork, source, face, appearance, maxSize, headOverrides, highlight)
+        .then((faceUrl) => ({ faceUrl, eyesAboveRearHairUrl: null }))
 
-    void render.then(async (url) => {
-      if (!await preparePreviewImage(url)) return
-      if (!cancelled) setSelectedFaceUrl(url)
+    void render.then(async ({ faceUrl, eyesAboveRearHairUrl }) => {
+      const ready = await Promise.all([preparePreviewImage(faceUrl), preparePreviewImage(eyesAboveRearHairUrl)])
+      if (!ready.every(Boolean)) return
+      if (!cancelled) {
+        setSelectedFaceUrl(faceUrl)
+        setSelectedEyesAboveRearHairUrl(eyesAboveRearHairUrl)
+      }
     }).catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o rosto do personagem.')
     })
     return () => { cancelled = true }
-  }, [appearance, catalogDetails, legacyFaceDetails, artwork, source, skinTone, headOverrides, previewExtent, zoom, expressionEffects, highlight, setSelectedFaceUrl, setCatalogError])
+  }, [appearance, catalogDetails, legacyFaceDetails, artwork, source, skinTone, headOverrides, previewExtent, zoom, expressionEffects, highlight, setSelectedFaceUrl, setSelectedEyesAboveRearHairUrl, setCatalogError])
 }

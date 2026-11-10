@@ -25,13 +25,21 @@ type Props = {
   onSetColor: (part: FaceComponentPartId, role: HairColorRole, value: string) => void | Promise<void>
   onApplyPalette: (part: FaceComponentPartId, colors: HairColorOverrides) => void | Promise<void>
   onResetColors: (part: FaceLibraryPartId) => void | Promise<void>
+  onSetVariant: (patch: Partial<CustomizerFaceAppearance>) => void | Promise<void>
 }
 
 export function CustomizerFaceAssemblyWorkspace({
   selectedModelSlot, loading, selectedPart, selectedPage, faceCatalogModel, faceComponentAssets,
   faceComponentDetails, appearance, hasCharacter, onSelectPart, onSelectPage, onChoosePart,
-  onClearPart, onSetColor, onApplyPalette, onResetColors
+  onClearPart, onSetColor, onApplyPalette, onResetColors, onSetVariant
 }: Props) {
+  const hasSelectedEye = Boolean(appearance?.eyeCatalogId || appearance?.eyeLeftCatalogId || appearance?.eyeRightCatalogId
+    || appearance?.components?.['eye-left']?.assetId || appearance?.components?.['eye-right']?.assetId)
+  const renderEyeLayerToggle = () => <label className="customizer-face-eye-layer-toggle" title="Desenha olhos, pupilas e destaques acima do cabelo posterior">
+    <input type="checkbox" checked={Boolean(appearance?.eyesAboveRearHair)} disabled={!hasCharacter || selectedModelSlot === null || (!hasSelectedEye && !appearance?.eyesAboveRearHair)} onChange={(event) => void onSetVariant({ eyesAboveRearHair: event.target.checked })} />
+    <span>Olhos + pupilas ↑</span>
+  </label>
+
   const renderParts = () => <div className="customizer-hair-layout customizer-face-layout">
     {customizerFaceParts.map((part) => {
       const options = faceCatalogModel.optionsForCategory(part.category)
@@ -57,11 +65,11 @@ export function CustomizerFaceAssemblyWorkspace({
       }
 
       return <article className={`customizer-hair-piece customizer-face-piece customizer-face-piece-${part.id}`} key={part.id}>
-        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void onResetColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
+        <header><strong>{part.label} {selectedSlot + 1}/{slotCount}</strong>{part.id === 'eye-left' && renderEyeLayerToggle()}{hasLocalColors && <button className="customizer-hair-reset" onClick={() => void onResetColors(colorPartId)} title={'Restaurar cores de ' + part.label} type="button">Restaurar</button>}</header>
         <div className="customizer-hair-piece-selector">
           <button aria-label={'Peça anterior: ' + part.label} onClick={() => chooseAt(selectedSlot - 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
           <button className="customizer-hair-piece-preview" aria-label={'Abrir biblioteca de ' + part.label} title={'Abrir biblioteca de ' + part.label} onClick={() => { onSelectPage(0); onSelectPart(part.id) }} type="button">
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: componentAppearance?.manualColorRoles }} alt={selected?.name ?? ''} flipX={part.side === 'right'} /> : null}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={colors} colorMode={piece.colorMode ?? selected?.colorMode ?? 'asset-colors'} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: componentAppearance?.manualColorRoles }} alt={selected?.name ?? ''} flipX={part.side === 'right'} /> : null}
           </button>
           <button aria-label={'Próxima peça: ' + part.label} onClick={() => chooseAt(selectedSlot + 1)} disabled={!options.length || !hasCharacter} type="button"><Icon name="chevronRight" /></button>
           <div className="customizer-hair-piece-colors" aria-label={'Cores de ' + part.label}>
@@ -107,7 +115,7 @@ export function CustomizerFaceAssemblyWorkspace({
           const piece = faceComponentDetails[summary.id]
           const selected = summary.id === selectedOption?.id
           return <button className={`customizer-hair-library-item${selected ? ' selected' : ''}`} key={summary.id} title={summary.name} aria-label={'Selecionar ' + summary.name} aria-pressed={selected} type="button" onClick={() => void onChoosePart(part.id, summary)}>
-            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: selectedFacePart?.manualColorRoles }} alt="" flipX={part.side === 'right'} /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
+            {piece ? <HairAssetPreview source={piece.dataUrl} colors={selectedColors} colorMode={piece.colorMode ?? selectedOption?.colorMode ?? 'asset-colors'} tintOptions={{ preserveNearWhite: true, allowNearWhiteRoles: selectedFacePart?.manualColorRoles }} alt="" flipX={part.side === 'right'} /> : <span className="customizer-hair-library-placeholder"><Icon name="face" /></span>}
           </button>
         })}
         {!options.length && <p className="customizer-hair-library-empty">Nenhum asset salvo para {part.label}. Importe esta peça no Rosto Dev.</p>}

@@ -51,11 +51,43 @@ test('hair keeps alpha and maps colored hair by perceptual shade to the hair pal
   assert.equal(report.visiblePixels, 3)
 })
 
+test('hair maps the purple accent to the fifth secondary role', () => {
+  const image = pixels([[rgba('#8C7BFF'), rgba('#9889F2'), rgba('#B9ADFF')]])
+  const report = normalizePalettePixels(image, 'hair')
+  assert.deepEqual(PALETTES.hair.map(({ role, hex }) => [role, hex]), [
+    ['outline', '#2B2B2B'], ['shadow', '#6B6B6B'], ['base', '#A8A8A8'], ['light', '#E2E2E2'], ['detail', '#8C7BFF']
+  ])
+  assert.deepEqual(Array.from(image.data).filter((_, index) => index % 4 !== 3), [140, 123, 255, 140, 123, 255, 140, 123, 255])
+  assert.ok(report.groups.every(({ role }) => role === 'detail'))
+  assertVisibleColorsAreOfficial(image, 'hair')
+})
+
+test('pixels in the same shade group normalize independently of their scan order', () => {
+  const source = ['#858585', '#8F8F8F']
+  const normalize = (colors) => {
+    const image = pixels([colors.map((color) => rgba(color))])
+    const report = normalizePalettePixels(image, 'hair')
+    return { colors: Array.from(image.data).filter((_, index) => index % 4 !== 3), sourceHex: report.groups[0]?.sourceHex }
+  }
+  const forward = normalize(source)
+  const reversed = normalize([...source].reverse())
+  assert.deepEqual(forward.colors.slice(0, 3), reversed.colors.slice(3, 6))
+  assert.deepEqual(forward.colors.slice(3, 6), reversed.colors.slice(0, 3))
+  assert.equal(forward.sourceHex, reversed.sourceHex)
+})
+
+test('hair keeps pale grayscale highlights in the light role', () => {
+  const image = pixels([[rgba('#C4C0C0')]])
+  const report = normalizePalettePixels(image, 'hair')
+  assert.deepEqual(Array.from(image.data.slice(0, 3)), [226, 226, 226])
+  assert.equal(report.groups[0]?.role, 'light')
+})
+
 test('already standardized hair colors are left unchanged', () => {
   const image = pixels([[...PALETTES.hair.map(({ hex }) => rgba(hex))]])
   normalizePalettePixels(image, 'hair')
   assert.deepEqual(Array.from(image.data).filter((_, index) => index % 4 !== 3), [
-    43, 43, 43, 107, 107, 107, 168, 168, 168, 226, 226, 226
+    43, 43, 43, 107, 107, 107, 168, 168, 168, 226, 226, 226, 140, 123, 255
   ])
 })
 
@@ -80,9 +112,10 @@ test('normalized clothing and hair swatches are recognized by the Customizer rec
   const hairDetection = detectCharacterSourcePalette(hair.data)
   assert.equal(hairDetection.supported, true)
   assert.equal(hairDetection.roleCounts.light, 1)
+  assert.equal(hairDetection.roleCounts.detail, 1)
   tintCharacterPalettePixels(hair.data, overrides)
   assert.deepEqual(Array.from(hair.data).filter((_, index) => index % 4 !== 3), [
-    17, 17, 17, 51, 51, 51, 119, 119, 119, 0, 255, 255
+    17, 17, 17, 51, 51, 51, 119, 119, 119, 0, 255, 255, 255, 0, 255
   ])
 })
 

@@ -156,16 +156,18 @@ export async function prepareEditorV6HairMotionBundle(
   type SerializedMotionLayerAtlas = Pick<EditorV6MotionLayerAtlasCapture, 'frames'> & {
     behindFaceDataUrl: string
     faceDataUrl: string
+    eyesAboveRearHairDataUrl: string | null
     inFrontOfFaceDataUrl: string | null
   }
   const captureTransitionLayers = (plan: EditorV6MotionPlan, result: Pick<EditorV6MotionBakeResult, 'faceAsset'>, capture: SerializedMotionLayerAtlas) => {
     const behindFaceSurfaceId = addSurface(`motion:${plan.key}:behind-face`, capture.behindFaceDataUrl)
     const faceSurfaceId = addSurface(`motion:${plan.key}:face`, capture.faceDataUrl)
+    const eyesAboveRearHairSurfaceId = capture.eyesAboveRearHairDataUrl ? addSurface(`motion:${plan.key}:raised-eyes`, capture.eyesAboveRearHairDataUrl) : null
     const overlaySurfaceId = capture.inFrontOfFaceDataUrl ? addSurface(`motion:${plan.key}:front-face`, capture.inFrontOfFaceDataUrl) : null
     const faceAtlasSurfaceId = result.faceAsset ? addSurface(`motion:${plan.key}:face-atlas`, result.faceAsset.dataUrl) : null
     motionTransitions.push({
       elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame,
-      behindFaceSurfaceId, faceSurfaceId, overlaySurfaceId, faceAtlasSurfaceId,
+      behindFaceSurfaceId, faceSurfaceId, eyesAboveRearHairSurfaceId, overlaySurfaceId, faceAtlasSurfaceId,
       frames: capture.frames
     })
   }
@@ -263,10 +265,12 @@ export async function prepareEditorV6HairMotionBundle(
       reportStage('prepareHairLayers', groupStageStarted)
 
       const poseSurfaceKey = JSON.stringify([groupKey, character.updatedAt, appearance?.modelSlot, appearance?.parts, character.customization.partOverrides])
-      let baseSurfaceId: string | undefined, overlaySurfaceId: string | null | undefined
+      let baseSurfaceId: string | undefined
       const cropByFace = new Map<string, { left: number; top: number; width: number; height: number }>()
       // Only immutable encoded face PNGs are reusable within this pose.
       const faceSurfacesByInput = new Map<string, string>()
+      const overlaySurfacesByInput = new Map<string, string | null>()
+      const eyesSurfacesByInput = new Map<string, string | null>()
       let preparedGeometry: Pick<EditorV6HairMotionRig, 'artworkWidth' | 'artworkHeight' | 'outputWidth' | 'outputHeight' | 'shapeScaleX' | 'shapeScaleY'> | undefined
       for (const target of group.targets) {
         if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
@@ -278,12 +282,16 @@ export async function prepareEditorV6HairMotionBundle(
         const hideMouthForExportLoop = Boolean(exportOptions.mouthLoop && (mode === 'talk' || mode === 'talk-blink') && hairlessRenderer.canIsolateMouth(currentAppearance))
         const faceKey = JSON.stringify([currentAppearance, faceTransforms, effects])
         const faceRenderKey = editorV6HairFaceSurfaceKey(faceKey, mode, hideMouthForExportLoop)
-        const existingFaceSurfaceId = faceSurfacesByInput.get(faceRenderKey)
+        const poseKey = JSON.stringify([poseSurfaceKey, state.poseSlot, sourceHeadPart.width, sourceHeadPart.height, targetHeadPart.x, targetHeadPart.y, targetHeadPart.width, targetHeadPart.height, targetHeadPart.rotation])
+        const faceSurfaceKey = JSON.stringify([poseKey, faceRenderKey])
+        const existingFaceSurfaceId = faceSurfacesByInput.get(faceSurfaceKey)
+        const hasOverlaySurface = overlaySurfacesByInput.has(faceSurfaceKey)
+        const hasEyesSurface = eyesSurfacesByInput.has(faceSurfaceKey)
         let sourceCrop = cropByFace.get(faceKey)
         groupStageStarted = performance.now()
         const [originalFrame, splitFrame] = await Promise.all([
           sourceCrop ? Promise.resolve(null) : originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
-          existingFaceSurfaceId ? Promise.resolve(null) : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
+          existingFaceSurfaceId && hasOverlaySurface && hasEyesSurface ? Promise.resolve(null) : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
         ])
         reportStage('renderHairlessFaceTarget', groupStageStarted)
         if (!sourceCrop) {
@@ -295,7 +303,6 @@ export async function prepareEditorV6HairMotionBundle(
           cropByFace.set(faceKey, sourceCrop)
           reportStage('measureFaceModeCrop', cropStarted)
         }
-        const poseKey = JSON.stringify([poseSurfaceKey, state.poseSlot, sourceHeadPart.width, sourceHeadPart.height, targetHeadPart.x, targetHeadPart.y, targetHeadPart.width, targetHeadPart.height])
         if (splitFrame) {
           preparedGeometry ??= {
             artworkWidth: splitFrame.width, artworkHeight: splitFrame.height,
@@ -303,8 +310,14 @@ export async function prepareEditorV6HairMotionBundle(
             shapeScaleX: splitFrame.shapeScaleX, shapeScaleY: splitFrame.shapeScaleY
           }
           baseSurfaceId ??= addSurface(`${poseKey}:base`, canvasDataUrl(splitFrame.behindFace))
-          if (overlaySurfaceId === undefined) overlaySurfaceId = splitFrame.inFrontOfFace
-            ? addSurface(`${poseKey}:overlay`, canvasDataUrl(splitFrame.inFrontOfFace)) : null
+          if (!hasOverlaySurface) {
+            const overlayDataUrl = splitFrame.inFrontOfFace ? canvasDataUrl(splitFrame.inFrontOfFace) : null
+            overlaySurfacesByInput.set(faceSurfaceKey, overlayDataUrl ? addSurface(`${poseKey}:${faceRenderKey}:overlay`, overlayDataUrl) : null)
+          }
+          if (!hasEyesSurface) {
+            const eyesDataUrl = splitFrame.eyesAboveRearHair ? canvasDataUrl(splitFrame.eyesAboveRearHair) : null
+            eyesSurfacesByInput.set(faceSurfaceKey, eyesDataUrl ? addSurface(`${poseKey}:${faceRenderKey}:raised-eyes`, eyesDataUrl) : null)
+          }
         }
         if (!baseSurfaceId || !preparedGeometry) throw Error('A camada estática do personagem não foi preparada.')
         let faceSurfaceId = existingFaceSurfaceId
@@ -312,13 +325,15 @@ export async function prepareEditorV6HairMotionBundle(
           if (!splitFrame) throw Error('A camada do rosto não foi preparada.')
           groupStageStarted = performance.now()
           faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, canvasDataUrl(splitFrame.face))
-          faceSurfacesByInput.set(faceRenderKey, faceSurfaceId)
+          faceSurfacesByInput.set(faceSurfaceKey, faceSurfaceId)
           reportStage('serializeFaceSurface', groupStageStarted)
         }
+        const overlaySurfaceId = overlaySurfacesByInput.get(faceSurfaceKey) ?? null
+        const eyesAboveRearHairSurfaceId = eyesSurfacesByInput.get(faceSurfaceKey) ?? null
         rigs.push({
           elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
           poseSlot: character.customization.poseSlot ?? null,
-          baseSurfaceId, faceSurfaceId, overlaySurfaceId: overlaySurfaceId ?? null,
+          baseSurfaceId, faceSurfaceId, eyesAboveRearHairSurfaceId: eyesAboveRearHairSurfaceId ?? null, overlaySurfaceId: overlaySurfaceId ?? null,
           ...preparedGeometry,
           sourceCrop, sourceHead: { width: sourceHeadPart.width, height: sourceHeadPart.height },
           targetHead: { x: targetHeadPart.x, y: targetHeadPart.y, width: targetHeadPart.width, height: targetHeadPart.height, rotation: targetHeadPart.rotation },
@@ -386,6 +401,7 @@ export async function prepareEditorV6HairMotionBundle(
             frames: capture.frames,
             behindFaceDataUrl: canvasDataUrl(capture.behindFace),
             faceDataUrl: canvasDataUrl(capture.face),
+            eyesAboveRearHairDataUrl: capture.eyesAboveRearHair ? canvasDataUrl(capture.eyesAboveRearHair) : null,
             inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
           }
         }, {

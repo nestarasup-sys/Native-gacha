@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent, type CSSProperties } from 'react'
 import type { HairTransform, ModelPart } from '../../../../shared/fabricator'
 import type { HairAssetSide } from '../../../../shared/hairCategories'
-import { applyImageWarpBrush, createImageWarpMesh, drawImageWarp, imageWarpPadding, type ImageWarpMesh, type ImageWarpPoint } from './models/imageMeshWarp'
+import { applyImageWarpBrush, applyImageWarpSmoothBrush, createImageWarpMesh, drawImageWarp, imageWarpPadding, type ImageWarpMesh, type ImageWarpPoint } from './models/imageMeshWarp'
 import type { HairWorkspace } from '../../../../shared/fabricator'
 
 type HairAsset = NonNullable<HairWorkspace['front']>
@@ -16,6 +16,7 @@ type Props = {
   active: boolean
   radius: number
   strength: number
+  tool: 'deform' | 'smooth'
   disabled: boolean
   onReadyChange: (ready: boolean) => void
   onCommit: (result: { dataUrl: string; width: number; height: number }) => void
@@ -51,14 +52,14 @@ function reflectedDelta(delta: ImageWarpPoint, rotation: number, flipX: boolean)
   return { x: localX * cos - localY * sin, y: localX * sin + localY * cos }
 }
 
-export function HairDeformationPreview({ side, asset, transform, head, active, radius, strength, disabled, onReadyChange, onCommit, onError }: Props) {
+export function HairDeformationPreview({ side, asset, transform, head, active, radius, strength, tool, disabled, onReadyChange, onCommit, onError }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const cursorRef = useRef<HTMLDivElement>(null)
   const sessionRef = useRef<HairWarpSession | null>(null)
   const dragRef = useRef<HairWarpDrag | null>(null)
   const drawFrameRef = useRef<number | null>(null)
-  const propsRef = useRef({ asset, transform, head, radius, strength, onReadyChange, onCommit, onError })
-  propsRef.current = { asset, transform, head, radius, strength, onReadyChange, onCommit, onError }
+  const propsRef = useRef({ asset, transform, head, radius, strength, tool, onReadyChange, onCommit, onError })
+  propsRef.current = { asset, transform, head, radius, strength, tool, onReadyChange, onCommit, onError }
   const [ready, setReady] = useState(false)
 
   function setCursor(point: ImageWarpPoint | null) {
@@ -194,7 +195,8 @@ export function HairDeformationPreview({ side, asset, transform, head, active, r
       const to = { x: drag.last.x + delta.x * (step / steps), y: drag.last.y + delta.y * (step / steps) }
       const brushPoint = reflectedPoint(to, center, current.transform.rotation, Boolean(current.transform.flipX))
       const brushDelta = reflectedDelta({ x: to.x - from.x, y: to.y - from.y }, current.transform.rotation, Boolean(current.transform.flipX))
-      applyImageWarpBrush(session.mesh, session.image, sourceBounds, brushPoint, brushDelta, current.radius, current.strength / 100)
+      if (current.tool === 'smooth') applyImageWarpSmoothBrush(session.mesh, session.image, sourceBounds, brushPoint, current.radius, current.strength / 100)
+      else applyImageWarpBrush(session.mesh, session.image, sourceBounds, brushPoint, brushDelta, current.radius, current.strength / 100)
     }
     drag.last = point
     drag.changed = true
@@ -242,7 +244,7 @@ export function HairDeformationPreview({ side, asset, transform, head, active, r
 
   return <>
     <canvas ref={canvasRef} className={`hair-dev-piece hair-dev-piece-${side} hair-dev-warp-canvas`} width={1} height={1}
-      style={style} aria-label={`Deformar cabelo ${side}`} title={ready ? 'Arraste para deformar o cabelo' : 'Preparando a deformação…'}
+      style={style} aria-label={`${tool === 'smooth' ? 'Suavizar' : 'Deformar'} cabelo ${side}`} title={ready ? (tool === 'smooth' ? 'Arraste para suavizar a deformação' : 'Arraste para deformar o cabelo') : 'Preparando a deformação…'}
       onPointerDown={begin} onPointerMove={move} onPointerUp={(event) => finish(event)} onPointerCancel={(event) => finish(event, true)}
       onLostPointerCapture={(event) => finish(event, true)} onPointerLeave={() => { if (!dragRef.current) setCursor(null) }} />
     <div ref={cursorRef} className="hair-dev-warp-cursor" aria-hidden="true" />

@@ -1,8 +1,9 @@
 import { projectForOriginalPreview } from '../../../../../shared/fabricatorModelViews'
 import { useModelSourceRefresh } from '../models/useModelSourceRefresh'
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type PointerEvent as ReactPointerEvent } from 'react'
-import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
+import type { FaceComponentAsset, FaceComponentAssetSave, FaceComponentAssetSummary, FaceGuideSettings, FabricatorAssetColorMode, FabricatorProject, FabricatorSlotSummary, FaceTransform } from '../../../../../shared/fabricator'
 import { Icon } from '../../../ui/components/Icon'
+import { AssetColorModeToggle } from '../AssetColorModeToggle'
 import { usePreviewBackground } from '../../../ui/hooks/usePreviewBackground'
 import { normalizeEditableImageFile } from '../normalizeImage'
 import { defaultFaceGuide, useFaceGuides } from './useFaceGuides'
@@ -151,7 +152,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
     finally { setBusy(false) }
   }
 
-  async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name'>> & { defaultTransform?: Partial<FaceTransform> }) {
+  async function updateAsset(patch: Partial<Pick<FaceComponentAsset, 'name' | 'colorMode'>> & { defaultTransform?: Partial<FaceTransform> }) {
     if (!selected) return
     const storedAsset = detailsRef.current[selected.id] ?? selected
     const currentHead = headPart(model)
@@ -164,7 +165,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
     const next: FaceComponentAsset = currentHead && merged.kind === 'head-extra' ? { ...merged, defaultTransform: normalizeExtraTransform(merged, currentHead) } : merged
     detailsRef.current = { ...detailsRef.current, [next.id]: next }
     setDetails(detailsRef.current)
-    setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, updatedAt: next.updatedAt } : asset))
+    setAssets((current) => current.map((asset) => asset.id === next.id ? { ...asset, name: next.name, colorMode: next.colorMode, updatedAt: next.updatedAt } : asset))
     try {
       const { dataUrl, ...save } = next
       const queuedSave = saveQueueRef.current.catch(() => undefined).then(() => window.desktop.fabricator.saveFaceComponentAsset(next.modelSlot, save, dataUrl))
@@ -270,6 +271,7 @@ export function HeadExtrasWorkspace({ baseModelSlot }: { baseModelSlot: number }
       <aside className="face-components-controls"><header><strong>Ajuste da peça</strong></header>
         {selected && transform ? <>
           <label className="head-extra-name">Nome<input value={selected.name} disabled={busy} onChange={(event) => void updateAsset({ name: event.target.value })} /></label>
+          <AssetColorModeToggle value={selected.colorMode ?? 'fixed-palette'} disabled={busy} onChange={(colorMode: FabricatorAssetColorMode) => { if (selected.colorMode !== colorMode) void updateAsset({ colorMode }) }} />
           {([['x', 'Horizontal', transform.x / (head?.width ?? 1) * 100, 0, 100], ['y', 'Vertical', transform.y / (head?.height ?? 1) * 100, 0, 100], ['scaleX', 'Largura', selected.width * transform.scaleX / (head?.width ?? 1) * 100, 0, 200], ['scaleY', 'Altura', selected.height * transform.scaleY / (head?.height ?? 1) * 100, 0, 200], ['rotation', 'Rotação', transform.rotation, -180, 180]] as const).map(([key, label, value, min, max]) => <label className="head-extra-control" key={key}><span>{label}<output>{Math.round(clamp(value, min, max))}{key === 'rotation' ? '°' : '%'}</output></span><input type="range" min={min} max={max} step="1" value={clamp(value, min, max)} disabled={!head || busy} onChange={(event) => changeTransform(key, Number(event.target.value))} /></label>)}
           <button className="face-component-reset-transform" type="button" disabled={!head || busy} onClick={() => head && void updateAsset({ defaultTransform: initialExtraTransform(head, selected.width, selected.height) })}>Restaurar encaixe da peça</button>
         </> : <p className="head-extra-empty">Selecione ou importe uma peça para ajustar.</p>}

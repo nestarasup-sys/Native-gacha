@@ -26,6 +26,8 @@ export type EditorV6HairMotionRig = {
   poseSlot: number | null
   baseSurfaceId: string
   faceSurfaceId: string
+  /** Optional eye layer composited after posterior hair and before the fringe. */
+  eyesAboveRearHairSurfaceId?: string | null
   overlaySurfaceId: string | null
   artworkWidth: number
   artworkHeight: number
@@ -57,6 +59,7 @@ export type EditorV6HairMotionTransition = {
   endFrame: number
   behindFaceSurfaceId: string
   faceSurfaceId: string
+  eyesAboveRearHairSurfaceId?: string | null
   overlaySurfaceId: string | null
   faceAtlasSurfaceId: string | null
   frames: EditorV6HairMotionTransitionFrame[]
@@ -249,7 +252,8 @@ const layer = z.object({
   flipX: z.boolean(), phase: finite.min(-1000).max(1000)
 }).strict()
 const rig = z.object({
-  elementId: id, assetId: id, characterId: id, baseSurfaceId: id, faceSurfaceId: id, overlaySurfaceId: id.nullable(),
+  elementId: id, assetId: id, characterId: id, baseSurfaceId: id, faceSurfaceId: id,
+  eyesAboveRearHairSurfaceId: id.nullable().optional(), overlaySurfaceId: id.nullable(),
   poseSlot: z.number().int().nullable(),
   artworkWidth: dimension, artworkHeight: dimension, outputWidth: dimension, outputHeight: dimension,
   shapeScaleX: finite.positive().max(10), shapeScaleY: finite.positive().max(10),
@@ -268,7 +272,7 @@ const transitionFrame = z.object({
 }).strict()
 const transition = z.object({
   elementId: id, key: z.string().min(1).max(20_000), startFrame: finite.min(0).max(10_000_000), endFrame: finite.min(0).max(10_000_000),
-  behindFaceSurfaceId: id, faceSurfaceId: id, overlaySurfaceId: id.nullable(), faceAtlasSurfaceId: id.nullable(),
+  behindFaceSurfaceId: id, faceSurfaceId: id, eyesAboveRearHairSurfaceId: id.nullable().optional(), overlaySurfaceId: id.nullable(), faceAtlasSurfaceId: id.nullable(),
   frames: z.array(transitionFrame).min(1).max(16)
 }).strict().superRefine((value, context) => {
   if (value.endFrame <= value.startFrame) context.addIssue({ code: 'custom', message: 'Intervalo da transição do cabelo inválido.' })
@@ -324,7 +328,7 @@ export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotio
     const key = `${item.elementId}:${item.assetId}`
     if (rigKeys.has(key)) throw Error('A exportação contém um personagem repetido nas camadas de cabelo.')
     rigKeys.add(key)
-    if (!surfaces.has(item.baseSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId))) throw Error('A exportação não encontrou uma camada preparada do personagem.')
+    if (!surfaces.has(item.baseSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.eyesAboveRearHairSurfaceId && !surfaces.has(item.eyesAboveRearHairSurfaceId)) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId))) throw Error('A exportação não encontrou uma camada preparada do personagem.')
     if (item.layers.some(piece => !textures.has(piece.textureId))) throw Error('A exportação não encontrou uma imagem de cabelo preparada.')
     if (item.sourceCrop.left + item.sourceCrop.width > item.outputWidth + 1 || item.sourceCrop.top + item.sourceCrop.height > item.outputHeight + 1) throw Error('O enquadramento preparado do cabelo é inválido.')
   }
@@ -332,7 +336,7 @@ export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotio
     const key = `${item.elementId}:${item.key}`
     if (transitionKeys.has(key)) throw Error('A exportação contém uma transição de cabelo repetida.')
     transitionKeys.add(key)
-    if (!surfaces.has(item.behindFaceSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId)) || (item.faceAtlasSurfaceId && !surfaces.has(item.faceAtlasSurfaceId))) throw Error('A exportação não encontrou uma camada de pose sem cabelo.')
+    if (!surfaces.has(item.behindFaceSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.eyesAboveRearHairSurfaceId && !surfaces.has(item.eyesAboveRearHairSurfaceId)) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId)) || (item.faceAtlasSurfaceId && !surfaces.has(item.faceAtlasSurfaceId))) throw Error('A exportação não encontrou uma camada de pose sem cabelo.')
   }
   return { ...parsed, preset } as EditorV6HairMotionBundle
 }

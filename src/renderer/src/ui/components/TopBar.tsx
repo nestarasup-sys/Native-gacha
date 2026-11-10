@@ -6,15 +6,15 @@ import { flushPendingRendererWrites } from '../pendingPersistence'
 import { APPLICATION_ROUTES } from '../../../../shared/applicationRoutes'
 
 const sections = [
-  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
-  { label: 'EDITOR V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
-  { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box' },
-  { label: 'EDITOR V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
-  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
-  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
-  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },
-  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings' },
-  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box' }
+  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow', tone: 'rose' },
+  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message', tone: 'rose' },
+  { label: 'EDITOR V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles', tone: 'rose' },
+  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera', tone: 'light' },
+  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame', tone: 'light' },
+  { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box', tone: 'light' },
+  { label: 'EDITOR V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles', tone: 'light' },
+  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings', tone: 'dark' },
+  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box', tone: 'dark' }
 ] as const
 
 export function TopBar() {
@@ -45,7 +45,7 @@ export function TopBar() {
       <nav className="top-navigation" aria-label="Áreas do aplicativo">
         {sections.map((section) => (
           <NavLink
-            className={({ isActive }) => `top-nav-link${isActive ? ' active' : ''}`}
+            className={({ isActive }) => `top-nav-link ${section.tone}${isActive ? ' active' : ''}`}
             key={section.path}
             onClick={(event) => navigateAfterFlush(event, section.path)}
             to={section.path}

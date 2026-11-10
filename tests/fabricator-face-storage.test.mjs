@@ -87,6 +87,7 @@ test('conjunto legado de rosto continua salvando, carregando PNGs e aparecendo c
 test('catálogo facial atual e assets faciais mantêm manifestos, IDs e PNGs', async t => {
   const { storage } = await createFixture(t)
   const item = catalogItem()
+  item.colorMode = 'fixed-palette'
   await storage.writeFaceCatalogItem(1, item, [
     { id: 'sheet-eyes', dataUrl: png('new-sheet') },
     { id: 'eye-left', dataUrl: png('new-piece') }
@@ -94,20 +95,22 @@ test('catálogo facial atual e assets faciais mantêm manifestos, IDs e PNGs', a
   const loadedItem = await storage.readFaceCatalogItem(1, 'eyes-new')
   assert.equal(loadedItem.sheet.dataUrl, png('new-sheet'))
   assert.equal(loadedItem.pieces[0].dataUrl, png('new-piece'))
+  assert.equal(loadedItem.colorMode, 'fixed-palette')
   assert.deepEqual(await storage.listFaceCatalogItems(1), [{
     id: 'eyes-new', modelSlot: 1, category: 'eyes', name: 'Olhos novos',
-    updatedAt: item.updatedAt, pieceCount: 1
+    colorMode: 'fixed-palette', updatedAt: item.updatedAt, pieceCount: 1
   }])
 
   const asset = {
-    schemaVersion: 1, id: 'eye-piece', modelSlot: 1, kind: 'eye', name: 'Olho',
+    schemaVersion: 1, id: 'eye-piece', modelSlot: 1, kind: 'eye', name: 'Olho', colorMode: 'asset-colors',
     width: 8, height: 6, defaultTransform: transform(), updatedAt: item.updatedAt
   }
   await storage.writeFaceComponentAsset(1, asset, png('component-png'))
   assert.equal((await storage.readFaceComponentAsset(1, 'eye-piece')).dataUrl, png('component-png'))
+  assert.equal((await storage.readFaceComponentAsset(1, 'eye-piece')).colorMode, 'asset-colors')
   assert.deepEqual(await storage.listFaceComponentAssets(1, 'eye'), [{
     schemaVersion: 1, id: 'eye-piece', modelSlot: 1, kind: 'eye', name: 'Olho',
-    width: 8, height: 6, updatedAt: item.updatedAt
+    width: 8, height: 6, colorMode: 'asset-colors', updatedAt: item.updatedAt
   }])
 })
 
@@ -116,4 +119,13 @@ test('validação recusa slots e dimensões inválidos antes de publicar dados',
   await assert.rejects(storage.writeFaceSet(2, faceSet(), []), /Rosto inválido/)
   await assert.rejects(storage.writeFaceCatalogItem(1, catalogItem({ sheet: { ...sheet('eyes'), width: 0 } }), []), /Peça facial inválida/)
   assert.equal(await storage.readFaceSet(1, 'classic'), null)
+})
+
+test('catálogo facial aceita somente modos de cor suportados', async t => {
+  const { storage } = await createFixture(t)
+  await assert.rejects(storage.writeFaceCatalogItem(1, catalogItem({ colorMode: 'automatic' }), []), /Peça facial inválida/)
+  await assert.rejects(storage.writeFaceComponentAsset(1, {
+    schemaVersion: 1, id: 'bad-mode', modelSlot: 1, kind: 'eye', name: 'Olho', colorMode: 'automatic',
+    width: 8, height: 6, defaultTransform: transform(), updatedAt: '2026-10-29T00:00:00.000Z'
+  }, png('bad')), /Asset facial inválido/)
 })

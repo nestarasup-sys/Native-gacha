@@ -12,7 +12,7 @@ export const defaultCharacterColorOverrides: CharacterPaletteOverrides = {
   outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#55C5D4', detail: '#8C7BFF'
 }
 export const defaultCharacterHairColorOverrides = {
-  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2'
+  outline: '#2B2B2B', shadow: '#6B6B6B', base: '#A8A8A8', light: '#E2E2E2', detail: '#8C7BFF'
 } satisfies CharacterPaletteOverrides
 
 export function normalizeCharacterColorOverrides(colors?: CharacterColorOverrides | null): CharacterPaletteOverrides {
@@ -37,11 +37,19 @@ export function normalizeCharacterHairColorOverrides(colors?: CharacterColorOver
     shadow: current?.shadow ?? legacy?.fade ?? defaultCharacterHairColorOverrides.shadow,
     base: current?.base ?? defaultCharacterHairColorOverrides.base,
     light: current?.light ?? legacy?.highlight ?? defaultCharacterHairColorOverrides.light,
-    ...(current?.detail === undefined ? {} : { detail: current.detail })
+    detail: current?.detail ?? defaultCharacterHairColorOverrides.detail
   }
 }
 export function setCharacterHairColorRole(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterPaletteOverrides {
   return { ...normalizeCharacterHairColorOverrides(colors), [role]: value }
+}
+/** Stores one per-piece hair override without filling the other roles with palette defaults. */
+export function setCharacterHairColorRoleOverride(colors: CharacterColorOverrides | undefined, role: CharacterPaletteRole, value: string): CharacterColorOverrides {
+  const next = { ...colors } as CharacterColorOverrides & Record<string, string | undefined>
+  if (role === 'shadow') delete next.fade
+  if (role === 'light') delete next.highlight
+  next[role] = value
+  return next
 }
 export function hasStandardCharacterColorRoles(colors?: CharacterColorOverrides | null): boolean {
   return !!colors && ('shadow' in colors || 'light' in colors || 'detail' in colors)
@@ -150,6 +158,8 @@ export type CustomizerFaceAppearance = {
   eyebrowRightCatalogId?: string | null
   /** Character-only recoloring for each independently selected facial feature. */
   partColors?: Partial<Record<'eye-left' | 'eye-right' | 'brow-left' | 'brow-right', HairColorOverrides>>
+  /** Paints eyes, pupils and eye highlights above the posterior hair layer. */
+  eyesAboveRearHair?: boolean
   /** New single-image face assets selected independently for this character. */
   components?: Partial<Record<FaceComponentPartId, { assetId: string | null; transform?: FaceTransform; colors?: HairColorOverrides; manualColorRoles?: HairColorRole[] }>>
   /** Character-owned placement for pieces from catalog sheets. */

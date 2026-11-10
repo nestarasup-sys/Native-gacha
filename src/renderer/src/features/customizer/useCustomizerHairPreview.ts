@@ -23,13 +23,14 @@ export function useCustomizerHairPreview(deps: {
   highlight: string | null
   setHairDetails: Dispatch<SetStateAction<Record<string, HairStyle>>>
   setSelectedArtworkUrl: Dispatch<SetStateAction<string | null>>
-  setSelectedFrontHairUrl: Dispatch<SetStateAction<string | null>>
+  setSelectedPosteriorHairUrl: Dispatch<SetStateAction<string | null>>
+  setSelectedFringeUrl: Dispatch<SetStateAction<string | null>>
   setCatalogError: Dispatch<SetStateAction<string>>
 }) {
   const {
     characterId, artwork, source, hairAppearance, hairDetails, skinTone, headOverrides,
     previewExtent, zoom, highlight, setHairDetails, setSelectedArtworkUrl,
-    setSelectedFrontHairUrl, setCatalogError
+    setSelectedPosteriorHairUrl, setSelectedFringeUrl, setCatalogError
   } = deps
 
   useEffect(() => {
@@ -53,20 +54,22 @@ export function useCustomizerHairPreview(deps: {
 
       const maxSize = characterRenderSize(artwork.width, artwork.height, previewExtent.width, previewExtent.height, zoom, previewExtent.density)
       const appearance = hairAppearance?.modelSlot === source.slot ? hairAppearance : undefined
-      const [url, frontUrl] = await Promise.all([
+      const [url, posteriorHairUrl, fringeUrl] = await Promise.all([
         renderArtworkWithHair(artwork, source, backStyles, maxSize, skinTone, appearance, undefined, headOverrides, highlight),
-        renderFrontHairOverlay(artwork, source, frontStyles, maxSize, appearance, undefined, headOverrides, highlight)
+        renderFrontHairOverlay(artwork, source, posteriorStyles, maxSize, appearance, undefined, headOverrides, highlight),
+        renderFrontHairOverlay(artwork, source, fringeStyles, maxSize, appearance, undefined, headOverrides, highlight)
       ])
-      const [artworkReady, frontHairReady] = await Promise.all([preparePreviewImage(url), preparePreviewImage(frontUrl)])
-      if (!artworkReady || !frontHairReady) return
+      const ready = await Promise.all([preparePreviewImage(url), preparePreviewImage(posteriorHairUrl), preparePreviewImage(fringeUrl)])
+      if (!ready.every(Boolean)) return
       if (!cancelled) {
         setSelectedArtworkUrl(url)
-        setSelectedFrontHairUrl(frontUrl)
+        setSelectedPosteriorHairUrl(posteriorHairUrl)
+        setSelectedFringeUrl(fringeUrl)
       }
     })().catch((reason: unknown) => {
       if (!cancelled) setCatalogError(reason instanceof Error ? reason.message : 'Não foi possível montar o cabelo do personagem.')
     })
 
     return () => { cancelled = true }
-  }, [characterId, artwork, source, hairAppearance, hairDetails, skinTone, headOverrides, previewExtent, zoom, highlight, setHairDetails, setSelectedArtworkUrl, setSelectedFrontHairUrl, setCatalogError])
+  }, [characterId, artwork, source, hairAppearance, hairDetails, skinTone, headOverrides, previewExtent, zoom, highlight, setHairDetails, setSelectedArtworkUrl, setSelectedPosteriorHairUrl, setSelectedFringeUrl, setCatalogError])
 }

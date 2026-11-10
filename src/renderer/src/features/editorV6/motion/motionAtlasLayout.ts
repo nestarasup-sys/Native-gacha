@@ -7,6 +7,9 @@ export type MotionAtlasLayout = {
   ratio: number
 }
 
+/** Budget for one character transition atlas; leaves room for near-limit native layouts. */
+export const MAX_MOTION_ATLAS_PIXELS = 8_100_000
+
 /** Packs all samples into the safest native-resolution grid for their aspect ratio. */
 export function chooseMotionAtlasLayout(
   count: number,

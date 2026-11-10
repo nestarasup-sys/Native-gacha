@@ -7,9 +7,10 @@ import { HairMotionMesh } from './HairMotionMesh'
 import { hairAnimationGeometry } from './hairAnimationGeometry'
 import type { HairMotionSettings } from './hairMotionPhysics'
 import type { HairSide } from '../hairWorkspaceModel'
+import { loadAssetColorModeImage } from '../../../characters/assetColorMode'
 
 type Layer = { part: HairPartId; side: HairSide; asset: HairAsset; transform: HairTransform }
-type Preview = { dataUrl: string; overlayDataUrl?: string; width: number; height: number; artworkWidth: number; artworkHeight: number; scaleX: number; scaleY: number; sourceHead: ModelPart; targetHead: ModelPart; layers: Layer[] }
+type Preview = { dataUrl: string; overlayDataUrl?: string; eyesAboveRearHairDataUrl?: string; width: number; height: number; artworkWidth: number; artworkHeight: number; scaleX: number; scaleY: number; sourceHead: ModelPart; targetHead: ModelPart; layers: Layer[] }
 type Props = { character: CustomizerCharacter; physics: Omit<HairMotionSettings, 'enabled'>; enabled: Record<HairSide, boolean>; intensity: Record<HairSide, number>; playing: boolean; headX: MutableRefObject<number>; impulse: number; resetToken: number; position: { x: number; y: number }; zoom: number }
 
 export function HairAnimationCharacter({ character, physics, enabled, intensity, playing, headX, impulse, resetToken, position, zoom }: Props) {
@@ -19,7 +20,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
     let cancelled = false
     setPreview(null); setError('')
     void (async () => {
-      const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
+      const [{ prepareSavedCharacterRenderer }, { loadCharacterTintedImage, loadHairTintedImage, resolvedHairColors }] = await Promise.all([
         import('../../../characters/editorV6CharacterRenderer'), import('../../../characters/characterRenderer')
       ])
       if (cancelled) return
@@ -30,7 +31,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
       if (!sourceHead || !targetHead) throw new Error('O modelo deste personagem não tem uma cabeça disponível.')
       const hairless = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
       const renderer = await prepareSavedCharacterRenderer(hairless, { source: resolved.source, artwork: resolved.sourceArtwork })
-      let rendered: { dataUrl: string; overlayDataUrl?: string; width: number; height: number }
+      let rendered: { dataUrl: string; overlayDataUrl?: string; eyesAboveRearHairDataUrl?: string; width: number; height: number }
       try {
         if (cancelled) return
         const frame = await renderer.renderLayersToCanvas(undefined, undefined, undefined, 'idle')
@@ -46,7 +47,8 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
         }
         const dataUrl = draw([frame.behindFace, frame.face])
         const overlayDataUrl = frame.inFrontOfFace ? draw([frame.inFrontOfFace]) : undefined
-        rendered = { dataUrl, ...(overlayDataUrl ? { overlayDataUrl } : {}), width: canvas.width, height: canvas.height }
+        const eyesAboveRearHairDataUrl = frame.eyesAboveRearHair ? draw([frame.eyesAboveRearHair]) : undefined
+        rendered = { dataUrl, ...(overlayDataUrl ? { overlayDataUrl } : {}), ...(eyesAboveRearHairDataUrl ? { eyesAboveRearHairDataUrl } : {}), width: canvas.width, height: canvas.height }
         canvas.width = canvas.height = 1
       } finally { renderer.dispose() }
       if (cancelled) return
@@ -64,7 +66,7 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
         const colors = resolvedHairColors(appearance, part)
         let dataUrl = original.dataUrl
         if (Object.keys(colors).length) {
-          const image = await loadCharacterTintedImage(original.dataUrl, colors)
+          const image = await loadAssetColorModeImage(original.dataUrl, colors, style?.colorMode, 'fixed-palette', { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage })
           const canvas = document.createElement('canvas'); canvas.width = image.naturalWidth; canvas.height = image.naturalHeight
           const context = canvas.getContext('2d')
           if (!context) throw new Error('Não foi possível aplicar as cores do cabelo.')
@@ -83,10 +85,20 @@ export function HairAnimationCharacter({ character, physics, enabled, intensity,
   const { sourceHead, targetHead } = preview
   const artworkStyle: CSSProperties = { width: `${preview.artworkWidth / preview.width * 100}%`, height: `${preview.artworkHeight / preview.height * 100}%`, transform: `translate(-50%, -50%) scale(${preview.scaleX}, ${preview.scaleY})` }
   const headStyle: CSSProperties = { left: `${targetHead.x / preview.artworkWidth * 100}%`, top: `${targetHead.y / preview.artworkHeight * 100}%`, width: `${targetHead.width / preview.artworkWidth * 100}%`, height: `${targetHead.height / preview.artworkHeight * 100}%`, transform: `rotate(${targetHead.rotation}deg)` }
-  const layersFor = (back: boolean) => preview.layers.filter((layer) => (layer.side === 'back') === back).map((layer, index) => <div key={`${layer.part}:${index}`} className="hair-animation-piece" style={{ ...hairAnimationGeometry(sourceHead, layer.asset, layer.transform), zIndex: index + 1 }}><HairMotionMesh source={layer.asset.dataUrl} name={`cabelo ${layer.part}`} settings={{ ...physics, enabled: enabled[layer.side] }} intensity={intensity[layer.side]} playing={playing} headX={headX} impulse={impulse} resetToken={resetToken} phase={index * 1.2 + (back ? 0 : 1.2)} flipped={Boolean(layer.transform.flipX)} /></div>)
-  const artwork = (back: boolean) => <div className={`hair-animation-character-artwork ${back ? 'back' : 'front'}`} style={artworkStyle}><div className="hair-animation-character-head" style={headStyle}>{layersFor(back)}</div></div>
+  const backLayers = preview.layers.filter((layer) => layer.side === 'back')
+  const frontLayers = preview.layers.filter((layer) => layer.side !== 'back')
+  const layersFor = (layers: Layer[]) => layers.map((layer, index) => {
+    const phaseIndex = layer.side === 'back' ? backLayers.indexOf(layer) : frontLayers.indexOf(layer)
+    return <div key={`${layer.part}:${index}`} className="hair-animation-piece" style={{ ...hairAnimationGeometry(sourceHead, layer.asset, layer.transform), zIndex: index + 1 }}><HairMotionMesh source={layer.asset.dataUrl} name={`cabelo ${layer.part}`} settings={{ ...physics, enabled: enabled[layer.side] }} intensity={intensity[layer.side]} playing={playing} headX={headX} impulse={impulse} resetToken={resetToken} phase={phaseIndex * 1.2 + (layer.side === 'back' ? 0 : 1.2)} flipped={Boolean(layer.transform.flipX)} /></div>
+  })
+  const artwork = (layerClass: 'back' | 'posterior' | 'front', layers: Layer[]) => <div className={`hair-animation-character-artwork ${layerClass}`} style={artworkStyle}><div className="hair-animation-character-head" style={headStyle}>{layersFor(layers)}</div></div>
   return <div className="hair-animation-character" style={{ aspectRatio: `${preview.width} / ${preview.height}`, transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})` }}>
-    {artwork(true)}<img className="hair-animation-character-image" src={preview.dataUrl} alt={`Personagem ${character.name}`} draggable={false} />{artwork(false)}{preview.overlayDataUrl && <img className="hair-animation-character-overlay" src={preview.overlayDataUrl} alt="" draggable={false} />}
+    {artwork('back', backLayers)}
+    <img className="hair-animation-character-image" src={preview.dataUrl} alt={`Personagem ${character.name}`} draggable={false} />
+    {artwork('posterior', frontLayers.filter((layer) => layer.part === 'rearHair'))}
+    {preview.eyesAboveRearHairDataUrl && <img className="hair-animation-character-eyes" src={preview.eyesAboveRearHairDataUrl} alt="" draggable={false} />}
+    {artwork('front', frontLayers.filter((layer) => layer.part !== 'rearHair'))}
+    {preview.overlayDataUrl && <img className="hair-animation-character-overlay" src={preview.overlayDataUrl} alt="" draggable={false} />}
     {!preview.layers.length && <div className="hair-animation-overlay">Este personagem não tem cabelo selecionado no Customizador.</div>}
   </div>
 }

@@ -1,9 +1,20 @@
 import type { HairStyle, HairStyleSummary } from '../../../../shared/fabricator'
-import type { HairPartId } from '../../../../shared/customizer'
+import type { CharacterGender, HairPartId } from '../../../../shared/customizer'
 import { hairStyleSupportsCategory } from '../../../../shared/hairCategories.ts'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems.ts'
 
 export const CUSTOMIZER_HAIR_LIBRARY_PAGE_SIZE = 20
+
+/** Old hair sets without a gender tag remain available to every character. */
+export function filterCustomizerHairStylesByGender(
+  summaries: readonly HairStyleSummary[],
+  gender: CharacterGender,
+  showOtherGender: boolean
+): HairStyleSummary[] {
+  return summaries.filter((summary) => summary.gender === undefined
+    || summary.gender === gender
+    || showOtherGender)
+}
 
 export function getCustomizerHairLibraryPage(
   summaries: readonly HairStyleSummary[],

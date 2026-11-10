@@ -8,6 +8,8 @@ import {
   upperWardrobePanels,
   upperWardrobePageTwoPanels,
   accessoryWardrobePanels,
+  torsoAccessoryWardrobePanels,
+  emptyWardrobePanelSlotNumbers,
   lowerWardrobePanels,
   lowerWardrobePageTwoPanels,
   createWardrobePanelCandidateIndex,
@@ -28,6 +30,70 @@ const set = (id, category) => ({
   height: 10,
   components: [{ id: `${id}-component`, name: id, category, attachedPartId: 'body', x: 0, y: 0, width: 10, height: 10, rotation: 0, dataUrl: 'data:image/png;base64,AA==' }],
   updatedAt: '2026-10-29T00:00:00.000Z'
+})
+
+test('sem permitir o outro gênero, oculta só as camisas opostas e mantém calças, mangas e peças antigas', () => {
+  const component = (id, category, attachedPartId = 'body', sleeveSide, sleeveSegment) => ({
+    id, name: id, category, attachedPartId, ...(sleeveSide ? { sleeveSide } : {}), ...(sleeveSegment ? { sleeveSegment } : {}),
+    x: 0, y: 0, width: 10, height: 10, rotation: 0, dataUrl: 'data:image/png;base64,AA=='
+  })
+  const createSet = (id, previewGender) => ({
+    schemaVersion: 1,
+    edition: 1,
+    id,
+    modelSlot: 1,
+    modelName: 'Modelo',
+    name: id,
+    width: 20,
+    height: 20,
+    components: [
+      component(`${id}-shirt`, 'camisa'),
+      component(`${id}-pants`, 'calca-coxa'),
+      component(`${id}-sleeve`, 'manga-superior', 'braço esquerdo', 'left', 'upper')
+    ],
+    updatedAt: '2026-10-29T00:00:00.000Z',
+    ...(previewGender ? { previewGender } : {})
+  })
+  const sets = [createSet('male-set', 'male'), createSet('female-set', 'female'), createSet('legacy-set')]
+  const summaries = sets.map((item) => ({ ...summary(item.id), ...(item.previewGender ? { previewGender: item.previewGender } : {}) }))
+  const panels = [upperWardrobePanels[0], upperWardrobePanels[2], lowerWardrobePanels[0]]
+  const getCandidates = (gender, showOtherGender) => createWardrobePanelCandidateIndex({
+    panels,
+    selectedModelSlot: 1,
+    wardrobeSets: summaries,
+    wardrobeDetails: Object.fromEntries(sets.map((item) => [`1:${item.id}`, item])),
+    faceComponentAssets: [],
+    faceComponentDetails: {},
+    wardrobeGenderFilter: { gender, showOtherGender }
+  })
+  const ids = (index, panel) => index.get(panel)?.map((candidate) => candidate.summary.id)
+  const forFemale = getCandidates('female', false)
+  const forMale = getCandidates('male', false)
+
+  assert.deepEqual(ids(forFemale, 'shirt'), ['female-set', 'legacy-set'])
+  assert.deepEqual(ids(forFemale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forFemale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'shirt'), ['male-set'])
+  assert.deepEqual(ids(forMale, 'pants-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(forMale, 'upper-left'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(getCandidates('male', true), 'shirt'), ['male-set', 'female-set', 'legacy-set'])
+  assert.deepEqual(ids(getCandidates('female', true), 'shirt'), ['male-set', 'female-set', 'legacy-set'])
+})
+
+test('controle de roupas usa o checkbox do gênero oposto em Modelos', async () => {
+  const [picker, page, importFlow] = await Promise.all([
+    readFile('src/renderer/src/features/customizer/CustomizerModelPicker.tsx', 'utf8'),
+    readFile('src/renderer/src/features/customizer/CustomizerPage.tsx', 'utf8'),
+    readFile('src/renderer/src/features/fabricator/wardrobe/useWardrobeSheetEditing.ts', 'utf8')
+  ])
+
+  const checkboxPosition = picker.indexOf('Mostrar roupas {oppositeGenderClothesLabel}?')
+  assert.ok(checkboxPosition > picker.indexOf('customizer-model-gender-band'))
+  assert.match(picker, /showOtherGenderClothes/)
+  assert.match(page, /showOtherGenderClothes=\{showOtherGenderClothes\}/)
+  assert.match(page, /onShowOtherGenderClothesChange=\{\(show\) => \{ setShowOtherGenderClothes\(show\); setWardrobeLibraryPage\(0\) \}\}/)
+  assert.match(page, /wardrobeGenderFilter: \{ gender: selectedCharacterGender, showOtherGender: showOtherGenderClothes \}/)
+  assert.equal((importFlow.match(/previewGender: 'female'/g) ?? []).length, 3)
 })
 
 test('carrega todos os conjuntos com concorrência limitada e publica os detalhes progressivamente', async () => {
@@ -106,6 +172,7 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
     ...upperWardrobePanels,
     ...upperWardrobePageTwoPanels,
     ...accessoryWardrobePanels,
+    ...torsoAccessoryWardrobePanels,
     ...lowerWardrobePanels,
     ...lowerWardrobePageTwoPanels
   ]
@@ -264,6 +331,31 @@ test('índice de candidatos preserva filtros, ordem e agrupamento de cada painel
   assert.equal(shoeGroups[0].renderBehindShinClothing, undefined)
   assert.equal(index.get('glasses')?.[0]?.headExtraAsset?.id, faceAsset.id)
   assert.equal(index.get('shirt')?.some((candidate) => candidate.summary.modelSlot === 2), false)
+})
+
+test('acessórios de tronco ficam no cartão próprio da aba Acessórios', () => {
+  const panel = torsoAccessoryWardrobePanels[0]
+  const beltSet = {
+    id: 'torso-accessories', modelSlot: 1, modelName: 'Modelo', name: 'Acessórios', width: 20, height: 20,
+    components: [{ id: 'belt', name: 'Cinto e acessório', category: 'cinto', attachedPartId: 'hip', x: 0, y: 0, width: 10, height: 5, rotation: 0, dataUrl: 'data:image/png;base64,AA==' }],
+    updatedAt: '2026-10-29T00:00:00.000Z'
+  }
+  const index = createWardrobePanelCandidateIndex({
+    panels: torsoAccessoryWardrobePanels,
+    selectedModelSlot: 1,
+    wardrobeSets: [{ ...summary(beltSet.id), componentCount: 1 }],
+    wardrobeDetails: { '1:torso-accessories': beltSet },
+    faceComponentAssets: [],
+    faceComponentDetails: {}
+  })
+
+  assert.equal(panel.label, 'Cinto e acessório')
+  assert.equal(panel.category, 'cinto')
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(1), [2, 3, 4, 5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(4), [5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(0), [1, 2, 3, 4, 5, 6])
+  assert.deepEqual(emptyWardrobePanelSlotNumbers(6), [])
+  assert.deepEqual(index.get(panel.id)?.map((candidate) => candidate.component.id), ['belt'])
 })
 
 test('prévia da roupa desenha todas as partes agrupadas no mesmo candidato', async () => {

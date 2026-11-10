@@ -2,7 +2,7 @@
  * Os PNGs continuam fontes permanentes do Fabricador DEV; nenhuma escrita aqui.
  */
 import type { FaceComponentAsset, FaceComponentAssetSummary, WardrobeCategory, WardrobeSet, WardrobeSetSummary } from '../../../../shared/fabricator'
-import type { CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
+import type { CharacterGender, CustomizerFaceAppearance, CustomizerWardrobeGroup, CustomizerWardrobePaletteKey } from '../../../../shared/customizer'
 import type { ClothingGroupCategory } from '../../characters/characterRenderer'
 
 export type WardrobePanel = { id: CustomizerWardrobePaletteKey; label: string; category: ClothingGroupCategory; side: 'left' | 'right' | null; source?: WardrobeCategory[] }
@@ -18,13 +18,22 @@ export const upperWardrobePageTwoPanels: WardrobePanel[] = [
   { id: 'gloves-left', label: 'Luvas esquerda', category: 'luvas', side: 'left' },
   { id: 'gloves-right', label: 'Luvas direita', category: 'luvas', side: 'right' },
   { id: 'cape', label: 'Capa', category: 'capa', side: null },
-  { id: 'belt', label: 'Cinto', category: 'cinto', side: null },
   { id: 'skirt', label: 'Saia superior', category: 'saia-superior', side: null, source: ['saia'] }
 ]
 export const accessoryWardrobePanels: WardrobePanel[] = [
   { id: 'glasses', label: 'Óculos', category: 'oculos', side: null },
   { id: 'head-accessory', label: 'Acessório de cabeça', category: 'acessorio-cabeca', side: null }
 ]
+/** Torso accessories have their own Roupas > Acessórios slot, separate from head extras. */
+export const torsoAccessoryWardrobePanels: WardrobePanel[] = [
+  { id: 'belt', label: 'Cinto e acessório', category: 'cinto', side: null }
+]
+
+/** Empty visual slots keep each wardrobe grid at six cards without creating selectable pieces. */
+export function emptyWardrobePanelSlotNumbers(panelCount: number): number[] {
+  const occupied = Number.isFinite(panelCount) ? Math.max(0, Math.floor(panelCount)) : 0
+  return Array.from({ length: Math.max(0, 6 - occupied) }, (_, index) => occupied + index + 1)
+}
 export const lowerWardrobePanels: WardrobePanel[] = [
   { id: 'pants-left', label: 'Calça', category: 'calca', side: null, source: ['calca-coxa', 'calca-canela'] },
   { id: 'shorts-right', label: 'Bermuda', category: 'calca', side: null, source: ['shorts'] },
@@ -176,6 +185,18 @@ export function wardrobePanelGroupMatchesComponent(
 }
 
 export type WardrobePanelCandidate = { summary: WardrobeSetSummary; set: WardrobeSet; component: WardrobeSet['components'][number]; components: WardrobeSet['components']; pairedComponents?: WardrobeSet['components']; headExtraAsset?: FaceComponentAsset }
+export type WardrobePanelGenderFilter = { gender: CharacterGender; showOtherGender: boolean }
+
+function wardrobePanelComponentMatchesGender(
+  summary: WardrobeSetSummary,
+  component: WardrobeSet['components'][number],
+  genderFilter: WardrobePanelGenderFilter | undefined
+): boolean {
+  if (!genderFilter || component.category !== 'camisa' || genderFilter.showOtherGender) return true
+  // Roupas DEV opens untagged legacy sets as female, so shirts follow that same default.
+  const setGender = summary.previewGender === 'male' ? 'male' : 'female'
+  return setGender === genderFilter.gender
+}
 
 export function wardrobePanelCandidates(
   panel: WardrobePanel,
@@ -183,7 +204,8 @@ export function wardrobePanelCandidates(
   wardrobeSets: WardrobeSetSummary[],
   wardrobeDetails: Record<string, WardrobeSet>,
   faceComponentAssets: FaceComponentAssetSummary[],
-  faceComponentDetails: Record<string, FaceComponentAsset>
+  faceComponentDetails: Record<string, FaceComponentAsset>,
+  genderFilter?: WardrobePanelGenderFilter
 ): WardrobePanelCandidate[] {
   const wardrobeCandidates = wardrobeSets
     .filter((summary) => summary.modelSlot === selectedModelSlot)
@@ -191,6 +213,7 @@ export function wardrobePanelCandidates(
       const set = wardrobeDetails[`${summary.modelSlot}:${summary.id}`]
       if (!set) return []
       const components = wardrobeComponentsForPanel(set, panel)
+        .filter((component) => wardrobePanelComponentMatchesGender(summary, component, genderFilter))
       if (!components.length) return []
       if (isSleeveUpperPanel(panel)) {
         return components
@@ -248,8 +271,8 @@ export function wardrobePanelCandidates(
       const asset = faceComponentDetails[summary.id]
       if (!asset || asset.kind !== 'head-extra') return []
       const component: WardrobeSet['components'][number] = { id: asset.id, name: asset.name, category: 'oculos', attachedPartId: 'head', x: 0, y: 0, width: asset.width, height: asset.height, rotation: asset.defaultTransform.rotation, dataUrl: asset.dataUrl }
-      const set: WardrobeSet = { schemaVersion: 1, edition: 2, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
-      const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
+      const set: WardrobeSet = { schemaVersion: 1, edition: 2, colorMode: asset.colorMode, id: `head-extra:${asset.id}`, modelSlot: summary.modelSlot, modelName: '', name: asset.name, width: asset.width, height: asset.height, components: [component], updatedAt: asset.updatedAt }
+      const wardrobeSummary: WardrobeSetSummary = { id: set.id, modelSlot: set.modelSlot, modelName: set.modelName, name: set.name, ...(set.colorMode ? { colorMode: set.colorMode } : {}), updatedAt: set.updatedAt, edition: 2, componentCount: 1 }
       return [{ summary: wardrobeSummary, set, component, components: [component], headExtraAsset: asset }]
     })
   return [...headExtraCandidates, ...wardrobeCandidates]
@@ -261,7 +284,8 @@ export function createWardrobePanelCandidateIndex({
   wardrobeSets,
   wardrobeDetails,
   faceComponentAssets,
-  faceComponentDetails
+  faceComponentDetails,
+  wardrobeGenderFilter
 }: {
   panels: readonly WardrobePanel[]
   selectedModelSlot: number | null
@@ -269,6 +293,7 @@ export function createWardrobePanelCandidateIndex({
   wardrobeDetails: Record<string, WardrobeSet>
   faceComponentAssets: FaceComponentAssetSummary[]
   faceComponentDetails: Record<string, FaceComponentAsset>
+  wardrobeGenderFilter?: WardrobePanelGenderFilter
 }): ReadonlyMap<WardrobePanel['id'], readonly WardrobePanelCandidate[]> {
   const index = new Map<WardrobePanel['id'], readonly WardrobePanelCandidate[]>()
   for (const panel of panels) {
@@ -278,7 +303,8 @@ export function createWardrobePanelCandidateIndex({
       wardrobeSets,
       wardrobeDetails,
       faceComponentAssets,
-      faceComponentDetails
+      faceComponentDetails,
+      wardrobeGenderFilter
     ))
   }
   return index

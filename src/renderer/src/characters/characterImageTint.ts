@@ -55,12 +55,12 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
     return { low: percentile(0.01), high: percentile(0.98), hue: hueIndex * 15 + 7.5, hasAccent: chromatic > count * 0.03 }
   }
 
-  function hairPixelColorRole(red: number, green: number, blue: number, profile: ReturnType<typeof hairImageColorProfile>, legacyAccent = false): HairColorRole {
+  function hairPixelColorRole(red: number, green: number, blue: number, profile: ReturnType<typeof hairImageColorProfile>, accentEnabled = false): HairColorRole {
     const luminance = red * 0.2126 + green * 0.7152 + blue * 0.0722
     const maximum = Math.max(red, green, blue)
     const saturation = maximum === 0 ? 0 : (maximum - Math.min(red, green, blue)) / maximum
     const hueDistance = Math.abs(hairHue(red, green, blue) - profile.hue)
-    if (legacyAccent && profile.hasAccent && saturation > 0.3 && Math.min(hueDistance, 360 - hueDistance) > 48 && luminance > 35) return 'accent'
+    if (accentEnabled && profile.hasAccent && saturation > 0.3 && Math.min(hueDistance, 360 - hueDistance) > 48 && luminance > 35) return 'accent'
     const range = profile.high - profile.low
     if (range < 18) return 'base'
     const position = (luminance - profile.low) / range
@@ -138,17 +138,18 @@ export function createCharacterImageTint(loadCachedImage: CharacterImageLoader) 
       }
       if (parsed.size === 0) return sourceImage
       const profile = hairImageColorProfile(pixels)
+      const accentEnabled = parsed.has('accent')
       const luminanceTotals: Record<HairColorRole, number> = { base: 0, fade: 0, outline: 0, highlight: 0, accent: 0 }
       const roleCounts: Record<HairColorRole, number> = { base: 0, fade: 0, outline: 0, highlight: 0, accent: 0 }
       for (let offset = 0; offset < pixels.length; offset += 4) {
         if (pixels[offset + 3] < 160) continue
-        const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile, parsed.has('accent') && !parsed.has('base'))
+        const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile, accentEnabled)
         luminanceTotals[role] += pixels[offset] * 0.2126 + pixels[offset + 1] * 0.7152 + pixels[offset + 2] * 0.0722
         roleCounts[role] += 1
       }
       for (let offset = 0; offset < pixels.length; offset += 4) {
         if (pixels[offset + 3] === 0) continue
-        const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile, parsed.has('accent') && !parsed.has('base'))
+        const role = hairPixelColorRole(pixels[offset], pixels[offset + 1], pixels[offset + 2], profile, accentEnabled)
         const target = parsed.get(role)
         if (!target) continue
         const red = pixels[offset]

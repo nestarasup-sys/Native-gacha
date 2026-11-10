@@ -81,11 +81,11 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
             <option value="uncategorized">Sem categoria</option>
             {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
           </select></label>
-          <p className="base-videos-export-count">{entries.length} vídeo{entries.length === 1 ? '' : 's'} incluído{entries.length === 1 ? '' : 's'}{categoryId === 'all' ? ', entre vídeos publicados e rascunhos.' : '.'}</p>
+          <p className="base-videos-export-count">{entries.length} vídeo{entries.length === 1 ? '' : 's'} publicado{entries.length === 1 ? '' : 's'} com descrição principal incluído{entries.length === 1 ? '' : 's'}.</p>
           {error && <p className="base-videos-export-error" role="alert">{error}</p>}
           <footer><button type="button" disabled={exporting} onClick={onClose}>Cancelar</button><button className="primary" type="button" disabled={exporting || !entries.length} onClick={() => void exportData()}>{exporting ? 'Preparando…' : 'Exportar TXT'}</button></footer>
         </div>
-        <aside className="base-videos-export-info"><span className="base-videos-export-info-icon">i</span><h3>Sobre este export</h3><strong>Dados simples (.txt)</strong><p>Gera um arquivo de texto organizado para consulta e preparação de roteiros. Você pode exportar todos os vídeos ou somente os de uma categoria.</p><ul><li>Descrição e duração do vídeo</li><li>Tempos da cena e das reações</li><li>Categoria e linha do tempo</li><li>Contexto adicional para IA</li></ul><small>Os vídeos sem número aparecem como rascunhos. O arquivo não inclui a mídia dos vídeos.</small></aside>
+        <aside className="base-videos-export-info"><span className="base-videos-export-info-icon">i</span><h3>Sobre este export</h3><strong>Dados simples (.txt)</strong><p>Gera um arquivo de texto organizado para consulta e preparação de roteiros. Você pode exportar todos os vídeos ou somente os de uma categoria.</p><ul><li>Descrição e duração do vídeo</li><li>Tempos da cena e das reações</li><li>Categoria e linha do tempo</li><li>Contexto adicional para IA</li></ul><small>Somente vídeos publicados com descrição principal preenchida entram no TXT. O arquivo não inclui a mídia dos vídeos.</small></aside>
       </div>
     </section>
   </div>

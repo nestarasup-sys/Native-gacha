@@ -16,6 +16,8 @@ import { drawBodyJointBridgePair, findBodyJointBridgePairs } from './bodyJointBr
 import type { BodyJointBridgePair } from './bodyJointBridge'
 import { resolveShoeBehindShinPlacement } from './wardrobeShoeLayering'
 import { findWardrobeBridgePairs } from './wardrobeBridgePairs'
+import { loadAssetColorModeImage } from './assetColorMode'
+import type { HairColorOverrides } from '../../../shared/customizer'
 
 export type ClothingGroupCategory = CustomizerWardrobeCategory
 export type SelectedWardrobeComponent = { modelSlot: number; setId: string; category: ClothingGroupCategory; componentId: string }
@@ -24,6 +26,7 @@ export type AdjustmentPreviewHighlight = { scope: 'head'; id: string } | { scope
 export type CharacterWardrobeImageLoaders = {
   loadCachedImage: (source: string | CanvasImageSource) => Promise<HTMLImageElement>
   loadCharacterTintedImage: (source: string, overrides: CharacterColorOverrides | undefined) => Promise<HTMLImageElement>
+  loadHairTintedImage: (source: string, overrides: HairColorOverrides | undefined) => Promise<HTMLImageElement>
   loadSkinTintedImage: (source: string, tone: string) => Promise<HTMLImageElement>
   loadModelBodyTintedImage: (source: string, skinTone?: string, outlineColor?: string, fakeContours?: ModelSkinContourStroke[]) => Promise<HTMLImageElement>
 }
@@ -45,7 +48,8 @@ type MappedWardrobeJointBridge = {
 }
 
 export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageLoaders) {
-  const { loadCachedImage, loadCharacterTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
+  const { loadCachedImage, loadCharacterTintedImage, loadHairTintedImage, loadSkinTintedImage, loadModelBodyTintedImage } = loaders
+  const colorLoaders = { fixedPalette: loadCharacterTintedImage, assetColors: loadHairTintedImage }
   const clothingCategories: Record<'Superior' | 'Inferior', Array<{ id: ClothingGroupCategory; label: string; source: WardrobeCategory[] }>> = {
     Superior: [
       { id: 'camisa', label: 'Camisas', source: ['camisa'] },
@@ -110,11 +114,12 @@ export function createCharacterWardrobeRenderer(loaders: CharacterWardrobeImageL
     const mappedGarments: MappedWardrobeGarment[] = []
     const imagePromises = new Map<string, Promise<HTMLImageElement>>()
     const loadGarmentImage = (garment: Pick<MappedWardrobeGarment, 'group' | 'component'>) => {
-      const key = `${garment.component.id}:${garment.group.modelSlot}:${garment.group.setId}:${JSON.stringify(garment.group.colors ?? null)}`
+      const set = renderDetails[`${garment.group.modelSlot}:${garment.group.setId}`]
+      const key = `${garment.component.id}:${garment.group.modelSlot}:${garment.group.setId}:${set?.colorMode ?? 'fixed-palette'}:${JSON.stringify(garment.group.colors ?? null)}`
       let image = imagePromises.get(key)
       if (!image) {
         image = garment.group.colors
-          ? loadCharacterTintedImage(garment.component.dataUrl, garment.group.colors)
+          ? loadAssetColorModeImage(garment.component.dataUrl, garment.group.colors, set?.colorMode, 'fixed-palette', colorLoaders)
           : loadCachedImage(garment.component.dataUrl)
         imagePromises.set(key, image)
       }

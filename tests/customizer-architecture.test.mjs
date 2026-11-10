@@ -49,11 +49,29 @@ test('as duas telas do Customizador usam uma única superfície de prévia', asy
 
   const layers = [
     'customizer-selected-artwork', 'customizer-wardrobe-overlay', 'customizer-face-overlay',
-    'customizer-front-hair-overlay', 'customizer-wardrobe-above-hair-overlay'
+    'customizer-posterior-hair-overlay', 'customizer-eyes-above-rear-hair-overlay',
+    'customizer-fringe-overlay', 'customizer-wardrobe-above-hair-overlay'
   ]
   const layerOffsets = layers.map((layer) => surface.indexOf(layer))
   assert.ok(layerOffsets.every((offset) => offset >= 0))
   assert.deepEqual(layerOffsets, [...layerOffsets].sort((left, right) => left - right))
+})
+
+test('customizer preview separates raised eyes between posterior hair and fringe', async () => {
+  const [facePreview, faceHook, hairHook, styles] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/customizerFacePreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/useCustomizerFacePreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/useCustomizerHairPreview.ts', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/ui/styles.css', import.meta.url), 'utf8')
+  ])
+  assert.match(facePreview, /appearance\.eyesAboveRearHair \? document\.createElement\('canvas'\)/)
+  assert.match(facePreview, /eyesAboveRearHairContext \?\? undefined/)
+  assert.match(faceHook, /setSelectedEyesAboveRearHairUrl\(eyesAboveRearHairUrl\)/)
+  assert.match(hairHook, /setSelectedPosteriorHairUrl\(posteriorHairUrl\)/)
+  assert.match(hairHook, /setSelectedFringeUrl\(fringeUrl\)/)
+  assert.match(styles, /customizer-posterior-hair-overlay[^\n]*z-index:4/)
+  assert.match(styles, /customizer-eyes-above-rear-hair-overlay[^\n]*z-index:5/)
+  assert.match(styles, /customizer-fringe-overlay[^\n]*z-index:6/)
 })
 
 test('workspace facial de catálogo fica isolado da página e gravação via callbacks', async () => {
@@ -69,6 +87,21 @@ test('workspace facial de catálogo fica isolado da página e gravação via cal
   assert.match(workspace, /onSelectPage/)
   assert.match(workspace, /onNoseOpacityChange/)
   assert.match(workspace, /customizer-face-layout-catalog/)
+})
+
+test('cartão de olhos expõe e salva a preferência de camada acima do cabelo posterior', async () => {
+  const [page, workspace] = await Promise.all([
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerPage.tsx', import.meta.url), 'utf8'),
+    readFile(new URL('../src/renderer/src/features/customizer/CustomizerFaceAssemblyWorkspace.tsx', import.meta.url), 'utf8')
+  ])
+  assert.match(page, /<CustomizerFaceAssemblyWorkspace\b/)
+  assert.match(page, /onSetVariant=\{setFaceCatalogVariant\}/)
+  assert.match(workspace, /customizer-face-eye-layer-toggle/)
+  assert.match(workspace, /checked=\{Boolean\(appearance\?\.eyesAboveRearHair\)\}/)
+  assert.match(workspace, /onSetVariant\(\{ eyesAboveRearHair: event\.target\.checked \}\)/)
+  assert.match(workspace, /part\.id === 'eye-left' && renderEyeLayerToggle\(\)/)
+  assert.match(workspace, /<span>Olhos \+ pupilas ↑<\/span>/)
+  assert.doesNotMatch(workspace, /renderEyeLayerToggle\(\)\}\{renderParts\(\)/)
 })
 
 test('workspace de cabelos fica isolado e recebe dados e ações pela página', async () => {
@@ -113,6 +146,11 @@ test('validador aceita formato atual e rejeita id, slot, cor ou pose inválidos'
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, gender: 'unknown' } }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, faceAppearance: null } }), false)
   assert.equal(isValidCustomizerFaceAppearance(null), false)
+  const faceWithEyes = { modelSlot: 1, eyeCatalogId: 'eyes-1', eyeState: 0, eyebrows: true, noseIndex: 0, expressionIndex: 0, mouthOpen: false }
+  assert.equal(isValidCustomizerFaceAppearance(faceWithEyes), true, 'A ausência da nova preferência mantém os personagens existentes compatíveis')
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: true }), true)
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: false }), true)
+  assert.equal(isValidCustomizerFaceAppearance({ ...faceWithEyes, eyesAboveRearHair: 'yes' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), id: '../../escape' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), hair: 'red' }), false)
   assert.equal(isCustomizerCharacter({ ...valid(), customization: { ...valid().customization, modelSlot: 11 } }), false)
