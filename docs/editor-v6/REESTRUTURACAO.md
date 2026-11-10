@@ -36,7 +36,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 ## Sequência de ciclos
 
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
-2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
+2. **Projeções de cena e seleção — mapeadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios; verificar seleção de bloco, estado no playhead, snapshot-base e assets associados.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais:** separar renderização, crop anterior, bake de variantes e agendamento do preview da gravação no documento; manter os contratos atuais.
 5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
@@ -105,3 +105,13 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** 28 testes Vitest e 17 testes Node focados passaram; cenários cobrem merge de transforms, preview do bloco selecionado, fallback do playhead e elementos que não são personagens. `npm run typecheck`, typecheck explícito dos testes novos, `npm run audit:architecture` (721 arquivos), `npm run build` e `git diff --check` passaram.
 
 **Limite:** a validação cobre comando, seleção de bloco e fluxo do preview; não foi feito export com projeto real, pois a worktree segue sem `app-data`.
+
+### Ciclo 6 — seleção do Inspector (verificado)
+
+**Mudança:** `editorV6Selection.ts` já isolava esta regra; foram adicionados testes diretos para suas prioridades e dados retornados, sem alterar o comportamento.
+
+**Cobertura:** bloco selecionado compatível tem prioridade; sem correspondência, usa-se o estado do playhead; depois vêm elementos visíveis e snapshot-base. Também foram cobertos personagem visível, seleção de mídia de vídeo, asset de fundo e ausência de projeto.
+
+**Observação:** a timeline mantém o último estado de personagem após o fim do último bloco; a fixture reflete esse contrato, sem tratar o estado como clip expirado.
+
+**Verificação:** 12 testes Vitest passaram junto com as regressões de transform facial e arraste do palco; o typecheck explícito da nova fixture passou.
