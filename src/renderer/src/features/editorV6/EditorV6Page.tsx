@@ -8,6 +8,7 @@ import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
 import { EditorV6ToolRail } from './EditorV6ToolRail'
+import { EditorV6Inspector } from './EditorV6Inspector'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -50,7 +51,6 @@ import { createEditorV6FaceTransformCommands } from './editorV6FaceTransformComm
 import { createEditorV6CharacterAppearanceCommands } from './editorV6CharacterAppearanceCommands'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
-import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor } from '../../ui/sceneEditorDefaults'
@@ -738,10 +738,13 @@ export function EditorV6Page() {
             <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><EditorV6PlaybackScene project={activeEditorV6} selectedId={selectedElementId ?? selectedTimelineBlockId} interaction={fullView ? undefined : sceneInteraction} playing={isPlaying} fullView={fullView} /></Profiler>
             {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
             {!fullView && <span className="studio-scene-title">{activeEditorV6.title}</span>}
-            {!fullView && inspectorOpen && <aside className={`studio-inspector studio-inspector-${inspectorSide}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
-              <header className="studio-inspector-tabs"><button className={inspectorTab === 'editor' ? 'active' : ''} onClick={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }} type="button">Editor</button><button className={inspectorTab === 'custom' && inspectorCustomView === 'face' ? 'active' : ''} onClick={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }} type="button">Custom</button><button className="studio-inspector-close" onClick={() => setInspectorOpen(false)} aria-label="Fechar inspector" title="Fechar" type="button">×</button></header>
-              <button className={`studio-inspector-presets${inspectorTab === 'custom' && inspectorCustomView === 'presets' ? ' active' : ''}`} onClick={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }} type="button"><Icon name="sparkles" />Presets</button>
-              {inspectorTab === 'editor' ? <div className="studio-inspector-content">{propertyPanel()}</div> : <div className="studio-inspector-content">{inspectorCustomView === 'presets' ? <EditorV6PresetPanel
+            {!fullView && inspectorOpen && <EditorV6Inspector
+              side={inspectorSide}
+              tab={inspectorTab}
+              customView={inspectorCustomView}
+              editorPanel={inspectorTab === 'editor' ? propertyPanel() : null}
+              facePanel={inspectorTab === 'custom' && inspectorCustomView === 'face' ? customPanel() : null}
+              presetsPanel={inspectorTab === 'custom' && inspectorCustomView === 'presets' ? <EditorV6PresetPanel
                 characterAvailable={Boolean(selectedEditorV6Character)} element={selectedElement} category={editorV6PresetCategory}
                 onCategoryChange={setEditorV6PresetCategory} poseSlots={editorV6PoseSlots} poseThumbnails={editorV6PoseThumbnails}
                 poseDimensions={editorV6PoseDimensions} selectedPoseSlot={selectedEditorV6PoseSlot} faceBusy={editorV6FaceBusy}
@@ -753,8 +756,12 @@ export function EditorV6Page() {
                 onCollectionSelect={(id) => { if (selectedElement?.kind === 'character') updateElement(selectedElement.id, { activeExpressionCollectionId: id }); setEditorV6ExpressionCollectionMenuOpen(false) }}
                 presets={editorV6ExpressionPresets} onApplyBaseExpression={() => { void applyEditorV6BaseExpression() }}
                 onApplyExpressionPreset={(preset, gaze) => { void applyEditorV6ExpressionPreset(preset, gaze) }}
-              /> : customPanel()}</div>}
-            </aside>}
+              /> : null}
+              onSelectEditor={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }}
+              onSelectCustom={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }}
+              onSelectPresets={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }}
+              onClose={() => setInspectorOpen(false)}
+            />}
           </div>
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><SceneCastPanel

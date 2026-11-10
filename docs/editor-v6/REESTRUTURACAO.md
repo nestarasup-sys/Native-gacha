@@ -272,3 +272,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos classes e rótulos, ação de voltar/salvar, atalhos de histórico, seleção de ferramenta, disponibilidade de fala/pensamento, condição de exportação, indicadores e ocultação em tela cheia. Os callbacks continuam ligados aos comandos e estados originais da página.
 
 **Verificação:** 3 testes Vitest da barra e 4 da biblioteca de projetos passaram, cobrindo modo de tela cheia, personagem selecionado, ferramenta ativa, estados e mensagens. `npm run typecheck`, `npm run audit:architecture` (738 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 26 — estrutura visual do inspector (implementado e verificado)
+
+**Objetivo:** extrair o contêiner das abas do inspector para `EditorV6Inspector.tsx`. O componente só organiza as abas Editor, Custom e Presets e recebe os painéis como conteúdo; seleção atual, persistência da aba, presets e ações continuam sob responsabilidade da página.
+
+**Compatibilidade:** mantidos posicionamento adaptativo, prevenção de propagação do ponteiro para o canvas, estado ativo das abas, seleção da categoria de expressão ao abrir Presets e restauração da visualização personalizada do personagem.
+
+**Verificação:** 3 novos testes do inspector e 7 testes de regressão da barra e biblioteca de projetos passaram. `npm run typecheck`, `npm run audit:architecture` (739 arquivos), `npm run build` e `git diff --check` passaram.
