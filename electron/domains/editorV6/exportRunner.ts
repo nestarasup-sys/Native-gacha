@@ -10,12 +10,13 @@ import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6Mo
 import { prepareExportMotions } from './prepareMotions'
 import { prepareExportMouthLoops } from './prepareMouthLoops'
 import { editorV6ExportTestSettings, type EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
-import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
+import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
 import { createEditorV6ExportTempFolder, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
+import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
@@ -26,14 +27,9 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
   const result = await runExportCommand(ffprobe, ['-v', 'error', ...countArgs, '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
   return JSON.parse(result.stdout) as MediaProbe
 }
-type TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs'
-type TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
-type FrameTimingReport = Partial<Record<TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
-type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
+type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: EditorV6FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-type ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
-type ExportPhaseTimings = Record<ExportPhase, number>
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: EditorV6ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: (project: EditorV6Document, part: EditorV6ExportPart, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => Promise<EditorV6FrameWorker>
@@ -62,43 +58,6 @@ export async function publishEditorV6Output(candidate: string, requestedPath: st
   }
 }
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
-function addPhaseTime(report: EditorV6ExportReport, phase: ExportPhase, started: number) {
-  report.phaseMilliseconds[phase] = Math.round((report.phaseMilliseconds[phase] + performance.now() - started) * 100) / 100
-}
-const TIMING_BUCKET_MS = .1
-const TIMING_BUCKETS = 2001
-function newTimingAccumulators(): Record<TimingPhase, TimingAccumulator> {
-  return Object.fromEntries((['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'captureMs', 'paintWaitMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const).map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as Record<TimingPhase, TimingAccumulator>
-}
-function recordTiming(accumulators: Record<TimingPhase, TimingAccumulator>, phase: TimingPhase, milliseconds: number) {
-  if (!Number.isFinite(milliseconds) || milliseconds <= 0) return
-  const stats = accumulators[phase], bucket = Math.min(TIMING_BUCKETS - 1, Math.floor(milliseconds / TIMING_BUCKET_MS))
-  stats.count++; stats.totalMs += milliseconds; stats.maxMs = Math.max(stats.maxMs, milliseconds); stats.histogram[bucket]++
-}
-function summarizeTimings(accumulators: Record<TimingPhase, TimingAccumulator>): FrameTimingReport {
-  const report: FrameTimingReport = {}
-  for (const [phase, stats] of Object.entries(accumulators) as Array<[TimingPhase, TimingAccumulator]>) {
-    if (!stats.count) continue
-    const percentile = (fraction: number) => {
-      const target = Math.ceil(stats.count * fraction)
-      let accumulated = 0
-      for (let bucket = 0; bucket < stats.histogram.length; bucket++) {
-        accumulated += stats.histogram[bucket]
-        if (accumulated >= target) return Number((bucket * TIMING_BUCKET_MS).toFixed(1))
-      }
-      return 0
-    }
-    report[phase] = { samples: stats.count, totalMs: Math.round(stats.totalMs * 100) / 100, p50Ms: percentile(.5) as number, p95Ms: percentile(.95) as number, maxMs: Math.round(stats.maxMs * 100) / 100 }
-  }
-  return report
-}
-function addFrameMetrics(target: EditorV6FrameMetrics, values: EditorV6FrameMetrics | undefined) {
-  if (!values) return
-  for (const [metric, value] of Object.entries(values) as Array<[keyof EditorV6FrameMetrics, number]>) {
-    if (!Number.isSafeInteger(value) || value < 0) continue
-    target[metric] = (target[metric] ?? 0) + value
-  }
-}
 const x264Preset = () => {
   const stressX264Presets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']
   const candidate = process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET
@@ -160,7 +119,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   try {
     folder = await createEditorV6ExportTempFolder(deps.tempRoot)
   } catch (error) {
-    addPhaseTime(report, 'temporarySetup', temporarySetupStarted)
+    addEditorV6PhaseTime(report, 'temporarySetup', temporarySetupStarted)
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'
     report.error = message(error)
     report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
@@ -168,7 +127,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     catch (reportError) { throw new AggregateError([error, reportError], 'Falha ao preparar o export e salvar seu relatório.') }
     throw error
   }
-  addPhaseTime(report, 'temporarySetup', temporarySetupStarted)
+  addEditorV6PhaseTime(report, 'temporarySetup', temporarySetupStarted)
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
   let characters: CustomizerCharacter[] = []
@@ -178,7 +137,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       await runExportCommand(deps.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=30', '-frames:v', '1', ...encodingArgs(encoder, 1), '-an', '-f', 'null', '-'], deps.signal)
       report.encoderTests.push({ encoder }); return true
     } catch (error) { deps.signal.throwIfAborted(); report.encoderTests.push({ encoder, error: message(error) }); return false }
-    finally { addPhaseTime(report, 'encoderProbe', probeStarted) }
+    finally { addEditorV6PhaseTime(report, 'encoderProbe', probeStarted) }
   }
   const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<PartReport[]> => {
     const began = performance.now(), controller = new AbortController(), abort = () => controller.abort(deps.signal.reason)
@@ -226,7 +185,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       // All part jobs use this process's monotonic clock, so offsets expose
       // actual overlap without adding per-frame trace traffic to the renderer.
       const result: PartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - started }
-      const timingAccumulators = newTimingAccumulators()
+      const timingAccumulators = createEditorV6TimingAccumulators()
       const frameMetrics: EditorV6FrameMetrics = {}
       let worker: EditorV6FrameWorker | undefined
       let process: ReturnType<typeof spawnExportProcess> | undefined
@@ -255,35 +214,35 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         if (process.child.pid) deps.onFfmpegProcessStarted?.(process.child.pid)
         const workerStarted = performance.now()
         worker = await deps.createWorker(renderProject, part, controller.signal, layeredVideo, mouthLoops)
-        recordTiming(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
+        recordEditorV6Timing(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
         let bitmap: Buffer | undefined
         for (let frame = part.startFrame; frame < part.endFrame; frame++) {
           controller.signal.throwIfAborted()
           const frameStarted = performance.now()
           const rendered = await worker.frame(frame)
-          recordTiming(timingAccumulators, 'frameRoundTripMs', performance.now() - frameStarted)
-          for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[TimingPhase, number]>) recordTiming(timingAccumulators, phase, milliseconds)
-          addFrameMetrics(frameMetrics, rendered.metrics)
+          recordEditorV6Timing(timingAccumulators, 'frameRoundTripMs', performance.now() - frameStarted)
+          for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[EditorV6TimingPhase, number]>) recordEditorV6Timing(timingAccumulators, phase, milliseconds)
+          addEditorV6FrameMetrics(frameMetrics, rendered.metrics)
           if (rendered.reused && bitmap) result.reused++
           else { if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.'); bitmap = rendered.bitmap; result.rendered++ }
           const writeStarted = performance.now()
           await waitForExport(new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap!, (error) => error ? reject(error) : resolve())), controller.signal, 60000, 'enviar quadro ao FFmpeg')
-          recordTiming(timingAccumulators, 'ffmpegWriteMs', performance.now() - writeStarted)
+          recordEditorV6Timing(timingAccumulators, 'ffmpegWriteMs', performance.now() - writeStarted)
           result.frames++; done++
           deps.progress({ frames: done })
         }
         const finalizeStarted = performance.now()
         process.child.stdin.end()
         await waitForExport(process.done, controller.signal, 120000, 'finalizar parte')
-        recordTiming(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
+        recordEditorV6Timing(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
         result.probe = await probeExportMedia(deps.ffprobe, path, controller.signal)
         if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')
         result.milliseconds = performance.now() - beganPart
         result.finishedAtOffsetMs = performance.now() - started
-        result.frameTiming = summarizeTimings(timingAccumulators)
+        result.frameTiming = summarizeEditorV6Timings(timingAccumulators)
         if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics
         return result
-      } catch (error) { result.frameTiming = summarizeTimings(timingAccumulators); if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics; controller.abort(error); throw error }
+      } catch (error) { result.frameTiming = summarizeEditorV6Timings(timingAccumulators); if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics; controller.abort(error); throw error }
       finally {
         result.finishedAtOffsetMs ??= performance.now() - started
         worker?.close(); if (process?.child.exitCode === null) process.child.kill(); await process?.done.catch(() => {})
@@ -303,7 +262,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     } catch (error) { attempt.error = message(error); throw error }
     finally {
       attempt.milliseconds = performance.now() - began
-      addPhaseTime(report, 'rendering', began)
+      addEditorV6PhaseTime(report, 'rendering', began)
       deps.signal.removeEventListener('abort', abort)
     }
   }
@@ -320,7 +279,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     report.hairPreparation = deps.hairPreparation
     const characterLoadStarted = performance.now()
     try { characters = await deps.getCharacters() }
-    finally { addPhaseTime(report, 'characterLoading', characterLoadStarted) }
+    finally { addEditorV6PhaseTime(report, 'characterLoading', characterLoadStarted) }
     const motionPreparationStarted = performance.now()
     const cacheBefore = deps.getMotionCacheStats?.()
     const cacheInputSamples: NonNullable<EditorV6ExportReport['motionCache']>['inputSamples'] = []
@@ -340,7 +299,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
             deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
           }
         })
-      } finally { addPhaseTime(report, 'motionPreparation', motionPreparationStarted) }
+      } finally { addEditorV6PhaseTime(report, 'motionPreparation', motionPreparationStarted) }
     })()
     project = prepared.project
     report.motionTransitionsRequired = prepared.stats.total
@@ -437,7 +396,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     const finishMeasured = async (parts: PartReport[]) => {
       const finalizationStarted = performance.now()
       try { return await finish(parts) }
-      finally { addPhaseTime(report, 'finalization', finalizationStarted) }
+      finally { addEditorV6PhaseTime(report, 'finalization', finalizationStarted) }
     }
     try {
       const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo ? 2 : 1
@@ -464,7 +423,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     const publicationStarted = performance.now()
     let publication: Awaited<ReturnType<typeof publishEditorV6Output>>
     try { publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id) }
-    finally { addPhaseTime(report, 'publication', publicationStarted) }
+    finally { addEditorV6PhaseTime(report, 'publication', publicationStarted) }
     report.outputPath = publication.outputPath
     report.deliveryWarning = [report.deliveryWarning, publication.warning].filter(Boolean).join(' ') || undefined
     published = true

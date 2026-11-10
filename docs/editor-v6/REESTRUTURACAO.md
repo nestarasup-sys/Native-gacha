@@ -224,3 +224,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade e proteção:** preservados o prefixo `editor-v6-export-`, o arquivo `.tmp` exclusivo, a publicação atômica do relatório, a tolerância a candidato já removido e o limite de remoção recursiva pela raiz/prefixo. O candidato MP4 segue sendo o caminho oculto e exclusivo calculado para aquele job, ao lado do destino escolhido. A agregação de erro, o aviso após publicação e os estados do job continuam no runner.
 
 **Verificação:** 5 testes Node com diretórios temporários sintéticos cobrem criação, substituição atômica, limpeza após falha no rename, comportamento de `ENOENT` e recusa de caminhos fora da raiz/prefixo. Mais 22 testes Vitest de runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (733 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 real foi gerado.
+
+### Ciclo 20 — métricas e tempos da exportação (implementado e verificado)
+
+**Mudança:** criada `electron/domains/editorV6/exportMetrics.ts` para acumular histogramas de latência por fase, resumir p50/p95/máximo, somar contadores de quadros e registrar duração das fases principais. `exportRunner.ts` continua definindo quando cada amostra começa e termina e compondo o relatório.
+
+**Compatibilidade:** preservados bucket de 0,1 ms até 200 ms, tratamento de amostras não positivas/não finitas, contagem e arredondamento, métricas de quadro aceitas e valores `phaseMilliseconds` do relatório. As métricas locais de PNG que não fazem parte do tipo compartilhado seguem suportadas no relatório do runner; não houve alteração de IPC ou schema.
+
+**Verificação:** 3 testes Node sintéticos cobrem histogramas/percentis e limite dos buckets, filtros dos contadores e acumulação do tempo de fase. Mais 22 testes Vitest do runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (734 arquivos), `npm run build` e `git diff --check` passaram. Não foi executado export MP4.
