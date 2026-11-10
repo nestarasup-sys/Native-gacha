@@ -200,3 +200,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a captura continua acontecendo depois do flush, no playhead atual e em 1920×1080 PNG. O tracker de operações continua cobrindo tanto a geração quanto a abertura; erros de flush, renderer e IPC continuam apresentados na página. Nenhum canal, caminho persistido ou formato de projeto foi alterado.
 
 **Verificação:** 5 testes Node focados passaram, incluindo ordem flush/captura/gravação, resolução e MIME, falha antes de salvar, ausência de projeto e erro ao abrir a pasta. `npm run typecheck`, `npm run audit:architecture` (730 arquivos), `npm run build` e `git diff --check` passaram. Os testes usam projeto sintético; nenhuma mídia de `app-data` foi lida.
+
+### Ciclo 17 — saída segura do projeto (implementado e verificado)
+
+**Mudança:** criada `editorV6ProjectExit.ts` para coordenar o flush de todas as operações pendentes antes de pausar o playback e limpar o estado de projeto, ferramenta, seleção e visualização cheia. A página permanece dona dos setters e da navegação visual.
+
+**Compatibilidade e proteção:** continua usando `flushEditorV6Writes`, que drena operações pendentes e gravações do documento. Se o flush falhar, o projeto continua aberto e a causa é mostrada; os estados só são limpos depois do sucesso. Não houve mudança na persistência ou nos dados salvos.
+
+**Verificação:** 14 testes Node passaram para saída, criação e exclusão, cobrindo ordem de flush, falhas e preservação do projeto ativo. `npm run typecheck`, `npm run audit:architecture` (731 arquivos), `npm run build` e `git diff --check` passaram. A verificação usa projeto sintético.

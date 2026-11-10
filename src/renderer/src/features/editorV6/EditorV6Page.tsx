@@ -18,6 +18,7 @@ import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { createEditorV6ProjectDeletionCommand } from './editorV6ProjectDeletion'
 import { createEditorV6PrintCommands } from './editorV6PrintCommands'
+import { createEditorV6ProjectExitCommand } from './editorV6ProjectExit'
 import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
@@ -582,17 +583,15 @@ export function EditorV6Page() {
     await deleteProject(target)
   }
 
-  const leaveStudio = async () => {
-    try { await flushEditorV6Writes() } catch (reason) {
-      setError(reason instanceof Error ? `Não foi possível sair do projeto porque o salvamento falhou: ${reason.message}` : 'Não foi possível sair do projeto porque o salvamento falhou.')
-      return
-    }
-    pausePlayback()
-    setActiveEditorV6Id(null)
-    setActiveTool(null)
-    setSelectedElementId(null)
-    setFullView(false)
-  }
+  const leaveStudio = createEditorV6ProjectExitCommand({
+    flushWrites: flushEditorV6Writes,
+    pausePlayback,
+    clearActiveProject: () => setActiveEditorV6Id(null),
+    clearActiveTool: () => setActiveTool(null),
+    clearSelection: () => setSelectedElementId(null),
+    exitFullView: () => setFullView(false),
+    setError
+  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
