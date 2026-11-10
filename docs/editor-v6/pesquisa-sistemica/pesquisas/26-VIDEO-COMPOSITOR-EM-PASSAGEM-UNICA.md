@@ -8,6 +8,8 @@
 
 No export completo de referência, renderização ocupou 48,43s dos 76,34s de clique→MP4. Os relatórios existentes não separam o desenho de cada camada. Foi adicionada instrumentação opcional `backgroundDrawMs`/`foregroundDrawMs`, sem mudar pixels nem ordem de operações. No smoke frio de 150 quadros (um vídeo, áudio presente), passou 150/150 e validou MP4; registrou 8 amostras de cada draw, 1 captura de fundo (36,48ms agregados) e 8 capturas de frente (515,99ms). Os draws somaram 71,62ms no fundo e 216,40ms na frente. Isso prova reuso do fundo nesse trecho, mas uma única janela não permite extrapolar os tempos ou frequências ao projeto completo. `ffmpegWriteMs` continua incluindo espera de pipe e não isola CPU de composição.
 
+O export integral frio com a instrumentação passou 2.394/2.394 quadros e validou MP4, 4 entradas de vídeo e áudio em **80,43s** (Main 71,76s; Motion 17,14s; rendering 51,60s). Referência anterior: 76,34s; são amostras únicas e não equivalentes no tempo do host, portanto não atribuir diferença à instrumentação. O relatório contou 456 draws/capturas de foreground e só 8 captures de background. Tempos agregados foreground: draw 6,68s e capture 23,68s; background: draw 1,87s e capture 0,31s. No conjunto, capture 23,99s, dos quais `capturePage` 16,54s e conversão/cópia 4,41s. São tempos concorrentes agregados por workers, não parede. Isso reduz a hipótese de captura duplicada: o fundo quase sempre reutiliza pixels, enquanto a frente é a candidata que merece validação.
+
 ## Oportunidade estrutural
 
 Investigar se uma composição final no renderer reduz o custo total, mas primeiro medir as capturas realmente evitadas. O FFmpeg poderia continuar responsável por encoder, áudio/mux e fallback. Como o fundo pode ser reutilizado entre quadros, a passagem única talvez reduza draws mesmo quando não reduz capturas; o ganho não pode ser presumido. Outra variante é manter o FFmpeg como compositor e otimizar a captura frontal sem alterar o contrato de camada.
@@ -16,9 +18,9 @@ Esse é um candidato de arquitetura, ainda não uma otimização demonstrada. De
 
 ## Próximo ciclo falsificável
 
-1. A instrumentação agregada de draw/capture foi implementada; coletar as novas métricas numa janela que cruze os quatro intervalos de vídeo e trechos estáticos. Limitar dados a contadores/tempos por parte; não registrar frames nem assets.
-2. Só iniciar um protótipo se as medições demonstrarem custo evitável. O candidato deverá produzir, no mesmo estado de frame, a imagem atual e a nova; comparar RGBA antes do encoder para quadros com cada vídeo, transições, cabelo, texto, alpha e bordas de clipe.
-3. Só depois do golden passar, executar primeiro smoke de 30–150 quadros com áudio e FFprobe. Rodar export completo frio apenas se o smoke reduzir parede/captura de modo claro e não alterar pixels.
+1. Criar um diagnóstico somente opt-in que, para o mesmo frame e árvore já desenhada, compare a bitmap de `paint-event` com `capturePage`; armazenar hash, quantidade de pixels diferentes e contadores, sem frames persistentes. Cobrir quadros estáticos, mudanças de face/cabelo e bordas de cada vídeo.
+2. Se paridade exata falhar, localizar se a divergência vem de crop/token, alpha, superfície stale ou scheduling; não promover `paint-event`. Se passar, executar smoke frio de 30–150 quadros com áudio/FFprobe e comparar tempo total, não apenas captura.
+3. Só iniciar o compositor de passagem única se o smoke produzir uma redução clara e preservação RGBA. Rodar export integral frio depois; exigir 2.394 quadros, todos os vídeos/áudios, mux, cancelamento e fallback.
 4. Preservar FFmpeg/x264 como caminho de produção e rollback até a exportação integral validar 2.394 quadros, todos os vídeos e áudios, mux, cancelamento e fallback. Não persistir MP4, textura, frames, atlas ou cache entre exportações.
 
 ## Relação com testes existentes

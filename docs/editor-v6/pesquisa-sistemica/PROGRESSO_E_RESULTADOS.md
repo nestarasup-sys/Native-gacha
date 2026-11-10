@@ -312,3 +312,10 @@ Os relatórios integrais colocam preparação Motion no Main em aproximadamente 
 - Verificação: `npm run typecheck`, `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportWorkers.test.ts` (8/8) e `npm run build` passaram. Smoke frio de 150/150 quadros, 1 vídeo, áudio e MP4 validado também passou.
 - Smoke reportou background: 8 draws (71,62ms agregado), 1 capture (36,48ms); foreground: 8 draws (216,40ms), 8 captures (515,99ms). Métricas agregadas de workers, sem atribuição de parede; o trecho de 5s não representa a timeline toda.
 - Corrigida a hipótese na Pesquisa 26: o produto já reutiliza camadas e não faz duas capturas por quadro incondicionalmente. Próximo teste deve cruzar intervalos variados e usar os contadores para estimar somente o trabalho evitável. O artefato do smoke contém apenas JSON pequeno; MP4 e perfil isolado foram apagados pelo harness.
+
+### Export integral com perfil de captura por camada — 10/11/2026
+
+- Uma exportação fria de 2.394 quadros passou: 4 vídeos, 4 clipes/faixas de áudio no projeto, saída H.264 `libx264` ultrafast/8 threads, projeto 1080p30 com cabelo posterior ativo. MP4 foi validado; relatório `out/editor-v6-stress/runs/target30-instrumented-full/stress-export-validation.json` (0,05 MiB; nenhuma mídia ou perfil temporário permaneceu).
+- Clique→MP4 validado **80,43s**, Main 71,76s, preparo de cabelo 8,26s, Motion 17,14s, render 51,60s e finalização 2,84s. A referência melhor arquivada é 76,34s; uma amostra em cada condição, sem conclusão causal.
+- No render integral: 456 amostras de foreground draw (6,68s agregado) e capture (23,68s); 456 amostras background draw (1,87s), mas apenas 8 capturas (0,31s). Captura total 23,99s, composta por 16,54s em `capturePage` e 4,41s em conversão/cópia. Valores agregam workers concorrentes e não são soma de parede.
+- Oportunidade: reduzir o custo de captura frontal pode remover trabalho mensurável, mas sozinha não demonstrou capacidade de alcançar 30s. `paint-event` continua sem equivalência RGBA completa; comparar ambos os caminhos no mesmo frame/estado é o próximo teste de baixo custo. Manter `capturePage` padrão até essa validação.
