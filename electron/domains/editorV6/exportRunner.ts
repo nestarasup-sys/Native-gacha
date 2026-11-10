@@ -12,8 +12,9 @@ import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import { createEditorV6ExportExecutionPlan, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES } from './exportPlanning'
-import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
-import { createEditorV6ExportReportContext, type EditorV6ExportAttemptReport, type EditorV6ExportReport } from './exportReport'
+import type { EditorV6ExportPartReport } from './exportPartRenderer'
+import { renderEditorV6ExportAttempt, type EditorV6ExportPartWorkerFactory } from './exportAttemptRenderer'
+import { createEditorV6ExportReportContext, type EditorV6ExportReport } from './exportReport'
 import { createEditorV6EncoderProbe, selectEditorV6ExportEncoder, selectEditorV6FallbackEncoder } from './exportEncoderSelection'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6PhaseTime } from './exportMetrics'
@@ -25,7 +26,7 @@ export type { MediaProbe } from './exportMediaProbe'
 export type { EditorV6ExportReport } from './exportReport'
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
-  createWorker: Parameters<typeof renderEditorV6ExportPart>[0]['createWorker']
+  createWorker: EditorV6ExportPartWorkerFactory
   getCharacters: () => Promise<CustomizerCharacter[]>
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   motionPreparationConcurrency?: 1 | 2 | 3
@@ -63,79 +64,31 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   let published = false
   let characters: CustomizerCharacter[] = []
   const testEncoder = createEditorV6EncoderProbe({ ffmpeg: deps.ffmpeg, signal: deps.signal, report })
-  const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<EditorV6ExportPartReport[]> => {
-    const began = performance.now(), controller = new AbortController(), abort = () => controller.abort(deps.signal.reason)
-    deps.signal.addEventListener('abort', abort, { once: true })
-    if (deps.signal.aborted) abort()
-    const parallelism = Math.max(1, Math.min(maxParallelism, parts.length))
-    const attempt: EditorV6ExportAttemptReport = { parts: [], encoder, parallelism }
-    report.attempts.push(attempt)
-    let done = 0
-    const mouthStats = { states: 0, characterIds: new Set<string>(), isolatedStates: 0, legacyPatchStates: 0, skipped: 0, skippedStale: 0, atlasBytes: 0, atlasPixels: 0, preparationMilliseconds: 0, details: new Set<string>() }
-    report.mouthAnimation = undefined
-    const publishMouthStats = () => {
-      report.mouthAnimation = { stateAtlases: mouthStats.states, characters: mouthStats.characterIds.size, isolatedStates: mouthStats.isolatedStates, legacyPatchStates: mouthStats.legacyPatchStates, skippedStates: mouthStats.skipped, staleStates: mouthStats.skippedStale, cycleFrames: options.mouthLoopCycleFrames ?? 30, atlasBytes: mouthStats.atlasBytes, atlasPixels: mouthStats.atlasPixels, preparationMilliseconds: mouthStats.preparationMilliseconds, details: [...mouthStats.details].slice(0, 3) }
-    }
-    deps.progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism > 1 ? `Renderizando até ${parallelism} trechos em paralelo…` : 'Renderizando um trecho por vez…', fallback: report.fallback })
-    const renderPart = (part: EditorV6ExportPart) => renderEditorV6ExportPart({
-      project,
-      part,
-      attemptNumber: report.attempts.length,
-      attemptPartCount: parts.length,
-      exportStartedAt: started,
-      encoder,
-      parallelism,
-      options,
-      layeredVideo,
-      speechInRange,
-      characters,
-      testSettings,
-      folder,
-      ffmpeg: deps.ffmpeg,
-      ffprobe: deps.ffprobe,
-      motionCacheScope,
-      signal: controller.signal,
-      abort: (reason) => controller.abort(reason),
-      completedFrames: () => done,
-      createWorker: deps.createWorker,
-      bakeMotion: deps.bakeMotion,
-      mediaPath: deps.mediaPath,
-      onFfmpegProcessStarted: deps.onFfmpegProcessStarted,
-      progress: deps.progress,
-      onPartCreated: (result) => attempt.parts.push(result),
-      onFrameWritten: () => { done++; deps.progress({ frames: done }) },
-      onMouthPrepared: (mouth) => {
-        mouthStats.states += mouth.stats.states
-        mouthStats.isolatedStates += mouth.stats.isolatedStates
-        mouthStats.legacyPatchStates += mouth.stats.legacyPatchStates
-        for (const id of mouth.mouthLoops.states.map((state) => state.characterId)) mouthStats.characterIds.add(id)
-        mouthStats.skipped += mouth.stats.skipped
-        mouthStats.skippedStale += mouth.stats.skippedStale
-        mouthStats.atlasBytes += mouth.stats.atlasBytes
-        mouthStats.atlasPixels += mouth.stats.atlasPixels
-        mouthStats.preparationMilliseconds += mouth.stats.milliseconds
-        for (const detail of mouth.stats.errors) mouthStats.details.add(detail)
-        publishMouthStats()
-      }
-    })
-    try {
-      const results: EditorV6ExportPartReport[] = []
-      for (let offset = 0; offset < parts.length; offset += parallelism) {
-        const group = parts.slice(offset, offset + parallelism)
-        const settled = await Promise.allSettled(group.map(renderPart))
-        const failed = settled.find((item) => item.status === 'rejected')
-        if (failed?.status === 'rejected') throw failed.reason
-        results.push(...settled.flatMap((item) => item.status === 'fulfilled' ? [item.value] : []))
-        await saveReport()
-      }
-      return results.sort((a, b) => a.index - b.index)
-    } catch (error) { attempt.error = message(error); throw error }
-    finally {
-      attempt.milliseconds = performance.now() - began
-      addEditorV6PhaseTime(report, 'rendering', began)
-      deps.signal.removeEventListener('abort', abort)
-    }
-  }
+  const renderAttempt = (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<EditorV6ExportPartReport[]> => renderEditorV6ExportAttempt({
+    project,
+    parts,
+    encoder,
+    maxParallelism,
+    exportStartedAt: started,
+    options,
+    layeredVideo,
+    speechInRange,
+    characters,
+    testSettings,
+    folder,
+    ffmpeg: deps.ffmpeg,
+    ffprobe: deps.ffprobe,
+    motionCacheScope,
+    signal: deps.signal,
+    report,
+    createWorker: deps.createWorker,
+    bakeMotion: deps.bakeMotion,
+    mediaPath: deps.mediaPath,
+    onFfmpegProcessStarted: deps.onFfmpegProcessStarted,
+    progress: deps.progress,
+    saveReport,
+    formatError: message
+  })
   // Start only after synchronous setup succeeds, immediately before the try/finally
   // that owns the sampler. This guarantees every started timer is cleared.
   const memorySampler = setInterval(() => {
