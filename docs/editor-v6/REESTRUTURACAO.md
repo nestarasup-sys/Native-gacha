@@ -416,3 +416,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o limite de faixa Objetos, mensagem de erro, geração de IDs, tamanho/posição padrão, ordem Z, quadro atual, atualização de `updatedAt`, vínculo ao asset da biblioteca e seleção do bloco/elemento. Nenhum asset é duplicado e o projeto salvo mantém o mesmo formato.
 
 **Verificação:** os testes sintéticos do novo comando e regressões de texto/remoção passaram (14 no total); `npm run typecheck`, `npm run audit:architecture` (757 arquivos), `npm run build` e `git diff --check` passaram. A asserção da regressão de texto foi atualizada para acompanhar a divisão atual entre `EditorV6Page` e `EditorV6ToolRail`.
+
+### Ciclo 44 — rollback e confirmação do arraste do palco (implementado e verificado)
+
+**Objetivo:** retirar do hook as decisões de finalização do gesto. `editorV6StageDragLifecycle.ts` passa a executar rollback de cancelamento e confirmação com histórico, mantendo o hook responsável por reconhecer os eventos e liberar o estado transitório.
+
+**Compatibilidade:** no cancelamento, restaura apenas se o mesmo projeto continua ativo, repõe a seleção de bloco correta por alvo e não cria histórico. Na conclusão, preserva a última posição transitória, registra o snapshot anterior antes da atualização de `updatedAt` e marca como não salvo. Cliques sem movimento continuam sem escrita nem histórico. Nenhum schema, canal IPC ou arquivo de projeto foi alterado.
+
+**Verificação:** 47 testes de arraste, timeline, seleção e lifecycle passaram em 5 arquivos; `npm run typecheck`, `npm run audit:architecture` (758 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou medição de velocidade foi executada.

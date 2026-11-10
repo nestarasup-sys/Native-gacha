@@ -3,6 +3,7 @@ import type { EditorV6Document } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6StageDragPosition, moveEditorV6StageDrag, prepareEditorV6StageDrag, type EditorV6StageDrag } from './editorV6StageDrag'
+import { commitEditorV6StageDrag, rollbackEditorV6StageDrag } from './editorV6StageDragLifecycle'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 
@@ -47,18 +48,12 @@ export function useEditorV6StageInteraction(
     const drag = dragRef.current
     if (!drag) return
     dragRef.current = null
-    if (drag.moved) {
-      const current = dependenciesRef.current
-      current.updateActiveProject((project) => project.id === drag.before.id
-        ? { ...drag.before, updatedAt: new Date().toISOString() }
-        : project)
-      current.setSelectedTimelineBlockId(drag.target === 'background'
-        ? null
-        : drag.target === 'video'
-          ? drag.blockId
-          : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
-      current.markUnsaved()
-    }
+    rollbackEditorV6StageDrag(drag, {
+      updateActiveProject: dependenciesRef.current.updateActiveProject,
+      setSelectedTimelineBlockId: dependenciesRef.current.setSelectedTimelineBlockId,
+      markUnsaved: dependenciesRef.current.markUnsaved,
+      now: () => new Date().toISOString()
+    })
   }, [])
 
   const startDrag = (event: ScenePointerEvent, id: string) => {
@@ -126,13 +121,12 @@ export function useEditorV6StageInteraction(
     if (drag?.pointerId !== event.pointerId) return
     if (event.type === 'pointercancel') { cancelSceneDrag(); return }
     dragRef.current = null
-    if (!drag.moved) return
-    const current = dependenciesRef.current
-    current.recordHistory(drag.before)
-    current.updateActiveProject((project) => project.id === drag.before.id
-      ? { ...project, updatedAt: new Date().toISOString() }
-      : project)
-    current.markUnsaved()
+    commitEditorV6StageDrag(drag, {
+      updateActiveProject: dependenciesRef.current.updateActiveProject,
+      markUnsaved: dependenciesRef.current.markUnsaved,
+      recordHistory: dependenciesRef.current.recordHistory,
+      now: () => new Date().toISOString()
+    })
   }
 
   handlersRef.current = { start: startDrag, move: moveDrag, end: endDrag }
