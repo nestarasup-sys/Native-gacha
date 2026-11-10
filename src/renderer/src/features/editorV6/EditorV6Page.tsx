@@ -24,7 +24,7 @@ import { projectSceneCharacters } from '../../characters/sceneCharacterProjectio
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
-import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -53,7 +53,7 @@ import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnaps
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
@@ -342,14 +342,23 @@ export function EditorV6Page() {
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
     undo,
-    redo
+    redo,
+    removeStageCharacter,
+    updateElement,
+    updateCharacterNameColor,
+    updateBalloonScale,
+    updateBalloonOffsetY,
+    updateVideoBlock,
+    updateBackground
   } = createEditorV6DocumentCommands({
     activeProject: activeEditorV6,
     activeProjectId: activeEditorV6Id,
     activeProjectIdRef: activeEditorV6IdRef,
     selectedElementId,
     selectedTimelineBlockId,
+    setSelectedElementId,
     updateActiveProject: updateActiveEditorV6Project,
+    now: () => new Date().toISOString(),
     setActiveProject: setActiveEditorV6Project,
     markUnsaved: markEditorV6Unsaved,
     writeDocumentInOrder: writeEditorV6DocumentInOrder,
@@ -599,54 +608,6 @@ export function EditorV6Page() {
     const faceTransforms = editorV6FaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
     if (!faceTransforms[transformKey]) return
     editorV6FacePreview.flushPreview()
-  }
-
-  const removeStageCharacter = (element: EditorV6Element) => {
-    changeScene((studio) => {
-      const elements = studio.elements.filter((item) => item.id !== element.id)
-      const stillUsed = new Set(elements.map((item) => item.assetId).filter(Boolean))
-      return {
-        ...studio, elements,
-        assets: studio.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
-        updatedAt: new Date().toISOString()
-      }
-    })
-    if (selectedElementId === element.id) setSelectedElementId(null)
-  }
-
-  const updateElement = (id: string, values: Partial<EditorV6Element>, record = true) => {
-    const update = (studio: EditorV6Document) => ({ ...studio, elements: studio.elements.map((element) => element.id === id ? { ...element, ...values } : element), updatedAt: new Date().toISOString() })
-    if (record) changeScene(update)
-    else patchDocument(update)
-  }
-
-  const updateCharacterNameColor = (characterId: string, color: string) => {
-    patchDocument((studio) => ({
-      ...studio,
-      characterNameColors: { ...studio.characterNameColors, [characterId]: color },
-      updatedAt: new Date().toISOString()
-    }), false)
-  }
-
-  const updateBalloonScale = (scalePercent: number) => {
-    patchDocument((studio) => ({ ...studio, balloonScalePercent: scalePercent, updatedAt: new Date().toISOString() }), false)
-  }
-
-  const updateBalloonOffsetY = (offsetY: number) => {
-    patchDocument((studio) => ({ ...studio, balloonOffsetY: offsetY, updatedAt: new Date().toISOString() }), false)
-  }
-
-  const updateVideoBlock = (blockId: string, values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>, record = true) => {
-    const update = (studio: EditorV6Document) => ({ ...studio, timeline: normalizeEditorV6Timeline({ ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block) })) }), updatedAt: new Date().toISOString() })
-    if (record) changeScene(update)
-    else patchDocument(update)
-  }
-
-  const updateBackground = (values: Partial<Pick<EditorV6Document, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
-    const frame = getEditorV6PlaybackFrame()
-    const update = (studio: EditorV6Document) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, values), updatedAt: new Date().toISOString() })
-    if (record) changeScene(update)
-    else patchDocument(update)
   }
 
   const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({

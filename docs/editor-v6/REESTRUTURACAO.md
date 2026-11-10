@@ -31,10 +31,11 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 - Há fronteiras existentes que devem ser preservadas: `useEditorV6DocumentPersistence` serializa gravações e drena operações; `useEditorV6ProjectLibrary` carrega o catálogo e o projeto ativo; `editorV6Store` guarda o documento ativo, resumos e histórico; comandos de mídia, texto, criação e remoção já têm módulos próprios.
 - Os componentes de maior risco — `motion/bakeMotion.ts`, `exportWorker.tsx` e preparação de cabelo — permanecem fora do primeiro ciclo. Uma redução de linhas não justifica alterar algoritmos de renderização ou exportação sem evidência de benefício.
 - A branch de laboratório existente contém alterações locais de outra rodada. Elas foram preservadas; este trabalho começou numa worktree nova baseada no commit publicado de `Dev-V2`.
+- A worktree não tem `app-data` nem projetos reais. A refatoração e os testes desta etapa usam somente código e fixtures sintéticas; um export de ponta a ponta com personagem real depende de uma cópia autorizada.
 
 ## Sequência de ciclos
 
-1. **Comandos e histórico do documento — implementado; testes focados pendentes:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
+1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
@@ -45,14 +46,14 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 ## Registro
 
-### Ciclo 1 — comandos do documento e histórico (implementado; testes focados pendentes)
+### Ciclo 1 — comandos do documento e histórico (implementado e verificado)
 
-**Mudança:** criada a fábrica `createEditorV6DocumentCommands` em `src/renderer/src/features/editorV6/editorV6DocumentCommands.ts`. A página injeta os estados e serviços atuais; o módulo agora reúne edição de documento e snapshots, gravação de imports, histórico, undo/redo e integração com a seleção temporal.
+**Mudança:** criada a fábrica `createEditorV6DocumentCommands` em `src/renderer/src/features/editorV6/editorV6DocumentCommands.ts`. A página injeta os estados e serviços atuais; o módulo reúne edição de documento e snapshots, handlers de cena/fundo/vídeo, gravação de imports, histórico e undo/redo.
 
 **Motivo:** manter em um lugar as regras que transformam o documento e a timeline, deixando a página como composição e ponto de ligação dos comandos. O nome legado `patchStudio` foi trocado por `patchDocument`, alinhando a regra ao domínio próprio do Editor V6.
 
 **Compatibilidade:** nenhuma mudança em schema, persistência, IPC, IDs, renderização, ordenação de camadas ou comportamento de undo/redo foi intencional. O diff moveu a lógica existente para o módulo novo.
 
-**Verificação:** `git diff --check`, `npm run typecheck`, `npm run audit:architecture` (717 arquivos) e `npm run build` passaram. Os testes focados não foram executados neste ciclo; validar undo/redo e importação antes de integrar a branch.
+**Verificação:** 8 testes focados passaram (`editor-v6-document-commands` e `editor-v6-delete-selected-command`); `npm run typecheck`, `npm run audit:architecture` (717 arquivos), `npm run build` e `git diff --check` também passaram. Exportação com projeto real não foi executada.
 
 **Próximo passo:** revisar os demais handlers ainda definidos na página e decidir, com base nos fluxos reais, se a próxima extração é seleção/projeção de cena ou interação do palco. Não iniciar uma troca de renderer ou do pipeline de exportação nesta etapa.
