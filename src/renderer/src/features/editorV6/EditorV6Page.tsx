@@ -30,7 +30,7 @@ import { projectSceneCharacters } from '../../characters/sceneCharacterProjectio
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
-import { addEditorV6ElementAtFrame, editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
+import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -62,7 +62,8 @@ import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnaps
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
+import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
+import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -604,21 +605,18 @@ export function EditorV6Page() {
     <NumericRangeField key={label} label={label} value={value} onChange={onChange} onStart={() => recordHistory()} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
   )
 
-  const addObjectAsset = (asset: EditorV6Asset) => {
-    if (!activeEditorV6) return
-    if (activeEditorV6.timeline.tracks.some((track) => track.kind === 'object' && track.locked)) {
-      setError('Desbloqueie a faixa Objetos para adicionar uma imagem.')
-      return
-    }
-    const element: EditorV6Element = { id: crypto.randomUUID(), kind: 'image', assetId: asset.id, text: '', x: 0, y: 0, width: 25, height: 25, rotation: 0, zIndex: Math.max(0, ...activeEditorV6.elements.map((item) => item.zIndex)) + 1 }
-    const blockId = crypto.randomUUID()
-    const frame = getEditorV6PlaybackFrame()
-    changeScene((studio) => ({ ...addEditorV6ElementAtFrame(studio, element, frame, blockId), updatedAt: new Date().toISOString() }))
-    setSelectedElementId(element.id)
-    setSelectedTimelineBlockId(blockId)
-    setInspectorOpen(true)
-    setInspectorTab('editor')
-  }
+  const addObjectAsset = createEditorV6AddObjectCommand({
+    activeProject: activeEditorV6,
+    getFrame: getEditorV6PlaybackFrame,
+    createId: () => crypto.randomUUID(),
+    now: () => new Date().toISOString(),
+    changeScene,
+    setError,
+    setSelectedElementId,
+    setSelectedTimelineBlockId,
+    setInspectorOpen,
+    setInspectorTab
+  })
 
   const propertyPanel = (): ReactNode => <EditorV6PropertyPanel
     project={activeEditorV6}

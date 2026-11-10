@@ -408,3 +408,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados seleção antes das validações de bloqueio, quadro calculado sem motion, bloqueios de faixa e personagem, layout salvo/default do vídeo, coordenadas percentuais, alvo e bloco editados, cancelamento e publicação do histórico. Se um estado de fundo inconsistente não produzir bloco editável, o gesto agora simplesmente não começa em vez de falhar durante o clique. Nenhum dado persistido, IPC, renderer ou exportação foi alterado.
 
 **Verificação:** 42 testes relacionados a arraste, timeline e seleção passaram em 4 arquivos; `npm run typecheck`, `npm run audit:architecture` (756 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou medição de velocidade foi executada.
+
+### Ciclo 43 — inclusão de objetos compartilhados (implementado e verificado)
+
+**Objetivo:** retirar da página a criação do elemento imagem ao selecionar um objeto da biblioteca. O comando passa a ser dono da validação da faixa, da criação do elemento/bloco no playhead e do foco no Inspector; a página só injeta estado e callbacks.
+
+**Compatibilidade:** preservados o limite de faixa Objetos, mensagem de erro, geração de IDs, tamanho/posição padrão, ordem Z, quadro atual, atualização de `updatedAt`, vínculo ao asset da biblioteca e seleção do bloco/elemento. Nenhum asset é duplicado e o projeto salvo mantém o mesmo formato.
+
+**Verificação:** os testes sintéticos do novo comando e regressões de texto/remoção passaram (14 no total); `npm run typecheck`, `npm run audit:architecture` (757 arquivos), `npm run build` e `git diff --check` passaram. A asserção da regressão de texto foi atualizada para acompanhar a divisão atual entre `EditorV6Page` e `EditorV6ToolRail`.

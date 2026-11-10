@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises'
 import { createEditorV6TextElementCommand } from '../src/renderer/src/features/editorV6/editorV6TextElementCommand.ts'
 
 const pageSource = await readFile(new URL('../src/renderer/src/features/editorV6/EditorV6Page.tsx', import.meta.url), 'utf8')
+const toolRailSource = await readFile(new URL('../src/renderer/src/features/editorV6/EditorV6ToolRail.tsx', import.meta.url), 'utf8')
 const timestamp = '2026-11-02T13:00:00.000Z'
 
 function makeCharacter(overrides = {}) {
@@ -143,5 +144,6 @@ test('faixa bloqueada de outro tipo não impede narrador; projeto ausente não p
 
 test('EditorV6Page delega a criação do elemento e preserva os callbacks da interface', () => {
   assert.match(pageSource, /createEditorV6TextElementCommand\(\{[\s\S]*?activeProject: activeEditorV6,[\s\S]*?changeScene,[\s\S]*?setSelectedTimelineBlockId,[\s\S]*?setInspectorTab/)
-  assert.match(pageSource, /onClick=\{\(\) => addTextElement\('speech'\)\}/)
+  assert.match(pageSource, /onAddText=\{addTextElement\}/)
+  assert.match(toolRailSource, /onClick=\{\(\) => onAddText\('speech'\)\}/)
 })
