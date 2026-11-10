@@ -4,13 +4,12 @@ import { dirname, join } from 'node:path'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
-import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
-import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import { createEditorV6ExportExecutionPlan } from './exportPlanning'
 import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import { renderEditorV6ExportAttempt, type EditorV6ExportPartWorkerFactory } from './exportAttemptRenderer'
@@ -21,6 +20,7 @@ import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6Ex
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
 import { cleanupEditorV6ExportRun } from './exportRunCleanup'
+import { prepareEditorV6ExportReadiness } from './exportReadiness'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
 export { encodingArgs, probeExportMedia }
@@ -100,40 +100,23 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   const motionCacheScope = randomUUID()
   let exportFailure: unknown
   try {
-    deps.signal.throwIfAborted()
-    report.hairPreparation = deps.hairPreparation
-    const characterLoadStarted = performance.now()
-    try { characters = await deps.getCharacters() }
-    finally { addEditorV6PhaseTime(report, 'characterLoading', characterLoadStarted) }
-    const motionPreparationStarted = performance.now()
-    const cacheBefore = deps.getMotionCacheStats?.()
-    let prepared: EditorV6PreparedExportMotions
-    try {
-      prepared = await prepareEditorV6ExportMotions({
-        project,
-        options,
-        testSettings,
-        characters,
-        signal: deps.signal,
-        motionPreparationConcurrency: deps.motionPreparationConcurrency,
-        motionCacheScope,
-        cacheBefore,
-        getMotionCacheStats: deps.getMotionCacheStats,
-        bakeMotion: deps.bakeMotion,
-        onProgress: (completed, total, name) => {
-          report.motionTransitionsRequired = total
-          report.motionTransitionsPrepared = completed
-          deps.progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
-        }
-      })
-    } finally { addEditorV6PhaseTime(report, 'motionPreparation', motionPreparationStarted) }
-    project = prepared.project
-    report.motionTransitionsRequired = prepared.stats.total
-    report.motionTransitionsPrepared = prepared.stats.total
-    report.motionPreparation = prepared.stats
-    if (prepared.motionCache) report.motionCache = prepared.motionCache
-    if (missingEditorV6Motions(project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
-    await saveReport()
+    const readiness = await prepareEditorV6ExportReadiness({
+      project,
+      options,
+      testSettings,
+      hairPreparation: deps.hairPreparation,
+      motionPreparationConcurrency: deps.motionPreparationConcurrency,
+      motionCacheScope,
+      signal: deps.signal,
+      getCharacters: deps.getCharacters,
+      getMotionCacheStats: deps.getMotionCacheStats,
+      bakeMotion: deps.bakeMotion,
+      report,
+      progress: deps.progress,
+      saveReport
+    })
+    project = readiness.project
+    characters = readiness.characters
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
     const encoder = await selectEditorV6ExportEncoder(options.encoder, testEncoder)
