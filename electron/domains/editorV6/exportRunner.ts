@@ -1,33 +1,27 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
-import { release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
-import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
-import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
-import { prepareEditorV6ExportMotions, type EditorV6MotionCacheReport, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
+import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import { createEditorV6ExportExecutionPlan, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES } from './exportPlanning'
 import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
+import { createEditorV6ExportReportContext, type EditorV6ExportAttemptReport, type EditorV6ExportReport } from './exportReport'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
-import { addEditorV6PhaseTime, type EditorV6ExportPhaseTimings } from './exportMetrics'
+import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
 export { encodingArgs, probeExportMedia }
 export type { MediaProbe } from './exportMediaProbe'
-
-declare const __NATIVE_GACHA_BUILD_SHA__: string
-declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
-type AttemptReport = { parts: EditorV6ExportPartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
-export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: EditorV6PreparedExportMotions['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheReport; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: EditorV6ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
+export type { EditorV6ExportReport } from './exportReport'
 type Dependencies = {
   ffmpeg: string; ffprobe: string; tempRoot: string; reportPath: string; outputPath: string; id: string
   createWorker: Parameters<typeof renderEditorV6ExportPart>[0]['createWorker']
@@ -48,17 +42,7 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const { options, testSettings, requestedParts, parts: planned, speechInRange, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
-  const started = performance.now(), totalFrames = options.endFrame - options.startFrame
-  const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
-  const compiledSha = typeof __NATIVE_GACHA_BUILD_SHA__ === 'string' ? __NATIVE_GACHA_BUILD_SHA__ : ''
-  const revision = process.env.NATIVE_GACHA_BUILD_SHA || compiledSha
-  const runtime = { platform: process.platform, arch: process.arch, osRelease: osRelease(), node: process.versions.node,
-    ...(process.versions.electron ? { electron: process.versions.electron } : {}),
-    ...(revision && /^[0-9a-f]{7,40}$/i.test(revision) ? { buildSha: revision } : {}),
-    ...(typeof __NATIVE_GACHA_BUILD_DIRTY__ === 'boolean' ? { workingTreeDirty: __NATIVE_GACHA_BUILD_DIRTY__ } : {}) }
-  const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, runtime, exportTestSettings: testSettings, videoInputs: new Set(planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
-  const startRssBytes = process.memoryUsage().rss
-  report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
+  const { report, layeredVideo, started, totalFrames } = createEditorV6ExportReportContext({ project, options, testSettings, id: deps.id, outputPath: deps.outputPath })
   const saveReport = () => writeEditorV6ExportReport(deps.reportPath, report)
   let folder: string
   const temporarySetupStarted = performance.now()
@@ -90,7 +74,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     deps.signal.addEventListener('abort', abort, { once: true })
     if (deps.signal.aborted) abort()
     const parallelism = Math.max(1, Math.min(maxParallelism, parts.length))
-    const attempt: AttemptReport = { parts: [], encoder, parallelism }
+    const attempt: EditorV6ExportAttemptReport = { parts: [], encoder, parallelism }
     report.attempts.push(attempt)
     let done = 0
     const mouthStats = { states: 0, characterIds: new Set<string>(), isolatedStates: 0, legacyPatchStates: 0, skipped: 0, skippedStale: 0, atlasBytes: 0, atlasPixels: 0, preparationMilliseconds: 0, details: new Set<string>() }

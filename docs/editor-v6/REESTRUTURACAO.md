@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar planejamento de intervalo/fala, registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar planejamento de intervalo/fala, contrato e inicialização do relatório, registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -336,3 +336,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados `mouthLoop: true`, teste de sobreposição da fala com o intervalo e exclusão de faixa oculta/silenciada ou bloco sem personagem, divisão padrão de 300 quadros e de 150 quadros apenas para quatro workers quando o harness está ativo. A divisão de fallback continua em 300 quadros; a ordem de validação e as mensagens de erro também foram mantidas.
 
 **Verificação:** 9 testes novos cobrem normalização, Turbo sem fala, divisão de fala, filtros, override do harness e plataforma. Junto com as regressões de preparação de movimentos, renderer por trecho, pipeline, runner e lifecycle IPC, 46 testes passaram. `npm run typecheck`, `npm run audit:architecture` (748 arquivos), `npm run build` e `git diff --check` passaram. Nenhum benchmark ou MP4 foi executado.
+
+### Ciclo 34 — contrato e inicialização do relatório de exportação (implementado e verificado)
+
+**Objetivo:** mover o tipo do relatório, os metadados da build/runtime, as métricas RSS iniciais e o contexto de vídeo para `exportReport.ts`. `exportRunner.ts` continua reexportando `EditorV6ExportReport`, preservando os importadores atuais de `main` e IPC.
+
+**Compatibilidade:** mantidos os campos, valores iniciais, SHA/estado dirty da build, FPS, janela de quadros, saída e frequência de amostragem RSS. O plano de overlays agora é calculado uma vez e alimenta tanto `layeredVideo` quanto a contagem de nomes de arquivo distintos no relatório; o planejamento compartilhado é puro e não altera o documento.
+
+**Verificação:** 2 testes novos cobrem a forma inicial do relatório, contagem única de vídeos, contexto com/sem camada e metadados runtime. Junto com as regressões de planejamento, preparação de movimentos, renderer por trecho, pipeline, runner e lifecycle IPC, 48 testes passaram. `npm run typecheck`, `npm run audit:architecture` (749 arquivos), `npm run build` e `git diff --check` passaram. Nenhum benchmark ou MP4 foi executado.
