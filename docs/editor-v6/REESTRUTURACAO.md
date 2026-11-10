@@ -38,7 +38,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
-4. **Preparação de poses e snapshots faciais:** separar renderização, medição de largura-base e geometria da gravação no documento; manter os contratos de imagem atuais.
+4. **Preparação de poses e aparências faciais:** separar renderização, crop anterior, bake de variantes e medição da geometria da gravação no documento; manter os contratos de imagem atuais.
 5. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
 6. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
 7. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
@@ -70,3 +70,13 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** 18 testes Vitest e 10 testes Node focados passaram; três testes sintéticos cobrem largura-base legada, largura já salva e descarte do renderer quando o bake falha. `npm run typecheck`, `npm run audit:architecture` (718 arquivos), `npm run build` e `git diff --check` passaram.
 
 **Limite:** sem `app-data` na worktree, a troca ainda não foi exercitada com personagens reais; a mudança não altera o caminho de exportação.
+
+### Ciclo 3 — preparação de aparência facial (implementado e verificado)
+
+**Mudança:** criada `editorV6FaceAppearancePreparation.ts` para reunir a renderização anterior, o crop usado para compensar a troca de imagem, a resolução de modo/efeitos da expressão e o bake da nova aparência. A página ainda controla o renderer compartilhado, a publicação no documento, o histórico e a geometria dependente do tamanho atual do palco.
+
+**Motivo:** a página coordenava diretamente renderizações anterior e nova e também decidia como `expressionState` altera efeitos e modo facial. A regra `Object.hasOwn` é preservada para distinguir propriedade ausente de propriedade explicitamente definida como `undefined`.
+
+**Compatibilidade:** a cache, o cancelamento e as proteções contra preview obsoleto continuam no hook `useEditorV6FacePreview`; a atualização de assets, expressão, transformações e histórico permanece no fluxo existente. Sem mudanças em persistência, IPC ou renderer.
+
+**Verificação:** 20 testes Vitest e 10 testes Node focados passaram; os testes sintéticos conferem a ordem das renderizações, o crop anterior, o modo ativo e o override explícito de `undefined`. `npm run typecheck`, `npm run audit:architecture` (719 arquivos), `npm run build` e `git diff --check` passaram.

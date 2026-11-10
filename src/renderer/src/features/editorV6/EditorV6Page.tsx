@@ -40,6 +40,7 @@ import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
+import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -491,24 +492,22 @@ export function EditorV6Page() {
         ...selectedEditorV6Character,
         customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
       }
-      const activeEffects = expressionState && Object.hasOwn(expressionState, 'activeExpressionEffects') ? expressionState.activeExpressionEffects : selectedElement.activeExpressionEffects
-      const faceMode = expressionState && Object.hasOwn(expressionState, 'activeFaceMode') ? expressionState.activeFaceMode : selectedElement.activeFaceMode
-      const baseMode = faceMode ?? editorV6FaceModeForElement(selectedElement, appearance)
       const assetId = selectedElement.assetId
-      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, selectedElement.modelSourceRevision, async (renderer) => {
-        const previousRendered = await renderer.renderToCanvas(
-          selectedElement.faceAppearance ?? selectedEditorV6Character.customization.faceAppearance,
-          selectedElement.faceTransforms,
-          selectedElement.activeExpressionEffects,
-          selectedElement.activeFaceMode
-        )
-        const previousCrop = trimTransparentCanvas(previousRendered.canvas)
-        const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
-        const baked = await bakeFaceModeAssets(selectedElement.text, renderer, appearance, faceTransforms, activeEffects, baseMode, rendered)
-        return { rendered, baked, previousCrop }
-      })
+      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, selectedElement.modelSourceRevision, (renderer) =>
+        prepareEditorV6FaceAppearance({
+          character: selectedEditorV6Character,
+          element: selectedElement,
+          appearance,
+          faceTransforms,
+          expressionState
+        }, renderer, {
+          faceModeForElement: editorV6FaceModeForElement,
+          trimCanvas: trimTransparentCanvas,
+          bakeAssets: bakeFaceModeAssets
+        })
+      )
       if (!result) return
-      const { rendered, baked, previousCrop } = result
+      const { baseMode, rendered, baked, previousCrop } = result
       const faceModeAssetIds = { ...baked.assetIds, [baseMode]: assetId }
       const elementId = selectedElement.id
       const update = (studio: EditorV6Document): EditorV6Document => ({
