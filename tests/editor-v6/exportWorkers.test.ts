@@ -60,11 +60,11 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event') {
+function fixture(captureMode?: 'capturePage' | 'paint-event', layeredVideo = false) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
   const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode })
-  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: false } as unknown as EditorV6WorkerPayload
+  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
     handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })
@@ -140,6 +140,21 @@ describe('export worker lifecycle', () => {
     const frame = await worker.frame(2)
     expect(frame.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
     expect(contents.capturePage).toHaveBeenCalledTimes(1)
+    worker.close(); factory.dispose()
+  })
+
+  it('reports background and foreground draw time separately for layered video frames', async () => {
+    const { factory, payload, ready } = fixture(undefined, true)
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const frame = await worker.frame(4)
+
+    expect(frame.timings?.backgroundDrawMs).toBeTypeOf('number')
+    expect(frame.timings?.foregroundDrawMs).toBeTypeOf('number')
+    expect(frame.timings?.backgroundCaptureMs).toBeTypeOf('number')
+    expect(frame.timings?.foregroundCaptureMs).toBeTypeOf('number')
+    expect(frame.bitmap).toHaveLength(payload.width * payload.height * 4 * 2)
     worker.close(); factory.dispose()
   })
 

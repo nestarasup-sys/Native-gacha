@@ -218,6 +218,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         }
         const layerBytes = payload.width * payload.height * 4
         const timings: EditorV6FrameTimings = { ...result.timings }
+        timings.backgroundDrawMs = result.timings?.ipcDrawMs ?? 0
         const metrics: EditorV6FrameMetrics = { ...result.metrics }
         const collect = (drawn: EditorV6RenderFrameResult) => {
           for (const [key, value] of Object.entries(drawn.timings ?? {}) as Array<[keyof EditorV6FrameTimings, number]>) timings[key] = (timings[key] ?? 0) + value
@@ -242,6 +243,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
         const foreground = await draw('foreground')
         if (foreground.reused) throw Error('O estado visual mudou entre a captura das camadas.')
         collect(foreground)
+        timings.foregroundDrawMs = foreground.timings?.ipcDrawMs ?? 0
         await copyLayer(layerBytes, 'foreground', foreground)
         if (!layeredBitmap) throw Error('O renderizador não produziu nenhuma camada para o quadro.')
         const bitmap = layeredBitmap

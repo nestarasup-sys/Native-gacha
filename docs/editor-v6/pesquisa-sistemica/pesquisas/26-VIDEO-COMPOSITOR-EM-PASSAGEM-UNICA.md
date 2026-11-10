@@ -4,20 +4,20 @@
 
 ## Evidência no caminho atual
 
-`runEditorV6Export` ativa `layeredVideo` quando há pelo menos um overlay no intervalo. O worker passa por `renderEditorV6ExportFrame` uma vez para o fundo e uma vez para o primeiro plano, captura cada superfície e empilha os dois buffers BGRA de 1920×1080. O FFmpeg separa o buffer empilhado, compõe até quatro overlays de vídeo na camada base e então sobrepõe os elementos de primeiro plano. No SVG, `SceneVideoLayer` está entre o background e os elementos; portanto, essa ordem visual precisa permanecer.
+`runEditorV6Export` ativa `layeredVideo` quando há pelo menos um overlay no intervalo. O worker desenha o fundo e o primeiro plano em chamadas separadas, mas as chaves de camada podem reutilizar uma imagem capturada anteriormente; portanto, não há duas capturas físicas em todo quadro. Quando uma camada muda, o worker captura seu buffer BGRA de 1920×1080. O FFmpeg separa o buffer empilhado, compõe até quatro overlays de vídeo na camada base e então sobrepõe os elementos de primeiro plano. No SVG, `SceneVideoLayer` está entre o background e os elementos; portanto, essa ordem visual precisa permanecer.
 
-No export completo de referência, renderização ocupou 48,43s dos 76,34s de clique→MP4. Em uma janela fria UI de 600 quadros com dois clipes, as amostras de `capturePageMs` foram aproximadamente 2,0s agregadas entre workers; isso é uma soma concorrente, não parede. Os relatórios mostram `ffmpegWriteMs` com espera de pipe, que também não isola CPU de composição. Assim, o alto custo é o caminho de render/captura como um todo, sem evidência de que apenas o filtro FFmpeg ou o segundo screenshot explique os 48s.
+No export completo de referência, renderização ocupou 48,43s dos 76,34s de clique→MP4. Os relatórios existentes não separam o desenho de cada camada. Foi adicionada instrumentação opcional `backgroundDrawMs`/`foregroundDrawMs`, sem mudar pixels nem ordem de operações. No smoke frio de 150 quadros (um vídeo, áudio presente), passou 150/150 e validou MP4; registrou 8 amostras de cada draw, 1 captura de fundo (36,48ms agregados) e 8 capturas de frente (515,99ms). Os draws somaram 71,62ms no fundo e 216,40ms na frente. Isso prova reuso do fundo nesse trecho, mas uma única janela não permite extrapolar os tempos ou frequências ao projeto completo. `ffmpegWriteMs` continua incluindo espera de pipe e não isola CPU de composição.
 
 ## Oportunidade estrutural
 
-Investigar um plano de cena que componha fundo, vídeo e elementos no mesmo renderer, capturando uma saída final única por quadro. O FFmpeg poderia continuar responsável por encoder, áudio/mux e fallback, mas não precisaria receber duas imagens de tela para reconstruir a ordem de camadas. Outra variante é manter o FFmpeg como compositor e reduzir o custo das duas capturas sem alterar o contrato de camada.
+Investigar se uma composição final no renderer reduz o custo total, mas primeiro medir as capturas realmente evitadas. O FFmpeg poderia continuar responsável por encoder, áudio/mux e fallback. Como o fundo pode ser reutilizado entre quadros, a passagem única talvez reduza draws mesmo quando não reduz capturas; o ganho não pode ser presumido. Outra variante é manter o FFmpeg como compositor e otimizar a captura frontal sem alterar o contrato de camada.
 
 Esse é um candidato de arquitetura, ainda não uma otimização demonstrada. Desenhar o vídeo num `<video>` do Chromium exigiria seek determinístico em cada quadro, aguardar decode e validar rotação, transparência, timestamps, formatos e todos os codecs importados. Receber os frames do FFmpeg no renderer pode adicionar IPC/cópias ou sincronização; não assumir que uma passagem seja automaticamente mais rápida.
 
 ## Próximo ciclo falsificável
 
-1. Adicionar instrumentação agregada separando tempo de `draw(background)`, `capture(background)`, `draw(foreground)`, `capture(foreground)` e espera/composição FFmpeg. Limitar dados a contadores/tempos por parte; não registrar frames nem assets.
-2. Fazer um protótipo isolado que produza, no mesmo estado de frame, a imagem final atual e o candidato; comparar RGBA antes do encoder para quadros com cada um dos quatro vídeos, transições, cabelo, texto, alpha e bordas de clipe.
+1. A instrumentação agregada de draw/capture foi implementada; coletar as novas métricas numa janela que cruze os quatro intervalos de vídeo e trechos estáticos. Limitar dados a contadores/tempos por parte; não registrar frames nem assets.
+2. Só iniciar um protótipo se as medições demonstrarem custo evitável. O candidato deverá produzir, no mesmo estado de frame, a imagem atual e a nova; comparar RGBA antes do encoder para quadros com cada vídeo, transições, cabelo, texto, alpha e bordas de clipe.
 3. Só depois do golden passar, executar primeiro smoke de 30–150 quadros com áudio e FFprobe. Rodar export completo frio apenas se o smoke reduzir parede/captura de modo claro e não alterar pixels.
 4. Preservar FFmpeg/x264 como caminho de produção e rollback até a exportação integral validar 2.394 quadros, todos os vídeos e áudios, mux, cancelamento e fallback. Não persistir MP4, textura, frames, atlas ou cache entre exportações.
 
