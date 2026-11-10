@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
 6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
-7. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
+7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 
 Os ciclos são independentes; a ordem pode mudar quando o código ou uma regressão demonstrar outra causa prioritária.
@@ -132,7 +132,7 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Arquivos e recuperação:** o runner cria uma pasta temporária identificada sob `app.getPath('temp')`, monta partes temporárias, prepara um MP4 candidato ao lado do destino, publica por rename com caminho alternativo para destino ocupado, salva relatório no projeto e remove a pasta temporária somente quando ela está sob a raiz temporária e tem o prefixo esperado. O IPC retém jobs ativos no inventário de operações até o término; o shutdown aborta jobs e drena as promessas.
 
-**Decisão:** não alterar o pipeline nem testar uma exportação real nesta auditoria. O registro/ownership/cancelamento de jobs foi extraído no Ciclo 9; captura, FFmpeg, formatos persistidos e recuperação continuam fora dessa mudança. A próxima revisão da exportação deve se concentrar nos handlers de mídia e cópia, mantendo os mesmos gates de lifecycle.
+**Decisão:** não alterar o pipeline nem testar uma exportação real nesta auditoria. O registro/ownership/cancelamento de jobs foi extraído no Ciclo 9 e os handlers de mídia/cópia no Ciclo 11; captura, FFmpeg, formatos persistidos e recuperação continuam fora dessas mudanças.
 
 **Cobertura existente a reutilizar:** `exportIpcLifecycle.test.ts`, `exportProcess.test.ts`, `exportRunner.test.ts`, `exportWorkers.test.ts` e os smokes Electron continuam sendo os gates.
 
@@ -151,3 +151,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o guard de projeto/personagem ocupado, cache e cancelamento do renderer facial, lazy import do renderer de personagem para pose, escolha entre patch sem histórico e `changeScene`, crop anterior, versão do renderer facial, geometria, assets por modo e cálculo de revisões da pose/roupa/cabelo/extras/olhos.
 
 **Verificação:** 32 testes Vitest passaram em oito arquivos relacionados a comandos, preparação de pose/face, preview, snapshots, seleção, transforms e arraste da timeline. `npm run typecheck`, `npm run audit:architecture` (724 arquivos), `npm run build` e `git diff --check` passaram. Os testes usam fixtures sintéticas; não foi executado export com projeto real.
+
+### Ciclo 11 — handlers de mídia da exportação (implementado e verificado)
+
+**Mudança:** importação de mídia e áudio, vínculo a itens da biblioteca e cópia de assets ao duplicar projeto agora são registrados por `exportMediaIpc.ts`. O módulo também concentra a resolução do caminho de áudio usada pela exportação; `exportIpc.ts` permanece responsável por lifecycle, jobs e coordenação do runner.
+
+**Compatibilidade:** preservados os canais IPC, validação de origem e UUIDs, extensões, limites de arquivo/duração, schemas, diretórios, nomes dos arquivos, referências vivas à biblioteca e cópias locais. Toda gravação continua no mesmo `pendingFileWrites`, portanto o shutdown ainda aguarda importações e duplicações em andamento. Nenhuma alteração no schema ou no pipeline de renderização/codificação.
+
+**Verificação:** 38 testes Vitest passaram em seis arquivos de lifecycle/runner/processo/workers/biblioteca; incluídos casos sintéticos de vínculo de áudio e vídeo da biblioteca e cópia local para duplicação de projetos. `npm run typecheck`, `npm run audit:architecture` (725 arquivos), `npm run build` e `git diff --check` passaram.

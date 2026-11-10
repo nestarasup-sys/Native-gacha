@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { IpcMain } from 'electron'
+import { join } from 'node:path'
 import { createEditorV6Timeline } from '../../src/shared/editorV6'
 import type { EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
@@ -58,7 +59,9 @@ function createHarness() {
     tempRoot: 'C:/synthetic/temp',
     getCharacters: async () => [],
     bakeMotion: async () => ({}) as EditorV6MotionBakeResult,
-    resolveLibraryVideo: async () => ({ path: 'C:/synthetic/library.mp4', name: 'Video', mimeType: 'video/mp4', extension: 'mp4', size: 1024, durationFrames: 30 })
+    resolveLibraryVideo: async () => ({ path: 'C:/synthetic/library.mp4', name: 'Video', mimeType: 'video/mp4', extension: 'mp4', size: 1024, durationFrames: 30 }),
+    resolveLibraryAudio: async () => ({ path: 'C:/synthetic/library.mp3', name: 'Library Audio', mimeType: 'audio/mpeg', extension: 'mp3', size: 1024 }),
+    resolveLibraryAsset: async () => ({ path: 'C:/synthetic/library.png', mimeType: 'image/png' })
   })
   return { handlers, lifecycle, recordDiagnostic }
 }
@@ -170,6 +173,60 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
 
     await expect(handlers.get(editorV6IpcChannels.importEditorV6ExportAudio)!(event, targetId))
       .rejects.toThrow('A duração do áudio não pôde ser determinada.')
+    expect(copyFile).not.toHaveBeenCalled()
+  })
+
+  it('vincula áudio da biblioteca por referência e usa a duração validada', async () => {
+    vi.mocked(probeExportMedia).mockResolvedValue({
+      streams: [{ codec_type: 'audio', duration: '2' }],
+      format: {}
+    } as never)
+    const { handlers } = createHarness()
+
+    await expect(handlers.get(editorV6IpcChannels.linkEditorV6LibraryAudio)!(event, targetId, sourceId))
+      .resolves.toMatchObject({ id: sourceId, libraryAudioId: sourceId, fileName: `${sourceId}.mp3`, sourceFrames: 60, hasAudio: true })
+    expect(copyFile).not.toHaveBeenCalled()
+  })
+
+  it('cria clipe de áudio de biblioteca sem copiar a mídia ao projeto', async () => {
+    vi.mocked(probeExportMedia).mockResolvedValue({
+      streams: [{ codec_type: 'audio', duration: '2' }],
+      format: {}
+    } as never)
+    const { handlers } = createHarness()
+
+    await expect(handlers.get(editorV6IpcChannels.linkEditorV6LibraryExportAudio)!(event, targetId, sourceId))
+      .resolves.toMatchObject({ libraryAudioId: sourceId, fileName: `${sourceId}.mp3`, sourceFrames: 60, durationFrames: 60, startFrame: 0 })
+    expect(copyFile).not.toHaveBeenCalled()
+  })
+
+  it('duplica áudio e mídia locais entre as pastas dos projetos', async () => {
+    const { handlers } = createHarness()
+
+    await handlers.get(editorV6IpcChannels.cloneEditorV6ExportAudio)!(event, sourceId, targetId, [audioClip])
+    await handlers.get(editorV6IpcChannels.cloneEditorV6Media)!(event, sourceId, targetId, [mediaAsset])
+
+    expect(copyFile).toHaveBeenNthCalledWith(
+      1,
+      join(`C:/synthetic/editorV6-${sourceId}`, 'export-audio', audioClip.fileName),
+      join(`C:/synthetic/editorV6-${targetId}`, 'export-audio', audioClip.fileName)
+    )
+    expect(copyFile).toHaveBeenNthCalledWith(
+      2,
+      join(`C:/synthetic/editorV6-${sourceId}`, 'media', mediaAsset.fileName),
+      join(`C:/synthetic/editorV6-${targetId}`, 'media', mediaAsset.fileName)
+    )
+  })
+
+  it('vincula vídeo da biblioteca após validar formato e faixa de vídeo', async () => {
+    vi.mocked(probeExportMedia).mockResolvedValue({
+      streams: [{ codec_type: 'video', duration: '1', width: 320, height: 180 }],
+      format: {}
+    } as never)
+    const { handlers } = createHarness()
+
+    await expect(handlers.get(editorV6IpcChannels.linkEditorV6LibraryVideo)!(event, targetId, sourceId))
+      .resolves.toMatchObject({ id: sourceId, libraryVideoId: sourceId, fileName: `${sourceId}.mp4`, sourceFrames: 30, width: 320, height: 180 })
     expect(copyFile).not.toHaveBeenCalled()
   })
 

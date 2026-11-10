@@ -1,25 +1,26 @@
 import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import * as fs from 'node:fs/promises'
-import { copyFile, mkdir, stat } from 'node:fs/promises'
-import { basename, extname, isAbsolute, join } from 'node:path'
+import { stat } from 'node:fs/promises'
+import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { z } from 'zod'
 import type { LocalDiagnosticEventInput } from '../../../src/shared/dataManagement'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
-import { editorV6ExportAudioSchema, editorV6MediaAssetSchema, parseEditorV6ExportDocument } from '../../../src/shared/editorV6Schema'
+import { parseEditorV6ExportDocument } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import type { EditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
 import { parseEditorV6HairMotionBundle } from '../../../src/shared/editorV6HairMotion'
-import { planEditorV6Export, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import { planEditorV6Export, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { editorV6ExportModeFileSuffix } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6WorkerFactory } from './exportWorkers'
-import { probeExportMedia, runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
+import { runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import { publishJsonManifest } from '../storage/atomicManifest'
 import { createPendingOperationTracker } from '../storage/pendingOperationTracker.ts'
 import { createEditorV6ExportJobRegistry, isEditorV6ExportJobTerminal } from './exportJobRegistry'
+import { createEditorV6ExportAudioPathResolver, registerEditorV6ExportMediaHandlers } from './exportMediaIpc'
 
 type EditorV6ExportIpcDependencies = {
   ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>
@@ -102,19 +103,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     })
     return current
   }
-  const audioPath = async (projectId: string, clip: EditorV6ExportAudio, media: readonly EditorV6MediaAsset[] = []) => clip.libraryAudioId
-    ? (await deps.resolveLibraryAudio(clip.libraryAudioId)).path
-    : clip.libraryVideoId ? (await deps.resolveLibraryVideo(clip.libraryVideoId)).path
-      : join(deps.projectPath(projectId), media.some((item) => item.fileName === clip.fileName) ? 'media' : 'export-audio', clip.fileName)
-  const inspectLibraryAudio = async (audioId: string) => {
-    const source = await deps.resolveLibraryAudio(audioId)
-    const probe = await probeExportMedia(ffprobe, source.path, new AbortController().signal)
-    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
-    const duration = Number(probe.format.duration ?? audio?.duration ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
-    if (!audio || !Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('O áudio da biblioteca não passou pela validação de duração e faixa de áudio.')
-    return { source, sourceFrames }
-  }
+  const audioPath = createEditorV6ExportAudioPathResolver(deps)
   const runIsolatedExport: EditorV6ExportIpcLifecycle['runIsolatedExport'] = (rawProject, options, outputPath, reportPath, id, signal = new AbortController().signal, progress = (patch) => { if (patch.message) console.log(`[V6 isolated export] ${patch.message}`) }, motionPreparationConcurrency = 2, hairAnimation, onFfmpegProcessStarted) => {
     const project = parseEditorV6ExportDocument(rawProject)
     planEditorV6Export(options, project.timeline.durationFrames)
@@ -217,110 +206,15 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
   deps.ipcMain.handle(editorV6IpcChannels.getEditorV6ExportStatus, (event, id) => findJob(event, id).status)
   deps.ipcMain.handle(editorV6IpcChannels.cancelEditorV6Export, async (event, id) => { const job = findJob(event, id); if (!isEditorV6ExportJobTerminal(job.status)) job.controller.abort(Error('Exportação cancelada pelo usuário.')); await job.promise })
   deps.ipcMain.handle(editorV6IpcChannels.revealEditorV6Export, (event, id, report?: boolean) => { const job = findJob(event, id); const path = report ? job.status.reportPath : job.status.outputPath ?? job.status.reportPath; if (path) shell.showItemInFolder(path) })
-  deps.ipcMain.handle(editorV6IpcChannels.importEditorV6ExportAudio, async (event, projectId: string): Promise<EditorV6ExportAudio | null> => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
-    const result = await dialog.showOpenDialog({ title: 'Editor V6: adicionar áudio à exportação', properties: ['openFile'], filters: [{ name: 'Áudio', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'] }] })
-    const source = result.filePaths[0]
-    if (result.canceled || !source) return null
-    const fileStats = await stat(source)
-    if (fileStats.size <= 0) throw Error('O arquivo de áudio está vazio.')
-    if (fileStats.size > 2 * 1024 ** 3) throw Error('O arquivo de áudio excede 2 GB.')
-    const extension = extname(source).slice(1).toLowerCase()
-    if (!['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'].includes(extension)) throw Error('Formato de áudio inválido.')
-    const probe = await probeExportMedia(ffprobe, source, new AbortController().signal)
-    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
-    if (!audio) throw Error('O arquivo selecionado não contém áudio.')
-    const duration = Number(probe.format.duration ?? audio.duration ?? 0)
-    if (!Number.isFinite(duration) || duration <= 0) throw Error('A duração do áudio não pôde ser determinada.')
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
-    if (sourceFrames > 1_000_000) throw Error('A duração do áudio passa do limite do Editor V6.')
-    const id = randomUUID(), fileName = `${id}.${extension}`
-    const clip = editorV6ExportAudioSchema.parse({ id, fileName, name: basename(source), sourceFrames, startFrame: 0, sourceInFrame: 0, durationFrames: sourceFrames, gain: 1, muted: false })
-    const folder = join(deps.projectPath(projectId), 'export-audio')
-    assertAvailable()
-    return pendingFileWrites.track(async () => {
-      await mkdir(folder, { recursive: true })
-      await copyFile(source, join(folder, fileName))
-      return clip
-    })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.cloneEditorV6ExportAudio, async (event, sourceId: string, targetId: string, rawClips: unknown) => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(sourceId); uuid.parse(targetId)
-    const clips = z.array(editorV6ExportAudioSchema).max(32).parse(rawClips)
-    const folder = join(deps.projectPath(targetId), 'export-audio')
-    return pendingFileWrites.track(async () => {
-      await mkdir(folder, { recursive: true })
-      for (const clip of clips) if (!clip.libraryAudioId) await copyFile(await audioPath(sourceId, clip), join(folder, clip.fileName))
-    })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.importEditorV6Media, async (event, projectId: string, rawKind: unknown): Promise<EditorV6MediaAsset | null> => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
-    const kind = z.enum(['video', 'audio']).parse(rawKind)
-    const filters = kind === 'video'
-      ? [{ name: 'Vídeos', extensions: ['mp4', 'webm', 'mov', 'm4v'] }]
-      : [{ name: 'Áudios', extensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm'] }]
-    const result = await dialog.showOpenDialog({ title: `Editor V6: importar ${kind === 'video' ? 'vídeo' : 'áudio'}`, properties: ['openFile'], filters })
-    const source = result.filePaths[0]
-    if (result.canceled || !source) return null
-    const fileStats = await stat(source)
-    if (fileStats.size <= 0 || fileStats.size > 2 * 1024 ** 3) throw Error('O arquivo precisa ter até 2 GB.')
-    const extension = extname(source).slice(1).toLowerCase()
-    const allowed = kind === 'video' ? ['mp4', 'webm', 'mov', 'm4v'] : ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac', 'opus', 'webm']
-    if (!allowed.includes(extension)) throw Error('O formato selecionado não é compatível com este tipo de mídia.')
-    const probe = await probeExportMedia(ffprobe, source, new AbortController().signal)
-    const video = probe.streams.find((stream) => stream.codec_type === 'video')
-    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
-    if (kind === 'video' && !video) throw Error('O arquivo selecionado não contém vídeo.')
-    if (kind === 'audio' && !audio) throw Error('O arquivo selecionado não contém áudio.')
-    const duration = Number(probe.format.duration ?? (kind === 'video' ? video?.duration : audio?.duration) ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
-    if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração da mídia é inválida ou passa do limite do Editor V6.')
-    const mimeByExtension: Record<string, string> = { mp4: 'video/mp4', webm: kind === 'video' ? 'video/webm' : 'audio/webm', mov: 'video/quicktime', m4v: 'video/x-m4v', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', flac: 'audio/flac', opus: 'audio/opus' }
-    const id = randomUUID(), fileName = `${id}.${extension}`
-    const media = editorV6MediaAssetSchema.parse({ id, name: basename(source), fileName, kind, mimeType: mimeByExtension[extension], sourceFrames, hasAudio: Boolean(audio), ...(video?.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
-    const folder = join(deps.projectPath(projectId), 'media')
-    assertAvailable()
-    return pendingFileWrites.track(async () => {
-      await mkdir(folder, { recursive: true })
-      await copyFile(source, join(folder, fileName))
-      return media
-    })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryAudio, async (event, projectId: string, rawAudioId: unknown): Promise<EditorV6MediaAsset> => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
-    const audioId = uuid.parse(rawAudioId)
-    const { source, sourceFrames } = await inspectLibraryAudio(audioId)
-    return editorV6MediaAssetSchema.parse({ id: audioId, libraryAudioId: audioId, name: source.name, fileName: `${audioId}.${source.extension}`, kind: 'audio', mimeType: source.mimeType, sourceFrames, hasAudio: true, sizeBytes: source.size })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryExportAudio, async (event, projectId: string, rawAudioId: unknown): Promise<EditorV6ExportAudio> => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
-    const audioId = uuid.parse(rawAudioId)
-    const { source, sourceFrames } = await inspectLibraryAudio(audioId)
-    return editorV6ExportAudioSchema.parse({ id: randomUUID(), libraryAudioId: audioId, name: source.name, fileName: `${audioId}.${source.extension}`, sourceFrames, startFrame: 0, sourceInFrame: 0, durationFrames: sourceFrames, gain: 1, muted: false })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.cloneEditorV6Media, async (event, sourceId: string, targetId: string, rawMedia: unknown) => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(sourceId); uuid.parse(targetId)
-    const media = z.array(editorV6MediaAssetSchema).max(500).parse(rawMedia)
-    const sourceFolder = join(deps.projectPath(sourceId), 'media'), targetFolder = join(deps.projectPath(targetId), 'media')
-    return pendingFileWrites.track(async () => {
-      await mkdir(targetFolder, { recursive: true })
-      for (const item of media) if (!item.libraryVideoId && !item.libraryAudioId) await copyFile(join(sourceFolder, item.fileName), join(targetFolder, item.fileName))
-    })
-  })
-  deps.ipcMain.handle(editorV6IpcChannels.linkEditorV6LibraryVideo, async (event, projectId: string, rawLibraryVideoId: unknown): Promise<EditorV6MediaAsset> => {
-    deps.assertTrustedSender(event); assertAvailable(); uuid.parse(projectId)
-    const libraryVideoId = uuid.parse(rawLibraryVideoId)
-    const source = await deps.resolveLibraryVideo(libraryVideoId)
-    if (!['mp4', 'webm', 'mov', 'm4v'].includes(source.extension)) throw Error('O vídeo selecionado tem um formato incompatível.')
-    const fileStats = await stat(source.path)
-    const probe = await probeExportMedia(ffprobe, source.path, new AbortController().signal)
-    const video = probe.streams.find((stream) => stream.codec_type === 'video')
-    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
-    if (!video) throw Error('O vídeo selecionado não contém uma faixa de vídeo válida.')
-    const duration = Number(probe.format.duration ?? video.duration ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
-    if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração do vídeo é inválida para o Editor V6.')
-    return editorV6MediaAssetSchema.parse({ id: libraryVideoId, libraryVideoId, name: source.name, fileName: `${libraryVideoId}.${source.extension}`, kind: 'video', mimeType: source.mimeType, sourceFrames, hasAudio: Boolean(audio), ...(video.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
+  registerEditorV6ExportMediaHandlers({
+    ipcMain: deps.ipcMain,
+    assertTrustedSender: (event) => deps.assertTrustedSender(event),
+    assertAvailable,
+    pendingFileWrites,
+    projectPath: (id) => deps.projectPath(id),
+    resolveLibraryVideo: (id) => deps.resolveLibraryVideo(id),
+    resolveLibraryAudio: (id) => deps.resolveLibraryAudio(id),
+    ffprobe
   })
   return {
     cancelAll,
