@@ -23,6 +23,14 @@ A Radeon RX 7600 e o H.264 AMF conseguem reduzir o tempo de exportação compara
 
 As duas amostras AMF ficaram 14–19% mais lentas que a referência x264. Também houve maior custo em Motion e render, portanto a diferença não pode ser atribuída somente ao encoder. Não houve teste de qualidade decodificada pareado para AMF; por esse motivo não é elegível à promoção mesmo se uma execução futura vencer. A busca `auto` tentou outros encoders antes do AMF, aumentando o probe em 0,45–0,69s. A escolha atual continua sendo x264; AMF permanece disponível para investigação explícita, mas não será selecionado automaticamente por causa da existência da GPU.
 
+### AMF com preferência por velocidade
+
+O FFmpeg bundled expõe `h264_amf -quality speed` (além de `balanced` e `quality`); a opção oficial representa uma preferência do encoder, não uma garantia de qualidade visual igual. Ver [FFmpeg AMF H.264 encoder](https://ffmpeg.org/doxygen/trunk/amfenc__h264_8c_source.html). No host instalado, `ffmpeg -h encoder=h264_amf` confirmou `speed` como opção válida e `-1` como valor padrão.
+
+Um piloto frio UI de 600f, preset 2 posterior-only, duas lanes, 1080p30, 2 vídeos + 2 áudios selecionou `h264_amf` com `-quality speed` e passou em **24,45s** clique→MP4 validado (Main 19,51s; Motion 4,81s; render 12,65s; finalização 1,28s). As referências x264 ultrafast de 8 threads ficaram em 22,70/22,91s; o piloto AMF speed continuou 6,8–7,7% mais lento. Comparado às duas amostras AMF anteriores (26,12/27,33s), há sinal de redução, mas foi apenas uma amostra e as condições podem variar. Não foi feito A/B de qualidade decodificada.
+
+**Decisão:** não promover AMF speed nem manter seu seletor experimental no harness; x264 permanece melhor no conjunto medido. Para considerar AMF novamente, exigir A/B frio repetido e SSIM/PSNR/inspeção visual, junto de áudio/vídeo/mux validados.
+
 O primeiro piloto produziu um relatório com `passed: true`, 600 quadros e áudio, mas o script encerrou com falha porque exigia o campo `x264Preset` também para `h264_amf`. O harness foi corrigido para validar esse metadado somente quando `--encoder=cpu`; o segundo piloto terminou normalmente, validando o mesmo projeto e limpando MP4/perfil temporários. A correção não muda parâmetros de exportação.
 
 ## Electron Shared Texture + WebCodecs runtime smoke
@@ -66,6 +74,7 @@ Os candidatos 90/120Hz foram 11–16% mais lentos que as duas referências a 60H
 - [Electron `OffscreenSharedTexture`](https://www.electronjs.org/docs/latest/api/structures/offscreen-shared-texture)
 - [Electron `SharedTextureImported`](https://www.electronjs.org/docs/latest/api/structures/shared-texture-imported)
 - [Electron `webContents` paint/offscreen](https://www.electronjs.org/docs/latest/api/web-contents)
+- [FFmpeg `h264_amf` opções oficiais](https://ffmpeg.org/doxygen/trunk/amfenc__h264_8c_source.html)
 
 Uma textura não pode ser passada diretamente entre processos; precisa de importação/transferência e gestão de ciclo de vida. FFmpeg atual consome BGRA via stdin e compõe vídeos/áudio antes do mux; apenas receber a textura não elimina essas etapas. Próximo estudo, se houver continuação dessa rota, precisa capturar pixels do projeto real, testar composição dos vídeos no renderer e validar H.264→mux por stream copy. Abortar se exigir readback, degradar paridade ou limitar fallback.
 

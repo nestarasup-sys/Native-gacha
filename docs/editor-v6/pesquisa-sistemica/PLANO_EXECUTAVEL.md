@@ -268,6 +268,7 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 4. Depois, extrair o frame engine/compositor do bootstrap do worker por interfaces, sem mover política de UI para o motor. Cada extração precisa de equivalência integral e fallback antes de trocar o caminho padrão.
 5. Usar WebCodecs/shared texture somente após uma prova com composição real, vídeo, áudio, mux, backpressure, qualidade e fallback em processo frio. Preservar o pipeline SVG/capturePage/FFmpeg enquanto oráculo.
 6. **Captura em lacunas de vídeo rejeitada:** 219 quadros da timeline não têm overlay ativo, mas uma otimização para captura completa nesses intervalos não reduziu o export integral (76,96s vs referência 76,34s; render 49,20s vs 48,43s) e foi revertida. Não repetir sem trace de quadros realmente capturados/reutilizados; escolher o próximo candidato pelo custo medido.
+7. **AMF speed rejeitado:** piloto UI frio de 600f validou 24,45s, contra x264 ultrafast/8 threads em 22,70–22,91s. Um único run não prova o efeito do preset e não teve comparação de qualidade; o override foi removido. Manter x264 no host medido.
 
 ### Meta operacional — 30 segundos no projeto completo (10/11/2026)
 

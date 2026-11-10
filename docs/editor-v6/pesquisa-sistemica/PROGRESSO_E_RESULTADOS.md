@@ -291,3 +291,9 @@ Os relatórios integrais colocam preparação Motion no Main em aproximadamente 
 - `captureMs` agregado caiu 24,676→24,190s, mas suas amostras subiram 456→464 e atravessam workers paralelos. Uma execução por condição não permite atribuição causal; o wall e o render da variante ficaram maiores. **A implementação foi revertida** e o teste de exportação Electron foi executado com ela; o caminho final de produção volta ao comportamento original.
 - Relatórios: `target30-video-gap-transition-smoke/` e `target30-video-gap-full-candidate/`, JSON leves. O harness removeu o MP4 e `isolated-app-data`; nenhum frame/cache foi retido.
 - Próximo passo: instrumentar recaptura/reuso por modo e estágio sob o projeto inteiro. Sem um sinal que supere o ruído, priorizar outro gargalo medido em vez de iterar essa hipótese.
+
+### Triagem AMF com preferência por velocidade — 10/11/2026
+
+- Pesquisa no FFmpeg bundled: `h264_amf` aceita `-quality speed`; preferência foi confirmada por `ffmpeg -h encoder=h264_amf` e na documentação oficial do FFmpeg. O override foi restrito à sessão de stress e ao AMF, testado e depois removido.
+- O piloto UI frio selecionou `h264_amf`, validou 600/600 quadros, 2 vídeos e 2 faixas de áudio em 24,45s clique→MP4 (19,51s Main; Motion 4,81s; render 12,65s; finalização 1,28s). X264 ultrafast/8 threads em duas referências frias ficou em 22,70/22,91s.
+- O valor AMF speed ficou 6,8–7,7% atrás de x264, sem qualidade decodificada pareada. Não fazer full AMF nem promover; o produto segue x264 com fallback atual. Pesquisa 24 atualizada.
