@@ -1,6 +1,6 @@
 import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
-import { basename, dirname, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join, resolve, sep } from 'node:path'
 
 const EXPORT_TEMP_PREFIX = 'editor-v6-export-'
 
@@ -28,6 +28,26 @@ export async function removeEditorV6ExportCandidate(candidate: string): Promise<
     await unlink(candidate)
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error
+  }
+}
+
+/** Publishes a validated MP4, choosing a recovery name only when the destination is temporarily unavailable. */
+export async function publishEditorV6Output(
+  candidate: string,
+  requestedPath: string,
+  id: string,
+  move: (from: string, to: string) => Promise<void> = rename
+): Promise<{ outputPath: string; warning?: string }> {
+  try {
+    await move(candidate, requestedPath)
+    return { outputPath: requestedPath }
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException)?.code
+    if (!['EPERM', 'EACCES', 'EBUSY', 'EEXIST'].includes(String(code))) throw error
+    const extension = extname(requestedPath) || '.mp4'
+    const recoveryPath = join(dirname(requestedPath), `${basename(requestedPath, extension)} (recuperado-${id.slice(0, 8)})${extension}`)
+    await move(candidate, recoveryPath)
+    return { outputPath: recoveryPath, warning: `O destino escolhido estava ocupado; o vídeo foi salvo como ${basename(recoveryPath)}.` }
   }
 }
 

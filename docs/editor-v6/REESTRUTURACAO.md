@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio e ciclo de artefatos temporários; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários e publicação do candidato; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
 
@@ -232,3 +232,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados bucket de 0,1 ms até 200 ms, tratamento de amostras não positivas/não finitas, contagem e arredondamento, métricas de quadro aceitas e valores `phaseMilliseconds` do relatório. As métricas locais de PNG que não fazem parte do tipo compartilhado seguem suportadas no relatório do runner; não houve alteração de IPC ou schema.
 
 **Verificação:** 3 testes Node sintéticos cobrem histogramas/percentis e limite dos buckets, filtros dos contadores e acumulação do tempo de fase. Mais 22 testes Vitest do runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (734 arquivos), `npm run build` e `git diff --check` passaram. Não foi executado export MP4.
+
+### Ciclo 21 — publicação do candidato validado (implementado e verificado)
+
+**Objetivo:** mover para `exportArtifacts.ts` a regra de mover o MP4 candidato para o destino solicitado e usar um nome de recuperação apenas quando o destino estiver bloqueado. O runner continua determinando o momento em que a publicação é segura, após validação do arquivo.
+
+**Compatibilidade:** preservados os códigos de erro que permitem recuperação (`EPERM`, `EACCES`, `EBUSY`, `EEXIST`), o nome `(recuperado-<8 caracteres do job>)`, o aviso entregue ao usuário e a propagação de outras falhas como falta de espaço. Sem alteração em formato, destino ou momento de publicação.
+
+**Verificação:** 26 testes Vitest do runner e lifecycle IPC passaram, incluindo publicação normal, os quatro códigos recuperáveis e propagação de erro não recuperável. Os 5 testes Node do ciclo de artefatos também passaram; `npm run typecheck`, `npm run audit:architecture` (734 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 real foi gerado.

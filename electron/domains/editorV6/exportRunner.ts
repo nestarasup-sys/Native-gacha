@@ -1,6 +1,6 @@
-import { mkdir, rename, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, dirname, extname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { availableParallelism, release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
@@ -15,7 +15,7 @@ import { runExportCommand, spawnExportProcess, waitForExport } from './exportPro
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
-import { createEditorV6ExportTempFolder, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
+import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
@@ -46,17 +46,6 @@ type Dependencies = {
   signal: AbortSignal; progress: (patch: Partial<EditorV6ExportStatus>) => void
 }
 
-export async function publishEditorV6Output(candidate: string, requestedPath: string, id: string, move: (from: string, to: string) => Promise<void> = rename): Promise<{ outputPath: string; warning?: string }> {
-  try { await move(candidate, requestedPath); return { outputPath: requestedPath } }
-  catch (error) {
-    const code = (error as NodeJS.ErrnoException)?.code
-    if (!['EPERM', 'EACCES', 'EBUSY', 'EEXIST'].includes(String(code))) throw error
-    const extension = extname(requestedPath) || '.mp4'
-    const recoveryPath = join(dirname(requestedPath), `${basename(requestedPath, extension)} (recuperado-${id.slice(0, 8)})${extension}`)
-    await move(candidate, recoveryPath)
-    return { outputPath: recoveryPath, warning: `O destino escolhido estava ocupado; o vídeo foi salvo como ${basename(recoveryPath)}.` }
-  }
-}
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
 const x264Preset = () => {
   const stressX264Presets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']
