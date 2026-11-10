@@ -1,9 +1,14 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { encodingArgs } from '../../electron/domains/editorV6/exportRunner'
+import { encodingArgs, probeExportMedia as legacyProbeExportMedia } from '../../electron/domains/editorV6/exportRunner'
+import { probeExportMedia } from '../../electron/domains/editorV6/exportMediaProbe'
 import { publishEditorV6Output } from '../../electron/domains/editorV6/exportArtifacts'
 
 describe('codificação do Editor V6', () => {
   afterEach(() => vi.unstubAllEnvs())
+
+  it('mantém o acesso à sondagem pelo módulo runner antigo', () => {
+    expect(legacyProbeExportMedia).toBe(probeExportMedia)
+  })
 
   it('usa o preset frio medido e permite comparação restrita somente no harness isolado', () => {
     expect(encodingArgs('libx264', 4).slice(encodingArgs('libx264', 4).indexOf('-preset') + 1, encodingArgs('libx264', 4).indexOf('-preset') + 2)).toEqual(['ultrafast'])

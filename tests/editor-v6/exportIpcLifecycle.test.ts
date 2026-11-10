@@ -25,13 +25,14 @@ vi.mock('../../electron/domains/editorV6/exportWorkers', () => ({
   createEditorV6WorkerFactory: vi.fn(() => ({ create: vi.fn() }))
 }))
 vi.mock('../../electron/domains/editorV6/exportRunner', () => ({
-  probeExportMedia: vi.fn(),
   runEditorV6Export: vi.fn()
 }))
+vi.mock('../../electron/domains/editorV6/exportMediaProbe', () => ({ probeExportMedia: vi.fn() }))
 
 import { dialog } from 'electron'
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
-import { probeExportMedia, runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
+import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
+import { probeExportMedia } from '../../electron/domains/editorV6/exportMediaProbe'
 import { registerEditorV6ExportHandlers } from '../../electron/domains/editorV6/exportIpc'
 
 const sourceId = '11111111-1111-4111-8111-111111111111'

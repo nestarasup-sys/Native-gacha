@@ -296,3 +296,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a consulta continua imediata e depois a cada 500 ms; falhas são mostradas e tentadas novamente; resultados de chamadas em andamento são ignorados após desmontagem; estados terminais continuam sendo `completed`, `cancelled` e `failed`. Canais IPC, payload, job lembrado e sequência de exportação permanecem iguais.
 
 **Verificação:** 4 testes novos exercitam repetição, erro, cancelamento e estados; 22 testes de exportação e presets passaram (26 no total), mais os 18 testes do ciclo de vida IPC. `npm run typecheck`, `npm run audit:architecture` (742 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 29 — codificação e sondagem de mídia FFmpeg (implementado e verificado)
+
+**Objetivo:** mover a montagem dos argumentos H.264 para `exportEncoding.ts` e a sondagem FFprobe para `exportMediaProbe.ts`. `exportMediaIpc` agora depende diretamente da sondagem, sem carregar o runner de exportação como módulo auxiliar.
+
+**Compatibilidade:** `exportRunner` mantém reexports de `encodingArgs`, `probeExportMedia` e do tipo `MediaProbe`; preservados preset de CPU restrito ao harness, perfis H.264, metadados BT.709, flags de contagem de quadros/pacotes, sinal de cancelamento e parsing JSON. Canais e payloads IPC não mudaram.
+
+**Verificação:** 4 testes sintéticos de sondagem, 9 de codificação/publicação/reexportação e 18 testes do ciclo IPC passaram (31 no total). `npm run typecheck`, `npm run audit:architecture` (744 arquivos), `npm run build` e `git diff --check` passaram.

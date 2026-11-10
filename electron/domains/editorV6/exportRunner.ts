@@ -12,23 +12,21 @@ import { prepareExportMouthLoops } from './prepareMouthLoops'
 import { editorV6ExportTestSettings, type EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
+import { encodingArgs } from './exportEncoding'
+import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
 import { buildEditorV6VideoComposition } from './exportVideoComposition'
-import { finalizeEditorV6Export, type EditorV6ExportFinalizationPart, type EditorV6ExportMediaProbe } from './exportFinalization'
+import { finalizeEditorV6Export, type EditorV6ExportFinalizationPart } from './exportFinalization'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
+export { encodingArgs, probeExportMedia }
+export type { MediaProbe } from './exportMediaProbe'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
-export type MediaProbe = EditorV6ExportMediaProbe
-export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count: boolean | 'packets' = false): Promise<MediaProbe> {
-  const countArgs = count === 'packets' ? ['-count_packets'] : count ? ['-count_frames'] : []
-  const result = await runExportCommand(ffprobe, ['-v', 'error', ...countArgs, '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
-  return JSON.parse(result.stdout) as MediaProbe
-}
 type PartReport = EditorV6ExportPart & EditorV6ExportFinalizationPart & { rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: EditorV6FrameTimingReport; frameMetrics?: EditorV6FrameMetrics }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: EditorV6ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
@@ -49,29 +47,6 @@ type Dependencies = {
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
-const x264Preset = () => {
-  const stressX264Presets = ['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium']
-  const candidate = process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET
-  // Cold full-project A/B at 12 Mbps found ultrafast 6.4% faster with SSIM 0.9979,
-  // PSNR 52.8 dB, and identical decoded audio versus veryfast.
-  return process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && candidate && stressX264Presets.includes(candidate) ? candidate : 'ultrafast'
-}
-
-// Each Turbo part must use identical H.264 color signalling even when only
-// some parts contain a source video with its own color metadata.
-export const encodingArgs = (encoder: string, threads: number) => [
-  '-c:v', encoder,
-  ...(encoder === 'libx264'
-    ? ['-b:v', '12M', '-preset', x264Preset(), '-threads', String(threads)]
-    : encoder === 'libopenh264'
-      ? ['-b:v', '12M', '-rc_mode', 'quality', '-allow_skip_frames', '0', '-threads', String(threads)]
-      : ['-b:v', '12M']),
-  ...(encoder === 'h264_mf' ? ['-hw_encoding', '0'] : []),
-  '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709',
-  '-color_primaries', 'bt709', '-color_trc', 'bt709',
-  '-profile:v', encoder === 'h264_mf' ? '100' : 'high',
-  '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000'
-]
 const MOUTH_LOOP_BATCH_FRAMES = 300
 function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
   return project.timeline.tracks.some((track) => track.kind === 'speech' && !track.hidden && !track.muted && track.blocks.some((block) => Boolean(block.characterId ?? block.state?.characterId) && block.startFrame < endFrame && block.startFrame + block.durationFrames > startFrame))

@@ -2,27 +2,11 @@ import { writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportPart, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import type { MediaProbe } from './exportMediaProbe'
 import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
 
-export type EditorV6ExportMediaProbe = {
-  streams: Array<{
-    codec_type: string
-    codec_name: string
-    profile?: string
-    pix_fmt?: string
-    width?: number
-    height?: number
-    r_frame_rate?: string
-    time_base?: string
-    has_b_frames?: number
-    nb_read_frames?: string
-    nb_read_packets?: string
-    nb_frames?: string
-    duration?: string
-    extradata_hash?: string
-  }>
-  format: { duration?: string }
-}
+/** Retained alias for callers that referenced the validation type through finalization. */
+export type EditorV6ExportMediaProbe = MediaProbe
 
 export type EditorV6ExportFinalizationPart = Pick<EditorV6ExportPart, 'startFrame'> & {
   encoder: string

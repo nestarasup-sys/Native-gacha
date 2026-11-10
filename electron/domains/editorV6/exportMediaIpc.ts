@@ -7,7 +7,7 @@ import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { editorV6ExportAudioSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
-import { probeExportMedia } from './exportRunner'
+import { probeExportMedia } from './exportMediaProbe'
 
 type LibraryVideo = {
   path: string
