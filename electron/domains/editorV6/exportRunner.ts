@@ -1,6 +1,6 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, dirname, join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { availableParallelism, release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
@@ -14,23 +14,22 @@ import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio,
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
-import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
 import { buildEditorV6VideoComposition } from './exportVideoComposition'
+import { finalizeEditorV6Export, type EditorV6ExportFinalizationPart, type EditorV6ExportMediaProbe } from './exportFinalization'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
-type StreamProbe = { codec_type: string; codec_name: string; profile?: string; pix_fmt?: string; width?: number; height?: number; r_frame_rate?: string; time_base?: string; has_b_frames?: number; nb_read_frames?: string; nb_read_packets?: string; nb_frames?: string; duration?: string; extradata_hash?: string }
-export type MediaProbe = { streams: StreamProbe[]; format: { duration?: string } }
+export type MediaProbe = EditorV6ExportMediaProbe
 export async function probeExportMedia(ffprobe: string, path: string, signal: AbortSignal, count: boolean | 'packets' = false): Promise<MediaProbe> {
   const countArgs = count === 'packets' ? ['-count_packets'] : count ? ['-count_frames'] : []
   const result = await runExportCommand(ffprobe, ['-v', 'error', ...countArgs, '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
   return JSON.parse(result.stdout) as MediaProbe
 }
-type PartReport = EditorV6ExportPart & { encoder: string; rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: EditorV6FrameTimingReport; frameMetrics?: EditorV6FrameMetrics; path: string; probe?: MediaProbe }
+type PartReport = EditorV6ExportPart & EditorV6ExportFinalizationPart & { rendered: number; reused: number; frames: number; milliseconds: number; startedAtOffsetMs: number; finishedAtOffsetMs?: number; frameTiming?: EditorV6FrameTimingReport; frameMetrics?: EditorV6FrameMetrics }
 type AttemptReport = { parts: PartReport[]; encoder: string; parallelism: number; milliseconds?: number; error?: string }
 export type EditorV6ExportReport = { schemaVersion: 1; id: string; state: string; projectId: string; options: EditorV6ExportOptions; fps: 30; totalFrames: number; fallback: boolean; attempts: AttemptReport[]; encoderTests: Array<{ encoder: string; error?: string }>; audioClips: number; videoInputs: number; proxies: 0; motionTransitionsRequired: number; motionTransitionsPrepared: number; motionPreparation?: Awaited<ReturnType<typeof prepareExportMotions>>['stats']; hairPreparation?: EditorV6HairPreparationProfile; exportTestSettings?: EditorV6ExportTestSettings; runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }; motionCache?: EditorV6MotionCacheStats & { inputSamples: Array<{ cacheKey: string; planKeyHash: string; characterId: string; characterFingerprint: string }> }; mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }; mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }; phaseMilliseconds: EditorV6ExportPhaseTimings; startedAt: string; endedAt?: string; milliseconds?: number; outputPath: string; deliveryWarning?: string; validation?: unknown; error?: string }
 type Dependencies = {
@@ -293,80 +292,25 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libx264', 'libopenh264'] : ['libx264', 'libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: PartReport[]) => {
-      if (new Set(parts.map((part) => part.encoder)).size !== 1) throw Error('As partes usaram codificadores diferentes.')
-      const signatures = parts.map((part) => {
-        const video = part.probe?.streams.find((stream) => stream.codec_type === 'video')
-        if (!video || video.codec_name !== 'h264') throw Error('Uma parte não contém vídeo H.264 válido.')
-        return JSON.stringify([video.codec_name, video.profile, video.pix_fmt, video.width, video.height, video.r_frame_rate, video.time_base, video.extradata_hash])
+      const result = await finalizeEditorV6Export({
+        ffmpeg: deps.ffmpeg,
+        ffprobe: deps.ffprobe,
+        folder,
+        candidate,
+        project,
+        options,
+        totalFrames,
+        parts,
+        signal: deps.signal,
+        audioPath: (clip) => deps.audioPath(clip),
+        runCommand: runExportCommand,
+        probeMedia: probeExportMedia,
+        progress: (patch) => deps.progress(patch),
+        setAudioClipCount: (count) => { report.audioClips = count },
+        setDeliveryWarning: (warning) => { report.deliveryWarning = warning },
+        setValidation: (validation) => { report.validation = validation }
       })
-      if (new Set(signatures).size !== 1) throw Error('Os parâmetros das partes são incompatíveis para junção sem recodificação.')
-      const audio = planEditorV6ProjectAudio(project, options.startFrame, options.endFrame)
-      deps.progress({ state: 'joining', message: audio.length ? 'Juntando o vídeo e preparando a mixagem de áudio…' : 'Juntando o vídeo final…', frames: totalFrames })
-      const list = join(folder, 'parts.txt')
-      await writeFile(list, parts.map((part) => `file '${basename(part.path)}'`).join('\n') + '\n')
-      report.audioClips = audio.length
-      const { strict: filters, recoverable: recoveryFilters } = editorV6AudioFilterGraphs(audio, totalFrames)
-      const audioPaths = await Promise.all(audio.map((item) => deps.audioPath(item.clip)))
-      const joinArgs = (recoverAudio = false) => ['-v', 'error', '-y', ...(recoverAudio ? ['-max_error_rate', '1'] : []), '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', (recoverAudio ? recoveryFilters : filters).join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(totalFrames / 30), '-movflags', '+faststart', candidate]
-      try {
-        await runExportCommand(deps.ffmpeg, joinArgs(), deps.signal, folder)
-      } catch (error) {
-        deps.signal.throwIfAborted()
-        if (!audio.length) throw error
-        const source = editorV6AudioDecodeFailureSource(error, audio)
-        const sourceName = source.clip ? `“${source.clip.name}” (${source.clip.fileName})` : 'uma das fontes de áudio'
-        const codec = source.codec ?? 'áudio'
-        if (!isEditorV6AudioDecodeRateFailure(error)) {
-          if (source.clip && isEditorV6AudioPacketDecodeFailure(error)) throw Error(`A fonte ${sourceName} contém dados ${codec} inválidos e não há quadros decodificáveis suficientes. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(error)}`, { cause: error })
-          throw error
-        }
-        deps.progress({ state: 'joining', message: `Recuperando quadros decodificáveis de ${sourceName}…` })
-        try {
-          // FFmpeg's default max_error_rate is 2/3 and returns code 69 above it.
-          // Retry only after that failure; valid sources keep the strict, unchanged path.
-          await runExportCommand(deps.ffmpeg, joinArgs(true), deps.signal, folder)
-        } catch (recoveryError) {
-          throw Error(`A fonte ${sourceName} tem erros demais para recuperar o ${codec}. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(recoveryError)}`, { cause: recoveryError })
-        }
-        report.deliveryWarning = `O MP4 foi exportado e validado, mas a fonte ${sourceName} contém quadros ${codec} inválidos. O FFmpeg recuperou os quadros decodificáveis; os trechos danificados podem estar ausentes ou silenciosos. Substitua ou reimporte essa mídia para preservar o áudio completo.`
-      }
-      deps.progress({ state: 'validating', message: 'Conferindo quadros, duração e emendas do MP4…' })
-      const seams = parts.slice(1).map((part) => part.startFrame - options.startFrame)
-      const validateSeams = async () => {
-        for (let offset = 0; offset < seams.length; offset += 2) {
-          const checks = await Promise.allSettled(seams.slice(offset, offset + 2).map((seam) =>
-            runExportCommand(deps.ffmpeg, ['-v', 'error', '-err_detect', 'explode', '-ss', String(Math.max(0, seam - 1) / 30), '-i', candidate, '-frames:v', '3', '-an', '-f', 'null', '-'], deps.signal)
-          ))
-          const failed = checks.find((check) => check.status === 'rejected')
-          if (failed?.status === 'rejected') throw failed.reason
-        }
-      }
-      const [packetProbeResult, seamResult] = await Promise.allSettled([
-        probeExportMedia(deps.ffprobe, candidate, deps.signal, 'packets'),
-        validateSeams()
-      ])
-      if (packetProbeResult.status === 'rejected') throw packetProbeResult.reason
-      if (seamResult.status === 'rejected') throw seamResult.reason
-      let validation = packetProbeResult.value
-      const packetVideo = validation.streams.find((stream) => stream.codec_type === 'video')
-      // Every encoded part was frame-count validated before stream-copy join.
-      // With the configured no-B-frame H.264 profile, one video packet is one
-      // displayed frame; count packets to validate the joined MP4 without
-      // decoding the whole movie a second time. Keep the strict decoded-frame
-      // check as fallback for unusual containers/profiles or bad packet counts.
-      if (Number(packetVideo?.nb_read_packets) !== totalFrames || Number(packetVideo?.has_b_frames ?? 0) !== 0) {
-        validation = await probeExportMedia(deps.ffprobe, candidate, deps.signal, true)
-      }
-      report.validation = validation
-      const video = validation.streams.find((stream) => stream.codec_type === 'video')
-      const validatedFrames = video?.nb_read_frames === undefined && Number(video?.has_b_frames ?? 0) === 0
-        ? video?.nb_read_packets : video?.nb_read_frames
-      if (!video || Number(validatedFrames) !== totalFrames || video.width !== options.width || video.height !== options.height || video.r_frame_rate !== '30/1' || !Number.isFinite(Number(video.duration)) || Math.abs(Number(video.duration) - totalFrames / 30) > 1 / 30 + .001) throw Error('O arquivo final não passou na validação de quadros, resolução, FPS ou duração.')
-      if (audio.length) {
-        const sound = validation.streams.find((stream) => stream.codec_type === 'audio')
-        if (!sound || !Number.isFinite(Number(sound.duration)) || Math.abs(Number(sound.duration) - totalFrames / 30) > .05) throw Error('O arquivo final perdeu ou truncou a trilha de áudio.')
-      }
-      return { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 }
+      return result.validation
     }
     const finishMeasured = async (parts: PartReport[]) => {
       const finalizationStarted = performance.now()

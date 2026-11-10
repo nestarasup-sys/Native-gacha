@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato e composição de vídeos FFmpeg; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição de vídeos FFmpeg e finalização/validação; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -256,3 +256,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos marcação visual, classes, rótulos acessíveis, estado de seleção, condições de habilitação, conteúdo do diálogo e callbacks atuais. A página ainda executa a confirmação de exclusão e a transição para o projeto selecionado. Nenhuma alteração no catálogo persistido, dados reais, navegação ou IPC.
 
 **Verificação:** 4 testes Vitest de renderização cobrem carregamento, lista vazia, diálogo de importação e cartões selecionados; 11 testes Node de criação, duplicação e exclusão passaram. `npm run typecheck`, `npm run audit:architecture` (736 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 24 — finalização e validação da exportação (implementado e verificado)
+
+**Objetivo:** retirar do `exportRunner.ts` a concatenação de trechos, recuperação estrita de falhas decodificáveis no áudio, inspeção das emendas e validação do arquivo final para `exportFinalization.ts`. O runner continua escolhendo a tentativa, o codificador e quando a publicação pode começar.
+
+**Compatibilidade:** mantidos lista de partes relativa à pasta temporária, streams H.264 compatíveis, mixagem/recuperação de áudio, sondagem por pacotes com fallback de quadros, validação de resolução/FPS/duração/áudio e campos de relatório mesmo quando a validação falha. Nenhuma alteração em IPC, schema, argumentos ou publicação.
+
+**Verificação:** 6 testes Node sintéticos cobrem compatibilidade das partes, concatenação, sondagem por pacotes/fallback por quadros, emendas, recuperação de áudio, áudio irrecuperável e preservação da sonda em falha. Mais 4 testes Node de planejamento/filtros de áudio e 26 testes Vitest do runner/IPC passaram. `npm run typecheck`, `npm run audit:architecture` (737 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 foi gerado.
