@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros e finalização/validação; preservar workers, captura, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -312,3 +312,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados reuso do último bitmap, erro para bitmap ausente, contagem de quadros escritos, progresso global, limites de timeout/cancelamento no writer, métricas por quadro e atualização dos relatórios parciais. Sem mudanças no protocolo do worker, conteúdo de quadros, FFmpeg ou relatório.
 
 **Verificação:** 3 testes novos cobrem escrita/reuso, falhas e cancelamento; 9 testes existentes de compatibilidade e 18 de ciclo IPC passaram (30 no total). `npm run typecheck`, `npm run audit:architecture` (745 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 31 — ciclo de vida de cada trecho de exportação (implementado e verificado)
+
+**Objetivo:** extrair do `exportRunner.ts` a preparação de loops de boca, composição FFmpeg, criação do worker, streaming dos quadros, sondagem e encerramento de recursos para `exportPartRenderer.ts`. O runner continua responsável por agrupar trechos, atualizar o relatório global e agregar as métricas de boca.
+
+**Compatibilidade:** preservados o nome e caminho dos MP4 temporários, argumentos de codificação, associação de mídias, paralelismo, progresso global, contadores, métricas parciais, validação da quantidade de quadros, cancelamento, abortamento em falha e limpeza do worker/processo. O progresso da preparação de boca mantém a contagem global de quadros já concluídos. Nenhuma mudança em IPC, schema, documento ou formato do relatório.
+
+**Verificação:** 4 testes novos cobrem sucesso, preparação de boca, erro de preparação e falha do worker; junto com 30 regressões do pipeline, runner e lifecycle IPC, 34 testes passaram. `npm run typecheck`, `npm run audit:architecture` (746 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 real foi gerado.
