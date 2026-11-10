@@ -43,7 +43,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
 7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato e composição de vídeos FFmpeg; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
-9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
+9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
 Os ciclos são independentes; a ordem pode mudar quando o código ou uma regressão demonstrar outra causa prioritária.
 
@@ -248,3 +248,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados ordem dos clips, seek/duração em segundos, offsets relativos ao início de cada trecho, posicionamento, rotação, sinalização BT.709 e composição da entrada em duas camadas. O runner continua reexportando a constante de filtro de cor pelo caminho antigo. Sem alteração no planejamento compartilhado, nos workers ou nos formatos de exportação.
 
 **Verificação:** 3 testes Node sintéticos cobrem seek, duração, offsets, ordem, posição, rotação e modo em camadas; 30 testes Vitest de runner, lifecycle IPC e paridade da timeline passaram; os 5 testes Node de artefatos também passaram. `npm run typecheck`, `npm run audit:architecture` (735 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 foi gerado.
+
+### Ciclo 23 — apresentação da biblioteca de projetos (implementado e verificado)
+
+**Objetivo:** retirar da `EditorV6Page` a tela de catálogo inicial — cabeçalho, ações, estado de carregamento/vazio, cartões e diálogo de importação — para `EditorV6ProjectBrowser.tsx`. A página continua dona dos hooks, operações, confirmação de exclusão, seleção ativa e gravação/importação.
+
+**Compatibilidade:** mantidos marcação visual, classes, rótulos acessíveis, estado de seleção, condições de habilitação, conteúdo do diálogo e callbacks atuais. A página ainda executa a confirmação de exclusão e a transição para o projeto selecionado. Nenhuma alteração no catálogo persistido, dados reais, navegação ou IPC.
+
+**Verificação:** 4 testes Vitest de renderização cobrem carregamento, lista vazia, diálogo de importação e cartões selecionados; 11 testes Node de criação, duplicação e exclusão passaram. `npm run typecheck`, `npm run audit:architecture` (736 arquivos), `npm run build` e `git diff --check` passaram.

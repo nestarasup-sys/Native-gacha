@@ -6,7 +6,7 @@ import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
-import { EditorV6ReactImportDialog } from './EditorV6ReactImportDialog'
+import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -778,23 +778,23 @@ export function EditorV6Page() {
     )
   }
 
-  return (
-    <main className="studio-page" aria-label="Editor V6">
-      <header className="studio-page-header"><h1>EDITOR V6</h1>{studioFolder && <small>Dados locais: {studioFolder}</small>}</header>
-      <div className="studio-toolbar" aria-label="Ações do Editor V6">
-        <button className="studio-action studio-action-primary" onClick={() => void createStudio()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
-        <button className="studio-action" onClick={() => setReactImportOpen(true)} disabled={loading || !availableCharactersReady} type="button"><Icon name="download" />Importar JSON</button>
-      </div>
-      {reactImportOpen && <EditorV6ReactImportDialog characters={availableCharacters} onClose={() => setReactImportOpen(false)} onSave={writeEditorV6Document} onImported={(project) => { upsertEditorV6Summary(editorV6ProjectSummary(project)); setSelectedId(project.id); setActiveEditorV6Id(project.id); setSaved(true); setReactImportOpen(false); setError(null) }} />}
-      {error && <p className="studio-error-message" role="alert">{error}</p>}
-      {loading ? <section className="studio-empty-state"><strong>Carregando projetos…</strong></section> : editorV6Projects.length ? (
-        <section className="studio-grid" aria-label="Projetos do Editor V6">
-          {editorV6Projects.map((studio) => <article className={`studio-card${selectedId === studio.id ? ' selected' : ''}`} key={studio.id}>
-            <header className="studio-card-heading"><button className="studio-card-open" onClick={() => { setSelectedId(studio.id); setActiveEditorV6Id(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button">{studio.title}</button><div className="studio-card-actions"><button className="studio-card-action" onClick={() => void duplicateStudio(studio)} aria-label={`Duplicar ${studio.title}`} title={`Duplicar ${studio.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => void deleteStudio(studio)} aria-label={`Excluir ${studio.title}`} title={`Excluir ${studio.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="studio-cover" style={{ backgroundColor: studio.color, ...(studio.thumbnailDataUrl ? { backgroundImage: `url(${studio.thumbnailDataUrl})` } : {}) }} onClick={() => { setSelectedId(studio.id); setActiveEditorV6Id(studio.id) }} aria-label={`Abrir ${studio.title}`} type="button" />
-          </article>)}
-        </section>
-      ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum projeto criado</strong><small>Crie um projeto para começar.</small></section>}
-    </main>
-  )
+  return <EditorV6ProjectBrowser
+    folder={studioFolder}
+    loading={loading}
+    creatingProject={creatingProject}
+    projects={editorV6Projects}
+    selectedProjectId={selectedId}
+    error={error}
+    importOpen={reactImportOpen}
+    characters={availableCharacters}
+    charactersReady={availableCharactersReady}
+    onCreateProject={createStudio}
+    onOpenImport={() => setReactImportOpen(true)}
+    onCloseImport={() => setReactImportOpen(false)}
+    onSaveImportedProject={writeEditorV6Document}
+    onImportCompleted={(project) => { upsertEditorV6Summary(editorV6ProjectSummary(project)); setSelectedId(project.id); setActiveEditorV6Id(project.id); setSaved(true); setReactImportOpen(false); setError(null) }}
+    onOpenProject={(projectId) => { setSelectedId(projectId); setActiveEditorV6Id(projectId) }}
+    onDuplicateProject={(project) => { void duplicateStudio(project) }}
+    onDeleteProject={(project) => { void deleteStudio(project) }}
+  />
 }
