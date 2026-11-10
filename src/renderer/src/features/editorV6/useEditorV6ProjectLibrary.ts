@@ -11,6 +11,7 @@ type Dependencies = {
   setFolder: (folder: string) => void
   setLoading: (loading: boolean) => void
   setError: (message: string | null) => void
+  setSaved: (saved: boolean) => void
   setActiveProjectId: (id: string | null) => void
   setActiveProject: (project: EditorV6Document | null) => void
   pausePlayback: () => void
@@ -26,6 +27,7 @@ export function useEditorV6ProjectLibrary({
   setFolder,
   setLoading,
   setError,
+  setSaved,
   setActiveProjectId,
   setActiveProject,
   pausePlayback,
@@ -62,6 +64,7 @@ export function useEditorV6ProjectLibrary({
       pausePlayback()
       publishPlayheadFrame(0)
       setActiveProject(null)
+      setSaved(true)
       return
     }
     setActiveProject(null)
@@ -74,11 +77,14 @@ export function useEditorV6ProjectLibrary({
       }
       setError(null)
       setActiveProject(project)
+      // Dirty state belongs to the previously active document. A project read
+      // from persistence is a clean baseline until a refresh/edit changes it.
+      setSaved(true)
     }).catch((reason: unknown) => {
       if (generation !== activeLoadGenerationRef.current) return
       setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o projeto do Editor V6.')
       setActiveProjectId(null)
     })
     return () => { if (activeLoadGenerationRef.current === generation) activeLoadGenerationRef.current += 1 }
-  }, [activeProjectId, pausePlayback, publishPlayheadFrame, setActiveProject, setActiveProjectId, setError])
+  }, [activeProjectId, pausePlayback, publishPlayheadFrame, setActiveProject, setActiveProjectId, setError, setSaved])
 }

@@ -32,7 +32,7 @@ export function useCustomizerWardrobeAdjustment(deps: {
     setWardrobeTransformDraft(group ? { offsetX: group.offsetX, offsetY: group.offsetY, scaleX: group.scaleX, scaleY: group.scaleY, rotation: group.rotation } : null)
   }, [selectedCharacter?.id, selectedCharacter?.customization.wardrobeGroups, selectedClothing?.modelSlot, selectedClothing?.setId, selectedClothing?.category, selectedClothing?.componentId])
 
-  async function updateClothesAdjustComponent(operation: 'transform' | 'toggle-hidden', values?: Partial<WardrobeTransform>) {
+  async function updateClothesAdjustComponent(operation: 'transform' | 'toggle-hidden' | 'reset', values?: Partial<WardrobeTransform>) {
     if (!selectedCharacter || !selectedClothing) return
     setAdjustmentPreviewHighlight(null)
     const current = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
@@ -43,7 +43,8 @@ export function useCustomizerWardrobeAdjustment(deps: {
     const selection = { modelSlot: selectedClothing.modelSlot, setId: selectedClothing.setId, category: selectedClothing.category, componentId: selectedClothing.componentId }
     const nextGroups = updateWardrobeComponentGroups(groups, originalGroups, selection, operation, values, sourceCategories, selectedSet?.components, displayArtworkParts)
     const adjusted = nextGroups.find((group) => matchesWardrobeComponent(group, selection))
-    if (values && adjusted) setWardrobeTransformDraft({ offsetX: adjusted.offsetX, offsetY: adjusted.offsetY, scaleX: adjusted.scaleX, scaleY: adjusted.scaleY, rotation: adjusted.rotation })
+    if (operation === 'reset') setWardrobeTransformDraft({ offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 })
+    else if (values && adjusted) setWardrobeTransformDraft({ offsetX: adjusted.offsetX, offsetY: adjusted.offsetY, scaleX: adjusted.scaleX, scaleY: adjusted.scaleY, rotation: adjusted.rotation })
     await saveCharacterCustomization({ wardrobeGroups: nextGroups })
   }
 

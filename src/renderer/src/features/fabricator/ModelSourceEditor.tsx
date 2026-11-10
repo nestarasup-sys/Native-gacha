@@ -70,6 +70,35 @@ function cropFromGesture(gesture: DrawingGesture): ModelSourceCrop {
   return { x, y, width: right - x, height: bottom - y }
 }
 
+async function cropImageToVisiblePixels(dataUrl: string): Promise<string> {
+  const image = new Image()
+  image.src = dataUrl
+  await image.decode()
+  const canvas = document.createElement('canvas')
+  canvas.width = image.naturalWidth
+  canvas.height = image.naturalHeight
+  const context = canvas.getContext('2d', { willReadFrequently: true })
+  if (!context) throw new Error('Não foi possível preparar o PNG da cabeça.')
+  context.drawImage(image, 0, 0)
+  const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+  let left = canvas.width, top = canvas.height, right = -1, bottom = -1
+  for (let y = 0; y < canvas.height; y += 1) for (let x = 0; x < canvas.width; x += 1) {
+    if (pixels[(y * canvas.width + x) * 4 + 3] === 0) continue
+    left = Math.min(left, x); top = Math.min(top, y)
+    right = Math.max(right, x); bottom = Math.max(bottom, y)
+  }
+  if (right < left || bottom < top) throw new Error('A peça da cabeça está totalmente transparente.')
+  const cropped = document.createElement('canvas')
+  cropped.width = right - left + 1
+  cropped.height = bottom - top + 1
+  const croppedContext = cropped.getContext('2d')
+  if (!croppedContext) throw new Error('Não foi possível recortar o PNG da cabeça.')
+  croppedContext.drawImage(canvas, left, top, cropped.width, cropped.height, 0, 0, cropped.width, cropped.height)
+  const png = cropped.toDataURL('image/png')
+  canvas.width = canvas.height = cropped.width = cropped.height = 1
+  return png
+}
+
 function orderAfterSplit(order: string[] | undefined, originalId: string, retainedId: string, newId: string): string[] | undefined {
   if (!order) return undefined
   const next = [...order]
@@ -897,6 +926,23 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
       setDownloading(false)
     }
   }
+  const downloadHead = async () => {
+    if (busy || downloading) return
+    setDownloading(true)
+    setDownloadInfo('')
+    try {
+      const result = await compile()
+      const head = result.parts.find(isHeadPart)
+      if (!head) throw new Error('Este modelo não tem uma peça identificada como cabeça.')
+      const pngDataUrl = await cropImageToVisiblePixels(head.dataUrl)
+      const path = await window.desktop.fabricator.downloadFabricatorModelSource(draft.slot, pngDataUrl, 'head')
+      setDownloadInfo('PNG transparente da cabeça salvo em Downloads: ' + path)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível baixar o PNG da cabeça.')
+    } finally {
+      setDownloading(false)
+    }
+  }
   const changeZoom = (value: number) => setZoom(clamp(value, .5, 4))
   const handlePreviewWheel = (event: ReactWheelEvent<HTMLDivElement>) => {
     if (!event.ctrlKey && !event.metaKey) return
@@ -1180,6 +1226,7 @@ export function ModelSourceEditor({ project, onClose, onPublish }: Props) {
             <option value="original">Tronco original</option>
             <option value="male">Tronco masculino</option>
           </select>
+          <button type="button" onClick={() => void downloadHead()} disabled={busy || downloading || Boolean(error) || !draft.parts.some(isHeadPart)} className="model-source-footer-button" title="Exporta somente a peça Cabeça, recortada e com transparência">{downloading ? 'Exportando…' : 'Baixar cabeça PNG transparente'}</button>
           <button type="button" onClick={() => void download()} disabled={busy || downloading || Boolean(error)} className="model-source-footer-button">{downloading ? 'Exportando…' : 'Baixar PNG em Downloads'}</button>
           <button type="button" onClick={() => void save()} disabled={!edited || busy || downloading || Boolean(error)} className="model-source-footer-button model-source-save">{busy ? 'Publicando…' : 'Salvar no original'}</button>
           </div>

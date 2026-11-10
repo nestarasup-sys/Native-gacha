@@ -24,6 +24,14 @@ test('exporta PNG no diretório Downloads escolhido pelo Electron, sem alterar f
   assert.equal((await readFile(first)).toString('base64'), dataUrl.split(',')[1])
   assert.equal((await readdir(downloads)).length,2)
 })
+test('exporta a cabeça com nome próprio e mantém os bytes PNG recebidos', async t => {
+  const downloads = await mkdtemp(join(tmpdir(), 'native-gacha-head-downloads-'))
+  t.after(() => rm(downloads, {recursive:true,force:true}))
+  const dataUrl = png()
+  const path = await exportModelSourceToDownloads(3, dataUrl, downloads, undefined, 'head')
+  assert.match(path,/Native-Gacha-Modelo-03-Cabeca-[a-f0-9-]+\.png$/)
+  assert.equal((await readFile(path)).toString('base64'), dataUrl.split(',')[1])
+})
 test('bloqueia entradas inválidas e nunca sobrescreve PNG existente', async () => {
   await assert.rejects(exportModelSourceToDownloads(0,png(),'/tmp'),/Slot inválido/)
   await assert.rejects(exportModelSourceToDownloads(1,'data:text/plain;base64,AAAA','/tmp'),/PNG/)

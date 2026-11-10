@@ -611,6 +611,7 @@ export function CustomizerPage() {
         }}
         onTransform={(next) => { void updateClothesAdjustComponent('transform',next) }}
         onToggleHidden={() => { void updateClothesAdjustComponent('toggle-hidden') }}
+        onReset={() => { void updateClothesAdjustComponent('reset') }}
       />
     }
     const items = headAdjustmentItemsFor(headCategorySelection)
@@ -627,6 +628,7 @@ export function CustomizerPage() {
       }}
       onToggleHidden={() => { void updateHeadAdjustment('toggle-hidden') }}
       onTransform={(transform) => { void updateHeadAdjustment('transform', transform) }}
+      onReset={() => { void updateHeadAdjustment('reset') }}
     />
   }
 
@@ -700,9 +702,6 @@ export function CustomizerPage() {
               styles={hairStyles}
               eligibleStyles={eligibleHairStyles}
               details={hairDetails}
-              gender={selectedCharacterGender}
-              showOtherGenderHair={showOtherGenderHair}
-              onShowOtherGenderHairChange={(show) => { setShowOtherGenderHair(show); setHairLibraryPage(0) }}
               libraryPart={hairLibraryPart}
               libraryPageLoading={hairLibraryPageLoading}
               libraryPageView={hairLibraryPageView}

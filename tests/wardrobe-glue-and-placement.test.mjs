@@ -166,6 +166,24 @@ test('Customizador separa seleção legada por ID e muda só a peça escolhida',
   assert.equal(toggleWardrobeVisibility({...group,hidden:true,opacity:.25}).opacity,undefined)
 })
 
+test('resetar peça restaura só sua transformação e preserva visibilidade, cores e referência',()=>{
+  const before=[
+    {...group,componentId:'sleeve-left',offsetX:12,scaleX:1.2},
+    {...group,componentId:'sleeve-right',offsetX:28,offsetY:-7,scaleX:1.4,scaleY:.8,rotation:13,
+      hidden:true,opacity:.4,colors:{base:'#abcdef'},adjustmentReference:{version:1,boneId:'forearm-right',width:40,height:60,rotation:0}}
+  ]
+  const reset=updateWardrobeComponentGroups(before,before,selected,'reset',undefined,['manga-inferior'],wardrobeComponents,[armLeft,armRight])
+  const left=reset.find(item=>item.componentId==='sleeve-left')
+  const right=reset.find(item=>item.componentId==='sleeve-right')
+  assert.deepEqual([left.offsetX,left.offsetY,left.scaleX,left.scaleY,left.rotation],[12,0,1.2,1,0])
+  assert.deepEqual([right.offsetX,right.offsetY,right.scaleX,right.scaleY,right.rotation],[0,0,1,1,0])
+  assert.equal(right.hidden,true)
+  assert.equal(right.opacity,.4)
+  assert.deepEqual(right.colors,{base:'#abcdef'})
+  assert.deepEqual(right.adjustmentReference,{version:1,boneId:'forearm-right',width:40,height:60,rotation:0})
+  assert.deepEqual(before[1].offsetX,28)
+})
+
 test('interface usa grude real, sem bolinha azul, sem mudar a folha desmontada',async()=>{
   const [workspace,bindingCommands,controls,renderer,customizerAdjustment]=await Promise.all([
     readFile('src/renderer/src/features/fabricator/wardrobe/WardrobeWorkspace.tsx','utf8'),

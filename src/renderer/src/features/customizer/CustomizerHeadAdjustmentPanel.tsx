@@ -16,10 +16,11 @@ type Props = {
   onSelect: (id: string) => void
   onToggleHidden: () => void
   onTransform: (transform: HeadTransform) => void
+  onReset: () => void
 }
 
 export function CustomizerHeadAdjustmentPanel({
-  character, label, items, selectedId, details, onSelect, onToggleHidden, onTransform
+  character, label, items, selectedId, details, onSelect, onToggleHidden, onTransform, onReset
 }: Props) {
   const selectedItem = items.find((item) => item.id === selectedId)
   const appliedItems = items.filter((item) => hasHeadAdjustmentItem(character, item.id))
@@ -39,6 +40,8 @@ export function CustomizerHeadAdjustmentPanel({
   const changeTransform = (patch: Partial<HeadTransform>) => onTransform({ ...transform, ...patch })
   const moveBy = (x: number, y: number) => changeTransform({ x: transform.x + x, y: transform.y + y })
   const canAdjustSelected = Boolean(character && selectedItem && hasHeadAdjustmentItem(character, selectedItem.id))
+  const hasManualTransform = Math.abs(transform.x) > .001 || Math.abs(transform.y) > .001
+    || Math.abs(transform.scaleX - 1) > .001 || Math.abs(transform.scaleY - 1) > .001 || Math.abs(transform.rotation) > .001
 
   return <section className="customizer-adjust-picker customizer-clothes-adjust-detail" aria-label={`Ajustes de cabeça · ${label}`}>
     <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
@@ -76,6 +79,9 @@ export function CustomizerHeadAdjustmentPanel({
         </div>
         <div className="customizer-clothes-adjust-axis-grid">{([{ key: 'scaleX', label: 'Largura' }, { key: 'scaleY', label: 'Altura' }] as const).map(({ key, label: axisLabel }) => <div className="customizer-clothes-adjust-axis" key={key}><strong>{axisLabel} <output>{Math.round(transform[key] * 100)}%</output></strong><button type="button" aria-label={`Diminuir ${axisLabel.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.max(.05, Number((transform[key] - .02).toFixed(2))) })}>−</button><button type="button" aria-label={`Aumentar ${axisLabel.toLowerCase()}`} onClick={() => changeTransform({ [key]: Math.min(5, Number((transform[key] + .02).toFixed(2))) })}>+</button></div>)}</div>
         <div className="customizer-clothes-adjust-rotation"><strong>Rotação <output>{Math.round(transform.rotation)}°</output></strong><button type="button" aria-label="Girar para a esquerda" onClick={() => changeTransform({ rotation: transform.rotation - 1 })}>↶</button><button type="button" aria-label="Girar para a direita" onClick={() => changeTransform({ rotation: transform.rotation + 1 })}>↷</button></div>
+        <button className="customizer-adjust-reset is-restore" type="button" onClick={onReset}
+          disabled={!canAdjustSelected || !hasManualTransform} title="Voltar aos ajustes originais deste item neste personagem"
+          aria-label="Resetar ajustes do item selecionado"><Icon name="undo"/><span>RESETAR PEÇA</span></button>
       </section> : <div className="customizer-clothes-adjust-empty-controls">Selecione um item aplicado na lista para ajustar.</div>}
     </div>}
   </section>

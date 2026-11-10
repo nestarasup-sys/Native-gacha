@@ -39,7 +39,7 @@ export function updateWardrobeComponentGroups(
   groups: readonly CustomizerWardrobeGroup[],
   displayedGroups: readonly CustomizerWardrobeGroup[],
   selected: Selection,
-  operation: 'transform' | 'toggle-hidden',
+  operation: 'transform' | 'toggle-hidden' | 'reset',
   patch: Adjustment | undefined,
   sourceCategories: readonly WardrobeCategory[],
   components: readonly WardrobeComponent[] | undefined,
@@ -48,6 +48,7 @@ export function updateWardrobeComponentGroups(
   const displayed = displayedGroups.find(group => matchesWardrobeComponent(group,selected))
   const update = (group: CustomizerWardrobeGroup) =>
     operation === 'toggle-hidden' ? toggleWardrobeVisibility(group)
+      : operation === 'reset' ? { ...group, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
       : editWardrobeAdjustment(group, poseBones.find(bone => bone.id === group.adjustmentReference?.boneId),
         patch ?? {}, displayed ?? group)
   const updated: CustomizerWardrobeGroup[] = []

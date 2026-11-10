@@ -23,7 +23,7 @@ export function useCustomizerHeadAdjustment(deps: {
   } = deps
   const [headAdjustSelection, setHeadAdjustSelection] = useState<string | null>(null)
 
-  async function updateHeadAdjustment(operation: 'transform' | 'toggle-hidden', values?: HeadTransform) {
+  async function updateHeadAdjustment(operation: 'transform' | 'toggle-hidden' | 'reset', values?: HeadTransform) {
     if (!selectedCharacter || !headAdjustSelection) return
     setAdjustmentPreviewHighlight(null)
     const wardrobeCategory = headAdjustSelection === 'oculos' || headAdjustSelection === 'acessorio-cabeca' ? headAdjustSelection : null
@@ -38,6 +38,7 @@ export function useCustomizerHeadAdjustment(deps: {
         if (operation === 'transform') return editWardrobeAdjustment(group,
           displayArtworkParts.find((bone) => bone.id === group.adjustmentReference?.boneId),
           { offsetX: values?.x, offsetY: values?.y, scaleX: values?.scaleX, scaleY: values?.scaleY, rotation: values?.rotation }, displayed)
+        if (operation === 'reset') return { ...group, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }
         return toggleWardrobeVisibility(group)
       })
       await saveCharacterCustomization({ wardrobeGroups })
@@ -46,6 +47,15 @@ export function useCustomizerHeadAdjustment(deps: {
 
     const key = `head:${headAdjustSelection}`
     await saveCharacterCustomization((current) => {
+      if (operation === 'reset') {
+        const partOverrides = { ...current.partOverrides }
+        const existing = partOverrides[key]
+        if (!existing) return {}
+        const { x: _x, y: _y, scaleX: _scaleX, scaleY: _scaleY, rotation: _rotation, ...preserved } = existing
+        if (Object.keys(preserved).length) partOverrides[key] = preserved
+        else delete partOverrides[key]
+        return { partOverrides }
+      }
       const existing = current.partOverrides?.[key] ?? {}
       const next = { ...existing }
       if (operation === 'transform' && values) Object.assign(next, values)

@@ -13,9 +13,9 @@ export function registerModelSourceDownloadHandlers(
   exportSource: ExportModelSource = exportModelSourceToDownloads
 ) {
   const pending = createPendingOperationTracker()
-  ipc.handle(fabricatorIpcChannels.downloadFabricatorModelSource, async (event, slot: number, pngDataUrl: string) => {
+  ipc.handle(fabricatorIpcChannels.downloadFabricatorModelSource, async (event, slot: number, pngDataUrl: string, kind: 'source' | 'head' = 'source') => {
     assertTrustedSender(event)
-    return pending.track(() => exportSource(slot, pngDataUrl, getDownloadsPath()))
+    return pending.track(() => exportSource(slot, pngDataUrl, getDownloadsPath(), undefined, kind))
   })
   return { getPendingWrites: pending.getPending }
 }

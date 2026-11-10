@@ -157,6 +157,7 @@ export function EditorV6Page() {
     setFolder: setEditorV6Folder,
     setLoading,
     setError,
+    setSaved,
     setActiveProjectId: setActiveEditorV6Id,
     setActiveProject: setActiveEditorV6Project,
     pausePlayback,

@@ -13,15 +13,18 @@ type Props = {
   transform: Transform
   onSelect: (piece: SelectedWardrobeComponent) => void
   onTransform: (transform: Transform) => void
+  onReset: () => void
   onToggleHidden: () => void
 }
 
 export function CustomizerClothesAdjustmentPanel({
-  label,hasCharacter,entries,selected,selectedPiece,transform,onSelect,onTransform,onToggleHidden
+  label,hasCharacter,entries,selected,selectedPiece,transform,onSelect,onTransform,onReset,onToggleHidden
 }: Props) {
   const hidden = Boolean(selected?.group.hidden)
   const changeTransform = (patch: Partial<Transform>) => onTransform({...transform,...patch})
   const moveBy = (x:number,y:number) => changeTransform({offsetX:transform.offsetX+x,offsetY:transform.offsetY+y})
+  const hasManualTransform = Math.abs(transform.offsetX) > .001 || Math.abs(transform.offsetY) > .001
+    || Math.abs(transform.scaleX - 1) > .001 || Math.abs(transform.scaleY - 1) > .001 || Math.abs(transform.rotation) > .001
   return <section className="customizer-adjust-picker customizer-clothes-adjust-detail"
       aria-label={`Ajustes de roupas ${label.toLowerCase()}`}>
     <header className="customizer-adjust-heading customizer-clothes-adjust-detail-heading">
@@ -74,6 +77,9 @@ export function CustomizerClothesAdjustmentPanel({
           <button type="button" aria-label="Girar para a esquerda" onClick={()=>changeTransform({rotation:transform.rotation-1})}>↶</button>
           <button type="button" aria-label="Girar para a direita" onClick={()=>changeTransform({rotation:transform.rotation+1})}>↷</button>
         </div>
+        <button className="customizer-adjust-reset is-restore" type="button" onClick={onReset}
+          disabled={!selected || !hasManualTransform} title="Voltar aos ajustes originais desta peça neste personagem"
+          aria-label="Resetar ajustes da peça selecionada"><Icon name="undo"/><span>RESETAR PEÇA</span></button>
       </section>:<div className="customizer-clothes-adjust-empty-controls">Selecione uma peça na lista para ajustar.</div>}
     </div>}
   </section>
