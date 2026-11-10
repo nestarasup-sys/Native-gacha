@@ -31,14 +31,14 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | `MATRIZ_DE_OPORTUNIDADES.md` | Hipóteses e prioridades condicionadas a medições | Não converter potencial em ganho medido |
 | `PLANO_EXECUTAVEL.md` | Backlog com dependências e gates | Ganha quem reduzir tempo frio sem perda de qualidade, com fallback |
 | `PROGRESSO_E_RESULTADOS.md` | O que foi feito, falhou ou não foi possível medir | Nunca afirmar testes que não rodaram |
-| `pesquisas/` | 25 estudos/relatórios temáticos | Um aprofundamento por vez, rastreável |
+| `pesquisas/` | 26 estudos/relatórios temáticos | Um aprofundamento por vez, rastreável |
 | `experimentos/` | Protocolos A/B e relatórios sanitizados | Testes somente em cópias autorizadas |
 | `decisoes/` | ADRs aceitas/rejeitadas | Registrar alternativa e rollback |
 | `evidencias/` | Índice de fontes e dados publicáveis | Proibir caminhos privados e retratos reais |
 
 ## Estudos e situação após a rodada completa do Grupo A
 
-**25 pesquisas/relatórios temáticos:** estudos 01–22 mantêm notas de código, tecnologia e gates; a Pesquisa 23 atualiza medições runtime do alvo 30 s, a 24 documenta AMF/Shared Texture e a 25 registra a tentativa de captura em lacunas de vídeo. **5 pesquisas de subsistema ainda abertas:** 06, 07, 08, 12 e 14. "PESQUISADA" significa leitura de código/fontes; resultados runtime são marcados separadamente por evidência.
+**26 pesquisas/relatórios temáticos:** estudos 01–22 mantêm notas de código, tecnologia e gates; a Pesquisa 23 atualiza medições runtime do alvo 30 s, a 24 documenta AMF/Shared Texture, a 25 registra a tentativa de captura em lacunas de vídeo e a 26 investiga composição de vídeo em uma passagem. **5 pesquisas de subsistema ainda abertas:** 06, 07, 08, 12 e 14. "PESQUISADA" significa leitura de código/fontes; resultados runtime são marcados separadamente por evidência.
 
 | Nº | Pesquisa | Estado em 06/11/2026 |
 |---|---|---|
@@ -67,6 +67,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | 23 | [Perfil e alvo operacional de 30 s](pesquisas/23-PERFIL-ALVO-30S.md) | Pilotos frios; sem ganho suficiente para promoção |
 | 24 | [AMF e superfícies GPU compartilhadas](pesquisas/24-AMF-E-SUPERFICIES-GPU.md) | AMF perdeu nos pilotos; Shared Texture→WebCodecs passou smoke sintético, paridade e projeto real pendentes |
 | 25 | [Captura em camadas durante lacunas de vídeo](pesquisas/25-CAPTURA-CAMADAS-LACUNAS-VIDEO.md) | Implementação revertida; full frio 76,96s vs referência 76,34s, sem ganho demonstrado |
+| 26 | [Composição de vídeo em uma passagem](pesquisas/26-VIDEO-COMPOSITOR-EM-PASSAGEM-UNICA.md) | Análise estática do caminho fundo+frente; protótipo RGBA pendente |
 
 **Pesquisa 02 aprofundada:** [Chromium/Blink/Viz/Skia — segunda rodada completa, capítulos 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md). Foi ampliada com mapa dos 12 estágios, código por frame, sincronização do token, ROI de cabelo, diagnóstico Perfetto, 11 experimentos e critérios de decisão. **Medição Windows ainda pendente.**
 
@@ -91,7 +92,7 @@ Não modificar perfil, assets ou projetos **originais**. Duplicar código e dado
 
 ## Próxima ação
 
-**Codex:** seguir [Diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md), especialmente: alinhar perfil UI/harness; validar `paint-event`; depois medir preparação, composição e disputar encoders/backends sem tecnologia fixa. Continuar até fechar qualidade, build, testes e módulos dependentes.
+**Codex:** seguir [Diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md) e [Pesquisa 26 — Composição de vídeo em uma passagem](pesquisas/26-VIDEO-COMPOSITOR-EM-PASSAGEM-UNICA.md): instrumentar os dois draws/capturas e prototipar composição sem duplicar screenshots somente depois de definir golden RGBA. Manter a saída em duas camadas no caminho de produção até a equivalência e o ganho integral serem demonstrados.
 
 1. Fechar `AUD-001` com a inspeção dinâmica das fronteiras marcadas [A CONFIRMAR], sem acessar dados privados.
 2. Preparar `AUD-002`: A/B cabelo no **projeto vigente**, após verificar duração real, copiar assets e criar **ambiente frio** sem caches reaproveitados. Primeiro par diagnóstico, 3+ pares para candidato final.

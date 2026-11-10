@@ -14,6 +14,7 @@
 | EXP-FFM-001 | Qual encoder/backend entrega o MP4 correto mais rápido a frio? | Preset x264 `ultrafast` 3+3 ON/OFF; SSIM integral ≥0,99784, PSNR ≥52,76dB; PCM idêntico. AMF `speed`: 24,45s/600f vs x264 22,70–22,91s, sem A/B visual | Manter libx264/12Mbps com preset ultrafast; AMF `speed` não foi promovido | P0 | X264 PROMOVIDO NO LAB; AMF SPEED PERDEU |
 | EXP-RAS-001 | DrawPlan nativo pode renderizar subconjunto com paridade? | Protótipo possui `unsupported` | Cenas reais com bloqueadores explícitos | P2 | HIPÓTESE |
 | EXP-UI-001 | Clock/timeline re-renderizam desnecessariamente? | RAF e virtualização já presentes | Trace de scrub/scroll/drag real | P1 | HIPÓTESE |
+| EXP-EXP-001 | Mais lanes reduzem o tempo do export? | A/B UI frio 600f: 2 workers/8 threads 24,53s; 4/4 25,08s. Sob 8 threads fixas, 2/4: 23,98/25,31s | Não elevar o padrão; investigar captura/composição das camadas de vídeo | P0 | 4 WORKERS REJEITADOS NESTE HOST |
 | EXP-DATA-001 | Cache/salvamento atravessam ownership? | JSON, CAS, SQLite, refs | Mapear chaves de revisão e recuperação | P1 | HIPÓTESE |
 | EXP-IMG-001 | Sharp/libvips vs Canvas em preparação estática? | [Pesquisa 17](pesquisas/17-SHARP-LIBVIPS-NORMALIZACAO-IMAGENS.md) | A/B de atlas/ROI frio incluindo IPC, alpha e CPU | P1 | PESQUISADA / NÃO MEDIDA |
 | EXP-STATE-001 | Selectors e snapshots React estão causando commits extras? | [Pesquisa 18](pesquisas/18-REACT-ZUSTAND-IMMER-ESTADO.md) | Perf de scrub/face/seek + identidade props | P1 | PESQUISADA / NÃO MEDIDA |

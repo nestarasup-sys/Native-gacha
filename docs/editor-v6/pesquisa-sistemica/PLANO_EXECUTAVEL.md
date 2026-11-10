@@ -269,6 +269,7 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 5. Usar WebCodecs/shared texture somente após uma prova com composição real, vídeo, áudio, mux, backpressure, qualidade e fallback em processo frio. Preservar o pipeline SVG/capturePage/FFmpeg enquanto oráculo.
 6. **Captura em lacunas de vídeo rejeitada:** 219 quadros da timeline não têm overlay ativo, mas uma otimização para captura completa nesses intervalos não reduziu o export integral (76,96s vs referência 76,34s; render 49,20s vs 48,43s) e foi revertida. Não repetir sem trace de quadros realmente capturados/reutilizados; escolher o próximo candidato pelo custo medido.
 7. **AMF speed rejeitado:** piloto UI frio de 600f validou 24,45s, contra x264 ultrafast/8 threads em 22,70–22,91s. Um único run não prova o efeito do preset e não teve comparação de qualidade; o override foi removido. Manter x264 no host medido.
+8. **Quatro lanes rejeitadas como padrão neste host:** A/B frio UI de 600f com o mesmo início, assets, áudio/vídeo, SVG, `capturePage` e x264 automático passou em ambas as condições, mas 2 lanes/8 threads concluíram em 24,53s e 4/4 em 25,08s. Com 8 threads fixas, 2/4 workers foram 23,98/25,31s; esse perfil não é o da UI, mas confirma a pressão de concorrência. Próximo alvo estrutural: reduzir o custo de capturar/compor o par fundo+frente que o FFmpeg usa para colocar vídeos atrás dos elementos, preservando a ordem visual.
 
 ### Meta operacional — 30 segundos no projeto completo (10/11/2026)
 
