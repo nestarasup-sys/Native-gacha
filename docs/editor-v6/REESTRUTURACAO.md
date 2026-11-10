@@ -43,6 +43,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
 7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
+9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
 
 Os ciclos são independentes; a ordem pode mudar quando o código ou uma regressão demonstrar outra causa prioritária.
 
@@ -159,3 +160,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os canais IPC, validação de origem e UUIDs, extensões, limites de arquivo/duração, schemas, diretórios, nomes dos arquivos, referências vivas à biblioteca e cópias locais. Toda gravação continua no mesmo `pendingFileWrites`, portanto o shutdown ainda aguarda importações e duplicações em andamento. Nenhuma alteração no schema ou no pipeline de renderização/codificação.
 
 **Verificação:** 38 testes Vitest passaram em seis arquivos de lifecycle/runner/processo/workers/biblioteca; incluídos casos sintéticos de vínculo de áudio e vídeo da biblioteca e cópia local para duplicação de projetos. `npm run typecheck`, `npm run audit:architecture` (725 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 12 — exclusão segura de projetos (implementado e verificado)
+
+**Mudança:** a sequência de exclusão foi movida para `editorV6ProjectDeletion.ts`; `EditorV6Page` mantém a confirmação visual e conecta o comando aos estados e ao bridge do Electron.
+
+**Compatibilidade e proteção:** projetos ativos continuam exigindo flush antes da exclusão. Só depois do sucesso o comando remove o resumo, limpa a seleção correspondente e encerra o projeto ativo; falha no flush ou no IPC conserva o projeto e apresenta o erro. Excluir outro projeto não pausa nem fecha o projeto atual.
+
+**Verificação:** 11 testes Node passaram em `projectDeletion` e `projectCreation`, cobrindo flush, ordem de exclusão, isolamento de projeto não ativo, preservação em erro e ausência de alvo. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.

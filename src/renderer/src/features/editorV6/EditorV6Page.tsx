@@ -16,6 +16,7 @@ import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
+import { createEditorV6ProjectDeletionCommand } from './editorV6ProjectDeletion'
 import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
@@ -560,19 +561,22 @@ export function EditorV6Page() {
     setSelectedTimelineBlockId
   })
 
+  const deleteProject = createEditorV6ProjectDeletionCommand({
+    activeProjectId: activeEditorV6Id,
+    activeProjectIdRef: activeEditorV6IdRef,
+    flushDocumentWrites: flushEditorV6DocumentWrites,
+    deleteProject: (projectId) => window.desktop.editorV6.deleteEditorV6Project(projectId),
+    removeSummary: removeEditorV6Summary,
+    setSelectedProject: setSelectedId,
+    pausePlayback,
+    setActiveProjectId: setActiveEditorV6Id,
+    setSaved,
+    setError,
+    trackOperation: trackEditorV6Operation
+  })
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
-    await trackEditorV6Operation(async () => {
-      try {
-        if (target.id === activeEditorV6IdRef.current) await flushEditorV6DocumentWrites()
-        await window.desktop.editorV6.deleteEditorV6Project(target.id)
-        removeEditorV6Summary(target.id)
-        setSelectedId((current) => current === target.id ? null : current)
-        if (activeEditorV6Id === target.id) { pausePlayback(); setActiveEditorV6Id(null) }
-        setSaved(true)
-        setError(null)
-      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível excluir o projeto do Editor V6.') }
-    })
+    await deleteProject(target)
   }
 
   const leaveStudio = async () => {
