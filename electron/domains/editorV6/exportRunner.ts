@@ -161,15 +161,17 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
   const testSettings = editorV6ExportTestSettings(options.testMode)
   const stressWorkerOverride = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS : undefined
-  // The default 300-frame mouth-loop windows expose at most two lanes in a
-  // 20-second benchmark. Split only stress runs asking for four renderers so
-  // the override measures four actual workers; frame content remains intact.
-  const mouthLoopBatchFrames = stressWorkerOverride === '4' ? Math.floor(MOUTH_LOOP_BATCH_FRAMES / 2) : MOUTH_LOOP_BATCH_FRAMES
+  // Split mouth-loop preparation into enough bounded batches for stress-only
+  // render lanes. The UI keeps its two-lane default and 300-frame batches.
+  const requestedStressWorkers = stressWorkerOverride ? Number(stressWorkerOverride) : 2
+  const mouthLoopBatchFrames = stressWorkerOverride
+    ? Math.max(30, Math.floor(MOUTH_LOOP_BATCH_FRAMES * 2 / requestedStressWorkers))
+    : MOUTH_LOOP_BATCH_FRAMES
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
-  if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
-    throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
+  if (stressWorkerOverride !== undefined && (!options.turbo || !/^(2|4|6|8)$/.test(stressWorkerOverride))) {
+    throw Error('O benchmark isolado do Editor V6 aceita 2, 4, 6 ou 8 renderizadores Turbo.')
   }
   if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame

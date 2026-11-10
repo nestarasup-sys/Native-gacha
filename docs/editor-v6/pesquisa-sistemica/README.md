@@ -1,6 +1,6 @@
 # Programa de Pesquisa Sistêmica — Native Gacha e Editor V6
 
-**Início:** 06/11/2026 · **Branch-alvo:** `Dev-V2` · **Natureza:** pesquisa documental, experimentação isolada e plano incremental.  
+**Início:** 06/11/2026 · **Branch de laboratório atual:** `refactor/editor-v6-cold-lab` · **Natureza:** pesquisa, experimentação fria e refatoração progressiva no LAB.
 **Baseline de leitura da Pesquisa 01:** `c636ff03c80274eabed7892dc9d5fa0e8ad025c5`. Verificar o HEAD antes de cada nova rodada.
 
 > **Atualização de execução — 06/11/2026:** projeto atual **Teste de Importação — Personagens do Pacote**; [RELATO] exportação **com cabelo ON em 91 segundos (1min31s)**, sem OFF atual medido. Resultados antigos de 50s/9s são históricos de outro projeto. O usuário autorizou o Codex a **pesquisar, implementar, refatorar e testar exclusivamente numa cópia local com branch/BAT/porta/app-data próprios**, sem caches pesados entre exportações. **Antes de começar, seguir [LABORATORIO_CODEX_EXPORTACAO_FRIA.md](LABORATORIO_CODEX_EXPORTACAO_FRIA.md) e a [diretriz de resultado final](DIRETRIZ_CODEX_RESULTADO_FINAL.md): livre escolha de CPU/GPU/AMF/NVENC/QSV e de backend, desde que exportação fria, qualidade e fallback melhorem.**
@@ -31,14 +31,14 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | `MATRIZ_DE_OPORTUNIDADES.md` | Hipóteses e prioridades condicionadas a medições | Não converter potencial em ganho medido |
 | `PLANO_EXECUTAVEL.md` | Backlog com dependências e gates | Ganha quem reduzir tempo frio sem perda de qualidade, com fallback |
 | `PROGRESSO_E_RESULTADOS.md` | O que foi feito, falhou ou não foi possível medir | Nunca afirmar testes que não rodaram |
-| `pesquisas/` | 21 estudos temáticos | Um aprofundamento por vez, rastreável |
+| `pesquisas/` | 23 estudos/relatórios temáticos | Um aprofundamento por vez, rastreável |
 | `experimentos/` | Protocolos A/B e relatórios sanitizados | Testes somente em cópias autorizadas |
 | `decisoes/` | ADRs aceitas/rejeitadas | Registrar alternativa e rollback |
 | `evidencias/` | Índice de fontes e dados publicáveis | Proibir caminhos privados e retratos reais |
 
 ## Estudos e situação após a rodada completa do Grupo A
 
-**16 pesquisas com análise estática:** arquitetura 01 e **15 estudos do Grupo A**; **5 pesquisas ainda abertas:** 06, 07, 08, 12, 14. Nenhuma pesquisa foi validada por teste no EXE do Windows. "PESQUISADA" aqui significa leitura do código e fontes oficiais, não benchmark nem refatoração.
+**23 pesquisas/relatórios temáticos:** estudos 01–22 mantêm notas de código, tecnologia e gates; a Pesquisa 23 atualiza medições runtime do alvo 30 s no LAB. **5 pesquisas de subsistema ainda abertas:** 06, 07, 08, 12 e 14. "PESQUISADA" significa leitura de código/fontes; resultados runtime são marcados separadamente por evidência.
 
 | Nº | Pesquisa | Estado em 06/11/2026 |
 |---|---|---|
@@ -64,6 +64,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | 20 | [WebCodecs](pesquisas/20-WEBCODECS-VIDEODECODER-VIDEOENCODER.md) | PESQUISADA — Grupo A (código+fonte oficial); runtime pendente |
 | 21 | [Vite/electron-vite/TypeScript/Zod](pesquisas/21-VITE-TS-ZOD-BUILD-CONTRATOS.md) | PESQUISADA — Grupo A (código+fonte oficial); runtime pendente |
 | 22 | [Alocação de threads x264](pesquisas/22-X264-THREADS-ALOCACAO.md) | Instrumentação e smoke sintético medidos; cold A/B integral pendente |
+| 23 | [Perfil e alvo operacional de 30 s](pesquisas/23-PERFIL-ALVO-30S.md) | Pilotos frios; sem ganho suficiente para promoção |
 
 **Pesquisa 02 aprofundada:** [Chromium/Blink/Viz/Skia — segunda rodada completa, capítulos 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md). Foi ampliada com mapa dos 12 estágios, código por frame, sincronização do token, ROI de cabelo, diagnóstico Perfetto, 11 experimentos e critérios de decisão. **Medição Windows ainda pendente.**
 

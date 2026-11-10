@@ -40,6 +40,18 @@
 
 **Observação importante:** no modo `hairPoseReactionOnly`, `selectEditorV6HairlessTransitionBakes` já evita um segundo bake das transições; priorizar outras formas de duplicidade antes de culpar essa operação (ver `motion/hairBakeBatch.ts`).
 
+## Novo alvo: 30 segundos — triagem fria de 10/11/2026
+
+O alvo aplica-se à exportação completa de 2.394 quadros do projeto atual e exige áudio, vídeos, qualidade e MP4 validado. [Pesquisa 23](pesquisas/23-PERFIL-ALVO-30S.md) registra todos os pilotos desta rodada.
+
+| ID | Evidência atualizada | Decisão |
+|---|---|---|
+| EXP-ELE-001 | Piloto 600f: `capturePage` 22,83s vs `paint-event` 23,85s; paint baixou 1,66s de capturePage, mas render total aumentou. Uma amostra por caminho. | `capturePage` permanece padrão; a captura paint não reduz o wall validado. |
+| EXP-CAB-001 | Preparo integral sem encoder: 2 grupos 8,54s; 4 grupos 7,88s; 140 rigs e zero transições preparadas nesta etapa; amostras únicas. | Não alterar padrão 2; ~0,65s não comprovados no MP4, RAM GPU aumentou ~77MiB. |
+| EXP-ENGINE-005 | Piloto 600f com 4 lanes 22,83s; 6 e 8 lanes anteriores 24,98s/25,66s; export integral arquivada sem ganho de 4 lanes. | Não elevar paralelismo global; só investigar quando teste curto reproduzir ganho com carga completa de mídia. |
+| META-30S | Export integral anterior: 79,49s Main, com render 58s, motion 18,22s e preparo de cabelo ~8s. | Gap maior que 2×; transporte/produção dos quadros é prioridade P0. Nenhum candidato desta rodada se aproxima de 30s. |
+| EXP-ENGINE-006 | Pré-busca limitada a 1 quadro: 22,83s referência vs 24,21s; Main RSS ~896 vs ~701MiB. | Revertida; a cópia adicional e a contenção anularam possível sobreposição de render/write. Um caminho sem cópia exige nova prova. |
+
 [Plano detalhado](PLANO_EXECUTAVEL.md) · [Pesquisa 01](pesquisas/01-ARQUITETURA-GERAL-E-INTEGRACOES.md).
 
 O teste de alocação de threads está documentado em [Pesquisa 22](pesquisas/22-X264-THREADS-ALOCACAO.md); a amostra sintética é somente um gate de triagem, não um benchmark do projeto.

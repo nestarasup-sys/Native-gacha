@@ -239,3 +239,13 @@ Os relatórios integrais colocam preparação Motion no Main em aproximadamente 
 - Gates do checkpoint: teste focal 5/5; typecheck, build e sintaxe do harness aprovados. A primeira checagem de typecheck encontrou referências incorretas no agregador do relatório; corrigimos e o rerun passou.
 - **Pendente:** piloto frio integral 6 vs 8 no mesmo projeto autorizado, seguido de ao menos 3 processos/sessões novos por condição se houver sinal. Comparar click→MP4 validado, áudio/ffprobe, qualidade decodificada e memória. Nenhum ganho real ou mudança de padrão alegados.
 - Continuação recomendada: verificar `git status` e branch `refactor/editor-v6-cold-lab`; executar um benchmark com `--x264-threads=8` e seu par sem esse argumento, sempre `--repeat=1`, pasta de saída e perfil isolados distintos e porta livre. Para qualidade decodificada, reter somente um MP4 de cada condição, comparar e remover esses dois MP4 após a validação. Em seguida, manter/reverter a hipótese e atualizar matriz/plano/progresso antes de avançar ao maior custo remanescente.
+
+## Meta operacional 30 s — perfil e triagem (10/11/2026)
+
+- O usuário definiu o alvo: exportar em até 30 s o projeto completo `Teste de Importação — Personagens do Pacote` (2.394 quadros 1080p30), com áudio, overlays de vídeo, animações e MP4 validado. A referência atual fica em ~89 s; a última execução integral arquivada ficou em 88,51 s clique→validado/79,49 s Main.
+- Leia [Pesquisa 23](pesquisas/23-PERFIL-ALVO-30S.md) para os relatórios e limites das amostras.
+- Piloto frio de 600 quadros: `capturePage`/4 lanes 22,83 s; `paint-event`/4 lanes 23,85 s. O segundo removeu 1,66 s de `capturePage` mas perdeu 1,02 s no total; não promover.
+- Preparo isolado do projeto: 2 grupos 8,54 s; 4 grupos 7,88 s. Reportou 140 rigs e zero transições preparadas nesse estágio; memória GPU maior com 4. Manter produto em duas lanes/grupos.
+- 4 lanes venceu a amostra de 600f; 6/8 lanes perderam e uma execução integral anterior não obteve benefício em 4 lanes. Sem alteração no paralelismo de produção.
+- Testei pré-busca limitada a um quadro para sobrepor render e escrita: 24,21s vs 22,83s de referência, RSS Main ~896MiB vs ~701MiB. MP4/áudio passaram, mas a tentativa foi revertida por regressão de wall/memória; relatório em `out/editor-v6-stress/runs/target30-pipeline-prefetch-20s-w4/`.
+- **Próxima ação:** instrumentar quadro→Renderer→captura→BGRA→stdin sob a carga completa de áudio/vídeos, depois fazer um protótipo de transporte de superfície sem cópia. Só pedir um benchmark integral quando o smoke mostrar melhoria relevante. Conservar SVG/capturePage/FFmpeg como caminho de referência e usar o fallback existente.

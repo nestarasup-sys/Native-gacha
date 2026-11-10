@@ -267,3 +267,13 @@ Uma pesquisa está feita quando informa arquivos/linhas ou funções verificadas
 3. O exporte atual mediu 58,00s de render, 18,22s de motion e 1,438s agregados de scene-resolution. Medir custo real por worker/lane e separar Renderer/FFmpeg; não atacar primeiro o resolver que já não domina.
 4. Depois, extrair o frame engine/compositor do bootstrap do worker por interfaces, sem mover política de UI para o motor. Cada extração precisa de equivalência integral e fallback antes de trocar o caminho padrão.
 5. Usar WebCodecs/shared texture somente após uma prova com composição real, vídeo, áudio, mux, backpressure, qualidade e fallback em processo frio. Preservar o pipeline SVG/capturePage/FFmpeg enquanto oráculo.
+
+### Meta operacional — 30 segundos no projeto completo (10/11/2026)
+
+- **Aceite:** clique→MP4 validado em até 30 s para 2.394 quadros 1080p30, Preset 2 posterior-only, áudio/vídeos do projeto e cache persistente frio; além de paridade visual/áudio e fallback funcional. A referência de 89 s é relato do usuário; a última exportação integral arquivada mede 88,51 s clique→validado/79,49 s Main.
+- **Triagem:** 600 quadros frios com `capturePage`/4 lanes = 22,83 s; `paint-event`/4 lanes = 23,85 s. Captura paint foi rejeitada como otimização por não reduzir o tempo de parede e ainda sem golden RGBA completa.
+- **Preparo de cabelo:** perfil somente de preparo no projeto completo, 2 grupos = 8,54 s; 4 grupos = 7,88 s. A melhoria de 0,65 s em uma amostra não foi levada ao produto, pois não valida o MP4 completo, não mede animação/transições nessa etapa e usa mais memória GPU. O padrão de uso permanece 2 grupos.
+- **Paralelismo de exportação:** 4 lanes foi mais rápido em uma janela de 600 quadros, mas 6/8 lanes perderam e há exportação integral prévia sem benefício de 4 lanes. Padrão de duas lanes permanece.
+- **Fila limitada de um quadro:** a tentativa de sobrepor desenho do quadro seguinte com escrita anterior em FFmpeg passou MP4/áudio, mas o piloto subiu para 24,21 s (ref. 22,83 s) e elevou RSS Main ~195 MiB. O código foi revertido; priorizar entrega sem cópia antes de novo teste de fila.
+- **Conclusão de priorização:** estes ganhos curtos não fecham o gap >2×. O próximo ciclo deve instrumentar produção/transferência de cada quadro sob os quatro overlays reais e prototipar um caminho que elimine cópia/readback, sem alterar o caminho de compatibilidade antes de validar pixels, áudio, cancelamento e fallback. Ver [Pesquisa 23](pesquisas/23-PERFIL-ALVO-30S.md).
+- **Regra de custo:** fazer smoke rápido por hipótese e só lançar benchmark integral frio após a triagem mostrar melhora relevante num estágio dominante. Manter apenas um MP4 de comparação de cada vez e deixar limpeza do harness remover saída e perfil temporários.

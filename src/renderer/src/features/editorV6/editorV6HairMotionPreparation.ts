@@ -95,7 +95,7 @@ export async function prepareEditorV6HairMotionBundle(
   preset: HairMotionPreset,
   exportOptions: EditorV6ExportOptions,
   isCancelled: () => boolean = () => false,
-  diagnostics?: { onStage?: (stage: string, milliseconds: number) => void }
+  diagnostics?: { onStage?: (stage: string, milliseconds: number) => void; maxConcurrentPoseGroups?: number }
 ): Promise<EditorV6HairMotionBundle> {
   if (!Number.isInteger(presetSlot) || presetSlot < 1 || presetSlot > 5) throw Error('Selecione um preset de animação de cabelo válido.')
   const preparationStarted = performance.now()
@@ -185,6 +185,8 @@ export async function prepareEditorV6HairMotionBundle(
   // shared through the bounded export-local caches above. Prepare at most two
   // pose groups at once to overlap renderer construction without an unbounded
   // canvas/texture memory spike.
+  const poseGroupConcurrency = diagnostics?.maxConcurrentPoseGroups ?? 2
+  if (!Number.isInteger(poseGroupConcurrency) || poseGroupConcurrency < 1 || poseGroupConcurrency > 4) throw Error('A concorrência de preparo de cabelo precisa ficar entre 1 e 4 grupos.')
   await mapConcurrentItems([...groups.entries()], async ([groupKey, group]) => {
     if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
     const character = group.character
@@ -341,7 +343,7 @@ export async function prepareEditorV6HairMotionBundle(
         })
       }
     } finally { originalRenderer.dispose(); hairlessRenderer.dispose(); wardrobePair.clear() }
-  }, isCancelled, 2)
+  }, isCancelled, poseGroupConcurrency)
   if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
   materialCache.clear()
   currentExportReuse.clear()

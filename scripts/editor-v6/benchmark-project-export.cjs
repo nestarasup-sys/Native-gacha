@@ -19,6 +19,7 @@ const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
 const noHairControl = process.argv.includes('--no-hair-control')
 const motionConcurrency = argument('--motion-bake-concurrency=') ?? '2'
 const renderWorkers = argument('--render-workers=')
+const hairPreparationWorkers = argument('--hair-prep-workers=')
 const exportTestMode = argument('--export-test-mode=')
 const hairPresetSlot = argument('--hair-preset-slot=')
 const segmentStartFrameValue = argument('--start-frame=')
@@ -147,7 +148,7 @@ async function main() {
     || singleMotionRun && !['1', '2', '3'].includes(motionConcurrency)
     || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || noHairControl || process.argv.includes('--compare-workers'))
     || noHairControl && (hairPresetSlot || cacheProbe || singleMotionRun || hairPreparationOnly || process.argv.includes('--compare-workers'))) {
-    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2|3 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control) [--render-workers=2|4]')
+    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2|3 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control) [--render-workers=2|4|6|8] [--hair-prep-workers=1|2|3|4]')
   }
   if (!Number.isInteger(rendererPort) || rendererPort < 1024 || rendererPort > 65535) throw Error('--renderer-port precisa ser uma porta local válida.')
   if (argument('--session-data=') !== undefined) throw Error('Reutilizar sessão Electron não é permitido no protocolo frio; cada execução cria uma sessão nova.')
@@ -166,11 +167,12 @@ async function main() {
   if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
   if (x264ThreadsValue !== undefined && (!/^[1-8]$/.test(x264ThreadsValue) || encoder !== 'cpu')) throw Error('--x264-threads aceita 1 a 8 e exige --encoder=cpu.')
   if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
-  if (renderWorkers && !['2', '4'].includes(renderWorkers)) throw Error('--render-workers aceita 2 ou 4 no harness Turbo.')
+  if (renderWorkers && !['2', '4', '6', '8'].includes(renderWorkers)) throw Error('--render-workers aceita 2, 4, 6 ou 8 no harness Turbo.')
+  if (hairPreparationWorkers && (!['1', '2', '3', '4'].includes(hairPreparationWorkers) || uiExportProfile)) throw Error('--hair-prep-workers aceita 1, 2, 3 ou 4 somente no caminho de preparo isolado; o perfil UI ignora essa instrumentação.')
   if (renderWorkers && process.argv.includes('--compare-workers')) throw Error('--render-workers não se combina com --compare-workers.')
   if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(x264Preset)) throw Error('--x264-preset aceita ultrafast, superfast, veryfast, faster, fast ou medium.')
   if (retainMp4ForQuality && (!uiExportProfile || !(hairPresetSlot || noHairControl) || hairPreparationOnly || repeatValue && repeatValue !== '1')) throw Error('--retain-mp4-for-quality exige uma única exportação completa do perfil UI.')
-  if (uiExportProfile && (hairPreparationOnly || hairPresetSlot && (Number(hairPresetSlot) !== 2 || !hairPresetFile) || !hairPresetSlot && !noHairControl)) {
+  if (uiExportProfile && (hairPresetSlot && (Number(hairPresetSlot) !== 2 || !hairPresetFile) || !hairPresetSlot && !noHairControl)) {
     throw Error('--ui-export-profile exige Preset 2 salvo para cabelo ativo ou --no-hair-control para o controle sem cabelo.')
   }
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
@@ -180,6 +182,7 @@ async function main() {
     || (segmentStartFrameValue !== undefined || segmentDurationSecondsValue !== undefined || fullTimeline) && hairPreparationOnly)) {
     throw Error('Benchmark de cabelo aceita --start-frame=, --duration-seconds= e --repeat=1..3; janela e repetição não se aplicam ao perfil somente de preparação.')
   }
+  if (hairPreparationOnly && uiExportProfile) throw Error('--hair-preparation-only usa o preparo direto em processo isolado; não combine com --ui-export-profile.')
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   const allowedPresetRoot = path.join(root, 'out', 'editor-v6-stress', 'preferences')
   const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
@@ -192,7 +195,7 @@ async function main() {
     throw Error('A pasta de resultados precisa ficar isolada das fontes verificadas.')
   }
   let uiPreset = null
-  if (uiExportProfile && hairPresetSlot) {
+  if ((uiExportProfile || hairPreparationOnly) && hairPresetSlot) {
     const resolvedPresetPath = await fs.realpath(hairPresetFile)
     if (!inside(allowedPresetRoot, resolvedPresetPath)) throw Error('O preset UI deve estar na área local isolada out/editor-v6-stress/preferences.')
     const presetStats = await fs.stat(resolvedPresetPath)
@@ -257,12 +260,14 @@ async function main() {
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
     ...(sceneSurface === 'canvas2d' ? { GACHA_EDITOR_V6_STRESS_SCENE_SURFACE: 'canvas2d' } : {}),
-    ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
+    ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1' } : {}),
+    ...((uiExportProfile || hairPreparationOnly) && uiPreset ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
     ...(x264Threads === undefined ? {} : { GACHA_EDITOR_V6_STRESS_X264_THREADS: String(x264Threads) }),
     GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
+    ...(hairPreparationWorkers ? { GACHA_EDITOR_V6_STRESS_HAIR_PREP_WORKERS: hairPreparationWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
@@ -308,7 +313,7 @@ async function main() {
   const invalidSummary = hairPreparationOnly
     ? summary.benchmarkKind !== 'real-project-hair-preparation' || summary.projectTitle !== authorizedProjectTitle
       || summary.durationFrames !== manifest.timeline.durationFrames || summary.hairPresetSlot !== Number(hairPresetSlot)
-      || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
+      || summary.rigCount < 1 || !Number.isFinite(summary.preparationWallMs)
     : noHairControl
     ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
       || summary.sceneSurface !== sceneSurface

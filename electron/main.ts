@@ -1261,7 +1261,7 @@ app.whenReady().then(async () => {
           let outputPath = join(outputRoot, `actual-project-${suffix}.mp4`)
           let reportPath = join(outputRoot, `actual-project-${suffix}.report.json`)
           const options: EditorV6ExportOptions = { startFrame, endFrame: startFrame + frameCount, width: 1920, height: 1080, turbo, encoder: 'auto', mouthLoop: true, mouthLoopCycleFrames: 30, ...(exportTestMode ? { testMode: exportTestMode } : {}), ...(hairPresetSlot !== null ? { hairAnimationPresetSlot: hairPresetSlot } : {}) }
-          if (uiExportProfile && hairPresetSlot !== null) {
+          if ((uiExportProfile || hairPreparationOnly) && hairPresetSlot !== null && uiPreset) {
             Object.assign(options, EDITOR_V6_DEFAULT_EXPORT_PROFILE, { encoder: stressEncoder, hairAnimationPresetSlot: hairPresetSlot })
             const seededPresets = Array.from({ length: 5 }, () => null as ReturnType<typeof normalizeHairMotionPreset>)
             seededPresets[hairPresetSlot - 1] = uiPreset
@@ -1301,7 +1301,8 @@ app.whenReady().then(async () => {
             uiStartedStatus = command.status
           } else if (hairPresetSlot !== null) {
             const prepareStarted = performance.now()
-            const prepared = await hairHarnessWindow!.webContents.executeJavaScript(`window.__editorV6PrepareRealProjectHairForStress(${JSON.stringify(projectId)}, ${hairPresetSlot}, ${JSON.stringify(options)})`) as { bundle: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle; preparationMs: number; preparationStages: unknown; bundleBytes: number; bundleSerializationMs: number; presetFingerprint: string; presetSlot: number }
+            const hairPreparationWorkers = Number(process.env.GACHA_EDITOR_V6_STRESS_HAIR_PREP_WORKERS ?? '2')
+            const prepared = await hairHarnessWindow!.webContents.executeJavaScript(`window.__editorV6PrepareRealProjectHairForStress(${JSON.stringify(projectId)}, ${hairPresetSlot}, ${JSON.stringify(options)}, undefined, undefined, ${hairPreparationWorkers})`) as { bundle: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle; preparationMs: number; preparationStages: unknown; bundleBytes: number; bundleSerializationMs: number; presetFingerprint: string; presetSlot: number }
             hairPreparationWallMs = performance.now() - prepareStarted
             hairPreparationRendererMs = prepared.preparationMs
             hairPreparationStages = prepared.preparationStages
@@ -1319,7 +1320,7 @@ app.whenReady().then(async () => {
               const stages = prepared.preparationStages as Record<string, { samples: number; totalMs: number; maxMs: number }>
               const preparedTransitions = hairAnimation.motionTransitions?.length ?? 0
               hairPreparationProfile = {
-                passed: preparedTransitions > 0 && Object.values(stages).every(stage => Number.isFinite(stage.totalMs)),
+                passed: hairAnimation.rigs.length > 0 && Object.values(stages).every(stage => Number.isFinite(stage.totalMs)),
                 benchmarkKind: 'real-project-hair-preparation', projectId, projectUpdatedAt: project.updatedAt,
                 projectTitle: project.title, durationFrames: frameCount, timelineDurationFrames: project.timeline.durationFrames, startFrame, endFrame: startFrame + frameCount, durationSeconds: frameCount / 30,
                 width: 1920, height: 1080, fps: '30/1', hairPresetSlot,

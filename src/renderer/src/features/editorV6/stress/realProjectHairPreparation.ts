@@ -22,7 +22,8 @@ declare global {
       presetSlot: number,
       options: EditorV6ExportOptions,
       projectSnapshot?: EditorV6Document,
-      presetSnapshot?: HairMotionPreset
+      presetSnapshot?: HairMotionPreset,
+      maxConcurrentPoseGroups?: number
     ) => Promise<PreparationResult>
     __editorV6StartRealProjectExportForStress?: (
       projectId: string,
@@ -34,7 +35,7 @@ declare global {
 
 /** Installs an opt-in benchmark bridge; it is only loaded by the isolated stress profile. */
 export function installRealProjectHairPreparationHarness(): void {
-  window.__editorV6PrepareRealProjectHairForStress = async (projectId, presetSlot, options, projectSnapshot, presetSnapshot) => {
+  window.__editorV6PrepareRealProjectHairForStress = async (projectId, presetSlot, options, projectSnapshot, presetSnapshot, maxConcurrentPoseGroups) => {
     const presets = parseHairMotionPresets(window.localStorage.getItem(HAIR_MOTION_PRESET_KEY))
     const storedPreset = presetSnapshot ?? presets[presetSlot - 1]
     if (!storedPreset) throw Error(`O Preset ${presetSlot} de cabelo não está salvo no perfil isolado.`)
@@ -49,7 +50,7 @@ export function installRealProjectHairPreparationHarness(): void {
     const bundle = await prepareEditorV6HairMotionBundle(project, presetSlot, preset, options, () => false, { onStage: (stage, milliseconds) => {
       const previous = stageAccumulators.get(stage) ?? { samples: 0, totalMs: 0, maxMs: 0 }
       stageAccumulators.set(stage, { samples: previous.samples + 1, totalMs: previous.totalMs + milliseconds, maxMs: Math.max(previous.maxMs, milliseconds) })
-    } })
+    }, maxConcurrentPoseGroups: maxConcurrentPoseGroups ?? 2 })
     const preparationMs = performance.now() - startedAt
     const bundleSerializationStarted = performance.now()
     const serialized = JSON.stringify(bundle)
