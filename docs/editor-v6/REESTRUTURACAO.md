@@ -40,7 +40,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais:** separar renderização, crop anterior, bake de variantes e agendamento do preview da gravação no documento; manter os contratos atuais.
 5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
-6. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
+6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
 7. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 
@@ -115,3 +115,23 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Observação:** a timeline mantém o último estado de personagem após o fim do último bloco; a fixture reflete esse contrato, sem tratar o estado como clip expirado.
 
 **Verificação:** 12 testes Vitest passaram junto com as regressões de transform facial e arraste do palco; o typecheck explícito da nova fixture passou.
+
+### Ciclo 7 — cálculo de arraste da timeline (implementado e verificado)
+
+**Mudança:** criada `editorV6TimelineDrag.ts` para montar a fotografia estável dos vizinhos/alvos de snap no início do gesto e calcular a prévia de movimento/redimensionamento sem React ou persistência. `EditorV6Timeline` continua dona da captura do ponteiro, estado de rascunho e confirmação em `pointerup` ou descarte em `pointercancel`/Escape.
+
+**Motivo:** a regra de arraste ocupava a tela e misturava coordenadas de ponteiro, limites de timeline, alinhamento e normalização. Separar a transformação pura deixa os invariantes exercitáveis sem Electron ou projeto salvo.
+
+**Compatibilidade:** preservados o snap de 7 pixels e o Alt temporário, o limite de origem de clipes de mídia, estados persistentes de personagem/fundo, deslocamento do próximo bloco e o vínculo de clipes filhos ao vídeo pai. A normalização final e o momento em que o documento é persistido permanecem iguais.
+
+**Verificação:** 33 testes Vitest passaram (`editorV6TimelineDrag`, `editorV6Timeline` e `editorV6Selection`); `npm run typecheck`, `npm run audit:architecture` (722 arquivos), `npm run build` e `git diff --check` passaram. Os novos cenários usam exclusivamente timelines/mídias sintéticas.
+
+### Ciclo 8 — auditoria dos limites da exportação (mapeada; pipeline intacto)
+
+**Caminho confirmado:** `EditorV6ExportPanel` configura e acompanha o job; `editorV6ExportCommands` cria snapshots fora de drafts Immer, valida o plano, prepara o pacote opcional de cabelo e chama a API tipada do preload. `electron/preload.ts` encaminha somente os métodos explícitos, e `exportIpc.ts` valida o remetente/documento/opções, escolhe destino, mantém ownership do job, controla cancelamento e participa do drain no encerramento. `exportRunner.ts` orquestra preparo de personagem/movimento, renderização, codificação, mixagem, validação, publicação e relatório; `exportWorkers.ts` cria BrowserWindows ocultas com sandbox e `exportWorker.tsx` compõe/captura os quadros. `exportProcess.ts` concentra timeout, aborto e encerramento de subprocessos FFmpeg/FFprobe.
+
+**Arquivos e recuperação:** o runner cria uma pasta temporária identificada sob `app.getPath('temp')`, monta partes temporárias, prepara um MP4 candidato ao lado do destino, publica por rename com caminho alternativo para destino ocupado, salva relatório no projeto e remove a pasta temporária somente quando ela está sob a raiz temporária e tem o prefixo esperado. O IPC retém jobs ativos no inventário de operações até o término; o shutdown aborta jobs e drena as promessas.
+
+**Decisão:** não alterar o pipeline nem testar uma exportação real neste ciclo. A fronteira recomendada para o próximo trabalho é separar, com testes de lifecycle existentes, o registro/ownership/cancelamento de jobs da longa fábrica de handlers IPC; manter captura, FFmpeg, formatos persistidos e recuperação fora dessa extração.
+
+**Cobertura existente a reutilizar:** `exportIpcLifecycle.test.ts`, `exportProcess.test.ts`, `exportRunner.test.ts`, `exportWorkers.test.ts` e os smokes Electron continuam sendo os gates.
