@@ -67,7 +67,7 @@ A investigação de Chromium já existente permanece em [PESQUISA_CHROMIUM_REFAC
 | 23 | [Perfil e alvo operacional de 30 s](pesquisas/23-PERFIL-ALVO-30S.md) | Pilotos frios; sem ganho suficiente para promoção |
 | 24 | [AMF e superfícies GPU compartilhadas](pesquisas/24-AMF-E-SUPERFICIES-GPU.md) | AMF perdeu nos pilotos; Shared Texture→WebCodecs passou smoke sintético, paridade e projeto real pendentes |
 | 25 | [Captura em camadas durante lacunas de vídeo](pesquisas/25-CAPTURA-CAMADAS-LACUNAS-VIDEO.md) | Implementação revertida; full frio 76,96s vs referência 76,34s, sem ganho demonstrado |
-| 26 | [Composição de vídeo em uma passagem](pesquisas/26-VIDEO-COMPOSITOR-EM-PASSAGEM-UNICA.md) | Full frio: só 8 capturas do fundo vs 456 da frente; capturePage caro; paridade paint-event pendente |
+| 26 | [Composição de vídeo em uma passagem](pesquisas/26-VIDEO-COMPOSITOR-EM-PASSAGEM-UNICA.md) | Paint-event ficou RGBA-exato nas amostras, mas 600f não venceu capturePage; padrão mantido |
 
 **Pesquisa 02 aprofundada:** [Chromium/Blink/Viz/Skia — segunda rodada completa, capítulos 7–21](pesquisas/02-CHROMIUM-BLINK-VIZ-SKIA.md). Foi ampliada com mapa dos 12 estágios, código por frame, sincronização do token, ROI de cabelo, diagnóstico Perfetto, 11 experimentos e critérios de decisão. **Medição Windows ainda pendente.**
 

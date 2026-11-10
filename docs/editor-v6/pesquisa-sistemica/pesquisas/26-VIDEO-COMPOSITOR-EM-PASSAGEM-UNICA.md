@@ -18,9 +18,10 @@ Esse é um candidato de arquitetura, ainda não uma otimização demonstrada. De
 
 ## Próximo ciclo falsificável
 
-1. Criar um diagnóstico somente opt-in que, para o mesmo frame e árvore já desenhada, compare a bitmap de `paint-event` com `capturePage`; armazenar hash, quantidade de pixels diferentes e contadores, sem frames persistentes. Cobrir quadros estáticos, mudanças de face/cabelo e bordas de cada vídeo.
-2. Se paridade exata falhar, localizar se a divergência vem de crop/token, alpha, superfície stale ou scheduling; não promover `paint-event`. Se passar, executar smoke frio de 30–150 quadros com áudio/FFprobe e comparar tempo total, não apenas captura.
-3. Só iniciar o compositor de passagem única se o smoke produzir uma redução clara e preservação RGBA. Rodar export integral frio depois; exigir 2.394 quadros, todos os vídeos/áudios, mux, cancelamento e fallback.
+1. Diagnóstico simultâneo implementado no harness e desligado por padrão: captura `paint-event`, faz `capturePage` do mesmo estado antes do próximo draw e compara os bytes BGRA/crop/token; somente hashes e diferença por amostra são persistidos.
+2. **Paridade pontual passou:** 11/11 imagens exatas, inclusive frames de transição em 1.002, 1.236, 1.320, 1.356 e 1.461. Falta cobrir todas as classes visuais da timeline; não afirmar equivalência integral.
+3. A/B frio de 600 quadros no trecho 900–1.500 validou vídeo e áudio em ambas: capturePage 25,26s, paint-event 25,64s. O total de capture frontal caiu 6,00→5,23s, sem ganho ponta a ponta. **Decisão:** manter `capturePage` por padrão; não executar full paint-event nem investir em compositor com base nesta evidência.
+4. Próximo esforço para alvo 30s: atacar separadamente Motion (~17,1s), preparo de cabelo (~8,3s) e o restante da renderização (~51,6s). Usar um piloto curto para uma mudança mensurável e reservar o próximo full frio para um candidato que vença com margem, não para repetir paint-event.
 4. Preservar FFmpeg/x264 como caminho de produção e rollback até a exportação integral validar 2.394 quadros, todos os vídeos e áudios, mux, cancelamento e fallback. Não persistir MP4, textura, frames, atlas ou cache entre exportações.
 
 ## Relação com testes existentes

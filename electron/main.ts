@@ -18,6 +18,7 @@ import type { StudioDocument } from '../src/shared/studio'
 import { isStudioDocument } from '../src/shared/studioValidation'
 import { isEditorV6Document } from '../src/shared/editorV6Schema'
 import { registerEditorV6ExportHandlers } from './domains/editorV6/exportIpc'
+import { captureEditorV6FrameBitmap } from './domains/editorV6/exportCaptureBitmap'
 import type { EditorV6ExportReport } from './domains/editorV6/exportRunner'
 import { registerEditorV7ExportHandlers } from './domains/editorV7/exportIpc'
 import { createEditorV6MotionService } from './domains/editorV6/motionIpc'
@@ -186,6 +187,7 @@ let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers>
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 const stressCapturePixelHashes = new Map<number, string[]>()
+const stressCapturePathComparisons: Array<{ frame: number; layer?: 'background' | 'foreground'; exact: boolean; differentPixels?: number; maxChannelDifference?: number; paintHash: string; capturePageHash?: string; error?: string }> = []
 const stressFfmpegPids = new Set<number>()
 let editorV7ExportService: ReturnType<typeof registerEditorV7ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
@@ -1119,11 +1121,33 @@ app.whenReady().then(async () => {
     captureMode: process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
       ? (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage')
       : process.env.GACHA_EDITOR_V6_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage',
-    ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { inspectCapture: async ({ frame, bitmap }: { window: BrowserWindow; frame: number; bitmap: Buffer }) => {
-      if (![0, 29, 30, 149, 300, 599, 1199, 2393].includes(frame)) return
-      const hashes = stressCapturePixelHashes.get(frame) ?? []
-      hashes.push(createHash('sha256').update(bitmap).digest('hex'))
-      stressCapturePixelHashes.set(frame, hashes)
+    ...((process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' || process.env.GACHA_EDITOR_V6_STRESS_COMPARE_CAPTURE_PATHS === '1') ? { inspectCapture: async ({ window, frame, bitmap, token, layer }: { window: BrowserWindow; frame: number; bitmap: Buffer; token: number; layer?: 'background' | 'foreground' }) => {
+      if (![0, 29, 30, 149, 150, 267, 300, 372, 599, 780, 885, 900, 999, 1002, 1003, 1135, 1146, 1199, 1236, 1320, 1356, 1461, 1499, 1500, 1578, 1818, 2043, 2181, 2286, 2393].includes(frame)) return
+      if (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1') {
+        const hashes = stressCapturePixelHashes.get(frame) ?? []
+        hashes.push(createHash('sha256').update(bitmap).digest('hex'))
+        stressCapturePixelHashes.set(frame, hashes)
+      }
+      if (process.env.GACHA_EDITOR_V6_STRESS_COMPARE_CAPTURE_PATHS === '1') {
+        try {
+          const image = await window.webContents.capturePage({ x: 0, y: 0, width: 1920 + 24, height: 1080 })
+          const capturePageBitmap = captureEditorV6FrameBitmap(image, 1920, 1080, token)
+          if (!capturePageBitmap) throw Error('capturePage não retornou o token/crop do mesmo quadro.')
+          let differentPixels = 0, maxChannelDifference = 0
+          for (let offset = 0; offset < bitmap.length; offset += 4) {
+            let pixelDifferent = false
+            for (let channel = 0; channel < 4; channel++) {
+              const difference = Math.abs(bitmap[offset + channel] - capturePageBitmap[offset + channel])
+              if (difference) pixelDifferent = true
+              if (difference > maxChannelDifference) maxChannelDifference = difference
+            }
+            if (pixelDifferent) differentPixels++
+          }
+          stressCapturePathComparisons.push({ frame, layer, exact: differentPixels === 0, differentPixels, maxChannelDifference, paintHash: createHash('sha256').update(bitmap).digest('hex'), capturePageHash: createHash('sha256').update(capturePageBitmap).digest('hex') })
+        } catch (error) {
+          stressCapturePathComparisons.push({ frame, layer, exact: false, paintHash: createHash('sha256').update(bitmap).digest('hex'), error: error instanceof Error ? error.message : String(error) })
+        }
+      }
     } } : {}) })
   editorV7ExportService = registerEditorV7ExportHandlers({ ipcMain, assertTrustedSender, toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools') })
   if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
@@ -1419,12 +1443,12 @@ app.whenReady().then(async () => {
           console.log(JSON.stringify(hairPreparationProfile, null, 2))
         } else if (hairPresetSlot !== null) {
           const targetSeconds = segmentFrameCount === 600 ? 10 : segmentFrameCount === 1200 ? 15 : null
-          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', profile: uiExportProfile && process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS === undefined ? 'editor-v6-ui-default' : 'stress-custom', x264Preset: stressEncoder === 'cpu' ? (process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET ?? 'ultrafast') : undefined, encoderThreads: hairRuns[0]?.encoderThreads, motionConcurrency, renderWorkers: Number(process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS ?? '2'), projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, targetSeconds, width: 1920, height: 1080, fps: '30/1', turbo: true, captureMode: process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage', requestedEncoder: stressEncoder, sceneSurface: sceneSurfaceRuns[0]?.sceneSurface ?? 'svg', sceneSurfaceRuns, hairPoseReactionOnly: hairRuns[0]?.hairPoseReactionOnly, hairPosteriorOnly: hairRuns[0]?.hairPosteriorOnly, hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), runs: hairRuns }
+          const summary = { passed: hairRuns.length === modes.length, benchmarkKind: 'real-project-hair-export', profile: uiExportProfile && process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS === undefined ? 'editor-v6-ui-default' : 'stress-custom', x264Preset: stressEncoder === 'cpu' ? (process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET ?? 'ultrafast') : undefined, encoderThreads: hairRuns[0]?.encoderThreads, motionConcurrency, renderWorkers: Number(process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS ?? '2'), projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: project.timeline.durationFrames, durationFrames: hairRuns[0]?.totalFrames, durationSeconds: (hairRuns[0]?.totalFrames ?? 0) / 30, targetSeconds, width: 1920, height: 1080, fps: '30/1', turbo: true, captureMode: process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage', requestedEncoder: stressEncoder, sceneSurface: sceneSurfaceRuns[0]?.sceneSurface ?? 'svg', sceneSurfaceRuns, hairPoseReactionOnly: hairRuns[0]?.hairPoseReactionOnly, hairPosteriorOnly: hairRuns[0]?.hairPosteriorOnly, hairPresetSlot, hairPresetFingerprint: hairRuns[0]?.hairPresetFingerprint, dialogSelectionMs: 0, dialogNote: 'Destino predefinido dentro da pasta isolada; o tempo humano de seleção no diálogo não foi medido.', audioClips: hairRuns[0]?.audioClips, audioOutput: hairRuns[0]?.audioOutput, medianClickToValidatedWallMs: median(hairRuns.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), ...(process.env.GACHA_EDITOR_V6_STRESS_COMPARE_CAPTURE_PATHS === '1' ? { capturePathComparisons: stressCapturePathComparisons } : {}), runs: hairRuns }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           hairStressCompleted = summary.passed
           console.log(JSON.stringify(summary, null, 2))
         } else if (noHairControl) {
-          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', profile: uiExportProfile && process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS === undefined ? 'editor-v6-ui-default-no-hair' : 'stress-custom', x264Preset: stressEncoder === 'cpu' ? (process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET ?? 'ultrafast') : undefined, encoderThreads: runs[0]?.encoderThreads, motionConcurrency, renderWorkers: Number(process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS ?? '2'), projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: segmentFrameCount, durationSeconds: segmentFrameCount / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: stressEncoder, sceneSurface: sceneSurfaceRuns[0]?.sceneSurface ?? 'svg', sceneSurfaceRuns, audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, medianClickToValidatedWallMs: median(runs.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), runs }
+          const summary = { passed: runs.length === modes.length, benchmarkKind: 'real-project-no-hair-control', profile: uiExportProfile && process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS === undefined ? 'editor-v6-ui-default-no-hair' : 'stress-custom', x264Preset: stressEncoder === 'cpu' ? (process.env.GACHA_EDITOR_V6_STRESS_X264_PRESET ?? 'ultrafast') : undefined, encoderThreads: runs[0]?.encoderThreads, motionConcurrency, renderWorkers: Number(process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS ?? '2'), projectTitle: project.title, startFrame: segmentStartFrame, endFrame: segmentStartFrame + segmentFrameCount, timelineDurationFrames: segmentFrameCount, durationSeconds: segmentFrameCount / 30, width: 1920, height: 1080, fps: '30/1', turbo: true, requestedEncoder: stressEncoder, sceneSurface: sceneSurfaceRuns[0]?.sceneSurface ?? 'svg', sceneSurfaceRuns, audioClips: runs[0]?.audioClips, audioOutput: runs[0]?.audioOutput, medianClickToValidatedWallMs: median(runs.map(run => run.clickToValidatedWallMs)), ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { capturePixelHashes: Object.fromEntries(stressCapturePixelHashes) } : {}), ...(process.env.GACHA_EDITOR_V6_STRESS_COMPARE_CAPTURE_PATHS === '1' ? { capturePathComparisons: stressCapturePathComparisons } : {}), runs }
           await nativeWriteFile(join(outputRoot, 'stress-export-validation.json'), JSON.stringify(summary, null, 2), 'utf8')
           if (uiExportProfile) hairStressCompleted = summary.passed
           console.log(JSON.stringify(summary, null, 2))

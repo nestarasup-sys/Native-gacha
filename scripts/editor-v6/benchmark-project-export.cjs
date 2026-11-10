@@ -38,6 +38,7 @@ const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
 const x264ThreadsValue = argument('--x264-threads=')
 const x264Threads = x264ThreadsValue === undefined ? undefined : Number(x264ThreadsValue)
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
+const compareCapturePaths = process.argv.includes('--compare-capture-paths')
 const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
 const MAX_RUN_OUTPUT_BYTES = 2 * 1024 ** 3
 const MIN_FREE_SPACE_BYTES = 3 * 1024 ** 3
@@ -162,6 +163,7 @@ async function main() {
     throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
   }
   if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
+  if (compareCapturePaths && captureModeValue !== 'paint-event') throw Error('--compare-capture-paths exige --capture-mode=paint-event.')
   if (!['svg', 'canvas2d'].includes(sceneSurface)) throw Error('--scene-surface aceita svg ou canvas2d.')
   if (sceneSurface === 'canvas2d' && (!uiExportProfile || hairPreparationOnly || !(hairPresetSlot || noHairControl))) throw Error('Canvas2D experimental exige uma exportação completa do perfil UI em processo isolado.')
   if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
@@ -269,6 +271,7 @@ async function main() {
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
     ...(hairPreparationWorkers ? { GACHA_EDITOR_V6_STRESS_HAIR_PREP_WORKERS: hairPreparationWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
+    ...(compareCapturePaths ? { GACHA_EDITOR_V6_STRESS_COMPARE_CAPTURE_PATHS: '1' } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),

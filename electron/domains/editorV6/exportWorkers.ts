@@ -97,7 +97,7 @@ async function capturePaintedFrame(window: BrowserWindow, signal: AbortSignal, w
   throw Error('Tempo limite: o compositor não apresentou o quadro solicitado para exportação.')
 }
 
-export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' }) {
+export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer; token: number; layer?: 'background' | 'foreground' }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' }) {
   const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
   const activeWorkers = new Set<() => void>()
   const retiredWorkers = new Set<number>()
@@ -207,7 +207,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
             : (frameBitmap ??= Buffer.allocUnsafe(layerBytes))
           const captured = await capturePaintedFrame(window, signal, payload.width, payload.height, token, output, outputOffset, captureRetryMilliseconds, paintCapture)
           const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
-          await deps.inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + payload.width * payload.height * 4) : bitmap })
+          await deps.inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + payload.width * payload.height * 4) : bitmap, token, ...(layeredVideo ? { layer: outputOffset === 0 ? 'background' as const : 'foreground' as const } : {}) })
           return { bitmap, readbacks, elapsedMs: performance.now() - started, paintWaitMs, capturePageMs, captureBitmapMs }
         }
         if (!layeredVideo) {

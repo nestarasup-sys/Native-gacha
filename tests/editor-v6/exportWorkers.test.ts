@@ -60,10 +60,10 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event', layeredVideo = false) {
+function fixture(captureMode?: 'capturePage' | 'paint-event', layeredVideo = false, inspectCapture?: Parameters<typeof createEditorV6WorkerFactory>[0]['inspectCapture']) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode })
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture })
   const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
@@ -155,6 +155,20 @@ describe('export worker lifecycle', () => {
     expect(frame.timings?.backgroundCaptureMs).toBeTypeOf('number')
     expect(frame.timings?.foregroundCaptureMs).toBeTypeOf('number')
     expect(frame.bitmap).toHaveLength(payload.width * payload.height * 4 * 2)
+    worker.close(); factory.dispose()
+  })
+
+  it('exposes the exact frame token and layer to isolated capture diagnostics', async () => {
+    const inspected: Array<{ frame: number; bitmap: Buffer; token: number; layer?: 'background' | 'foreground' }> = []
+    const { factory, payload, ready } = fixture(undefined, true, async (capture) => { inspected.push(capture) })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    await worker.frame(11)
+
+    expect(inspected).toHaveLength(2)
+    expect(inspected.map(({ layer }) => layer)).toEqual(['background', 'foreground'])
+    expect(inspected.every(({ frame, bitmap, token }) => frame === 11 && bitmap.length === payload.width * payload.height * 4 && token > 0)).toBe(true)
     worker.close(); factory.dispose()
   })
 
