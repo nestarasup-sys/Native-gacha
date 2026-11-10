@@ -274,3 +274,20 @@ Os relatórios integrais colocam preparação Motion no Main em aproximadamente 
 - A API é experimental; ainda faltam golden pixel, seleção/benefício de encoder hardware e integração do mix de 4 vídeos + 4 áudios. O smoke a 60fps não chega ao throughput mínimo de 79,8fps para 30s. Não foi integrado na produção.
 - **Decisão:** permanecer em x264 8 threads e captura padrão. A melhor exportação integral segue 76,34s clique→validado (67,85s Main); meta de 30s está aberta. Shared Texture não melhorou o limite já configurado a 60fps. Próximo ciclo deve otimizar preparação de personagens e composição real; só retomar o protótipo de cena após solução de vídeo/áudio e golden.
 - Duas saídas de qualidade x264 (~60MB) seguem nas pastas descritas na seção anterior porque o executor bloqueou sua remoção explícita. São as únicas mídias pesadas identificadas; o espaço livre agora é ~79,2GB.
+
+### Triagem de alocação e cadência offscreen — 10/11/2026
+
+- O primeiro piloto x264 4 threads não chegou a exportar: faltava abrir o perfil UI com o preset 2 salvo. O harness encerrou antes dos quadros e limpou a saída parcial; a execução corrigida validou 600/600 + áudio em 26,61s, 21,48s Main, 5,33s Motion e 14,46s render. Os controles frios de 8 threads em ultrafast ficaram em 22,70 e 22,91s; não promover 4.
+- Testei 90 e 120Hz com 8 threads e o mesmo perfil de UI. Ambas validaram 600/600+áudio, mas deram 26,41 e 25,48s, contra 22,70–22,91s em 60Hz. Motion ficou próximo (5,12/4,87s vs 4,83/4,65s); render piorou para 14,40/14,00s vs 11,64/11,96s. Reverti o seletor experimental; workers de produção continuam em 60Hz.
+- Os relatórios em `target30-offscreen-{90hz,120hz}-20s-triage` e `target30-x264-threads4-20s-triage-ui` são JSON leves, sem MP4, perfis isolados, frames ou cache de exportação.
+- Auditoria local do armazenamento: `out/editor-v6-stress` soma 791,24 MiB (729,97 MiB de backups verificados, 61,28 MiB em resultados); perfis auxiliares compartilhados somam 27,43 MiB; espaço livre em C: 74,21 GiB. Os backups e MP4s de qualidade previamente retidos foram preservados.
+- Decisão: manter x264 8 threads, 60Hz e duas lanes. Próximo ciclo precisa mirar o custo de render/captura de ~48s no export integral; cadência e alocação de threads não resolveram o gargalo.
+
+### Camadas de vídeo em intervalos sem overlay — 10/11/2026
+
+- Código identificou quatro clipes cobrindo 2.175 dos 2.394 quadros; restam 219 quadros sem vídeo ativo. Uma variante temporária desenhou/capturou a cena completa nesses intervalos e manteve a camada de primeiro plano transparente para o FFmpeg. A mudança exigiu separar chave de reuso por modo.
+- Teste rápido do worker 14/14, `npm run typecheck`, build e `npm run test:editor-v6:export` passaram com a variante; smoke frio de 30 quadros na lacuna 1120–1150 passou contagem, 2 vídeos e áudio.
+- Full frio da variante passou 2.394/2.394, 4 vídeos/4 áudios e cache Motion com zero gravações em 76,96s clique→MP4 validado (68,57s Main), Motion 16,34s, render 49,20s. Referência integral 8-thread arquivada: 76,34s (67,85s Main), Motion 16,33s, render 48,43s.
+- `captureMs` agregado caiu 24,676→24,190s, mas suas amostras subiram 456→464 e atravessam workers paralelos. Uma execução por condição não permite atribuição causal; o wall e o render da variante ficaram maiores. **A implementação foi revertida** e o teste de exportação Electron foi executado com ela; o caminho final de produção volta ao comportamento original.
+- Relatórios: `target30-video-gap-transition-smoke/` e `target30-video-gap-full-candidate/`, JSON leves. O harness removeu o MP4 e `isolated-app-data`; nenhum frame/cache foi retido.
+- Próximo passo: instrumentar recaptura/reuso por modo e estágio sob o projeto inteiro. Sem um sinal que supere o ruído, priorizar outro gargalo medido em vez de iterar essa hipótese.

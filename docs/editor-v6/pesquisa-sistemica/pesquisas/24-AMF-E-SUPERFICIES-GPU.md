@@ -48,6 +48,18 @@ O modo 60 ficou ~1,55× mais rápido que a mediana das duas amostras explícitas
 
 O harness contou 150 eventos `paint` sem textura antes de encontrar o evento com textura para cada quadro solicitado. A saída codificada somou ~26–31KB no cenário artificial; não foi gravada como MP4. Os JSON estão nas pastas `out/editor-v6-stress/runs/electron-shared-texture-runtime-2026-11-10-{1920x1080-150f-30fps,1920x1080-150f-60fps}/`. Esse wall inclui startup da primeira renderização e handshakes de cada frame, e não é comparável diretamente ao export real.
 
+### Cadência maior no projeto real
+
+O `setFrameRate` de produção está em 60Hz. Para verificar se a cadência limitava o export, usei o harness UI em processo/perfil/cache novos, preset 2 posterior-only, x264 ultrafast/8 threads, duas lanes, 600 quadros a 1080p30, vídeos e áudio reais. Cada candidato passou contagem e áudio:
+
+| Cadência do worker | Clique→MP4 validado | Main | Motion | Render |
+|---:|---:|---:|---:|---:|
+| 60Hz, duas referências frias | 22,70 / 22,91s | 17,86 / 18,14s | 4,83 / 4,65s | 11,64 / 11,96s |
+| 90Hz | 26,41s | 21,08s | 5,12s | 14,40s |
+| 120Hz | 25,48s | 20,37s | 4,87s | 14,00s |
+
+Os candidatos 90/120Hz foram 11–16% mais lentos que as duas referências a 60Hz; o estágio render aumentou em ambas. São amostras únicas e não demonstram uma penalidade causal precisa, mas não há sinal para subir a cadência. Removi a instrumentação do produto/harness e mantive 60Hz. Relatórios: `target30-offscreen-90hz-20s-triage/` e `target30-offscreen-120hz-20s-triage/`.
+
 **Conclusão:** Shared Texture → VideoFrame → WebCodecs é acessível neste Electron, porém não demonstrou aceleração frente ao caminho existente e não atende ao throughput necessário. Ainda não substitui o exportador: nenhum golden de pixels, projeto real, vídeo/áudio, FFmpeg mux, abort, fallback ou comparação de qualidade foi executado. `prefer-hardware` não comprova uso de AMD hardware.
 
 - [Electron `sharedTexture`](https://www.electronjs.org/docs/latest/api/shared-texture)

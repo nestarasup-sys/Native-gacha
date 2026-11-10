@@ -4,7 +4,7 @@
 
 **Abertos:** [06 Fabricador](06-FABRICADOR-MODELOS-POSES-ROUPAS.md), [07 Customizador](07-CUSTOMIZADOR-PERSONAGENS-E-REUSO.md), [08 Studio/Roteiros](08-STUDIO-ROTEIROS-BIBLIOTECAS.md), [12 Windows/AMD](12-WINDOWS-AMD-AMF-DIRECT3D.md) e [14 Motores alternativos](14-MOTORES-ALTERNATIVOS.md). São roteiros técnicos preparados, não estudos aprofundados.
 
-O [índice central](../README.md) é a fonte canônica de status e links para os **23 estudos**. A [Pesquisa 23 — perfil de exportação e alvo de 30 segundos](23-PERFIL-ALVO-30S.md) registra as primeiras medições frias do novo alvo e as decisões de não promoção. Não duplicar o mesmo tema em novos documentos sem necessidade; atualizar a trilha existente ou criar ADR/experimento, se for outra forma de artefato.
+O [índice central](../README.md) é a fonte canônica de status e links para os **25 estudos**. A [Pesquisa 23](23-PERFIL-ALVO-30S.md) registra o alvo de 30 segundos; a [Pesquisa 24](24-AMF-E-SUPERFICIES-GPU.md), AMF/Shared Texture; e a [Pesquisa 25](25-CAPTURA-CAMADAS-LACUNAS-VIDEO.md), captura dinâmica em lacunas de vídeo. Não duplicar o mesmo tema em novos documentos sem necessidade; atualizar a trilha existente ou criar ADR/experimento, se for outra forma de artefato.
 
 ## Protocolo de pesquisa
 

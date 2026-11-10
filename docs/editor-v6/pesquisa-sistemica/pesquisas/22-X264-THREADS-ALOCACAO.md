@@ -34,6 +34,8 @@ O smoke indicava throughput sintético maior até 6 threads, mas não representa
 - A primeira tentativa com 10 foi corretamente rejeitada pelo validador: usou binário `out/main` anterior à alteração e o relatório marcou 8 threads. Após `npm run build`, a execução nova registrou 10 e passou. MP4s/perfis temporários foram limpos pelo harness; só relatórios JSON leves permaneceram.
 - **Decisão:** evidência insuficiente e ruidosa para mudar o padrão ou afirmar que 10 é mais rápido. O padrão continua em 8 e não houve teste de qualidade decodificada. A faixa de 1–12 threads é somente um instrumento de triagem no harness; não usar 9–12 sem novo A/B frio pareado. Prioridade volta a render/preparação, não à busca cega de mais threads.
 
+- Em nova triagem pelo perfil UI, 4 threads passou 600/600 quadros + áudio em 26,61s (Main 21,48s; Motion 5,33s; render 14,46s). Referências frias de 8 threads ficaram em 22,70/22,91s; portanto 4 não foi promovido. O primeiro comando de 4 falhou antes da exportação por não carregar o preset UI isolado; o harness removeu a saída parcial.
+
 ## Instrumentação adicionada no LAB
 
 - `exportRunner.ts` aplica a nova margem automática proporcional somente a `libx264`, com limite de 8. `GACHA_EDITOR_V6_STRESS_X264_THREADS` continua isolado ao harness; encoders alternativos não recebem a margem.
@@ -43,7 +45,7 @@ O smoke indicava throughput sintético maior até 6 threads, mas não representa
 
 ## Próxima validação
 
-1. Não elevar o padrão acima de 8: a triagem 8/10 foi ruidosa, e a comparação só deve ser retomada com pares frios repetidos e período de host sem concorrência perceptível.
+1. Não alterar o padrão de 8: triagens de 4/8/10 não separam o efeito de threads da variação entre execuções frias; não retomar sem período de host controlado e necessidade causal clara.
 2. Monitorar tempo e responsividade em máquinas com menos de 12 processadores lógicos; a fórmula é proporcional e limitada a 8, mas ainda precisa de validação em hardware inferior.
 3. Prosseguir com a captura/transferência e o render comum, que seguem dominantes; 76 s ainda está muito acima da meta de 30 s.
 
