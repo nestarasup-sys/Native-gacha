@@ -40,7 +40,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
-6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
+6. **Timeline e mídia — em andamento avançado:** cálculo de arraste e comandos de faixa estão separados; preservar virtualização, sincronização e edição transitória.
 7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
@@ -176,3 +176,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a seleção continua preservando elementos não removidos, ordem Z e assets referenciados. Os assets atuais são lidos dentro da função de atualização para não descartar escritas feitas enquanto os renderers trabalham; erros mantêm o seletor aberto e liberam o estado de gravação.
 
 **Verificação:** 12 testes Vitest passaram em quatro arquivos de comandos, plano, snapshots e aparência do personagem, incluindo uma atualização concorrente de assets. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
+
+### Ciclo 14 — comandos de faixas da timeline (implementado e verificado)
+
+**Mudança:** criada `editorV6TimelineTrackCommands.ts` para coordenar bloqueio, ordenação, renomeação, visibilidade e criação de blocos a partir das faixas. `EditorV6Timeline` conserva eventos de ponteiro, preview do arraste, playback e apresentação.
+
+**Compatibilidade:** permanecem as regras de grupo/ordem das faixas, exceções das faixas bloqueadas, reutilização do estado do objeto no cursor, seleção do bloco de personagem já existente e orientação para importar mídia quando necessário. A criação continua normalizando a timeline e mantendo IDs conhecidos, duração e seleção.
+
+**Verificação:** 35 testes Vitest passaram em três arquivos (`EditorV6Timeline`, comandos de faixa e arraste), cobrindo seleção, mutações bloqueadas, criação de fala/objeto, grupos de ordenação e dicas de importação. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
