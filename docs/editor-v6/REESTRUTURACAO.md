@@ -36,7 +36,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 ## Sequência de ciclos
 
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
-2. **Projeções de cena e seleção — mapeadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios; verificar seleção de bloco, estado no playhead, snapshot-base e assets associados.
+2. **Projeções de cena e seleção — implementadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios e compor ambas pelo view model da tela; verificar seleção de bloco, estado no playhead, snapshot-base, personagem-fonte e assets associados.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
@@ -384,3 +384,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o cancelamento antes do carregamento, as medições separadas de carregamento e preparação, a amostra anterior do cache, parâmetros de concorrência/bake, mensagens de progresso, relatório parcial de falha e gravação do relatório após preparar a cena. Nenhuma mudança no bake, cache, documento, schema, IPC ou MP4.
 
 **Verificação:** 3 testes sintéticos cobrem carregamento/preparo/progresso, bloqueio por movimento ausente e cancelamento antecipado. Junto com as regressões de cleanup, fallback, agendamento, encoder, relatório, planejamento, motions, renderer por trecho, pipeline, runner e lifecycle IPC, 69 testes Vitest passaram; os 5 testes Node de proteção dos artefatos também passaram. `npm run typecheck`, `npm run audit:architecture` e `npm run build` passaram. Nenhum benchmark ou MP4 real foi executado.
+
+### Ciclo 40 — view model da prévia e do Inspector (implementado e verificado)
+
+**Objetivo:** reunir em `editorV6SceneViewModel.ts` a resolução da cena no playhead, fundo padrão, itens visíveis e seleção do Inspector, junto com os dados do personagem selecionado usados pelos controles de pose/rosto. `EditorV6Page` continua compondo hooks, comandos e componentes da tela.
+
+**Compatibilidade:** preservados `includeMotion: false` na prévia, prioridade do bloco selecionado sobre o estado no playhead, ator visível para ações na cena, fundo padrão sem projeto, fallback de pose/aparência para os valores do personagem e prioridade de valores explícitos salvos no estado da cena. Nenhum renderer, estado persistido ou contrato IPC foi alterado.
+
+**Verificação:** 3 testes novos cobrem projeto ausente, bloco selecionado com playhead em outro estado e overrides explícitos de face/pose. Junto com as regressões de seleção, timeline e face, 39 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.

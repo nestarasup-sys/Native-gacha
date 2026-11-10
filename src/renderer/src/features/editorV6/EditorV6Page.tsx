@@ -32,7 +32,7 @@ import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
-import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
@@ -42,7 +42,7 @@ import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCata
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
-import { resolveEditorV6InspectorSelection } from './editorV6Selection'
+import { createEditorV6SceneViewModel } from './editorV6SceneViewModel'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
@@ -183,32 +183,25 @@ export function EditorV6Page() {
   useMotionPreparation(activeEditorV6, availableCharacters,
     saved && !isPlaying && !motionExportBusy && !characterSourceRefreshRequired
     && activePoseSourceSnapshot?.projectId === activeEditorV6Id)
-  const previewScene = useMemo(() => activeEditorV6 ? resolveEditorV6SceneAtFrame(activeEditorV6, playheadFrame, { includeMotion: false }) : null, [activeEditorV6, playheadFrame])
-  const previewBackground = previewScene?.background ?? { backgroundColor: '#d7b5cd', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 }
-  const visibleTimelineElements = previewScene?.elements ?? []
+  const {
+    previewBackground, inspectorSelection: editorV6Selection,
+    selectedEditorV6Character, selectedEditorV6CharacterModelSlot, selectedEditorV6PoseSlot,
+    selectedEditorV6FaceAppearance, selectedEditorV6FaceMode
+  } = useMemo(() => createEditorV6SceneViewModel({
+    project: activeEditorV6,
+    availableCharacters,
+    playheadFrame,
+    selectedTimelineBlockId,
+    selectedElementId
+  }), [activeEditorV6, availableCharacters, playheadFrame, selectedTimelineBlockId, selectedElementId])
   useEffect(() => {
     if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
     updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
     markEditorV6Unsaved()
   }, [activeEditorV6, selectedTimelineBlockId, markEditorV6Unsaved])
-  const editorV6Selection = useMemo(() => resolveEditorV6InspectorSelection({
-    project: activeEditorV6,
-    visibleElements: visibleTimelineElements,
-    backgroundAssetId: previewBackground.backgroundAssetId,
-    selectedTimelineBlockId,
-    selectedElementId,
-    playheadFrame
-  }), [activeEditorV6, visibleTimelineElements, previewBackground.backgroundAssetId, selectedTimelineBlockId, selectedElementId, playheadFrame])
   const { selectedTimelineVideoClip, selectedTimelineVideo, selectedElement, selectedCharacterElement, selectedBackgroundAsset } = editorV6Selection
-  const selectedEditorV6Character = selectedElement?.kind === 'character' ? availableCharacters.find((character) => character.id === selectedElement.characterId) ?? null : null
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
-  const selectedEditorV6CharacterModelSlot = selectedEditorV6Character ? selectedEditorV6Character.customization.modelSlot ?? 1 : null
   const { poseSlots: editorV6PoseSlots, poseThumbnails: editorV6PoseThumbnails, poseDimensions: editorV6PoseDimensions } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError)
-  const selectedEditorV6PoseSlot = selectedElement?.kind === 'character' ? selectedElement.poseSlot === undefined ? selectedEditorV6Character?.customization.poseSlot ?? null : selectedElement.poseSlot : null
-  const selectedEditorV6FaceAppearance = selectedElement?.kind === 'character'
-    ? selectedElement.faceAppearance ?? selectedEditorV6Character?.customization.faceAppearance
-    : undefined
-  const selectedEditorV6FaceMode = selectedElement?.kind === 'character' ? editorV6FaceModeForElement(selectedElement, selectedEditorV6FaceAppearance) : 'idle'
   const reportFaceCatalogError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
   }, [])
