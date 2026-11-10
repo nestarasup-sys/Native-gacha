@@ -20,6 +20,7 @@ import { createEditorV6EncoderProbe, selectEditorV6ExportEncoder, selectEditorV6
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
+import { cleanupEditorV6ExportRun } from './exportRunCleanup'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
 export { encodingArgs, probeExportMedia }
@@ -205,27 +206,26 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     report.error = message(error)
     throw error
   } finally {
-    deps.releaseMotionCacheScope?.(motionCacheScope)
-    clearInterval(memorySampler)
-    const memory = report.mainProcessMemory
-    if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
-    const cleanupErrors: unknown[] = []
-    if (!published) {
-      report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
-      try { await saveReport() } catch (error) { cleanupErrors.push(error) }
-    }
-    try { await removeEditorV6ExportCandidate(candidate) } catch (error) { cleanupErrors.push(error) }
-    try { await removeEditorV6ExportTempFolder(deps.tempRoot, folder) } catch (error) { cleanupErrors.push(error) }
-    if (cleanupErrors.length) {
-      const details = cleanupErrors.map(message)
-      if (published) {
-        report.deliveryWarning = [report.deliveryWarning, 'O MP4 foi salvo, mas houve falha ao limpar arquivos temporários.'].filter(Boolean).join(' ')
-        try { await saveReport() } catch (error) { console.warn('Não foi possível registrar a falha de limpeza do Editor V6:', message(error)) }
-        console.warn('Falha ao limpar arquivos temporários do Editor V6:', details.join('; '))
-      } else {
-        const primary = exportFailure === undefined ? [] : [exportFailure]
-        throw new AggregateError([...primary, ...cleanupErrors], [exportFailure === undefined ? 'Falha ao limpar arquivos temporários da exportação.' : `A exportação falhou: ${message(exportFailure)}.`, `Falha adicional na limpeza: ${details.join('; ')}`].join(' '))
-      }
-    }
+    await cleanupEditorV6ExportRun({
+      report,
+      published,
+      started,
+      exportFailure,
+      motionCacheScope,
+      releaseMotionCacheScope: deps.releaseMotionCacheScope,
+      memorySampler,
+      candidate,
+      tempRoot: deps.tempRoot,
+      folder,
+      saveReport,
+      removeCandidate: removeEditorV6ExportCandidate,
+      removeTempFolder: removeEditorV6ExportTempFolder,
+      now: () => performance.now(),
+      timestamp: () => new Date().toISOString(),
+      currentRss: () => process.memoryUsage().rss,
+      clearMemorySampler: (sampler) => clearInterval(sampler),
+      formatError: message,
+      warn: (...data) => console.warn(...data)
+    })
   }
 }
