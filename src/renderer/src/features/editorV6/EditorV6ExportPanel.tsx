@@ -9,6 +9,8 @@ import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
 import { cancelEditorV6ExportCommand, runEditorV6ExportCommand } from './editorV6ExportCommands'
 import { EditorV6ExportActivity } from './EditorV6ExportActivity'
 import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
+import { EditorV6ExportAudioSettings } from './EditorV6ExportAudioSettings'
+import { editorV6ExportFramesToSeconds, editorV6ExportSecondsToFrames } from './editorV6ExportTime'
 import type { EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
 
 // Perfil padrão de exportação do Editor V6. As melhorias futuras devem evoluir este caminho.
@@ -136,8 +138,6 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setBusy(false) }
   }
-  const seconds = (value: number) => Number((value / 30).toFixed(4))
-  const frames = (value: string, maximum = 1_000_000) => Math.max(0, Math.min(maximum, Math.round(Number(value) * 30) || 0))
   if (!open) return null
   return <div className="v6-export-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section ref={dialog} tabIndex={-1} className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
@@ -146,8 +146,8 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {characterSourceRefreshRequired && <p className="v6-export-warning" role="status">Atualizando os personagens do Customizador. A exportação ficará disponível quando os snapshots estiverem sincronizados.</p>}
       <div className="v6-export-settings-grid">
         <fieldset className="v6-export-video-settings" disabled={busy || active}><legend>Exportação padrão</legend><div className="v6-export-grid">
-          <label>Do início (s)<input type="number" min={0} step={1 / 30} value={seconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
-          <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={seconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: frames(event.target.value, project.timeline.durationFrames) })} /></label>
+          <label>Do início (s)<input type="number" min={0} step={1 / 30} value={editorV6ExportFramesToSeconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: editorV6ExportSecondsToFrames(event.target.value, project.timeline.durationFrames) })} /></label>
+          <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={editorV6ExportFramesToSeconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: editorV6ExportSecondsToFrames(event.target.value, project.timeline.durationFrames) })} /></label>
         </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small>
           <p><strong>Destino do MP4</strong><br /><small>{exportFolder ?? 'Perguntar onde salvar a cada exportação'}</small></p>
           <button type="button" onClick={() => void chooseExportFolder()}>{exportFolder ? 'Mudar pasta fixa' : 'Escolher pasta fixa'}</button>
@@ -166,18 +166,13 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
           <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem.</small>
         </fieldset>
-        <fieldset className="v6-export-audio-settings" disabled={busy || active}><legend>Opções adicionais · trilha sonora</legend><p>Os áudios são referenciados por ID na Biblioteca V6. A mixagem é aplicada uma única vez ao vídeo final.</p>
-          {(project.exportAudio?.length ?? 0) > 0 ? <div className="v6-export-audio-list">{(project.exportAudio ?? []).map((clip) => <div className="v6-export-audio" key={clip.id}>
-            <strong title={clip.name}>{clip.name}</strong>
-            <label>Começa na edição (s)<input type="number" min={0} step={1 / 30} value={seconds(clip.startFrame)} onChange={(event) => updateAudio(clip.id, { startFrame: frames(event.target.value) })} /></label>
-            <label>Início no arquivo (s)<input type="number" min={0} max={seconds(clip.sourceFrames - 1)} step={1 / 30} value={seconds(clip.sourceInFrame)} onChange={(event) => { const sourceInFrame = frames(event.target.value, clip.sourceFrames - 1); updateAudio(clip.id, { sourceInFrame, durationFrames: Math.min(clip.durationFrames, clip.sourceFrames - sourceInFrame) }) }} /></label>
-            <label>Duração (s)<input type="number" min={1 / 30} max={seconds(clip.sourceFrames - clip.sourceInFrame)} step={1 / 30} value={seconds(clip.durationFrames)} onChange={(event) => updateAudio(clip.id, { durationFrames: Math.max(1, frames(event.target.value, clip.sourceFrames - clip.sourceInFrame)) })} /></label>
-            <label>Volume (%)<input type="number" min={0} max={200} value={Math.round(clip.gain * 100)} onChange={(event) => updateAudio(clip.id, { gain: Math.min(2, Math.max(0, Number(event.target.value) / 100 || 0)) })} /></label>
-            <label className="v6-export-check"><input type="checkbox" checked={clip.muted} onChange={(event) => updateAudio(clip.id, { muted: event.target.checked })} />Silenciar</label>
-            <button type="button" onClick={() => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.filter((item) => item.id !== clip.id), updatedAt: new Date().toISOString() }))}>Remover</button>
-          </div>)}</div> : <div className="v6-export-audio-empty"><span aria-hidden="true">♫</span><div><strong>Nenhuma trilha adicionada</strong><small>Adicione áudio para mixar no arquivo final.</small></div></div>}
-          <button className="v6-export-add-audio" type="button" disabled={(project.exportAudio?.length ?? 0) >= 32} onClick={() => setAudioPickerOpen(true)}>＋ Selecionar da biblioteca</button>
-        </fieldset>
+        <EditorV6ExportAudioSettings
+          clips={project.exportAudio ?? []}
+          disabled={busy || active}
+          onUpdate={updateAudio}
+          onRemove={(id) => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.filter((item) => item.id !== id), updatedAt: new Date().toISOString() }))}
+          onChooseFromLibrary={() => setAudioPickerOpen(true)}
+        />
       </div>
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
       {job && finished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? `MP4 pronto${job.totalExportMilliseconds !== undefined ? ` · ${(job.totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s com preparo` : ''}` : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}

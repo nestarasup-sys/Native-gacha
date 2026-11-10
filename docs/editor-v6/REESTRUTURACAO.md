@@ -280,3 +280,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos posicionamento adaptativo, prevenção de propagação do ponteiro para o canvas, estado ativo das abas, seleção da categoria de expressão ao abrir Presets e restauração da visualização personalizada do personagem.
 
 **Verificação:** 3 novos testes do inspector e 7 testes de regressão da barra e biblioteca de projetos passaram. `npm run typecheck`, `npm run audit:architecture` (739 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 27 — controles de trilha sonora na exportação (implementado e verificado)
+
+**Objetivo:** extrair para `EditorV6ExportAudioSettings.tsx` os controles de seleção, corte, posição, volume e silenciamento das trilhas exportadas. A `EditorV6ExportPanel` segue dona da gravação no documento, vínculo com a Biblioteca V6 e abertura do seletor de áudio. As conversões de segundos/quadros foram reunidas em `editorV6ExportTime.ts`.
+
+**Compatibilidade:** mantidos FPS 30, arredondamento e limites numéricos, edição por ID, `updatedAt`, remoção, limite de 32 clipes, bloqueio durante exportação e referência do áudio pela biblioteca. Nenhuma mudança em IPC, schema, documento salvo ou mixagem.
+
+**Verificação:** 4 testes novos cobrem o painel, limite e conversões; 16 testes existentes de exportação e presets passaram (20 no total). `npm run typecheck`, `npm run audit:architecture` (741 arquivos), `npm run build` e `git diff --check` passaram.
