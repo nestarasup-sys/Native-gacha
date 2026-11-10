@@ -124,7 +124,12 @@ export const encodingArgs = (encoder: string, threads: number) => [
   '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000'
 ]
 export function editorV6EncoderThreads(encoder: string, renderParallelism: number, cpuCount = availableParallelism()) {
-  const defaultThreads = Math.max(1, Math.min(8, Math.floor(Math.max(1, cpuCount) / Math.max(1, renderParallelism))))
+  const laneCount = Math.max(1, renderParallelism)
+  // Real 1080p project pilots on a 12-logical-CPU host found 8 x264 threads
+  // faster than 6 without measurable quality loss; keep the increase bounded
+  // and proportional so smaller hosts and non-x264 encoders retain their split.
+  const encoderThreadFactor = encoder === 'libx264' ? 4 / 3 : 1
+  const defaultThreads = Math.max(1, Math.min(8, Math.floor(Math.max(1, cpuCount) / laneCount * encoderThreadFactor)))
   const candidate = Number(process.env.GACHA_EDITOR_V6_STRESS_X264_THREADS)
   if (encoder === 'libx264' && process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
     && Number.isSafeInteger(candidate) && candidate >= 1 && candidate <= 8) return candidate

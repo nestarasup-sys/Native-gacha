@@ -342,7 +342,9 @@ async function main() {
       || summary.requestedEncoder !== encoder
       || summary.motionConcurrency !== Number(motionConcurrency)
       || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)
-      || uiExportProfile && (summary.profile !== 'editor-v6-ui-default' || summary.hairPoseReactionOnly !== true || summary.hairPosteriorOnly !== true)
+      || uiExportProfile && (summary.profile !== (x264ThreadsValue === undefined ? 'editor-v6-ui-default' : 'stress-custom')
+        || summary.x264Preset !== x264Preset || x264ThreadsValue !== undefined && summary.encoderThreads !== Number(x264ThreadsValue)
+        || summary.hairPoseReactionOnly !== true || summary.hairPosteriorOnly !== true)
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || run.requestedEncoder !== encoder || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
         || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
