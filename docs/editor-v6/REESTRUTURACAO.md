@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição de vídeos FFmpeg e finalização/validação; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros e finalização/validação; preservar workers, captura, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -304,3 +304,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** `exportRunner` mantém reexports de `encodingArgs`, `probeExportMedia` e do tipo `MediaProbe`; preservados preset de CPU restrito ao harness, perfis H.264, metadados BT.709, flags de contagem de quadros/pacotes, sinal de cancelamento e parsing JSON. Canais e payloads IPC não mudaram.
 
 **Verificação:** 4 testes sintéticos de sondagem, 9 de codificação/publicação/reexportação e 18 testes do ciclo IPC passaram (31 no total). `npm run typecheck`, `npm run audit:architecture` (744 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 30 — transporte dos quadros renderizados (implementado e verificado)
+
+**Objetivo:** retirar do runner o laço que solicita cada quadro do worker, reutiliza o último bitmap válido, grava no pipe do FFmpeg e agrega métricas/tempos em `exportFramePipeline.ts`. O runner continua dono da preparação da parte, processo FFmpeg e limpeza de worker.
+
+**Compatibilidade:** preservados reuso do último bitmap, erro para bitmap ausente, contagem de quadros escritos, progresso global, limites de timeout/cancelamento no writer, métricas por quadro e atualização dos relatórios parciais. Sem mudanças no protocolo do worker, conteúdo de quadros, FFmpeg ou relatório.
+
+**Verificação:** 3 testes novos cobrem escrita/reuso, falhas e cancelamento; 9 testes existentes de compatibilidade e 18 de ciclo IPC passaram (30 no total). `npm run typecheck`, `npm run audit:architecture` (745 arquivos), `npm run build` e `git diff --check` passaram.

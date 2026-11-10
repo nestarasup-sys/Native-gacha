@@ -16,8 +16,9 @@ import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
+import { renderAndWriteEditorV6Frames } from './exportFramePipeline'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
-import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
+import { addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport } from './exportMetrics'
 import { buildEditorV6VideoComposition } from './exportVideoComposition'
 import { finalizeEditorV6Export, type EditorV6ExportFinalizationPart } from './exportFinalization'
 
@@ -164,22 +165,21 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         const workerStarted = performance.now()
         worker = await deps.createWorker(renderProject, part, controller.signal, layeredVideo, mouthLoops)
         recordEditorV6Timing(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
-        let bitmap: Buffer | undefined
-        for (let frame = part.startFrame; frame < part.endFrame; frame++) {
-          controller.signal.throwIfAborted()
-          const frameStarted = performance.now()
-          const rendered = await worker.frame(frame)
-          recordEditorV6Timing(timingAccumulators, 'frameRoundTripMs', performance.now() - frameStarted)
-          for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[EditorV6TimingPhase, number]>) recordEditorV6Timing(timingAccumulators, phase, milliseconds)
-          addEditorV6FrameMetrics(frameMetrics, rendered.metrics)
-          if (rendered.reused && bitmap) result.reused++
-          else { if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.'); bitmap = rendered.bitmap; result.rendered++ }
-          const writeStarted = performance.now()
-          await waitForExport(new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap!, (error) => error ? reject(error) : resolve())), controller.signal, 60000, 'enviar quadro ao FFmpeg')
-          recordEditorV6Timing(timingAccumulators, 'ffmpegWriteMs', performance.now() - writeStarted)
-          result.frames++; done++
-          deps.progress({ frames: done })
-        }
+        await renderAndWriteEditorV6Frames({
+          worker,
+          part,
+          signal: controller.signal,
+          counters: result,
+          timingAccumulators,
+          frameMetrics,
+          writeFrame: (bitmap) => waitForExport(
+            new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap, (error) => error ? reject(error) : resolve())),
+            controller.signal,
+            60000,
+            'enviar quadro ao FFmpeg'
+          ),
+          onFrameWritten: () => { done++; deps.progress({ frames: done }) }
+        })
         const finalizeStarted = performance.now()
         process.child.stdin.end()
         await waitForExport(process.done, controller.signal, 120000, 'finalizar parte')
