@@ -39,9 +39,10 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de poses e aparências faciais:** separar renderização, crop anterior, bake de variantes e medição da geometria da gravação no documento; manter os contratos de imagem atuais.
-5. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
-6. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
-7. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
+5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
+6. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
+7. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
+8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 
 Os ciclos são independentes; a ordem pode mudar quando o código ou uma regressão demonstrar outra causa prioritária.
 
@@ -80,3 +81,15 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a cache, o cancelamento e as proteções contra preview obsoleto continuam no hook `useEditorV6FacePreview`; a atualização de assets, expressão, transformações e histórico permanece no fluxo existente. Sem mudanças em persistência, IPC ou renderer.
 
 **Verificação:** 20 testes Vitest e 10 testes Node focados passaram; os testes sintéticos conferem a ordem das renderizações, o crop anterior, o modo ativo e o override explícito de `undefined`. `npm run typecheck`, `npm run audit:architecture` (719 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 4 — materialização de snapshots do elenco (implementado e verificado)
+
+**Mudança:** criada `editorV6CastSnapshots.ts` para renderizar os personagens selecionados e montar os assets e elementos de cena com tamanho, ordem de camada, expressão inicial e revisões de fonte. A página continua dona do plano de inclusão/remoção, da retenção de assets usados por outros elementos e da gravação no documento.
+
+**Motivo:** o handler do elenco combinava montagem dos snapshots com coordenação de modal e estado da tela. A materialização agora pode ser verificada com renderers e referências sintéticas, sem abrir projetos reais.
+
+**Compatibilidade:** referências continuam reutilizadas por `modelSlot`; o bake inicial segue em `idle`; `zIndex`, IDs, referências faciais, revisões e geometria continuam no mesmo contrato. `planEditorV6CastSelection` e `retainEditorV6CastAssets` não foram alterados.
+
+**Verificação:** 22 testes Vitest e 17 testes Node focados passaram, incluindo reuso da referência por modelo, associação de assets e liberação de renderer em falha. `npm run typecheck`, `npm run audit:architecture` (720 arquivos), `npm run build` e `git diff --check` passaram.
+
+**Limite:** o fluxo foi exercitado com personagens e imagens sintéticas; nenhuma `app-data` foi copiada para esta worktree.

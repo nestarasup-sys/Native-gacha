@@ -1,12 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../src/shared/customizer'
 import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode } from '../../src/shared/editorV6'
+import type { FaceExpressionEffects } from '../../src/shared/fabricator'
 import type { PreparedEditorV6FaceRenderer } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { prepareEditorV6FaceAppearance } from '../../src/renderer/src/features/editorV6/editorV6FaceAppearancePreparation'
 
 const oldAppearance = { modelSlot: 1, setId: 'old' } as CustomizerFaceAppearance
 const newAppearance = { modelSlot: 1, setId: 'new' } as CustomizerFaceAppearance
-const oldEffects = {}
+const faceEffect = { enabled: false, color: '#000000', opacity: 0, softness: 0, size: 0, offsetY: 0 }
+const oldEffects: FaceExpressionEffects = { shadow: faceEffect, blush: faceEffect, mouthBlush: faceEffect }
 const nextTransforms = {}
 
 function character(): CustomizerCharacter {

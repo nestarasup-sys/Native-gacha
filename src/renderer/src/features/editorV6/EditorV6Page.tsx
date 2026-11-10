@@ -20,6 +20,7 @@ import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
+import { prepareEditorV6CastSnapshots } from './editorV6CastSnapshots'
 import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
@@ -438,35 +439,21 @@ export function EditorV6Page() {
     try {
       const castPlan = planEditorV6CastSelection(activeEditorV6.elements, availableCharacters, castSelection)
       const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      const assets: EditorV6Asset[] = []
-      const elements: EditorV6Element[] = []
-      const references = new Map<number, Awaited<ReturnType<typeof editorV6CharacterStageReference>>>()
       const stageWidth = sceneRef.current?.clientWidth ?? 1000
       const stageHeight = sceneRef.current?.clientHeight ?? 562
-      let zIndex = Math.max(0, ...castPlan.retainedElements.map((item) => item.zIndex))
-      for (const character of castPlan.charactersToAdd) {
-        const renderer = await prepareSavedCharacterRenderer(character)
-        try {
-          const rendered = await renderer.renderToCanvas(undefined, undefined, undefined, 'idle')
-          const baked = await bakeFaceModeAssets(character.name, renderer, character.customization.faceAppearance, undefined, undefined, 'idle', rendered)
-          const imageWidth = baked.crop?.width ?? rendered.width
-          const imageHeight = baked.crop?.height ?? rendered.height
-          const modelSlot = character.customization.modelSlot ?? 1
-          if (!references.has(modelSlot)) references.set(modelSlot, await editorV6CharacterStageReference(character))
-          const reference = references.get(modelSlot)!
-          const asset: EditorV6Asset = { id: crypto.randomUUID(), category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl }
-          const { width, height, characterCanvasWidth } = fitEditorV6CharacterToStage(reference.rendered, reference.crop, rendered, { width: imageWidth, height: imageHeight }, stageWidth, stageHeight)
-          assets.push(asset, ...baked.extraAssets)
-          const poseSlot = character.customization.poseSlot
-          const poseSourceRevision = typeof poseSlot === 'number' ? activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' : undefined
-          const modelSourceRevision = activePoseSourceSnapshot?.modelRevisions[String(character.customization.modelSlot ?? 1)] ?? 'missing'
-          const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
-          const hairSourceRevision = editorV6CharacterHairSourceRevision(character, activePoseSourceSnapshot?.hairRevisions ?? {})
-          const headExtraSourceRevision = editorV6CharacterHeadExtraSourceRevision(character, activePoseSourceSnapshot?.headExtraRevisions ?? {})
-          const eyeSourceRevision = editorV6CharacterEyeSourceRevision(character, activePoseSourceSnapshot?.eyeRevisions ?? {})
-          elements.push({ id: crypto.randomUUID(), kind: 'character', assetId: asset.id, faceModeAssetIds: { ...baked.assetIds, idle: asset.id }, characterId: character.id, characterSourceUpdatedAt: character.updatedAt, modelSourceRevision, ...(poseSourceRevision ? { poseSourceRevision } : {}), ...(wardrobeSourceRevision ? { wardrobeSourceRevision } : {}), ...(hairSourceRevision ? { hairSourceRevision } : {}), ...(headExtraSourceRevision ? { headExtraSourceRevision } : {}), ...(eyeSourceRevision ? { eyeSourceRevision } : {}), faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, activeExpressionCollectionId: 'standard', activeExpressionPresetId: null, activeFaceMode: 'idle', characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, ...(character.customization.faceAppearance ? { expressionBase: { appearance: structuredClone(character.customization.faceAppearance), transforms: {} } } : {}), characterCanvasWidth, text: character.name, x: 0, y: 0, width, height, rotation: 0, zIndex: ++zIndex })
-        } finally { renderer.dispose() }
-      }
+      const { assets, elements } = await prepareEditorV6CastSnapshots({
+        characters: castPlan.charactersToAdd,
+        startZIndex: Math.max(0, ...castPlan.retainedElements.map((item) => item.zIndex)),
+        stageWidth,
+        stageHeight,
+        sourceSnapshot: activePoseSourceSnapshot
+      }, {
+        prepareRenderer: prepareSavedCharacterRenderer,
+        bakeAssets: bakeFaceModeAssets,
+        getStageReference: editorV6CharacterStageReference,
+        fitToStage: fitEditorV6CharacterToStage,
+        createId: () => crypto.randomUUID()
+      })
       changeScene((studio) => ({
         ...studio,
         elements: [...castPlan.retainedElements, ...elements],

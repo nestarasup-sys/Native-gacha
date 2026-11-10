@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6Asset, EditorV6Element } from '../../src/shared/editorV6'
+import type { FaceExpressionEffects } from '../../src/shared/fabricator'
 import type { PreparedEditorV6FaceRenderer } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { prepareEditorV6PoseChange } from '../../src/renderer/src/features/editorV6/editorV6PosePreparation'
 
@@ -8,11 +9,14 @@ function character(): CustomizerCharacter {
   return { id: 'character-1', name: 'Hero', updatedAt: 'source-1', customization: { modelSlot: 1, poseSlot: 2 } } as CustomizerCharacter
 }
 
+const faceEffect = { enabled: false, color: '#000000', opacity: 0, softness: 0, size: 0, offsetY: 0 }
+const effects: FaceExpressionEffects = { shadow: faceEffect, blush: faceEffect, mouthBlush: faceEffect }
+
 function element(overrides: Partial<EditorV6Element> = {}): EditorV6Element {
   return {
     id: 'element-1', kind: 'character', assetId: 'asset-1', characterId: 'character-1', text: 'Hero',
     x: 10, y: 20, width: 120, height: 180, rotation: 0, zIndex: 1, poseSlot: 2,
-    activeFaceMode: 'idle', faceTransforms: {}, activeExpressionEffects: {}, ...overrides
+    activeFaceMode: 'idle', faceTransforms: {}, activeExpressionEffects: effects, ...overrides
   }
 }
 
@@ -25,7 +29,7 @@ function renderer(width: number, height: number) {
 
 function dependencies(renderers: PreparedEditorV6FaceRenderer[]) {
   return {
-    prepareRenderer: vi.fn(async () => renderers.shift()!),
+    prepareRenderer: vi.fn(async (_character: CustomizerCharacter) => renderers.shift()!),
     bakeAssets: vi.fn(async () => ({
       dataUrl: 'data:image/png;base64,baked', crop: null, assetIds: {}, extraAssets: [] as EditorV6Asset[]
     })),
@@ -51,8 +55,8 @@ describe('preparação de pose do Editor V6', () => {
     expect(deps.prepareRenderer).toHaveBeenCalledTimes(2)
     expect(deps.prepareRenderer.mock.calls[0][0].customization.poseSlot).toBe(2)
     expect(deps.prepareRenderer.mock.calls[1][0].customization.poseSlot).toBe(5)
-    expect(currentRenderer.renderToCanvas).toHaveBeenCalledWith(undefined, {}, {}, 'idle')
-    expect(deps.bakeAssets).toHaveBeenCalledWith('Hero', poseRenderer, undefined, {}, {}, 'idle', expect.objectContaining({ width: 900, height: 700 }))
+    expect(currentRenderer.renderToCanvas).toHaveBeenCalledWith(undefined, {}, effects, 'idle')
+    expect(deps.bakeAssets).toHaveBeenCalledWith('Hero', poseRenderer, undefined, {}, effects, 'idle', expect.objectContaining({ width: 900, height: 700 }))
     expect(deps.faceRenderGeometry).toHaveBeenCalledWith(expect.objectContaining({ characterCanvasWidth: 240 }), expect.objectContaining({ width: 900, height: 700 }), null, 1600, 900)
     expect(result.geometry.characterCanvasWidth).toBe(240)
     expect(currentRenderer.dispose).toHaveBeenCalledOnce()
