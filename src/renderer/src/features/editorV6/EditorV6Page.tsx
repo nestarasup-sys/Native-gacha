@@ -17,6 +17,7 @@ import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
 import { createEditorV6ProjectDeletionCommand } from './editorV6ProjectDeletion'
+import { createEditorV6PrintCommands } from './editorV6PrintCommands'
 import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
@@ -563,6 +564,19 @@ export function EditorV6Page() {
     setError,
     trackOperation: trackEditorV6Operation
   })
+  const { exportPrint, openPrints } = createEditorV6PrintCommands({
+    trackOperation: trackEditorV6Operation,
+    flushDocumentWrites: flushEditorV6DocumentWrites,
+    getFrame: getEditorV6PlaybackFrame,
+    captureFrame: async (project, frame, width, height, mimeType) => {
+      const { captureEditorV6Frame } = await import('./sceneCapture')
+      return captureEditorV6Frame(project, frame, width, height, mimeType)
+    },
+    savePrint: (projectId, dataUrl) => window.desktop.editorV6.saveEditorV6Print(projectId, dataUrl),
+    openPrints: (projectId) => window.desktop.editorV6.openEditorV6Prints(projectId),
+    setError,
+    setNotice
+  })
   const deleteStudio = async (target: EditorV6Card | null = selectedEditorV6) => {
     if (!target || !window.confirm(`Excluir ${target.title}?`)) return
     await deleteProject(target)
@@ -579,26 +593,6 @@ export function EditorV6Page() {
     setSelectedElementId(null)
     setFullView(false)
   }
-
-  const exportPrint = () => {
-    if (!activeEditorV6) return
-    const project = activeEditorV6
-    return trackEditorV6Operation(async () => {
-      try {
-        await flushEditorV6DocumentWrites()
-        const { captureEditorV6Frame } = await import('./sceneCapture')
-        const image = await captureEditorV6Frame(project, getEditorV6PlaybackFrame(), 1920, 1080, 'image/png')
-        const path = await window.desktop.editorV6.saveEditorV6Print(project.id, image)
-        if (path) { setError(null); setNotice(`Print salvo em ${path}`) }
-      } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível gerar o print.') }
-    })
-  }
-
-  const openPrints = () => trackEditorV6Operation(async () => {
-    if (!activeEditorV6) return
-    try { await window.desktop.editorV6.openEditorV6Prints(activeEditorV6.id) }
-    catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível abrir a pasta de prints.') }
-  })
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -734,8 +728,8 @@ export function EditorV6Page() {
             <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Selecionar áudio</span></button>
             <span className="studio-tool-separator" />
             <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
-            <button className="studio-tool-button" onClick={() => void exportPrint()} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => void openPrints()} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
+            <button className="studio-tool-button" onClick={() => void exportPrint(activeEditorV6)} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
+            <button className="studio-tool-button" onClick={() => void openPrints(activeEditorV6.id)} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
             <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
           </nav>
           <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>

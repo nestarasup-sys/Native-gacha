@@ -192,3 +192,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** classes e estrutura visual, ordenação, faixa de fundo, cores por personagem, cálculo dos intervalos de movimento e filtro dos blocos visíveis foram preservados. A memoização continua isolando as linhas das atualizações do playback; o contrato novo é tipado por `EditorV6TimelineRowsProps`.
 
 **Verificação:** 35 testes Vitest passaram nos testes da timeline, comandos de faixa e arraste. `npm run typecheck`, `npm run audit:architecture` (729 arquivos), `npm run build` e `git diff --check` passaram. A suíte usa timelines sintéticas; não foi feito export com projeto real.
+
+### Ciclo 16 — comandos de print (implementado e verificado)
+
+**Mudança:** criada `editorV6PrintCommands.ts` para coordenar flush do documento, captura do quadro atual, gravação do PNG e abertura da pasta de prints. `EditorV6Page` injeta o renderer e a ponte IPC, mantendo os botões e as mensagens na tela.
+
+**Compatibilidade:** a captura continua acontecendo depois do flush, no playhead atual e em 1920×1080 PNG. O tracker de operações continua cobrindo tanto a geração quanto a abertura; erros de flush, renderer e IPC continuam apresentados na página. Nenhum canal, caminho persistido ou formato de projeto foi alterado.
+
+**Verificação:** 5 testes Node focados passaram, incluindo ordem flush/captura/gravação, resolução e MIME, falha antes de salvar, ausência de projeto e erro ao abrir a pasta. `npm run typecheck`, `npm run audit:architecture` (730 arquivos), `npm run build` e `git diff --check` passaram. Os testes usam projeto sintético; nenhuma mídia de `app-data` foi lida.
