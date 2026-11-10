@@ -5,15 +5,16 @@ import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
-import { splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
-import { createEditorV6ExportExecutionPlan, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES } from './exportPlanning'
+import { createEditorV6ExportExecutionPlan } from './exportPlanning'
 import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import { renderEditorV6ExportAttempt, type EditorV6ExportPartWorkerFactory } from './exportAttemptRenderer'
+import { renderEditorV6ExportWithFallback, type EditorV6ExportAttempt } from './exportFallbackStrategy'
 import { createEditorV6ExportReportContext, type EditorV6ExportReport } from './exportReport'
 import { createEditorV6EncoderProbe, selectEditorV6ExportEncoder, selectEditorV6FallbackEncoder } from './exportEncoderSelection'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
@@ -64,7 +65,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   let published = false
   let characters: CustomizerCharacter[] = []
   const testEncoder = createEditorV6EncoderProbe({ ffmpeg: deps.ffmpeg, signal: deps.signal, report })
-  const renderAttempt = (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<EditorV6ExportPartReport[]> => renderEditorV6ExportAttempt({
+  const renderAttempt: EditorV6ExportAttempt = (parts, encoder, maxParallelism = 2) => renderEditorV6ExportAttempt({
     project,
     parts,
     encoder,
@@ -162,23 +163,21 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       try { return await finish(parts) }
       finally { addEditorV6PhaseTime(report, 'finalization', finalizationStarted) }
     }
-    try {
-      const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo ? 2 : 1
-      report.validation = await finishMeasured(await renderAttempt(planned, encoder, turboParallelism))
-    } catch (error) {
-      deps.signal.throwIfAborted()
-      const attempt = report.attempts.at(-1)
-      if (attempt) attempt.error = message(error)
-      if (options.forceTurbo1080) throw Error(`Turbo obrigatório falhou: ${message(error)}`)
-      if (!options.turbo || requestedParts.length < 2) throw error
-      report.fallback = true
-      deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })
-      const safeEncoder = await selectEditorV6FallbackEncoder(encoder, testEncoder)
-      if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
-      const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
-      const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
-      report.validation = await finishMeasured(await renderAttempt(safeParts, safeEncoder, 1))
-    }
+    report.validation = await renderEditorV6ExportWithFallback({
+      options,
+      plannedParts: planned,
+      requestedPartCount: requestedParts.length,
+      stressWorkerOverride,
+      speechInRange,
+      encoder,
+      signal: deps.signal,
+      report,
+      progress: deps.progress,
+      renderAttempt,
+      finishMeasured,
+      selectFallbackEncoder: (attemptedEncoder) => selectEditorV6FallbackEncoder(attemptedEncoder, testEncoder),
+      formatError: message
+    })
     deps.signal.throwIfAborted()
     // The destination only changes after the candidate passes all validations.
     report.state = 'publishing'
