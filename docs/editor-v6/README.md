@@ -18,6 +18,7 @@
 | [Diagnóstico histórico de 309 quadros](ZONA_GUERRA_RELATORIO_309_QUADROS_E_PLANO.md) | Projeto antigo, não comparar contra a nova linha de base |
 | [Bancada Windows remota](ZONA_GUERRA_BANCADA_WINDOWS_REMOTA.md) | CI, resultados sintéticos e limitações |
 | [R37 — estado e gates](ZONA_GUERRA_R37_STATUS_E_GATES.md) | Protótipo de peças, raster experimental e paridade pendente |
+| [Refatoração incremental em execução](REESTRUTURACAO.md) | Ciclos, mudanças, gates e pendências da branch isolada. |
 
 ## Histórico técnico por etapa
 

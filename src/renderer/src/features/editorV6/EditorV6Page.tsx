@@ -1,6 +1,6 @@
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { useEditorV6Store } from './editorV6Store'
-import { createEditorV6Timeline, syncEditorV6TimelineElements, videoCharacterTrackColor } from '../../../../shared/editorV6'
+import { createEditorV6Timeline, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
@@ -16,6 +16,7 @@ import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
+import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
@@ -24,7 +25,7 @@ import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
 import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
+import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
@@ -333,29 +334,33 @@ export function EditorV6Page() {
     }
   }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project, sceneCharacterProjection.autosaveSignature])
 
-  const patchStudio = (transform: (studio: EditorV6Document) => EditorV6Document, editSelection = true) => {
-    if (!activeEditorV6Id) return
-    updateActiveEditorV6Project((studio) => {
-      if (studio.id !== activeEditorV6Id) return studio
-      const currentFrame = getEditorV6PlaybackFrame()
-      const selected = timelineClips(studio.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElementId)
-        ?? (selectedElementId ? editorV6ClipAtFrame(studio.timeline, selectedElementId, currentFrame) : undefined)
-      const next = editSelection ? editEditorV6DocumentAtBlock(studio, selected?.block.id ?? null, transform) : transform(studio)
-      return pruneEditorV6TimelineSnapshots(repairEditorV6FaceModeAssetReferences({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) }))
-    })
-    markEditorV6Unsaved()
-  }
-
-  const patchEditorV6FacePreview = (projectId: string, blockId: string | null | undefined, transform: (project: EditorV6Document) => EditorV6Document) => {
-    if (activeEditorV6IdRef.current !== projectId) return
-    updateActiveEditorV6Project((project) => {
-      if (project.id !== projectId) return project
-      const next = editEditorV6DocumentAtBlock(project, blockId ?? null, transform)
-      return pruneEditorV6TimelineSnapshots(repairEditorV6FaceModeAssetReferences({ ...next, timeline: normalizeEditorV6Timeline(next.timeline) }))
-    })
-    markEditorV6Unsaved()
-  }
-
+  const {
+    patchDocument,
+    patchEditorV6FacePreview,
+    recordHistory,
+    changeScene,
+    loadLatestEditorV6Project,
+    persistImportedEditorV6Document,
+    undo,
+    redo
+  } = createEditorV6DocumentCommands({
+    activeProject: activeEditorV6,
+    activeProjectId: activeEditorV6Id,
+    activeProjectIdRef: activeEditorV6IdRef,
+    selectedElementId,
+    selectedTimelineBlockId,
+    updateActiveProject: updateActiveEditorV6Project,
+    setActiveProject: setActiveEditorV6Project,
+    markUnsaved: markEditorV6Unsaved,
+    writeDocumentInOrder: writeEditorV6DocumentInOrder,
+    upsertSummary: upsertEditorV6Summary,
+    setSaved,
+    setError,
+    setCanUndo,
+    setCanRedo,
+    bumpHistoryVersion: () => setHistoryVersion((value) => value + 1),
+    getFrame: getEditorV6PlaybackFrame
+  })
   const editorV6FacePreview = useEditorV6FacePreview({
     activeProject: activeEditorV6,
     activeProjectId: activeEditorV6Id,
@@ -364,50 +369,6 @@ export function EditorV6Page() {
     patchProject: patchEditorV6FacePreview,
     setError
   })
-
-  const recordHistory = (document = activeEditorV6) => {
-    if (!document) return
-    const history = useEditorV6Store.getState().record(document.id, document)
-    setCanUndo(history.undo.length > 0)
-    setCanRedo(false)
-    setHistoryVersion(value => value + 1)
-  }
-
-  const loadLatestEditorV6Project = async (projectId: string) => {
-    const current = useEditorV6Store.getState().activeProject
-    return current?.id === projectId ? current : window.desktop.editorV6.loadEditorV6Project(projectId)
-  }
-
-  const persistImportedEditorV6Document = async (source: EditorV6Document, next: EditorV6Document) => {
-    const isActive = activeEditorV6IdRef.current === source.id && useEditorV6Store.getState().activeProject?.id === source.id
-    if (isActive) {
-      recordHistory(source)
-      setActiveEditorV6Project(next)
-      markEditorV6Unsaved()
-    }
-    await writeEditorV6DocumentInOrder(next)
-    const current = useEditorV6Store.getState().activeProject
-    upsertEditorV6Summary(editorV6ProjectSummary(current?.id === next.id ? current : next))
-    const isStillCurrent = isActive
-      && activeEditorV6IdRef.current === next.id
-      && current?.id === next.id
-      && current.updatedAt === next.updatedAt
-    if (isStillCurrent) {
-      setSaved(true)
-      setError(null)
-    }
-    return isStillCurrent
-  }
-
-  const changeScene = (transform: (studio: EditorV6Document) => EditorV6Document) => {
-    if (!activeEditorV6) return
-    recordHistory()
-    patchStudio((studio) => {
-      const next = transform(studio)
-      return { ...next, timeline: syncEditorV6TimelineElements(next.timeline, next.elements) }
-    })
-  }
-
   const { importImage, importTimelineMedia, linkVideoLibraryItem, linkAudioLibraryItem, selectBackground, linkSharedBackground, linkSharedObject } = createEditorV6MediaCommands({
     activeProject: activeEditorV6,
     trackOperation: trackEditorV6Operation,
@@ -438,28 +399,6 @@ export function EditorV6Page() {
     changeScene,
     createId: () => crypto.randomUUID()
   })
-
-  const undo = () => {
-    if (!activeEditorV6) return
-    const document = useEditorV6Store.getState().undo(activeEditorV6.id, activeEditorV6)
-    if (!document) return
-    const history = useEditorV6Store.getState().histories[activeEditorV6.id]
-    patchStudio(() => document, false)
-    setCanUndo(Boolean(history?.undo.length))
-    setCanRedo(true)
-    setHistoryVersion(value => value + 1)
-  }
-
-  const redo = () => {
-    if (!activeEditorV6) return
-    const document = useEditorV6Store.getState().redo(activeEditorV6.id, activeEditorV6)
-    if (!document) return
-    const history = useEditorV6Store.getState().histories[activeEditorV6.id]
-    patchStudio(() => document, false)
-    setCanUndo(Boolean(history?.undo.length))
-    setCanRedo(Boolean(history?.redo.length))
-    setHistoryVersion(value => value + 1)
-  }
 
   const addTextElement = createEditorV6TextElementCommand({
     activeProject: activeEditorV6,
@@ -569,7 +508,7 @@ export function EditorV6Page() {
         updatedAt: new Date().toISOString()
       })
       if (record) changeScene(update)
-      else patchStudio(update)
+      else patchDocument(update)
       setError(null)
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a peça facial neste projeto.')
@@ -678,11 +617,11 @@ export function EditorV6Page() {
   const updateElement = (id: string, values: Partial<EditorV6Element>, record = true) => {
     const update = (studio: EditorV6Document) => ({ ...studio, elements: studio.elements.map((element) => element.id === id ? { ...element, ...values } : element), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
-    else patchStudio(update)
+    else patchDocument(update)
   }
 
   const updateCharacterNameColor = (characterId: string, color: string) => {
-    patchStudio((studio) => ({
+    patchDocument((studio) => ({
       ...studio,
       characterNameColors: { ...studio.characterNameColors, [characterId]: color },
       updatedAt: new Date().toISOString()
@@ -690,24 +629,24 @@ export function EditorV6Page() {
   }
 
   const updateBalloonScale = (scalePercent: number) => {
-    patchStudio((studio) => ({ ...studio, balloonScalePercent: scalePercent, updatedAt: new Date().toISOString() }), false)
+    patchDocument((studio) => ({ ...studio, balloonScalePercent: scalePercent, updatedAt: new Date().toISOString() }), false)
   }
 
   const updateBalloonOffsetY = (offsetY: number) => {
-    patchStudio((studio) => ({ ...studio, balloonOffsetY: offsetY, updatedAt: new Date().toISOString() }), false)
+    patchDocument((studio) => ({ ...studio, balloonOffsetY: offsetY, updatedAt: new Date().toISOString() }), false)
   }
 
   const updateVideoBlock = (blockId: string, values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>, record = true) => {
     const update = (studio: EditorV6Document) => ({ ...studio, timeline: normalizeEditorV6Timeline({ ...studio.timeline, tracks: studio.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block) })) }), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
-    else patchStudio(update)
+    else patchDocument(update)
   }
 
   const updateBackground = (values: Partial<Pick<EditorV6Document, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>, record = true) => {
     const frame = getEditorV6PlaybackFrame()
     const update = (studio: EditorV6Document) => ({ ...editEditorV6BackgroundAtFrame(studio, frame, values), updatedAt: new Date().toISOString() })
     if (record) changeScene(update)
-    else patchStudio(update)
+    else patchDocument(update)
   }
 
   const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
@@ -956,7 +895,7 @@ export function EditorV6Page() {
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchStudio(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
