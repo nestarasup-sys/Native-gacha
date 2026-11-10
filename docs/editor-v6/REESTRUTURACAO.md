@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia e preparação/mixagem de áudio; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
 
@@ -208,3 +208,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade e proteção:** continua usando `flushEditorV6Writes`, que drena operações pendentes e gravações do documento. Se o flush falhar, o projeto continua aberto e a causa é mostrada; os estados só são limpos depois do sucesso. Não houve mudança na persistência ou nos dados salvos.
 
 **Verificação:** 14 testes Node passaram para saída, criação e exclusão, cobrindo ordem de flush, falhas e preservação do projeto ativo. `npm run typecheck`, `npm run audit:architecture` (731 arquivos), `npm run build` e `git diff --check` passaram. A verificação usa projeto sintético.
+
+### Ciclo 18 — preparação e mixagem de áudio na exportação (implementado e verificado)
+
+**Mudança:** criada `electron/domains/editorV6/exportAudio.ts` para mapear áudio de blocos de timeline, combinar com as trilhas de exportação, montar os filtros FFmpeg e classificar erros de decodificação. `exportRunner.ts` continua coordenando a junção final e a política de publicação.
+
+**Compatibilidade:** foram movidas sem alteração as regras de faixas ocultas/mutadas, `audioEnabled`, referência de mídia, ordem entre áudio de exportação e timeline, recorte pelo intervalo, mixagem, recuperação tolerada pelo FFmpeg e identificação da fonte com erro. Não houve alteração no formato do relatório, IPC, documentos ou argumentos do fluxo final.
+
+**Verificação:** 4 testes Node sintéticos cobrem projeção de áudio, recorte, filtros estritos/de recuperação e identificação/classificação de erro. Mais 22 testes Vitest de runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (732 arquivos), `npm run build` e `git diff --check` passaram. Não foi executado export MP4 real.

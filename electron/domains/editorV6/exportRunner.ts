@@ -10,10 +10,11 @@ import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6Mo
 import { prepareExportMotions } from './prepareMotions'
 import { prepareExportMouthLoops } from './prepareMouthLoops'
 import { editorV6ExportTestSettings, type EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
-import { planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
+import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportMouthLoops, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus, type EditorV6FrameMetrics, type EditorV6FrameTimings } from '../../../src/shared/editorV6Export'
 import { runExportCommand, spawnExportProcess, waitForExport } from './exportProcess'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
+import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
@@ -126,27 +127,6 @@ function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame
   return project.timeline.tracks.some((track) => track.kind === 'speech' && !track.hidden && !track.muted && track.blocks.some((block) => Boolean(block.characterId ?? block.state?.characterId) && block.startFrame < endFrame && block.startFrame + block.durationFrames > startFrame))
 }
 
-function timelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
-  const media = new Map((project.media ?? []).filter((asset) => asset.hasAudio).map((asset) => [asset.id, asset]))
-  return project.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => {
-    const asset = block.mediaId ? media.get(block.mediaId) : undefined
-    if (!asset || (track.kind !== 'audio' && !(track.kind === 'video' && asset.kind === 'video')) || track.muted || track.hidden || block.audioEnabled === false) return []
-    return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), ...(asset.libraryAudioId ? { libraryAudioId: asset.libraryAudioId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
-  }))
-}
-function audioDecodeFailureSource(error: unknown, audio: ReturnType<typeof planEditorV6Audio>) {
-  const details = message(error)
-  const stream = /aist#(\d+):\d+\/([a-z0-9_]+)/i.exec(details)
-  const clip = stream ? audio[Number(stream[1]) - 1]?.clip : undefined
-  return { clip, codec: stream?.[2]?.toUpperCase() }
-}
-function isAudioDecodeRateFailure(error: unknown) {
-  const details = message(error)
-  return /FFmpeg\/FFprobe terminou com c[oó]digo 69:/i.test(details) && /Decode error rate .* exceeds maximum/i.test(details)
-}
-function isAudioPacketDecodeFailure(error: unknown) {
-  return /(?:Error submitting packet to decoder|Invalid data found when processing input|Input buffer exhausted before END element found|Decode error rate .* exceeds maximum)/i.test(message(error))
-}
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
   const testSettings = editorV6ExportTestSettings(options.testMode)
@@ -391,15 +371,12 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         return JSON.stringify([video.codec_name, video.profile, video.pix_fmt, video.width, video.height, video.r_frame_rate, video.time_base, video.extradata_hash])
       })
       if (new Set(signatures).size !== 1) throw Error('Os parâmetros das partes são incompatíveis para junção sem recodificação.')
-      const audio = planEditorV6Audio([...(project.exportAudio ?? []), ...timelineMediaAudio(project)], options.startFrame, options.endFrame)
+      const audio = planEditorV6ProjectAudio(project, options.startFrame, options.endFrame)
       deps.progress({ state: 'joining', message: audio.length ? 'Juntando o vídeo e preparando a mixagem de áudio…' : 'Juntando o vídeo final…', frames: totalFrames })
       const list = join(folder, 'parts.txt')
       await writeFile(list, parts.map((part) => `file '${basename(part.path)}'`).join('\n') + '\n')
       report.audioClips = audio.length
-      const filters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
-      if (audio.length) filters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)
-      const recoveryFilters = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=PTS-STARTPTS,aresample=48000:async=48000:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
-      if (audio.length) recoveryFilters.push(`${audio.map((_item, index) => `[a${index}]`).join('')}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`)
+      const { strict: filters, recoverable: recoveryFilters } = editorV6AudioFilterGraphs(audio, totalFrames)
       const audioPaths = await Promise.all(audio.map((item) => deps.audioPath(item.clip)))
       const joinArgs = (recoverAudio = false) => ['-v', 'error', '-y', ...(recoverAudio ? ['-max_error_rate', '1'] : []), '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', (recoverAudio ? recoveryFilters : filters).join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(totalFrames / 30), '-movflags', '+faststart', candidate]
       try {
@@ -407,11 +384,11 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       } catch (error) {
         deps.signal.throwIfAborted()
         if (!audio.length) throw error
-        const source = audioDecodeFailureSource(error, audio)
+        const source = editorV6AudioDecodeFailureSource(error, audio)
         const sourceName = source.clip ? `“${source.clip.name}” (${source.clip.fileName})` : 'uma das fontes de áudio'
         const codec = source.codec ?? 'áudio'
-        if (!isAudioDecodeRateFailure(error)) {
-          if (source.clip && isAudioPacketDecodeFailure(error)) throw Error(`A fonte ${sourceName} contém dados ${codec} inválidos e não há quadros decodificáveis suficientes. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(error)}`, { cause: error })
+        if (!isEditorV6AudioDecodeRateFailure(error)) {
+          if (source.clip && isEditorV6AudioPacketDecodeFailure(error)) throw Error(`A fonte ${sourceName} contém dados ${codec} inválidos e não há quadros decodificáveis suficientes. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(error)}`, { cause: error })
           throw error
         }
         deps.progress({ state: 'joining', message: `Recuperando quadros decodificáveis de ${sourceName}…` })
