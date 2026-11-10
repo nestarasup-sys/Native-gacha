@@ -288,3 +288,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos FPS 30, arredondamento e limites numéricos, edição por ID, `updatedAt`, remoção, limite de 32 clipes, bloqueio durante exportação e referência do áudio pela biblioteca. Nenhuma mudança em IPC, schema, documento salvo ou mixagem.
 
 **Verificação:** 4 testes novos cobrem o painel, limite e conversões; 16 testes existentes de exportação e presets passaram (20 no total). `npm run typecheck`, `npm run audit:architecture` (741 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 28 — consulta do status de exportação (implementado e verificado)
+
+**Objetivo:** isolar o polling de status do job em `editorV6ExportStatusPolling.ts`, mantendo o painel responsável pelo estado visual, mensagem de erro e integração com o preload.
+
+**Compatibilidade:** a consulta continua imediata e depois a cada 500 ms; falhas são mostradas e tentadas novamente; resultados de chamadas em andamento são ignorados após desmontagem; estados terminais continuam sendo `completed`, `cancelled` e `failed`. Canais IPC, payload, job lembrado e sequência de exportação permanecem iguais.
+
+**Verificação:** 4 testes novos exercitam repetição, erro, cancelamento e estados; 22 testes de exportação e presets passaram (26 no total), mais os 18 testes do ciclo de vida IPC. `npm run typecheck`, `npm run audit:architecture` (742 arquivos), `npm run build` e `git diff --check` passaram.

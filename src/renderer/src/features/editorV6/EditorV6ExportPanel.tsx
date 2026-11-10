@@ -11,12 +11,12 @@ import { EditorV6ExportActivity } from './EditorV6ExportActivity'
 import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ExportAudioSettings } from './EditorV6ExportAudioSettings'
 import { editorV6ExportFramesToSeconds, editorV6ExportSecondsToFrames } from './editorV6ExportTime'
+import { isEditorV6ExportFinished, startEditorV6ExportStatusPolling } from './editorV6ExportStatusPolling'
 import type { EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
 
 // Perfil padrão de exportação do Editor V6. As melhorias futuras devem evoluir este caminho.
 const DEFAULT_EXPORT_SETTINGS = EDITOR_V6_DEFAULT_EXPORT_PROFILE
 let rememberedJob: EditorV6ExportStatus | null = null
-const finished = (job: EditorV6ExportStatus) => ['completed', 'cancelled', 'failed'].includes(job.state)
 export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequired, onClose, onExitEditor, onChange, onActivity, trackOperation, prepareHair = prepareEditorV6HairMotionBundle }: { project: EditorV6Document; open: boolean; characterSourceRefreshRequired: boolean; onClose: () => void; onExitEditor: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T>; prepareHair?: typeof prepareEditorV6HairMotionBundle }) {
   const dialog = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
@@ -39,7 +39,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   const [busy, setBusy] = useState(false)
   const [audioPickerOpen, setAudioPickerOpen] = useState(false)
   const [error, setError] = useState('')
-  const active = Boolean(job && !finished(job))
+  const active = Boolean(job && !isEditorV6ExportFinished(job))
   useEffect(() => {
     if (!open) return
     try {
@@ -59,15 +59,16 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
   useEffect(() => { onActivity?.(active || busy); return () => onActivity?.(false) }, [active, busy, onActivity])
   const setStatus = (value: EditorV6ExportStatus) => { rememberedJob = value; setJob(value) }
   useEffect(() => {
-    if (!job || finished(job)) return
-    let stopped = false, timer = 0
-    const poll = async () => {
-      try { const value = await window.desktop.editorV6.getEditorV6ExportStatus(job.id); if (!stopped) setStatus(value) }
-      catch (reason) { if (!stopped) setError(reason instanceof Error ? reason.message : String(reason)) }
-      if (!stopped) timer = window.setTimeout(() => { void poll() }, 500)
-    }
-    void poll()
-    return () => { stopped = true; clearTimeout(timer) }
+    if (!job || isEditorV6ExportFinished(job)) return
+    return startEditorV6ExportStatusPolling(job.id, {
+      getStatus: (jobId) => window.desktop.editorV6.getEditorV6ExportStatus(jobId),
+      onStatus: setStatus,
+      onError: (reason) => setError(reason instanceof Error ? reason.message : String(reason)),
+      scheduler: {
+        schedule: (callback, delayMs) => window.setTimeout(callback, delayMs),
+        cancel: (timerId) => window.clearTimeout(timerId)
+      }
+    })
   }, [job?.id, active])
   const updateAudio = (id: string, values: Partial<EditorV6ExportAudio>) => onChange((document) => ({ ...document, exportAudio: document.exportAudio?.map((clip) => clip.id === id ? { ...clip, ...values } : clip), updatedAt: new Date().toISOString() }))
   const linkAudio = async (item: EditorV6LibraryMediaItem) => {
@@ -175,9 +176,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
         />
       </div>
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
-      {job && finished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? `MP4 pronto${job.totalExportMilliseconds !== undefined ? ` · ${(job.totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s com preparo` : ''}` : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}
+      {job && isEditorV6ExportFinished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? `MP4 pronto${job.totalExportMilliseconds !== undefined ? ` · ${(job.totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s com preparo` : ''}` : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <><button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(true)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO'}</button><button className="v6-export-without-hair" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(false)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR SEM ANIMAÇÃO DE CABELO'}</button></>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button>{job && finished(job) && <button type="button" disabled={busy} onClick={onExitEditor}>Voltar aos projetos</button>}</footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <><button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(true)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO'}</button><button className="v6-export-without-hair" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start(false)}>{busy ? 'Abrindo exportação…' : 'EXPORTAR SEM ANIMAÇÃO DE CABELO'}</button></>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button>{job && isEditorV6ExportFinished(job) && <button type="button" disabled={busy} onClick={onExitEditor}>Voltar aos projetos</button>}</footer>
     </section>
     {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudio} />}
   </div>
