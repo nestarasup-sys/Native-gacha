@@ -1,6 +1,6 @@
-import { mkdir, mkdtemp, rename, rm, unlink, writeFile } from 'node:fs/promises'
+import { mkdir, rename, writeFile } from 'node:fs/promises'
 import { createHash, randomUUID } from 'node:crypto'
-import { basename, dirname, extname, join, resolve, sep } from 'node:path'
+import { basename, dirname, extname, join } from 'node:path'
 import { availableParallelism, release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
@@ -15,6 +15,7 @@ import { runExportCommand, spawnExportProcess, waitForExport } from './exportPro
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
+import { createEditorV6ExportTempFolder, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
@@ -153,17 +154,11 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   const report: EditorV6ExportReport = { schemaVersion: 1, id: deps.id, projectId: project.id, options, fps: 30, totalFrames, state: 'preparing', fallback: false, attempts: [], encoderTests: [], audioClips: 0, runtime, exportTestSettings: testSettings, videoInputs: new Set(planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).map((clip) => clip.fileName)).size, proxies: 0, motionTransitionsRequired: 0, motionTransitionsPrepared: 0, phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 }, startedAt: new Date().toISOString(), outputPath: deps.outputPath }
   const startRssBytes = process.memoryUsage().rss
   report.mainProcessMemory = { startRssBytes, peakRssBytes: startRssBytes, sampleIntervalMs: 500 }
-  const saveReport = async () => {
-    await mkdir(dirname(deps.reportPath), { recursive: true })
-    const temporary = `${deps.reportPath}.${randomUUID()}.tmp`
-    try { await writeFile(temporary, JSON.stringify(report, null, 2), { flag: 'wx' }); await rename(temporary, deps.reportPath) }
-    finally { await unlink(temporary).catch(() => {}) }
-  }
+  const saveReport = () => writeEditorV6ExportReport(deps.reportPath, report)
   let folder: string
   const temporarySetupStarted = performance.now()
   try {
-    await mkdir(deps.tempRoot, { recursive: true })
-    folder = await mkdtemp(join(deps.tempRoot, 'editor-v6-export-'))
+    folder = await createEditorV6ExportTempFolder(deps.tempRoot)
   } catch (error) {
     addPhaseTime(report, 'temporarySetup', temporarySetupStarted)
     report.state = deps.signal.aborted ? 'cancelled' : 'failed'
@@ -497,11 +492,8 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
       try { await saveReport() } catch (error) { cleanupErrors.push(error) }
     }
-    try { await unlink(candidate) } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') cleanupErrors.push(error) }
-    const absolute = resolve(folder)
-    if (absolute.startsWith(resolve(deps.tempRoot) + sep) && basename(absolute).startsWith('editor-v6-export-')) {
-      try { await rm(absolute, { recursive: true, force: true }) } catch (error) { cleanupErrors.push(error) }
-    }
+    try { await removeEditorV6ExportCandidate(candidate) } catch (error) { cleanupErrors.push(error) }
+    try { await removeEditorV6ExportTempFolder(deps.tempRoot, folder) } catch (error) { cleanupErrors.push(error) }
     if (cleanupErrors.length) {
       const details = cleanupErrors.map(message)
       if (published) {

@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia e preparação/mixagem de áudio; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio e ciclo de artefatos temporários; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
 
@@ -216,3 +216,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** foram movidas sem alteração as regras de faixas ocultas/mutadas, `audioEnabled`, referência de mídia, ordem entre áudio de exportação e timeline, recorte pelo intervalo, mixagem, recuperação tolerada pelo FFmpeg e identificação da fonte com erro. Não houve alteração no formato do relatório, IPC, documentos ou argumentos do fluxo final.
 
 **Verificação:** 4 testes Node sintéticos cobrem projeção de áudio, recorte, filtros estritos/de recuperação e identificação/classificação de erro. Mais 22 testes Vitest de runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (732 arquivos), `npm run build` e `git diff --check` passaram. Não foi executado export MP4 real.
+
+### Ciclo 19 — artefatos temporários e relatórios de exportação (implementado e verificado)
+
+**Mudança:** criada `electron/domains/editorV6/exportArtifacts.ts` para criar a pasta temporária identificada do job, gravar o relatório via arquivo temporário e rename, remover o MP4 candidato ausente ou existente e apagar apenas a pasta de exportação com prefixo esperado dentro da raiz permitida. `exportRunner.ts` continua decidindo quando salvar o relatório e como comunicar falhas de limpeza.
+
+**Compatibilidade e proteção:** preservados o prefixo `editor-v6-export-`, o arquivo `.tmp` exclusivo, a publicação atômica do relatório, a tolerância a candidato já removido e o limite de remoção recursiva pela raiz/prefixo. O candidato MP4 segue sendo o caminho oculto e exclusivo calculado para aquele job, ao lado do destino escolhido. A agregação de erro, o aviso após publicação e os estados do job continuam no runner.
+
+**Verificação:** 5 testes Node com diretórios temporários sintéticos cobrem criação, substituição atômica, limpeza após falha no rename, comportamento de `ENOENT` e recusa de caminhos fora da raiz/prefixo. Mais 22 testes Vitest de runner e lifecycle IPC passaram; `npm run typecheck`, `npm run audit:architecture` (733 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 real foi gerado.
