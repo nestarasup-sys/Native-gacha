@@ -17,6 +17,9 @@ import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { editorV6AudioDecodeFailureSource, editorV6AudioFilterGraphs, isEditorV6AudioDecodeRateFailure, isEditorV6AudioPacketDecodeFailure, planEditorV6ProjectAudio } from './exportAudio'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6FrameMetrics, addEditorV6PhaseTime, createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6ExportPhaseTimings, type EditorV6FrameTimingReport, type EditorV6TimingPhase } from './exportMetrics'
+import { buildEditorV6VideoComposition } from './exportVideoComposition'
+
+export { editorV6OutputColorFilter } from './exportVideoComposition'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
@@ -70,7 +73,6 @@ export const encodingArgs = (encoder: string, threads: number) => [
   '-profile:v', encoder === 'h264_mf' ? '100' : 'high',
   '-level:v', '4.1', '-g', '60', '-bf', '0', '-video_track_timescale', '30000'
 ]
-export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
 const MOUTH_LOOP_BATCH_FRAMES = 300
 function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
   return project.timeline.tracks.some((track) => track.kind === 'speech' && !track.hidden && !track.muted && track.blocks.some((block) => Boolean(block.characterId ?? block.state?.characterId) && block.startFrame < endFrame && block.startFrame + block.durationFrames > startFrame))
@@ -182,24 +184,8 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       try {
         const videoClips = planEditorV6VideoOverlays(project, part.startFrame, part.endFrame)
         const videoPaths = await Promise.all(videoClips.map((clip) => deps.mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
-        const videoInputs = videoClips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', videoPaths[index]])
-        const filters = layeredVideo ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]'] : ['[0:v]setsar=1[base]']
-        let lastVideo = 'base'
-        videoClips.forEach((clip, index) => {
-          const offset = (clip.startFrame - part.startFrame) / 30, end = (clip.endFrame - part.startFrame) / 30
-          const output = `mix${index}`
-          const boxWidth = clip.layout.width * options.width / 100, boxHeight = clip.layout.height * options.height / 100
-          const centerX = (50 + clip.layout.x) * options.width / 100, centerY = (50 + clip.layout.y) * options.height / 100
-          const rotation = clip.layout.rotation * Math.PI / 180
-          filters.push(`[${index + 1}:v:0]scale=${boxWidth}:${boxHeight}:force_original_aspect_ratio=decrease:force_divisible_by=2,setsar=1,format=rgba,rotate=${rotation}:ow=rotw(iw):oh=roth(ih):c=none,setpts=PTS-STARTPTS+${offset}/TB[clip${index}]`)
-          filters.push(`[${lastVideo}][clip${index}]overlay=x='${centerX}-overlay_w/2':y='${centerY}-overlay_h/2':enable='gte(t,${offset})*lt(t,${end})':eof_action=pass:repeatlast=0[${output}]`)
-          lastVideo = output
-        })
-        if (layeredVideo) { filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[mixed]`); lastVideo = 'mixed' }
-        filters.push(`[${lastVideo}]${editorV6OutputColorFilter}[vout]`)
-        const filterArgs = ['-filter_complex', filters.join(';'), '-map', '[vout]']
-        const rawHeight = options.height * (layeredVideo ? 2 : 1)
-        process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoInputs, ...filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
+        const videoComposition = buildEditorV6VideoComposition({ clips: videoClips, mediaPaths: videoPaths, partStartFrame: part.startFrame, width: options.width, height: options.height, layeredVideo })
+        process = spawnExportProcess(deps.ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path], controller.signal)
         if (process.child.pid) deps.onFfmpegProcessStarted?.(process.child.pid)
         const workerStarted = performance.now()
         worker = await deps.createWorker(renderProject, part, controller.signal, layeredVideo, mouthLoops)

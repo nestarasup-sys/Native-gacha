@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários e publicação do candidato; preservar workers, captura, FFmpeg, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato e composição de vídeos FFmpeg; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
 
@@ -240,3 +240,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os códigos de erro que permitem recuperação (`EPERM`, `EACCES`, `EBUSY`, `EEXIST`), o nome `(recuperado-<8 caracteres do job>)`, o aviso entregue ao usuário e a propagação de outras falhas como falta de espaço. Sem alteração em formato, destino ou momento de publicação.
 
 **Verificação:** 26 testes Vitest do runner e lifecycle IPC passaram, incluindo publicação normal, os quatro códigos recuperáveis e propagação de erro não recuperável. Os 5 testes Node do ciclo de artefatos também passaram; `npm run typecheck`, `npm run audit:architecture` (734 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 real foi gerado.
+
+### Ciclo 22 — composição de vídeos FFmpeg (implementado e verificado)
+
+**Objetivo:** retirar do laço `renderPart` a montagem de argumentos de entrada, filtros de posição/escala/rotação e composição de saída de vídeos sobrepostos. O runner continua planejando os clips e resolvendo caminhos de mídia; o novo módulo só traduz esse plano para argumentos FFmpeg.
+
+**Compatibilidade:** preservados ordem dos clips, seek/duração em segundos, offsets relativos ao início de cada trecho, posicionamento, rotação, sinalização BT.709 e composição da entrada em duas camadas. O runner continua reexportando a constante de filtro de cor pelo caminho antigo. Sem alteração no planejamento compartilhado, nos workers ou nos formatos de exportação.
+
+**Verificação:** 3 testes Node sintéticos cobrem seek, duração, offsets, ordem, posição, rotação e modo em camadas; 30 testes Vitest de runner, lifecycle IPC e paridade da timeline passaram; os 5 testes Node de artefatos também passaram. `npm run typecheck`, `npm run audit:architecture` (735 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 foi gerado.
