@@ -1,9 +1,8 @@
 import { useCallback, useMemo, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
-import { editorV6StageDragPosition, moveEditorV6StageDrag, type EditorV6StageDrag } from './editorV6StageDrag'
+import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { editorV6StageDragPosition, moveEditorV6StageDrag, prepareEditorV6StageDrag, type EditorV6StageDrag } from './editorV6StageDrag'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 
@@ -71,7 +70,6 @@ export function useEditorV6StageInteraction(
     event.stopPropagation()
     current.pausePlayback()
     const currentScene = resolveEditorV6SceneAtFrame(project, getEditorV6PlaybackFrame(), { includeMotion: false })
-    const currentBackground = currentScene.background
     const videoBlockId = id.startsWith('media-video:') ? id.slice('media-video:'.length) : null
     const target: StageDragTarget = videoBlockId ? 'video' : id === 'background' ? 'background' : 'element'
     current.setSelectedElementId(target === 'video' ? null : id)
@@ -88,31 +86,22 @@ export function useEditorV6StageInteraction(
     if (element?.kind === 'character') current.restoreCharacterInspectorView()
     else current.setInspectorTab('editor')
     if (current.faceBusy || current.expressionBusy || current.faceRenderRunningRef.current) return
-    const frame = currentScene.frame
-    let prepared: EditorV6Document, blockId: string
-    if (target === 'video' && videoClip) {
-      prepared = project
-      blockId = videoClip.block.id
-    } else if (target === 'background') {
-      if (project.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) return
-      prepared = editEditorV6BackgroundAtFrame(project, frame, {})
-      blockId = timelineClips(prepared.timeline).find(({ block }) => block.background && block.startFrame === frame)!.block.id
-    } else {
-      const operation = prepareEditorV6PositionAtFrame(project, id, frame)
-      if (!operation || !element) return
-      prepared = operation.document
-      blockId = operation.blockId
-    }
     const rect = stage.getBoundingClientRect()
-    const videoAsset = videoClip?.block.mediaId ? project.media?.find((media) => media.id === videoClip.block.mediaId) : undefined
-    const videoLayout = videoClip?.block.mediaLayout ?? editorV6DefaultVideoLayout(videoAsset?.width, videoAsset?.height)
-    dragRef.current = {
-      id, target, ...(target === 'video' ? { videoLayout } : {}),
-      pointerId: event.pointerId, startX: event.clientX, startY: event.clientY,
-      originalX: target === 'background' ? currentBackground.backgroundX : target === 'video' ? videoLayout.x : element!.x,
-      originalY: target === 'background' ? currentBackground.backgroundY : target === 'video' ? videoLayout.y : element!.y,
-      width: rect.width, height: rect.height, before: project, prepared, blockId, frame, moved: false
-    }
+    const drag = prepareEditorV6StageDrag({
+      project,
+      scene: currentScene,
+      id,
+      target,
+      element,
+      videoClip,
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      width: rect.width,
+      height: rect.height
+    })
+    if (!drag) return
+    dragRef.current = drag
     event.currentTarget.setPointerCapture(event.pointerId)
   }
 

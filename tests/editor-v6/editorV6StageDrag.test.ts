@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame, timelineClips } from '../../src/shared/editorV6Timeline'
+import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame, timelineClips } from '../../src/shared/editorV6Timeline'
 import { editorV6StageDragPosition, moveEditorV6StageDrag, type EditorV6StageDrag } from '../../src/renderer/src/features/editorV6/useEditorV6StageInteraction'
+import { prepareEditorV6StageDrag } from '../../src/renderer/src/features/editorV6/editorV6StageDrag'
 
 function fixture(): EditorV6Document {
   const actor: EditorV6Element = {
@@ -19,15 +20,22 @@ function fixture(): EditorV6Document {
   }
 }
 
-function elementDrag(project: EditorV6Document): EditorV6StageDrag {
-  const operation = prepareEditorV6PositionAtFrame(project, 'actor-1', 0)
-  if (!operation) throw new Error('Não foi possível preparar a peça de teste.')
-  return {
-    id: 'actor-1', target: 'element', pointerId: 1,
-    startX: 10, startY: 20, originalX: 0, originalY: 0,
-    width: 200, height: 100, before: project, prepared: operation.document,
-    blockId: operation.blockId, frame: 0, moved: false
-  }
+function elementDrag(project: EditorV6Document, frame = 0): EditorV6StageDrag {
+  const scene = resolveEditorV6SceneAtFrame(project, frame, { includeMotion: false })
+  const drag = prepareEditorV6StageDrag({
+    project,
+    scene,
+    id: 'actor-1',
+    target: 'element',
+    element: scene.elements.find((element) => element.id === 'actor-1'),
+    pointerId: 1,
+    startX: 10,
+    startY: 20,
+    width: 200,
+    height: 100
+  })
+  if (!drag) throw new Error('Não foi possível preparar a peça de teste.')
+  return drag
 }
 
 describe('arraste da cena do Editor V6', () => {
@@ -35,6 +43,78 @@ describe('arraste da cena do Editor V6', () => {
     const drag = elementDrag(fixture())
     expect(editorV6StageDragPosition(drag, 11, 21)).toBeNull()
     expect(editorV6StageDragPosition(drag, 110, 70)).toEqual({ x: 50, y: 50 })
+  })
+
+  it('prepara o rascunho do elemento com o bloco do quadro e a posição da cena', () => {
+    const project = fixture()
+    const drag = elementDrag(project, 15)
+
+    expect(drag).toMatchObject({
+      id: 'actor-1', target: 'element', pointerId: 1,
+      startX: 10, startY: 20, originalX: 0, originalY: 0,
+      width: 200, height: 100, frame: 15, moved: false
+    })
+    expect(drag.blockId).toBeTruthy()
+    expect(drag.before).toBe(project)
+    expect(drag.prepared).not.toBe(project)
+  })
+
+  it('não prepara o arraste quando a faixa de personagens está bloqueada', () => {
+    const project = fixture()
+    const characterTrack = project.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.locked = true
+    const scene = resolveEditorV6SceneAtFrame(project, 0, { includeMotion: false })
+
+    expect(prepareEditorV6StageDrag({
+      project,
+      scene,
+      id: 'actor-1',
+      target: 'element',
+      element: scene.elements.find((element) => element.id === 'actor-1'),
+      pointerId: 1,
+      startX: 0,
+      startY: 0,
+      width: 200,
+      height: 100
+    })).toBeNull()
+  })
+
+  it('não prepara o arraste do fundo quando a faixa de vídeo está bloqueada', () => {
+    const project = fixture()
+    project.timeline.tracks.find((track) => track.kind === 'video')!.locked = true
+    const scene = resolveEditorV6SceneAtFrame(project, 0, { includeMotion: false })
+
+    expect(prepareEditorV6StageDrag({
+      project,
+      scene,
+      id: 'background',
+      target: 'background',
+      pointerId: 1,
+      startX: 0,
+      startY: 0,
+      width: 200,
+      height: 100
+    })).toBeNull()
+  })
+
+  it('prepara o bloco de fundo do quadro e mantém seu ponto inicial', () => {
+    const project = fixture()
+    const scene = resolveEditorV6SceneAtFrame(project, 0, { includeMotion: false })
+    const drag = prepareEditorV6StageDrag({
+      project,
+      scene,
+      id: 'background',
+      target: 'background',
+      pointerId: 2,
+      startX: 5,
+      startY: 6,
+      width: 200,
+      height: 100
+    })
+
+    if (!drag) throw new Error('Não foi possível preparar o fundo para o arraste de teste.')
+    expect(drag).toMatchObject({ target: 'background', pointerId: 2, originalX: 0, originalY: 0, frame: 0 })
+    expect(timelineClips(drag.prepared.timeline).find(({ block }) => block.id === drag.blockId)?.block.background).toBeDefined()
   })
 
   it('edita o personagem no bloco preparado sem alterar o snapshot usado para cancelar', () => {
@@ -80,5 +160,35 @@ describe('arraste da cena do Editor V6', () => {
     const next = moveEditorV6StageDrag(drag, 30, -10)
     expect(timelineClips(next.timeline).find(({ block }) => block.id === 'video-block')?.block.mediaLayout)
       .toEqual({ x: 30, y: -10, width: 40, height: 25, rotation: 12 })
+  })
+
+  it('prepara o arraste de vídeo usando o layout salvo e respeita o bloqueio da faixa', () => {
+    const project = fixture()
+    const videoTrack = project.timeline.tracks.find((track) => track.kind === 'video')!
+    const videoBlock = {
+      id: 'video-block', label: 'Vídeo', mediaId: 'media-1', startFrame: 0, durationFrames: 90,
+      mediaLayout: { x: 3, y: 4, width: 40, height: 25, rotation: 12 }
+    }
+    videoTrack.blocks.push(videoBlock)
+    const scene = resolveEditorV6SceneAtFrame(project, 0, { includeMotion: false })
+    const videoClip = timelineClips(project.timeline).find(({ block }) => block.id === videoBlock.id)!
+    const input = {
+      project,
+      scene,
+      id: 'media-video:video-block',
+      target: 'video' as const,
+      videoClip,
+      pointerId: 3,
+      startX: 0,
+      startY: 0,
+      width: 200,
+      height: 100
+    }
+
+    expect(prepareEditorV6StageDrag(input)).toMatchObject({
+      target: 'video', videoLayout: videoBlock.mediaLayout, originalX: 3, originalY: 4, blockId: 'video-block'
+    })
+    videoTrack.locked = true
+    expect(prepareEditorV6StageDrag(input)).toBeNull()
   })
 })

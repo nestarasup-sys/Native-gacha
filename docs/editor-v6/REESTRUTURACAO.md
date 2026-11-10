@@ -400,3 +400,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o limiar de 2 pixels, a transformação baseada no tamanho do palco, edição por período para personagens, gravação do fundo e atualização do layout do vídeo. Os símbolos continuam reexportados pelo caminho antigo do hook para manter os importadores existentes.
 
 **Verificação:** 36 testes de arraste/timeline e regressões de seleção passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram. Nenhum benchmark foi executado.
+
+### Ciclo 42 — preparação de início do arraste do palco (implementado e verificado)
+
+**Objetivo:** mover para `editorV6StageDrag.ts` a preparação do rascunho do gesto: identificar o bloco editável, preparar o estado do quadro, calcular o ponto inicial e resolver o layout de vídeo. O hook de interação continua dono da seleção da interface, pausa, eventos de ponteiro, captura, movimento transitório, rollback e histórico.
+
+**Compatibilidade:** preservados seleção antes das validações de bloqueio, quadro calculado sem motion, bloqueios de faixa e personagem, layout salvo/default do vídeo, coordenadas percentuais, alvo e bloco editados, cancelamento e publicação do histórico. Se um estado de fundo inconsistente não produzir bloco editável, o gesto agora simplesmente não começa em vez de falhar durante o clique. Nenhum dado persistido, IPC, renderer ou exportação foi alterado.
+
+**Verificação:** 42 testes relacionados a arraste, timeline e seleção passaram em 4 arquivos; `npm run typecheck`, `npm run audit:architecture` (756 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou medição de velocidade foi executada.

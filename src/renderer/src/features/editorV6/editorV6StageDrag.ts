@@ -1,10 +1,10 @@
-import type { EditorV6Document, EditorV6VideoLayout } from '../../../../shared/editorV6'
-import { EDITOR_V6_DEFAULT_VIDEO_LAYOUT } from '../../../../shared/editorV6'
-import { normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
+import type { EditorV6Document, EditorV6SceneElement, EditorV6VideoLayout } from '../../../../shared/editorV6'
+import { EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
+import { normalizeEditorV6Timeline, timelineClips, type TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { moveEditorV6ElementInPeriod } from '../../../../shared/editorV6TimelineEdits'
-import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, type EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 
-type StageDragTarget = 'element' | 'background' | 'video'
+export type StageDragTarget = 'element' | 'background' | 'video'
 
 export type EditorV6StageDrag = {
   id: string
@@ -22,6 +22,77 @@ export type EditorV6StageDrag = {
   blockId: string
   frame: number
   moved: boolean
+}
+
+type PrepareEditorV6StageDragInput = {
+  project: EditorV6Document
+  scene: EditorV6ResolvedScene
+  id: string
+  target: StageDragTarget
+  element?: EditorV6SceneElement
+  videoClip?: TimelineClip
+  pointerId: number
+  startX: number
+  startY: number
+  width: number
+  height: number
+}
+
+/** Builds the immutable baseline and target block for a pointer drag. */
+export function prepareEditorV6StageDrag(input: PrepareEditorV6StageDragInput): EditorV6StageDrag | null {
+  const { project, scene, id, target, element, videoClip } = input
+  const frame = scene.frame
+  let prepared: EditorV6Document
+  let blockId: string
+
+  if (target === 'video') {
+    if (!videoClip || videoClip.track.locked) return null
+    prepared = project
+    blockId = videoClip.block.id
+  } else if (target === 'background') {
+    if (project.timeline.tracks.some((track) => track.kind === 'video' && track.locked)) return null
+    prepared = editEditorV6BackgroundAtFrame(project, frame, {})
+    const backgroundClip = timelineClips(prepared.timeline).find(({ block }) => block.background && block.startFrame === frame)
+    if (!backgroundClip) return null
+    blockId = backgroundClip.block.id
+  } else {
+    if (!element) return null
+    const operation = prepareEditorV6PositionAtFrame(project, id, frame)
+    if (!operation) return null
+    prepared = operation.document
+    blockId = operation.blockId
+  }
+
+  const videoAsset = videoClip?.block.mediaId
+    ? project.media?.find((media) => media.id === videoClip.block.mediaId)
+    : undefined
+  const videoLayout = videoClip
+    ? videoClip.block.mediaLayout ?? editorV6DefaultVideoLayout(videoAsset?.width, videoAsset?.height)
+    : EDITOR_V6_DEFAULT_VIDEO_LAYOUT
+  const origin = target === 'background'
+    ? { x: scene.background.backgroundX, y: scene.background.backgroundY }
+    : target === 'video'
+      ? { x: videoLayout.x, y: videoLayout.y }
+      : element ? { x: element.x, y: element.y } : null
+  if (!origin) return null
+
+  return {
+    id,
+    target,
+    ...(target === 'video' && videoLayout ? { videoLayout } : {}),
+    pointerId: input.pointerId,
+    startX: input.startX,
+    startY: input.startY,
+    originalX: origin.x,
+    originalY: origin.y,
+    width: input.width,
+    height: input.height,
+    before: project,
+    prepared,
+    blockId,
+    frame,
+    moved: false
+  }
 }
 
 /** Converts pointer movement in stage pixels to percentage-based scene coordinates. */
