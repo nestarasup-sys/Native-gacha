@@ -38,9 +38,10 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
-4. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
-5. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
-6. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
+4. **Preparação de poses e snapshots faciais:** separar renderização, medição de largura-base e geometria da gravação no documento; manter os contratos de imagem atuais.
+5. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
+6. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
+7. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 
 Os ciclos são independentes; a ordem pode mudar quando o código ou uma regressão demonstrar outra causa prioritária.
 
@@ -56,4 +57,16 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Verificação:** 8 testes focados passaram (`editor-v6-document-commands` e `editor-v6-delete-selected-command`); `npm run typecheck`, `npm run audit:architecture` (717 arquivos), `npm run build` e `git diff --check` também passaram. Exportação com projeto real não foi executada.
 
-**Próximo passo:** revisar os demais handlers ainda definidos na página e decidir, com base nos fluxos reais, se a próxima extração é seleção/projeção de cena ou interação do palco. Não iniciar uma troca de renderer ou do pipeline de exportação nesta etapa.
+**Próximo passo:** revisar seleção/projeção de cena e os handlers de render facial, sem trocar o renderer nem o pipeline de exportação.
+
+### Ciclo 2 — preparação de troca de pose (implementado e verificado)
+
+**Mudança:** criada `editorV6PosePreparation.ts` para preparar o renderer da pose selecionada, medir a largura-base de projetos legados sem `characterCanvasWidth`, renderizar e assar as variantes faciais, liberar os renderers e calcular a geometria. `EditorV6Page` continua responsável por atualizar elemento, assets e revisões de fonte no documento.
+
+**Motivo:** a troca de pose misturava trabalho de Canvas e geometria com a coordenação da tela. O recorte novo tem dependências explícitas e pode ser exercitado sem personagem salvo ou dados reais.
+
+**Compatibilidade:** a sequência e os argumentos de renderização, o cálculo da largura-base, o `faceMode`, o bake das variantes, a atualização de pose e as revisões salvas foram preservados. Não houve mudança de schema, IPC ou formato de projeto.
+
+**Verificação:** 18 testes Vitest e 10 testes Node focados passaram; três testes sintéticos cobrem largura-base legada, largura já salva e descarte do renderer quando o bake falha. `npm run typecheck`, `npm run audit:architecture` (718 arquivos), `npm run build` e `git diff --check` passaram.
+
+**Limite:** sem `app-data` na worktree, a troca ainda não foi exercitada com personagens reais; a mudança não altera o caminho de exportação.

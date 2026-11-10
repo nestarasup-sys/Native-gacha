@@ -39,6 +39,7 @@ import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditor
 import { resolveEditorV6InspectorSelection } from './editorV6Selection'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
+import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -551,26 +552,18 @@ export function EditorV6Page() {
     setEditorV6FaceBusy(true)
     try {
       const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      let characterCanvasWidth = selectedElement.characterCanvasWidth
-      if (!characterCanvasWidth) {
-        const currentPoseCharacter: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedEditorV6Character.customization.faceAppearance } }
-        const currentRenderer = await prepareSavedCharacterRenderer(currentPoseCharacter)
-        const currentRendered = await currentRenderer.renderToCanvas(currentPoseCharacter.customization.faceAppearance, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, selectedElement.activeFaceMode).finally(() => currentRenderer.dispose())
-        const currentCrop = trimTransparentCanvas(currentRendered.canvas)
-        characterCanvasWidth = selectedElement.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
-      }
-      const characterCopy: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot, faceAppearance: selectedElement.faceAppearance ?? selectedEditorV6Character.customization.faceAppearance } }
-      const baseMode = editorV6FaceModeForElement(selectedElement, characterCopy.customization.faceAppearance)
-      const poseRenderer = await prepareSavedCharacterRenderer(characterCopy)
-      let rendered: { canvas: HTMLCanvasElement; width: number; height: number }
-      let baked: Awaited<ReturnType<typeof bakeFaceModeAssets>>
-      try {
-        rendered = await poseRenderer.renderToCanvas(characterCopy.customization.faceAppearance, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, baseMode)
-        baked = await bakeFaceModeAssets(selectedElement.text, poseRenderer, characterCopy.customization.faceAppearance, selectedElement.faceTransforms, selectedElement.activeExpressionEffects, baseMode, rendered)
-      } finally { poseRenderer.dispose() }
-      const stageWidth = sceneRef.current?.clientWidth ?? 1000
-      const stageHeight = sceneRef.current?.clientHeight ?? 562
-      const geometry = faceRenderGeometry({ ...selectedElement, characterCanvasWidth }, rendered, baked.crop, stageWidth, stageHeight)
+      const { baseMode, baked, geometry } = await prepareEditorV6PoseChange({
+        character: selectedEditorV6Character,
+        element: selectedElement,
+        poseSlot,
+      }, {
+        prepareRenderer: prepareSavedCharacterRenderer,
+        bakeAssets: bakeFaceModeAssets,
+        trimCanvas: trimTransparentCanvas,
+        faceModeForElement: editorV6FaceModeForElement,
+        getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
+        faceRenderGeometry
+      })
       const elementId = selectedElement.id
       const assetId = selectedElement.assetId
       const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
