@@ -1,67 +1,15 @@
 import { useCallback, useMemo, useRef } from 'react'
-import type { EditorV6Document, EditorV6VideoLayout } from '../../../../shared/editorV6'
-import {
-  EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout
-} from '../../../../shared/editorV6'
-import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { moveEditorV6ElementInPeriod } from '../../../../shared/editorV6TimelineEdits'
+import type { EditorV6Document } from '../../../../shared/editorV6'
+import { editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
+import { editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { editorV6StageDragPosition, moveEditorV6StageDrag, type EditorV6StageDrag } from './editorV6StageDrag'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 
 type StageDragTarget = 'element' | 'background' | 'video'
-export type EditorV6StageDrag = {
-  id: string
-  target: StageDragTarget
-  videoLayout?: EditorV6VideoLayout
-  pointerId: number
-  startX: number
-  startY: number
-  originalX: number
-  originalY: number
-  width: number
-  height: number
-  before: EditorV6Document
-  prepared: EditorV6Document
-  blockId: string
-  frame: number
-  moved: boolean
-}
-
-/** Converte movimento do ponteiro, em pixels da prévia, para as coordenadas percentuais da cena. */
-export function editorV6StageDragPosition(
-  drag: EditorV6StageDrag,
-  clientX: number,
-  clientY: number
-): { x: number; y: number } | null {
-  if (!drag.moved && Math.hypot(clientX - drag.startX, clientY - drag.startY) < 2) return null
-  return {
-    x: drag.originalX + (clientX - drag.startX) / drag.width * 100,
-    y: drag.originalY + (clientY - drag.startY) / drag.height * 100
-  }
-}
-
-/** Aplica o destino do arraste ao documento preparado para o quadro ativo. */
-export function moveEditorV6StageDrag(drag: EditorV6StageDrag, x: number, y: number): EditorV6Document {
-  if (drag.target === 'background') {
-    return editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId)
-  }
-  if (drag.target === 'video') {
-    return {
-      ...drag.prepared,
-      timeline: normalizeEditorV6Timeline({
-        ...drag.prepared.timeline,
-        tracks: drag.prepared.timeline.tracks.map((track) => ({
-          ...track,
-          blocks: track.blocks.map((block) => block.id === drag.blockId
-            ? { ...block, mediaLayout: { ...(block.mediaLayout ?? drag.videoLayout ?? EDITOR_V6_DEFAULT_VIDEO_LAYOUT), x, y } }
-            : block)
-        }))
-      })
-    }
-  }
-  return moveEditorV6ElementInPeriod(drag.prepared, drag.blockId, x, y)
-}
+export { editorV6StageDragPosition, moveEditorV6StageDrag }
+export type { EditorV6StageDrag } from './editorV6StageDrag'
 
 type Dependencies = {
   project: EditorV6Document | null

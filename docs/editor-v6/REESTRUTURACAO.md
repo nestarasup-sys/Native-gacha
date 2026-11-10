@@ -37,7 +37,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção — implementadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios e compor ambas pelo view model da tela; verificar seleção de bloco, estado no playhead, snapshot-base, personagem-fonte e assets associados.
-3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
+3. **Interação do palco — em andamento avançado:** separar o cálculo puro da posição/destino de movimento do ciclo de captura do ponteiro, preservando rollback, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
@@ -392,3 +392,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados `includeMotion: false` na prévia, prioridade do bloco selecionado sobre o estado no playhead, ator visível para ações na cena, fundo padrão sem projeto, fallback de pose/aparência para os valores do personagem e prioridade de valores explícitos salvos no estado da cena. Nenhum renderer, estado persistido ou contrato IPC foi alterado.
 
 **Verificação:** 3 testes novos cobrem projeto ausente, bloco selecionado com playhead em outro estado e overrides explícitos de face/pose. Junto com as regressões de seleção, timeline e face, 39 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
+
+### Ciclo 41 — regra de movimento do palco separada do hook (implementado e verificado)
+
+**Objetivo:** mover o tipo do rascunho, a conversão de pixels para posição percentual e a aplicação do destino para `editorV6StageDrag.ts`. `useEditorV6StageInteraction.ts` continua dono dos eventos de ponteiro, seleção, captura, publicação transitória, rollback e histórico.
+
+**Compatibilidade:** preservados o limiar de 2 pixels, a transformação baseada no tamanho do palco, edição por período para personagens, gravação do fundo e atualização do layout do vídeo. Os símbolos continuam reexportados pelo caminho antigo do hook para manter os importadores existentes.
+
+**Verificação:** 36 testes de arraste/timeline e regressões de seleção passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram. Nenhum benchmark foi executado.
