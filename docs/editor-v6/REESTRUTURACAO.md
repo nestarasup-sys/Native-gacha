@@ -39,7 +39,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 2. **Projeções de cena e seleção — mapeadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios; verificar seleção de bloco, estado no playhead, snapshot-base e assets associados.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
-5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
+5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
 7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
@@ -168,3 +168,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade e proteção:** projetos ativos continuam exigindo flush antes da exclusão. Só depois do sucesso o comando remove o resumo, limpa a seleção correspondente e encerra o projeto ativo; falha no flush ou no IPC conserva o projeto e apresenta o erro. Excluir outro projeto não pausa nem fecha o projeto atual.
 
 **Verificação:** 11 testes Node passaram em `projectDeletion` e `projectCreation`, cobrindo flush, ordem de exclusão, isolamento de projeto não ativo, preservação em erro e ausência de alvo. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
+
+### Ciclo 13 — coordenação da seleção de elenco (implementado e verificado)
+
+**Mudança:** criada `editorV6CastCommands.ts` para coordenar o plano de elenco, a preparação dos snapshots, a retenção dos assets ainda usados, a atualização do documento e o fechamento do seletor. `EditorV6Page` injeta o renderer e continua dona da composição da tela.
+
+**Compatibilidade:** a seleção continua preservando elementos não removidos, ordem Z e assets referenciados. Os assets atuais são lidos dentro da função de atualização para não descartar escritas feitas enquanto os renderers trabalham; erros mantêm o seletor aberto e liberam o estado de gravação.
+
+**Verificação:** 12 testes Vitest passaram em quatro arquivos de comandos, plano, snapshots e aparência do personagem, incluindo uma atualização concorrente de assets. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.

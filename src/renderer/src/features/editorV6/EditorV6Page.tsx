@@ -20,8 +20,8 @@ import { createEditorV6ProjectDeletionCommand } from './editorV6ProjectDeletion'
 import { createEditorV6DocumentCommands } from './editorV6DocumentCommands'
 import { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'
-import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
 import { prepareEditorV6CastSnapshots } from './editorV6CastSnapshots'
+import { createEditorV6CastCommands } from './editorV6CastCommands'
 import { projectSceneCharacters } from '../../characters/sceneCharacterProjection'
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
@@ -434,43 +434,32 @@ export function EditorV6Page() {
     setCastPickerOpen(true)
   }
 
-  const saveCastSelection = async () => {
-    if (!activeEditorV6 || savingCast) return
-    setSavingCast(true)
-    try {
-      const castPlan = planEditorV6CastSelection(activeEditorV6.elements, availableCharacters, castSelection)
+  const { saveCastSelection } = createEditorV6CastCommands({
+    activeProject: activeEditorV6,
+    availableCharacters,
+    selectedCharacterIds: castSelection,
+    saving: savingCast,
+    sourceSnapshot: activePoseSourceSnapshot,
+    getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
+    prepareSnapshots: async (input) => {
       const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      const stageWidth = sceneRef.current?.clientWidth ?? 1000
-      const stageHeight = sceneRef.current?.clientHeight ?? 562
-      const { assets, elements } = await prepareEditorV6CastSnapshots({
-        characters: castPlan.charactersToAdd,
-        startZIndex: Math.max(0, ...castPlan.retainedElements.map((item) => item.zIndex)),
-        stageWidth,
-        stageHeight,
-        sourceSnapshot: activePoseSourceSnapshot
-      }, {
+      return prepareEditorV6CastSnapshots(input, {
         prepareRenderer: prepareSavedCharacterRenderer,
         bakeAssets: bakeFaceModeAssets,
         getStageReference: editorV6CharacterStageReference,
         fitToStage: fitEditorV6CharacterToStage,
         createId: () => crypto.randomUUID()
       })
-      changeScene((studio) => ({
-        ...studio,
-        elements: [...castPlan.retainedElements, ...elements],
-        assets: [...retainEditorV6CastAssets(studio.assets, castPlan), ...assets],
-        updatedAt: new Date().toISOString()
-      }))
-      setCastPickerOpen(false)
-      setActiveTool(null)
-      restoreCharacterInspectorView()
-      setInspectorOpen(true)
-      setSelectedElementId(elements.at(-1)?.id ?? null)
-      setError(null)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o elenco do Editor V6.')
-    } finally { setSavingCast(false) }
-  }
+    },
+    changeScene,
+    setSaving: setSavingCast,
+    setPickerOpen: setCastPickerOpen,
+    setActiveTool,
+    restoreInspectorView: restoreCharacterInspectorView,
+    setInspectorOpen,
+    setSelectedElementId,
+    setError
+  })
 
   const { applyFaceAppearance: applyStudioFaceAppearance, applyPose: applyStudioPose } = createEditorV6CharacterAppearanceCommands({
     activeProject: activeEditorV6,
