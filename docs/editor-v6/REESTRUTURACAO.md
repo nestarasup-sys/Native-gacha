@@ -264,3 +264,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos lista de partes relativa à pasta temporária, streams H.264 compatíveis, mixagem/recuperação de áudio, sondagem por pacotes com fallback de quadros, validação de resolução/FPS/duração/áudio e campos de relatório mesmo quando a validação falha. Nenhuma alteração em IPC, schema, argumentos ou publicação.
 
 **Verificação:** 6 testes Node sintéticos cobrem compatibilidade das partes, concatenação, sondagem por pacotes/fallback por quadros, emendas, recuperação de áudio, áudio irrecuperável e preservação da sonda em falha. Mais 4 testes Node de planejamento/filtros de áudio e 26 testes Vitest do runner/IPC passaram. `npm run typecheck`, `npm run audit:architecture` (737 arquivos), `npm run build` e `git diff --check` passaram. Nenhum MP4 foi gerado.
+
+### Ciclo 25 — barra de ferramentas do workspace (implementado e verificado)
+
+**Objetivo:** extrair a barra lateral de ações para `EditorV6ToolRail.tsx`. O componente recebe estados e callbacks da página; criação de comandos, persistência, playback e seleção continuam na `EditorV6Page`.
+
+**Compatibilidade:** mantidos classes e rótulos, ação de voltar/salvar, atalhos de histórico, seleção de ferramenta, disponibilidade de fala/pensamento, condição de exportação, indicadores e ocultação em tela cheia. Os callbacks continuam ligados aos comandos e estados originais da página.
+
+**Verificação:** 3 testes Vitest da barra e 4 da biblioteca de projetos passaram, cobrindo modo de tela cheia, personagem selecionado, ferramenta ativa, estados e mensagens. `npm run typecheck`, `npm run audit:architecture` (738 arquivos), `npm run build` e `git diff --check` passaram.

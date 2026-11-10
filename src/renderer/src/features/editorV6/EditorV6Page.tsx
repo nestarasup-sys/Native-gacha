@@ -7,6 +7,7 @@ import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
 import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
+import { EditorV6ToolRail } from './EditorV6ToolRail'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -52,7 +53,7 @@ import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
-import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
+import { createSceneTextElement, sceneCatalogColor } from '../../ui/sceneEditorDefaults'
 import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
 import { useEditorV6CharacterSources } from './useEditorV6CharacterSources'
@@ -709,33 +710,29 @@ export function EditorV6Page() {
     return (
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
         <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
-        {!fullView && <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Editor V6">
-          <div className="studio-editor-quick-actions">
-            <button className="studio-round-action" onClick={() => void leaveStudio()} title="Salvar automaticamente e voltar" aria-label="Voltar para Editor V6" type="button"><span>←</span></button>
-            <button className="studio-round-action" onClick={() => { void flushEditorV6Writes().catch(() => undefined) }} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
-          </div>
-          <div className="studio-editor-quick-actions studio-history-actions">
-            <button className="studio-round-action" disabled={!canUndo} onClick={undo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
-            <button className="studio-round-action" disabled={!canRedo} onClick={redo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
-          </div>
-          <nav className="studio-tool-list" aria-label="Ferramentas da cena">
-            {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => { setActiveTool(tool.id); setInspectorOpen(true); setInspectorTab('editor') }} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
-            <button className="studio-tool-button" onClick={() => addTextElement('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => addTextElement('speech')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar fala a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => addTextElement('thought')} disabled={!selectedCharacterElement} title={selectedCharacterElement ? `Adicionar pensamento a ${selectedCharacterElement.text}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => void importTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
-            <button className="studio-tool-button" onClick={() => void importTimelineMedia('audio')} type="button"><b>♪</b><span>Selecionar áudio</span></button>
-            <span className="studio-tool-separator" />
-            <button className="studio-tool-button" onClick={() => { pausePlayback(); setExportOpen(true) }} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
-            <button className="studio-tool-button" onClick={() => void exportPrint(activeEditorV6)} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button" onClick={() => void openPrints(activeEditorV6.id)} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
-            <button className="studio-tool-button studio-view-button" onClick={() => setFullView(true)} type="button"><Icon name="expand" /><span>View</span></button>
-          </nav>
-          <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
-          {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando as aparências salvas para a prévia e a exportação usarem as fontes mais recentes.</small>}
-          {error && <small className="studio-error-message" role="alert">{error}</small>}
-          {notice && <small className="studio-save-notice" role="status">{notice}</small>}
-        </aside>}
+        <EditorV6ToolRail
+          visible={!fullView}
+          activeTool={activeTool}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          saved={saved}
+          faceAssetRefreshRequired={faceAssetRefreshRequired}
+          characterSourceRefreshRequired={characterSourceRefreshRequired}
+          selectedCharacterLabel={selectedCharacterElement ? selectedCharacterElement.text : null}
+          error={error}
+          notice={notice}
+          onBack={() => { void leaveStudio() }}
+          onSave={() => { void flushEditorV6Writes().catch(() => undefined) }}
+          onUndo={undo}
+          onRedo={redo}
+          onSelectTool={(tool) => { setActiveTool(tool); setInspectorOpen(true); setInspectorTab('editor') }}
+          onAddText={addTextElement}
+          onImportTimelineMedia={(kind) => { void importTimelineMedia(kind) }}
+          onExport={() => { pausePlayback(); setExportOpen(true) }}
+          onPrint={() => { void exportPrint(activeEditorV6) }}
+          onOpenPrints={() => { void openPrints(activeEditorV6.id) }}
+          onEnterFullView={() => setFullView(true)}
+        />
         <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
           <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
             <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><EditorV6PlaybackScene project={activeEditorV6} selectedId={selectedElementId ?? selectedTimelineBlockId} interaction={fullView ? undefined : sceneInteraction} playing={isPlaying} fullView={fullView} /></Profiler>
