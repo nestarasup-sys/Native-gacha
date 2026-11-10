@@ -38,7 +38,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção:** mapear dependências entre documento, quadro atual, Inspector e preview; extrair regra pura quando houver um contrato testável.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
-4. **Preparação de poses e aparências faciais:** separar renderização, crop anterior, bake de variantes e medição da geometria da gravação no documento; manter os contratos de imagem atuais.
+4. **Preparação de pose, aparência e transformações faciais:** separar renderização, crop anterior, bake de variantes e agendamento do preview da gravação no documento; manter os contratos atuais.
 5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
 6. **Timeline e mídia:** revisar comandos, geometria visível e sincronização; manter a virtualização atual e evitar recriar estado persistido.
 7. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
@@ -93,3 +93,15 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** 22 testes Vitest e 17 testes Node focados passaram, incluindo reuso da referência por modelo, associação de assets e liberação de renderer em falha. `npm run typecheck`, `npm run audit:architecture` (720 arquivos), `npm run build` e `git diff --check` passaram.
 
 **Limite:** o fluxo foi exercitado com personagens e imagens sintéticas; nenhuma `app-data` foi copiada para esta worktree.
+
+### Ciclo 5 — comandos de transformação facial (implementado e verificado)
+
+**Mudança:** criada `editorV6FaceTransformCommands.ts` para reunir a composição dos transforms, a gravação no documento e o agendamento/flush da prévia. A página injeta seleção, estado atual do projeto e os callbacks que já possui.
+
+**Motivo:** o handler ainda combinava edição de rascunho, sincronização com o Inspector e resolução do bloco da timeline. Separar essa coordenação permite testar a prioridade do bloco selecionado e o fallback para o playhead sem acionar renderer ou Canvas.
+
+**Compatibilidade:** cache, debounce e cancelamento permanecem em `useEditorV6FacePreview`; a gravação continua respeitando o parâmetro `record`, e o bloco da timeline continua preferindo o selecionado antes de procurar o do playhead.
+
+**Verificação:** 28 testes Vitest e 17 testes Node focados passaram; cenários cobrem merge de transforms, preview do bloco selecionado, fallback do playhead e elementos que não são personagens. `npm run typecheck`, typecheck explícito dos testes novos, `npm run audit:architecture` (721 arquivos), `npm run build` e `git diff --check` passaram.
+
+**Limite:** a validação cobre comando, seleção de bloco e fluxo do preview; não foi feito export com projeto real, pois a worktree segue sem `app-data`.

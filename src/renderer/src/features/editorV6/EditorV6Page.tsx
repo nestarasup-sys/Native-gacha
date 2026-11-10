@@ -25,7 +25,7 @@ import { projectSceneCharacters } from '../../characters/sceneCharacterProjectio
 import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
-import { addEditorV6ElementAtFrame, editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { addEditorV6ElementAtFrame, editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
@@ -42,6 +42,7 @@ import { faceRenderGeometry } from '../../characters/characterGeometry'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
 import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
+import { createEditorV6FaceTransformCommands } from './editorV6FaceTransformCommands'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -567,27 +568,20 @@ export function EditorV6Page() {
     finally { setEditorV6FaceBusy(false) }
   }
 
-  const updateEditorV6FaceTransform = (transformKey: string, patch: Partial<EditorV6FaceTransform>, record = false, baseTransform = defaultStudioEyeTransform) => {
-    if (!selectedElement || selectedElement.kind !== 'character') return
-    const saved = editorV6FaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
-    const transform = { ...(saved[transformKey] ?? baseTransform), ...patch }
-    const next = { ...saved, [transformKey]: transform }
-    editorV6FaceTransformsRef.current[selectedElement.id] = next
-    updateElement(selectedElement.id, { faceTransforms: next }, record)
-    if (activeEditorV6 && selectedEditorV6Character && selectedEditorV6FaceAppearance && selectedElement.assetId && activeEditorV6Id) {
-      const character: CustomizerCharacter = { ...selectedEditorV6Character, customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: selectedEditorV6FaceAppearance } }
-      const selectedClip = timelineClips(activeEditorV6.timeline).find(({ block }) => block.id === selectedTimelineBlockId && block.elementId === selectedElement.id)
-        ?? editorV6ClipAtFrame(activeEditorV6.timeline, selectedElement.id, getEditorV6PlaybackFrame())
-      editorV6FacePreview.schedulePreview({ projectId: activeEditorV6Id, elementId: selectedElement.id, assetId: selectedElement.assetId, blockId: selectedClip?.block.id ?? null, poseSlot: selectedElement.poseSlot, poseSourceRevision: selectedElement.poseSourceRevision, modelSourceRevision: selectedElement.modelSourceRevision, character, transforms: next, previousState: { faceAppearance: selectedElement.faceAppearance, faceTransforms: selectedElement.faceTransforms, activeExpressionEffects: selectedElement.activeExpressionEffects, activeFaceMode: selectedElement.activeFaceMode } })
-    }
-  }
-
-  const finishEditorV6FaceTransform = (transformKey: string) => {
-    if (!selectedElement || selectedElement.kind !== 'character') return
-    const faceTransforms = editorV6FaceTransformsRef.current[selectedElement.id] ?? selectedElement.faceTransforms ?? {}
-    if (!faceTransforms[transformKey]) return
-    editorV6FacePreview.flushPreview()
-  }
+  const { update: updateEditorV6FaceTransform, finish: finishEditorV6FaceTransform } = createEditorV6FaceTransformCommands({
+    activeProject: activeEditorV6,
+    activeProjectId: activeEditorV6Id,
+    selectedElement,
+    selectedCharacter: selectedEditorV6Character,
+    selectedFaceAppearance: selectedEditorV6FaceAppearance,
+    selectedTimelineBlockId,
+    transformsRef: editorV6FaceTransformsRef,
+    defaultTransform: defaultStudioEyeTransform,
+    updateElement,
+    getFrame: getEditorV6PlaybackFrame,
+    schedulePreview: editorV6FacePreview.schedulePreview,
+    flushPreview: editorV6FacePreview.flushPreview
+  })
 
   const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
     project: activeEditorV6, sceneRef,
