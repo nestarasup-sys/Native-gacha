@@ -135,6 +135,13 @@ export function editorV6EncoderThreads(encoder: string, renderParallelism: numbe
     && Number.isSafeInteger(candidate) && candidate >= 1 && candidate <= 8) return candidate
   return defaultThreads
 }
+export function editorV6MotionPreparationConcurrency(fallback: 1 | 2 | 3): 1 | 2 | 3 {
+  if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN !== '1') return fallback
+  const candidate = process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY
+  if (candidate === undefined) return fallback
+  if (!/^[123]$/.test(candidate)) throw Error('O harness isolado aceita 1, 2 ou 3 bakes de movimento em paralelo.')
+  return Number(candidate) as 1 | 2 | 3
+}
 export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
 const MOUTH_LOOP_BATCH_FRAMES = 300
 function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
@@ -370,7 +377,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     const prepared = await (async () => {
       try {
         return await prepareExportMotions(project, options.startFrame, options.endFrame, {
-          signal: deps.signal, characters, concurrency: options.testMode && options.testMode !== 'controle' ? testSettings.motionConcurrency : deps.motionPreparationConcurrency ?? 2, mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 }, bake: (request, signal) => {
+          signal: deps.signal, characters, concurrency: options.testMode && options.testMode !== 'controle' ? testSettings.motionConcurrency : editorV6MotionPreparationConcurrency(deps.motionPreparationConcurrency ?? 2), mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 }, bake: (request, signal) => {
             if (cacheInputSamples.length < 3 && !cacheInputSamples.some((sample) => sample.characterId === request.character.id)) {
               cacheInputSamples.push({ cacheKey: motionCacheKey(request),
                 planKeyHash: createHash('sha256').update(request.plan.key).digest('hex'), characterId: request.character.id,

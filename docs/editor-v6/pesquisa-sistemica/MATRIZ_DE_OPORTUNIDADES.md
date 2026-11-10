@@ -56,6 +56,14 @@ O alvo aplica-se à exportação completa de 2.394 quadros do projeto atual e ex
 
 O teste de alocação de threads está documentado em [Pesquisa 22](pesquisas/22-X264-THREADS-ALOCACAO.md); a amostra sintética é somente um gate de triagem, não um benchmark do projeto.
 
+### Atualização de 10/11 — hipóteses de encoder e superfície GPU
+
+| ID | Evidência medida | Decisão |
+|---|---|---|
+| EXP-FFM-002 | [Pesquisa 24](pesquisas/24-AMF-E-SUPERFICIES-GPU.md): host RX 7600, auto selecionou `h264_amf`; 2 pilotos frios 600f em 26,12/27,33s vs x264 8t 22,91s. Ambos passaram 600f+áudio, sem A/B de qualidade. | AMF/auto não promovidos; custo global maior e encoder não pareado por qualidade. Continuar com x264 8t; não selecionar encoder por GPU detectada. |
+| EXP-ELE-003 | [Pesquisa 24](pesquisas/24-AMF-E-SUPERFICIES-GPU.md): Shared Texture→VideoFrame→WebCodecs passou 150 quadros sintéticos 1080p em 4,45s/33,69fps a `setFrameRate(60)`; alvo exige 79,8fps. Export worker já usa 60. | Sem ganho novo de produto. Não integrar até golden, projeto real, overlays/áudio, mux e fallback; limitar foco no caminho de captura/GPU. |
+| EXP-MOTION-001 | Pilotos Motion 600f: concorrência 2 em 22,91/23,99s e 3 em 23,16s; Motion ~4,18–4,74s. Pares com variação. | Sinal misto/abaixo de ruído de parede; manter concorrência normal 2. Override restrito ao harness. |
+
 ## Atualização de resultado — 06/11/2026
 
 | ID | Evidência atualizada | Decisão |

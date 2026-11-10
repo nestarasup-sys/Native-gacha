@@ -99,3 +99,14 @@
 - Para uma medição [MEDIDO], anexar apenas dados sanitizados e log de commit, fixture autorizada, cache, hardware, duração, mp4/frames e método, nunca mídia privada ou paths pessoais.
 
 **Próxima etapa:** documentar versões runtime/capabilities do EXE, A/B com e sem cabelo, e pesquisas 06/07/08/12/14 sem atribuir ganho antecipadamente.
+
+## Fontes consultadas — Shared Texture Electron (10/11/2026)
+
+| Referência | Evidência usada |
+|---|---|
+| https://www.electronjs.org/docs/latest/api/shared-texture | importação para VideoFrame, transferência entre processos, receiver renderer e aviso experimental |
+| https://www.electronjs.org/docs/latest/api/structures/offscreen-shared-texture | formato/dimensões e obrigação de `release()`; limite de texturas vivas |
+| https://www.electronjs.org/docs/latest/api/structures/shared-texture-imported | `getVideoFrame()` e `release()` da referência importada |
+| https://www.electronjs.org/docs/latest/api/web-contents | suporte da textura ao evento `paint` offscreen e ciclo de vida |
+
+Confronto de runtime realizado com Electron 45.1.0 empacotado em LAB em [Pesquisa 24](../pesquisas/24-AMF-E-SUPERFICIES-GPU.md). API experimental; o smoke demonstra somente passagem sintética, não throughput nem paridade de exportação.
