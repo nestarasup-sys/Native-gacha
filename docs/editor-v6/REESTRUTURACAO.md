@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar planejamento de intervalo/fala, contrato e inicialização do relatório, registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar planejamento de intervalo/fala, contrato e inicialização do relatório, sondagem/seleção de codificadores, registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -344,3 +344,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os campos, valores iniciais, SHA/estado dirty da build, FPS, janela de quadros, saída e frequência de amostragem RSS. O plano de overlays agora é calculado uma vez e alimenta tanto `layeredVideo` quanto a contagem de nomes de arquivo distintos no relatório; o planejamento compartilhado é puro e não altera o documento.
 
 **Verificação:** 2 testes novos cobrem a forma inicial do relatório, contagem única de vídeos, contexto com/sem camada e metadados runtime. Junto com as regressões de planejamento, preparação de movimentos, renderer por trecho, pipeline, runner e lifecycle IPC, 48 testes passaram. `npm run typecheck`, `npm run audit:architecture` (749 arquivos), `npm run build` e `git diff --check` passaram. Nenhum benchmark ou MP4 foi executado.
+
+### Ciclo 35 — sondagem e seleção de codificadores (implementado e verificado)
+
+**Objetivo:** extrair a sonda de capacidade FFmpeg e a seleção dos codificadores preferidos/de fallback para `exportEncoderSelection.ts`. O runner segue decidindo quando sondar inicialmente e quando tentar o fallback depois de uma falha Turbo.
+
+**Compatibilidade:** preservados argumentos da sonda, registro do sucesso/erro por codificador, tempo da fase, propagação do cancelamento, ordem Automática (NVENC, QSV, AMF, Media Foundation, x264 e OpenH264), ordem CPU (x264 e OpenH264) e preferência pelos codificadores CPU já selecionados no fallback. Nenhuma mudança em FFmpeg, IPC, relatório ou formato do MP4.
+
+**Verificação:** 6 testes novos cobrem argumentos, registro, cancelamento, ordem das preferências e seleção de fallback. Junto com regressões de relatório, planejamento, preparação de movimentos, renderer por trecho, pipeline, runner e lifecycle IPC, 54 testes passaram. `npm run typecheck`, `npm run audit:architecture` (750 arquivos), `npm run build` e `git diff --check` passaram. Nenhum benchmark ou MP4 foi executado.

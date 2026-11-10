@@ -14,6 +14,7 @@ import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from
 import { createEditorV6ExportExecutionPlan, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES } from './exportPlanning'
 import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
 import { createEditorV6ExportReportContext, type EditorV6ExportAttemptReport, type EditorV6ExportReport } from './exportReport'
+import { createEditorV6EncoderProbe, selectEditorV6ExportEncoder, selectEditorV6FallbackEncoder } from './exportEncoderSelection'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
@@ -61,14 +62,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   const candidate = join(dirname(deps.outputPath), `.editor-v6-${deps.id}.mp4`)
   let published = false
   let characters: CustomizerCharacter[] = []
-  const testEncoder = async (encoder: string) => {
-    const probeStarted = performance.now()
-    try {
-      await runExportCommand(deps.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=black:s=320x180:r=30', '-frames:v', '1', ...encodingArgs(encoder, 1), '-an', '-f', 'null', '-'], deps.signal)
-      report.encoderTests.push({ encoder }); return true
-    } catch (error) { deps.signal.throwIfAborted(); report.encoderTests.push({ encoder, error: message(error) }); return false }
-    finally { addEditorV6PhaseTime(report, 'encoderProbe', probeStarted) }
-  }
+  const testEncoder = createEditorV6EncoderProbe({ ffmpeg: deps.ffmpeg, signal: deps.signal, report })
   const renderAttempt = async (parts: EditorV6ExportPart[], encoder: string, maxParallelism = 2): Promise<EditorV6ExportPartReport[]> => {
     const began = performance.now(), controller = new AbortController(), abort = () => controller.abort(deps.signal.reason)
     deps.signal.addEventListener('abort', abort, { once: true })
@@ -187,8 +181,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     await saveReport()
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
-    let encoder = ''
-    for (const candidate of options.encoder === 'auto' ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libx264', 'libopenh264'] : ['libx264', 'libopenh264']) if (await testEncoder(candidate)) { encoder = candidate; break }
+    const encoder = await selectEditorV6ExportEncoder(options.encoder, testEncoder)
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: EditorV6ExportPartReport[]) => {
       const result = await finalizeEditorV6Export({
@@ -227,7 +220,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       if (!options.turbo || requestedParts.length < 2) throw error
       report.fallback = true
       deps.progress({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })
-      const safeEncoder = encoder === 'libx264' || encoder === 'libopenh264' ? encoder : (await testEncoder('libx264') ? 'libx264' : await testEncoder('libopenh264') ? 'libopenh264' : '')
+      const safeEncoder = await selectEditorV6FallbackEncoder(encoder, testEncoder)
       if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
       const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
       const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
