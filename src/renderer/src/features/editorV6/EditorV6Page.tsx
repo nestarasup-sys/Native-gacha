@@ -43,6 +43,7 @@ import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForE
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
 import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
 import { createEditorV6FaceTransformCommands } from './editorV6FaceTransformCommands'
+import { createEditorV6CharacterAppearanceCommands } from './editorV6CharacterAppearanceCommands'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { Icon } from '../../ui/components/Icon'
@@ -51,15 +52,13 @@ import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
 import { createSceneTextElement, sceneCatalogColor, sceneEditorTools } from '../../ui/sceneEditorDefaults'
 import { recordUiCommit } from '../../ui/performanceDiagnostics'
 import { useEditorV6DocumentPersistence } from './useEditorV6DocumentPersistence'
-import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision, editorV6PoseRevisionKey, useEditorV6CharacterSources } from './useEditorV6CharacterSources'
+import { useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
 import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Document, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
-import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
+import { editorV6ProjectSummary, type EditorV6Asset, type EditorV6Element, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -472,45 +471,35 @@ export function EditorV6Page() {
     } finally { setSavingCast(false) }
   }
 
-  const applyStudioFaceAppearance = async (appearance: CustomizerFaceAppearance, faceTransforms: EditorV6FaceTransforms = selectedElement?.faceTransforms ?? {}, record = true, expressionState?: Pick<EditorV6Element, 'expressionBase' | 'activeExpressionGaze' | 'activeExpressionPresetId' | 'activeExpressionPresetUpdatedAt' | 'activeExpressionCollectionId' | 'activeExpressionEffects' | 'activeFaceMode'>) => {
-    if (!activeEditorV6 || selectedElement?.kind !== 'character' || !selectedEditorV6Character || !selectedElement.assetId || editorV6FaceBusy) return
-    setEditorV6FaceBusy(true)
-    try {
-      const characterCopy: CustomizerCharacter = {
-        ...selectedEditorV6Character,
-        customization: { ...selectedEditorV6Character.customization, poseSlot: selectedElement.poseSlot === undefined ? selectedEditorV6Character.customization.poseSlot : selectedElement.poseSlot, faceAppearance: appearance }
-      }
-      const assetId = selectedElement.assetId
-      const result = await editorV6FacePreview.withRenderer(characterCopy, selectedElement.poseSourceRevision, selectedElement.modelSourceRevision, (renderer) =>
-        prepareEditorV6FaceAppearance({
-          character: selectedEditorV6Character,
-          element: selectedElement,
-          appearance,
-          faceTransforms,
-          expressionState
-        }, renderer, {
-          faceModeForElement: editorV6FaceModeForElement,
-          trimCanvas: trimTransparentCanvas,
-          bakeAssets: bakeFaceModeAssets
-        })
-      )
-      if (!result) return
-      const { baseMode, rendered, baked, previousCrop } = result
-      const faceModeAssetIds = { ...baked.assetIds, [baseMode]: assetId }
-      const elementId = selectedElement.id
-      const update = (studio: EditorV6Document): EditorV6Document => ({
-        ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, ...expressionState, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, faceModeAssetIds, ...faceRenderGeometry(element, rendered, baked.crop, sceneRef.current?.clientWidth ?? 1000, sceneRef.current?.clientHeight ?? 562, previousCrop), faceAppearance: appearance, faceTransforms, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt } : element),
-        assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
-        updatedAt: new Date().toISOString()
+  const { applyFaceAppearance: applyStudioFaceAppearance, applyPose: applyStudioPose } = createEditorV6CharacterAppearanceCommands({
+    activeProject: activeEditorV6,
+    selectedElement,
+    selectedCharacter: selectedEditorV6Character,
+    faceBusy: editorV6FaceBusy,
+    setFaceBusy: setEditorV6FaceBusy,
+    facePreview: editorV6FacePreview,
+    sceneRef,
+    poseSourceSnapshot: activePoseSourceSnapshot,
+    prepareFaceAppearance: (input, renderer) => prepareEditorV6FaceAppearance(input, renderer, {
+      faceModeForElement: editorV6FaceModeForElement,
+      trimCanvas: trimTransparentCanvas,
+      bakeAssets: bakeFaceModeAssets
+    }),
+    preparePoseChange: async (input) => {
+      const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
+      return prepareEditorV6PoseChange(input, {
+        prepareRenderer: prepareSavedCharacterRenderer,
+        bakeAssets: bakeFaceModeAssets,
+        trimCanvas: trimTransparentCanvas,
+        faceModeForElement: editorV6FaceModeForElement,
+        getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
+        faceRenderGeometry
       })
-      if (record) changeScene(update)
-      else patchDocument(update)
-      setError(null)
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a peça facial neste projeto.')
-    } finally { setEditorV6FaceBusy(false) }
-  }
+    },
+    changeScene,
+    patchDocument,
+    setError
+  })
 
   const {
     applyBaseExpression: applyEditorV6BaseExpression,
@@ -533,40 +522,6 @@ export function EditorV6Page() {
     loadCatalogItem: loadEditorV6FaceCatalogItem,
     applyAppearance: applyStudioFaceAppearance
   })
-
-  const applyStudioPose = async (poseSlot: number | null) => {
-    if (!activeEditorV6 || selectedElement?.kind !== 'character' || !selectedEditorV6Character || !selectedElement.assetId || editorV6FaceBusy) return
-    setEditorV6FaceBusy(true)
-    try {
-      const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      const { baseMode, baked, geometry } = await prepareEditorV6PoseChange({
-        character: selectedEditorV6Character,
-        element: selectedElement,
-        poseSlot,
-      }, {
-        prepareRenderer: prepareSavedCharacterRenderer,
-        bakeAssets: bakeFaceModeAssets,
-        trimCanvas: trimTransparentCanvas,
-        faceModeForElement: editorV6FaceModeForElement,
-        getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
-        faceRenderGeometry
-      })
-      const elementId = selectedElement.id
-      const assetId = selectedElement.assetId
-      const wardrobeSourceRevision = editorV6CharacterWardrobeSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.wardrobeRevisions ?? {})
-      const hairSourceRevision = editorV6CharacterHairSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.hairRevisions ?? {})
-      const headExtraSourceRevision = editorV6CharacterHeadExtraSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.headExtraRevisions ?? {})
-      const eyeSourceRevision = editorV6CharacterEyeSourceRevision(selectedEditorV6Character, activePoseSourceSnapshot?.eyeRevisions ?? {})
-      changeScene((studio) => ({
-        ...studio,
-        elements: studio.elements.map((element) => element.id === elementId ? { ...element, poseSlot, ...geometry, ...(typeof poseSlot === 'number' ? { poseSourceRevision: activePoseSourceSnapshot?.revisions[editorV6PoseRevisionKey(selectedEditorV6Character.customization.modelSlot ?? 1, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }), faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId }, characterSourceUpdatedAt: selectedEditorV6Character.updatedAt, wardrobeSourceRevision, hairSourceRevision, headExtraSourceRevision, eyeSourceRevision } : element),
-        assets: [...studio.assets.map((asset) => asset.id === assetId ? { ...asset, dataUrl: baked.dataUrl, mimeType: 'image/png' as const } : asset), ...baked.extraAssets],
-        updatedAt: new Date().toISOString()
-      }))
-      setError(null)
-    } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível aplicar a pose neste projeto.') }
-    finally { setEditorV6FaceBusy(false) }
-  }
 
   const { update: updateEditorV6FaceTransform, finish: finishEditorV6FaceTransform } = createEditorV6FaceTransformCommands({
     activeProject: activeEditorV6,

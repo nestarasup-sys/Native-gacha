@@ -31,14 +31,14 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 - Há fronteiras existentes que devem ser preservadas: `useEditorV6DocumentPersistence` serializa gravações e drena operações; `useEditorV6ProjectLibrary` carrega o catálogo e o projeto ativo; `editorV6Store` guarda o documento ativo, resumos e histórico; comandos de mídia, texto, criação e remoção já têm módulos próprios.
 - Os componentes de maior risco — `motion/bakeMotion.ts`, `exportWorker.tsx` e preparação de cabelo — permanecem fora do primeiro ciclo. Uma redução de linhas não justifica alterar algoritmos de renderização ou exportação sem evidência de benefício.
 - A branch de laboratório existente contém alterações locais de outra rodada. Elas foram preservadas; este trabalho começou numa worktree nova baseada no commit publicado de `Dev-V2`.
-- A worktree não tem `app-data` nem projetos reais. A refatoração e os testes desta etapa usam somente código e fixtures sintéticas; um export de ponta a ponta com personagem real depende de uma cópia autorizada.
+- No início, a worktree não tinha `app-data`. Depois, por solicitação do usuário, a pasta foi copiada da branch principal para esta worktree; esta rodada não abriu projetos ou mídia reais. A refatoração e os testes usam fixtures sintéticas, e um export de ponta a ponta com personagem real ainda não foi executado.
 
 ## Sequência de ciclos
 
 1. **Comandos, histórico e edição do documento — implementado e verificado:** retirar da página a coordenação de patch, histórico, undo/redo e gravação de mídia importada.
 2. **Projeções de cena e seleção — mapeadas e cobertas:** manter a resolução de cena e a seleção do Inspector em módulos próprios; verificar seleção de bloco, estado no playhead, snapshot-base e assets associados.
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
-4. **Preparação de pose, aparência e transformações faciais:** separar renderização, crop anterior, bake de variantes e agendamento do preview da gravação no documento; manter os contratos atuais.
+4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco:** separar renderização, referência por modelo, geometria e revisões de fonte da alteração de elenco no documento.
 6. **Timeline e mídia — em andamento:** revisar comandos, geometria visível, sincronização e edição transitória; manter a virtualização atual e evitar recriar estado persistido.
 7. **Exportação:** documentar os limites entre job, workers, captura, FFmpeg, cancelamento e recuperação antes de considerar mudanças no pipeline.
@@ -132,7 +132,7 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Arquivos e recuperação:** o runner cria uma pasta temporária identificada sob `app.getPath('temp')`, monta partes temporárias, prepara um MP4 candidato ao lado do destino, publica por rename com caminho alternativo para destino ocupado, salva relatório no projeto e remove a pasta temporária somente quando ela está sob a raiz temporária e tem o prefixo esperado. O IPC retém jobs ativos no inventário de operações até o término; o shutdown aborta jobs e drena as promessas.
 
-**Decisão:** não alterar o pipeline nem testar uma exportação real neste ciclo. A fronteira recomendada para o próximo trabalho é separar, com testes de lifecycle existentes, o registro/ownership/cancelamento de jobs da longa fábrica de handlers IPC; manter captura, FFmpeg, formatos persistidos e recuperação fora dessa extração.
+**Decisão:** não alterar o pipeline nem testar uma exportação real nesta auditoria. O registro/ownership/cancelamento de jobs foi extraído no Ciclo 9; captura, FFmpeg, formatos persistidos e recuperação continuam fora dessa mudança. A próxima revisão da exportação deve se concentrar nos handlers de mídia e cópia, mantendo os mesmos gates de lifecycle.
 
 **Cobertura existente a reutilizar:** `exportIpcLifecycle.test.ts`, `exportProcess.test.ts`, `exportRunner.test.ts`, `exportWorkers.test.ts` e os smokes Electron continuam sendo os gates.
 
@@ -143,3 +143,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o limite continua em 20 entradas antes de limpar jobs terminais; jobs ativos nunca são removidos. A rota continua restringindo status/cancelamento/relatório à janela proprietária, e o shutdown ainda inclui cada promise ativa no drain. Nenhuma mudança no pipeline, armazenamento, esquema ou IPC público.
 
 **Verificação:** 26 testes Vitest passaram (`exportJobRegistry`, `exportIpcLifecycle`, `exportProcess` e `editorV6TimelineDrag`), incluindo ownership do cancelamento por janela; `npm run test:application:persistence-shutdown` passou (11 testes), assim como `npm run typecheck`, `npm run audit:architecture` (723 arquivos), `npm run build` e `git diff --check`.
+
+### Ciclo 10 — aplicação de aparência facial e pose (implementado e verificado)
+
+**Mudança:** criada `editorV6CharacterAppearanceCommands.ts` para coordenar o preparo de aparência/pose com os snapshots do projeto, edição dos assets, histórico e revisões de origem. `EditorV6Page` agora compõe os preparadores, renderer e comandos; não mantém mais os handlers de gravação facial e pose.
+
+**Compatibilidade:** mantidos o guard de projeto/personagem ocupado, cache e cancelamento do renderer facial, lazy import do renderer de personagem para pose, escolha entre patch sem histórico e `changeScene`, crop anterior, versão do renderer facial, geometria, assets por modo e cálculo de revisões da pose/roupa/cabelo/extras/olhos.
+
+**Verificação:** 32 testes Vitest passaram em oito arquivos relacionados a comandos, preparação de pose/face, preview, snapshots, seleção, transforms e arraste da timeline. `npm run typecheck`, `npm run audit:architecture` (724 arquivos), `npm run build` e `git diff --check` passaram. Os testes usam fixtures sintéticas; não foi executado export com projeto real.
