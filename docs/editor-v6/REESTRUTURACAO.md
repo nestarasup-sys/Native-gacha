@@ -135,3 +135,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Decisão:** não alterar o pipeline nem testar uma exportação real neste ciclo. A fronteira recomendada para o próximo trabalho é separar, com testes de lifecycle existentes, o registro/ownership/cancelamento de jobs da longa fábrica de handlers IPC; manter captura, FFmpeg, formatos persistidos e recuperação fora dessa extração.
 
 **Cobertura existente a reutilizar:** `exportIpcLifecycle.test.ts`, `exportProcess.test.ts`, `exportRunner.test.ts`, `exportWorkers.test.ts` e os smokes Electron continuam sendo os gates.
+
+### Ciclo 9 — registro e ownership de jobs de exportação (implementado e verificado)
+
+**Mudança:** criada `electron/domains/editorV6/exportJobRegistry.ts`. A unidade passa a possuir o mapa de jobs, busca do job mais recente por janela, verificação de jobs ativos, cancelamento coletivo, inventário de promessas pendentes e remoção de históricos terminais. `exportIpc.ts` continua registrando canais, validando a origem/UUID e fazendo a transição de status do caso de uso.
+
+**Compatibilidade:** o limite continua em 20 entradas antes de limpar jobs terminais; jobs ativos nunca são removidos. A rota continua restringindo status/cancelamento/relatório à janela proprietária, e o shutdown ainda inclui cada promise ativa no drain. Nenhuma mudança no pipeline, armazenamento, esquema ou IPC público.
+
+**Verificação:** 26 testes Vitest passaram (`exportJobRegistry`, `exportIpcLifecycle`, `exportProcess` e `editorV6TimelineDrag`), incluindo ownership do cancelamento por janela; `npm run test:application:persistence-shutdown` passou (11 testes), assim como `npm run typecheck`, `npm run audit:architecture` (723 arquivos), `npm run build` e `git diff --check`.

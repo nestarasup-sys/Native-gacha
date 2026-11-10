@@ -250,6 +250,23 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
     expect(lifecycle.getPendingWrites()).toEqual([])
   })
 
+  it('restringe o cancelamento à janela dona e registra o estado cancelado', async () => {
+    vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: 'C:/synthetic/output.mp4' })
+    vi.mocked(runEditorV6Export).mockImplementation((_project, _options, dependencies) => new Promise((_resolve, reject) => {
+      dependencies.signal.addEventListener('abort', () => reject(dependencies.signal.reason), { once: true })
+    }))
+
+    const { handlers } = createHarness()
+    const status = await handlers.get(editorV6IpcChannels.startEditorV6Export)!(event, exportProject, exportOptions) as { id: string }
+    const cancel = handlers.get(editorV6IpcChannels.cancelEditorV6Export)!
+    const otherWindow = { ...event, sender: { ...event.sender, id: 13 } }
+
+    await expect(cancel(otherWindow, status.id)).rejects.toThrow('Exportação não encontrada nesta janela.')
+    expect(handlers.get(editorV6IpcChannels.getEditorV6ExportStatus)!(event, status.id)).toMatchObject({ state: 'preparing' })
+    await expect(cancel(event, status.id)).resolves.toBeUndefined()
+    expect(handlers.get(editorV6IpcChannels.getEditorV6ExportStatus)!(event, status.id)).toMatchObject({ state: 'cancelled' })
+  })
+
   it('aceita no IPC de exportação projetos com mais de 500 assets', async () => {
     const exportGate = deferred<Awaited<ReturnType<typeof runEditorV6Export>>>()
     vi.mocked(dialog.showSaveDialog).mockResolvedValue({ canceled: false, filePath: 'C:/synthetic/output.mp4' })
