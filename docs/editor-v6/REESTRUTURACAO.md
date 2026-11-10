@@ -41,7 +41,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
 6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
-7. **Exportação — em andamento:** separar registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
+7. **Exportação — em andamento:** separar planejamento de intervalo/fala, registro de jobs, handlers de mídia/cópia, preparação/cache de movimentos e preparação/mixagem de áudio, ciclo de artefatos temporários, publicação do candidato, composição/codificação/sondagem FFmpeg, transporte de quadros, ciclo de vida de cada trecho e finalização/validação; preservar workers, captura, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida e biblioteca de projetos:** criação/duplicação, exclusão protegida por gravação concluída e apresentação do catálogo; manter a ordem de publicação e a seleção coerentes.
 
@@ -328,3 +328,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o escopo temporário de cache por export, os limites de três personagens distintos nas amostras, os hashes registrados, a diferença entre contadores antes/depois, a concorrência escolhida pelos modos de teste, o ciclo de boca e as mensagens de progresso. A leitura inicial do cache continua fora do bloco temporizado, e nenhuma alteração foi feita em bake, cache persistente, IPC ou formatos.
 
 **Verificação:** 3 testes novos cobrem configuração/progresso, diferença e limite de amostras do cache e propagação de falha; junto com os testes de motions, renderer por trecho, pipeline, runner e lifecycle IPC, 61 testes passaram. `npm run typecheck`, `npm run audit:architecture` (747 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real foi executada.
+
+### Ciclo 33 — planejamento do intervalo de exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportPlanning.ts` a aplicação de opções padrão, detecção de fala ativa no intervalo, divisão em trechos, validação do override do harness isolado e restrição de plataforma. O runner continua usando o plano para agendar as tentativas e decidir o fallback Turbo/CPU.
+
+**Compatibilidade:** preservados `mouthLoop: true`, teste de sobreposição da fala com o intervalo e exclusão de faixa oculta/silenciada ou bloco sem personagem, divisão padrão de 300 quadros e de 150 quadros apenas para quatro workers quando o harness está ativo. A divisão de fallback continua em 300 quadros; a ordem de validação e as mensagens de erro também foram mantidas.
+
+**Verificação:** 9 testes novos cobrem normalização, Turbo sem fala, divisão de fala, filtros, override do harness e plataforma. Junto com as regressões de preparação de movimentos, renderer por trecho, pipeline, runner e lifecycle IPC, 46 testes passaram. `npm run typecheck`, `npm run audit:architecture` (748 arquivos), `npm run build` e `git diff --check` passaram. Nenhum benchmark ou MP4 foi executado.

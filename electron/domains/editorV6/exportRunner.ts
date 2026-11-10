@@ -7,13 +7,14 @@ import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV
 import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
-import { editorV6ExportTestSettings, type EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
-import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
+import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
+import { splitEditorV6ExportParts, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportPart, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import { prepareEditorV6ExportMotions, type EditorV6MotionCacheReport, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
+import { createEditorV6ExportExecutionPlan, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES } from './exportPlanning'
 import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
 import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
 import { addEditorV6PhaseTime, type EditorV6ExportPhaseTimings } from './exportMetrics'
@@ -44,26 +45,9 @@ type Dependencies = {
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
-const MOUTH_LOOP_BATCH_FRAMES = 300
-function hasLinkedSpeech(project: EditorV6Document, startFrame: number, endFrame: number) {
-  return project.timeline.tracks.some((track) => track.kind === 'speech' && !track.hidden && !track.muted && track.blocks.some((block) => Boolean(block.characterId ?? block.state?.characterId) && block.startFrame < endFrame && block.startFrame + block.durationFrames > startFrame))
-}
 
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
-  const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
-  const testSettings = editorV6ExportTestSettings(options.testMode)
-  const stressWorkerOverride = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? process.env.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS : undefined
-  // The default 300-frame mouth-loop windows expose at most two lanes in a
-  // 20-second benchmark. Split only stress runs asking for four renderers so
-  // the override measures four actual workers; frame content remains intact.
-  const mouthLoopBatchFrames = stressWorkerOverride === '4' ? Math.floor(MOUTH_LOOP_BATCH_FRAMES / 2) : MOUTH_LOOP_BATCH_FRAMES
-  const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
-  const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
-  const planned = speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
-  if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
-    throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
-  }
-  if (process.platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
+  const { options, testSettings, requestedParts, parts: planned, speechInRange, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
   const started = performance.now(), totalFrames = options.endFrame - options.startFrame
   const layeredVideo = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame).length > 0
   const compiledSha = typeof __NATIVE_GACHA_BUILD_SHA__ === 'string' ? __NATIVE_GACHA_BUILD_SHA__ : ''
@@ -262,7 +246,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       const safeEncoder = encoder === 'libx264' || encoder === 'libopenh264' ? encoder : (await testEncoder('libx264') ? 'libx264' : await testEncoder('libopenh264') ? 'libopenh264' : '')
       if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
       const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
-      const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, MOUTH_LOOP_BATCH_FRAMES) : safePart
+      const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
       report.validation = await finishMeasured(await renderAttempt(safeParts, safeEncoder, 1))
     }
     deps.signal.throwIfAborted()
