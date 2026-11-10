@@ -40,7 +40,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 3. **Interação do palco:** separar rascunhos de arraste/transformação das edições persistidas, preservando captura do ponteiro, cancelamento e histórico.
 4. **Preparação de pose, aparência e transformações faciais — em andamento avançado:** preparação de render/crop/bake, comandos de transform e agora aplicação dos snapshots estão separados; preservar agendamento e cache do preview.
 5. **Snapshots de elenco — implementado e verificado:** preparação e publicação do elenco em módulos próprios; manter referência por modelo, geometria, assets retidos e revisões de fonte.
-6. **Timeline e mídia — em andamento avançado:** cálculo de arraste e comandos de faixa estão separados; preservar virtualização, sincronização e edição transitória.
+6. **Timeline e mídia — em andamento avançado:** cálculo de arraste, comandos de faixa e linhas visuais da timeline estão separados; preservar virtualização, sincronização e edição transitória.
 7. **Exportação — em andamento:** separar registro de jobs e handlers de mídia/cópia; preservar workers, captura, FFmpeg, cancelamento e recuperação.
 8. **Medição:** qualquer mudança de performance depende de comparação controlada e paridade de saída, conforme o plano sistêmico existente.
 9. **Ciclo de vida dos projetos:** criação/duplicação e exclusão protegida por gravação concluída; manter a ordem de publicação e a seleção coerentes.
@@ -184,3 +184,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** permanecem as regras de grupo/ordem das faixas, exceções das faixas bloqueadas, reutilização do estado do objeto no cursor, seleção do bloco de personagem já existente e orientação para importar mídia quando necessário. A criação continua normalizando a timeline e mantendo IDs conhecidos, duração e seleção.
 
 **Verificação:** 35 testes Vitest passaram em três arquivos (`EditorV6Timeline`, comandos de faixa e arraste), cobrindo seleção, mutações bloqueadas, criação de fala/objeto, grupos de ordenação e dicas de importação. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
+
+### Ciclo 15 — linhas visuais da timeline (implementado e verificado)
+
+**Mudança:** movida a renderização memoizada das faixas e dos blocos para `EditorV6TimelineRows.tsx`. `EditorV6Timeline` mantém a captura dos ponteiros, o arraste transitório, o playhead, os atalhos e o menu de ações.
+
+**Compatibilidade:** classes e estrutura visual, ordenação, faixa de fundo, cores por personagem, cálculo dos intervalos de movimento e filtro dos blocos visíveis foram preservados. A memoização continua isolando as linhas das atualizações do playback; o contrato novo é tipado por `EditorV6TimelineRowsProps`.
+
+**Verificação:** 35 testes Vitest passaram nos testes da timeline, comandos de faixa e arraste. `npm run typecheck`, `npm run audit:architecture` (729 arquivos), `npm run build` e `git diff --check` passaram. A suíte usa timelines sintéticas; não foi feito export com projeto real.
