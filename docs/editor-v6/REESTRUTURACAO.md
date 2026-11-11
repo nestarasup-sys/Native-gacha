@@ -1032,3 +1032,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o recorte pelo intervalo e mudança geométrica, o desvio quando o atlas facial já cobre todos os samples, o uso de snapshots existentes, escalas de boca por frame, deduplicação por conteúdo limitada à exportação, concorrência máxima de dois bakes, serialização síncrona dos canvases antes da liberação e limpeza dos materiais temporários.
 
 **Verificação:** 692 testes Vitest passaram em 155 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para seleção de transições por geometria/atlas facial, serialização dos canvases, modo posterior e limpeza de cache. Os testes de batch de bake e intervalo de alvos também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (839 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 121 — preparação das camadas animadas de cabelo (implementado)
+
+**Objetivo:** extrair para `editorV6HairMotionLayers.ts` a montagem dos descritores de cabelo de cada grupo de pose, isolando visibilidade/overrides, transformação relativa à cabeça de destino, paleta e registro da textura. O orquestrador mantém a propriedade dos renderers e das caches de textura.
+
+**Compatibilidade:** preservados ordem e IDs das peças, índice original usado na fase de animação mesmo quando uma peça é ocultada, erro de asset ausente, aplicação aditiva/multiplicativa dos overrides, flip, proporção entre as cabeças e deduplicação/coloração no cache limitado à exportação atual. Os dados persistidos do personagem e o pipeline de exportação não mudam.
+
+**Verificação:** 694 testes Vitest passaram em 156 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes sintéticos para composição de transforms, peça oculta, preparação de cor/textura e erro de referência ausente. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (840 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

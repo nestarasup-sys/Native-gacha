@@ -3,7 +3,7 @@ import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
-import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
+import type { EditorV6HairMotionBundle, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
@@ -17,6 +17,7 @@ import { createEditorV6HairMotionBundleAssets } from './editorV6HairMotionBundle
 import { createEditorV6ExportStageProfiler } from './editorV6ExportStageProfiler'
 import { editorV6HairMotionCanvasDataUrl as canvasDataUrl } from './editorV6HairMotionCanvas'
 import { prepareEditorV6HairMotionTransitions } from './editorV6HairMotionTransitions'
+import { prepareEditorV6HairMotionLayers } from './editorV6HairMotionLayers'
 
 export { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from './editorV6HairMotionTargets'
 
@@ -101,23 +102,14 @@ export async function prepareEditorV6HairMotionBundle(
     reportStage('prepareCharacterRenderers', groupStageStarted)
     try {
       groupStageStarted = performance.now()
-      const descriptors: EditorV6HairMotionLayer[] = []
-      for (const [index, reference] of references.entries()) {
-        const style = styles.get(reference.id), original = style?.[reference.side], baseTransform = style?.transforms[reference.side]
-        if (!original || !baseTransform) throw Error(`Não foi possível carregar a peça ${reference.part} do cabelo de ${character.name}.`)
-        const override = character.customization.partOverrides?.[`head:${reference.part}`]
-        if (override?.hidden) continue
-        const transform = override ? {
-          ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0),
-          scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1),
-          rotation: baseTransform.rotation + (override.rotation ?? 0)
-        } : baseTransform
-        const colors = resolvedHairColors(appearance, reference.part)
-        const dataUrl = await currentExportReuse.prepareTexture(
-          resolved.modelSlot, reference.id, reference.side, reference.part, colors,
+      const descriptors = await prepareEditorV6HairMotionLayers({
+        character, references, styles, sourceHead: sourceHeadPart, targetHead: targetHeadPart,
+        resolveColors: part => resolvedHairColors(appearance, part),
+        prepareTexture: ({ modelSlot, styleId, side, part, colors, dataUrl }) => currentExportReuse.prepareTexture(
+          modelSlot, styleId, side, part, colors,
           async () => {
-            if (!Object.keys(colors).length) return original.dataUrl
-            const tinted = await loadCharacterTintedImage(original.dataUrl, colors)
+            if (!Object.keys(colors).length) return dataUrl
+            const tinted = await loadCharacterTintedImage(dataUrl, colors)
             const canvas = document.createElement('canvas'); canvas.width = tinted.naturalWidth; canvas.height = tinted.naturalHeight
             const context = canvas.getContext('2d')
             if (!context) throw Error('Não foi possível recolorir uma camada de cabelo para a exportação.')
@@ -126,19 +118,9 @@ export async function prepareEditorV6HairMotionBundle(
               return canvasDataUrl(canvas)
             } finally { canvas.width = canvas.height = 1 }
           }
-        )
-        descriptors.push({
-          id: `${reference.part}:${index}`,
-          textureId: addTexture(`${character.id}:${reference.id}:${reference.side}:${reference.part}`, dataUrl),
-          side: reference.side, width: original.width, height: original.height,
-          x: transform.x * targetHeadPart.width / sourceHeadPart.width - targetHeadPart.width / 2,
-          y: transform.y * targetHeadPart.height / sourceHeadPart.height - targetHeadPart.height / 2,
-          scaleX: transform.scaleX * targetHeadPart.width / sourceHeadPart.width,
-          scaleY: transform.scaleY * targetHeadPart.height / sourceHeadPart.height,
-          rotation: transform.rotation, flipX: Boolean(transform.flipX),
-          phase: index * 1.2 + (reference.side === 'back' ? 0 : 1.2)
-        })
-      }
+        ),
+        addTexture
+      })
       if (!descriptors.length) return
       reportStage('prepareHairLayers', groupStageStarted)
 
