@@ -16,7 +16,8 @@ import { renderEditorV6ExportAttempt, type EditorV6ExportPartWorkerFactory } fro
 import { renderEditorV6ExportWithFallback, type EditorV6ExportAttempt } from './exportFallbackStrategy'
 import { createEditorV6ExportReportContext, type EditorV6ExportReport } from './exportReport'
 import { createEditorV6EncoderProbe, selectEditorV6ExportEncoder, selectEditorV6FallbackEncoder } from './exportEncoderSelection'
-import { createEditorV6ExportTempFolder, publishEditorV6Output, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
+import { createEditorV6ExportTempFolder, removeEditorV6ExportCandidate, removeEditorV6ExportTempFolder, writeEditorV6ExportReport } from './exportArtifacts'
+import { publishEditorV6ExportCandidate } from './exportCandidatePublication'
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
 import { cleanupEditorV6ExportRun } from './exportRunCleanup'
@@ -164,24 +165,11 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     })
     deps.signal.throwIfAborted()
     // The destination only changes after the candidate passes all validations.
-    report.state = 'publishing'
-    await saveReport()
-    deps.signal.throwIfAborted()
-    const publicationStarted = performance.now()
-    let publication: Awaited<ReturnType<typeof publishEditorV6Output>>
-    try { publication = await publishEditorV6Output(candidate, deps.outputPath, deps.id) }
-    finally { addEditorV6PhaseTime(report, 'publication', publicationStarted) }
-    report.outputPath = publication.outputPath
-    report.deliveryWarning = [report.deliveryWarning, publication.warning].filter(Boolean).join(' ') || undefined
+    await publishEditorV6ExportCandidate({
+      report, candidate, outputPath: deps.outputPath, id: deps.id, started, memorySampler, signal: deps.signal, saveReport,
+      formatError: message
+    })
     published = true
-    report.state = 'completed'
-    report.endedAt = new Date().toISOString(); report.milliseconds = performance.now() - started
-    clearInterval(memorySampler)
-    report.mainProcessMemory!.peakRssBytes = Math.max(report.mainProcessMemory!.peakRssBytes, process.memoryUsage().rss)
-    try { await saveReport() }
-    catch (error) {
-      report.deliveryWarning = [report.deliveryWarning, `Vídeo salvo, mas não foi possível atualizar o relatório: ${message(error)}`].filter(Boolean).join(' ')
-    }
     return report
   } catch (error) {
     exportFailure = error
