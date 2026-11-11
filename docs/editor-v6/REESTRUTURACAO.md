@@ -776,3 +776,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** `bakeMotion.ts` reexporta a mesma função e o mesmo tipo, mantendo os consumidores existentes. Permanecem os limites de 48 poses, 12 renderizadores e 96 MiB estimados, a ordem FIFO de remoção e a limpeza dos renderizadores, histórico e materiais.
 
 **Verificação:** 603 testes passaram na suíte Vitest oficial (128 arquivos; 1 ignorado), incluindo limites de histórico/memória, ordem de descarte e limpeza da sessão. `npm run typecheck`, `npm run audit:architecture` (806 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 89 — preparação e calibração facial para o bake de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionFacePreparation.ts` a preparação pareada dos estados faciais, resolução de transforms padrão, calibração de overrides de expressão e escala de boca na amostra exportada.
+
+**Compatibilidade:** o bake continua resolvendo as poses em paralelo com os rostos. A preparação preserva o fallback entre face do elemento e face padrão do personagem, não altera transforms de origem, mantém overrides explícitos e só acrescenta `sourceTransformOverride` ausente. A seleção/fallback do transform de boca e o fator aplicado permanecem iguais.
+
+**Verificação:** 607 testes passaram na suíte Vitest oficial (129 arquivos; 1 ignorado), incluindo defaults de catálogo/componente/expressão, calibração pareada, imutabilidade dos endpoints e escala de boca. `npm run typecheck`, `npm run audit:architecture` (807 arquivos), `npm run build` e `git diff --check` passaram. Uma execução inicial completa encontrou interferência transitória de mocks em `exportMediaProbe.test.ts`; os testes afetados juntos e a repetição completa passaram. Nenhum vídeo ou benchmark de mídia foi executado.

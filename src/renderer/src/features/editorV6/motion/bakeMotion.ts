@@ -1,11 +1,9 @@
 import type { CharacterRenderAssetProvider } from '../../../../../shared/characterRenderAssets'
-import type { FaceComponentPartId } from '../../../../../shared/customizer'
-import type { FaceElementKind, FaceTransform } from '../../../../../shared/fabricator'
-import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransform } from '../../../../../shared/editorV6'
+import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
-import { loadStandardExpressionEffects, prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
+import { prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
   changedMotionPixelBounds as changedBounds,
@@ -21,6 +19,7 @@ import { motionEndpointScale } from './motionEndpointScale'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
+import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -107,55 +106,6 @@ function croppedCanvas(source: HTMLCanvasElement, bounds: Crop): HTMLCanvasEleme
 function isBlinkUnavailable(error: unknown): boolean {
   return error instanceof Error && /Blink precisa|olho fechado correspondente|Selecione olhos do catálogo|assets de Olhos Dev/.test(error.message)
 }
-const neutral = (): EditorV6FaceTransform => ({ x: 0, y: 0, width: 100, height: 100, rotation: 0 })
-
-function scaleMouthForExport(face: Awaited<ReturnType<typeof interpolateEditorV6Face>>, factor: number) {
-  if (factor === 1) return face
-  const appearance = face.appearance
-  const transforms = { ...face.transforms }
-  const source = transforms.mouth
-    ?? (appearance?.mouthClosedCatalogId ? transforms[`mouth-closed:${appearance.mouthClosedCatalogId}`] : undefined)
-    ?? (appearance?.mouthOpenCatalogId ? transforms[`mouth-open:${appearance.mouthOpenCatalogId}`] : undefined)
-    ?? transforms['mouth-open']
-    ?? transforms['mouth-closed']
-    ?? neutral()
-  transforms.mouth = { ...source, width: source.width * factor, height: source.height * factor }
-  return { ...face, transforms }
-}
-
-/** Resolve implicit sheet calibrations before interpolating portable preset overrides. */
-async function prepareFace(state: EditorV6Element, request: EditorV6MotionBakeRequest, provider: CharacterRenderAssetProvider): Promise<EditorV6Element> {
-  const appearance = structuredClone(state.faceAppearance ?? request.character.customization.faceAppearance)
-  if (!appearance) return state
-  const slot = request.character.customization.modelSlot ?? 1
-  appearance.transforms = { ...appearance.transforms }
-  appearance.components = { ...appearance.components }
-  const ids: Partial<Record<FaceElementKind, string>> = { 'eye-left': appearance.eyeLeftCatalogId ?? appearance.eyeCatalogId, 'eye-right': appearance.eyeRightCatalogId ?? appearance.eyeCatalogId, 'brow-left': appearance.eyebrowLeftCatalogId ?? appearance.eyebrowCatalogId, 'brow-right': appearance.eyebrowRightCatalogId ?? appearance.eyebrowCatalogId, nose: appearance.noseCatalogId, mouth: appearance.mouthClosedCatalogId ?? appearance.mouthOpenCatalogId }
-  for (const [part, id] of Object.entries(ids)) if (id && !appearance.transforms[part as FaceElementKind]) {
-    const item = await provider.loadFaceCatalogItem(slot, id)
-    const transform = item?.transforms[part as FaceElementKind]
-    if (transform) appearance.transforms[part as FaceElementKind] = transform
-  }
-  for (const [key, selected] of Object.entries(appearance.components)) if (selected?.assetId && !selected.transform) {
-    const component = await provider.loadFaceComponentAsset(slot, selected.assetId)
-    if (component) appearance.components[key as FaceComponentPartId] = { ...selected, transform: component.defaultTransform }
-  }
-  const effects = state.activeExpressionEffects ?? (await loadStandardExpressionEffects(slot, provider))[appearance.expressionIndex]
-  return { ...state, faceAppearance: appearance, faceTransforms: { ...state.faceTransforms }, activeExpressionEffects: effects }
-}
-function calibratePair(from: EditorV6Element, to: EditorV6Element) {
-  const keys = new Set([...Object.keys(from.faceTransforms ?? {}), ...Object.keys(to.faceTransforms ?? {})])
-  for (const state of [from, to]) for (const key of keys) {
-    if (!key.startsWith('expression')) continue
-    const existing = state.faceTransforms?.[key]
-    if (existing?.sourceTransformOverride) continue
-    let baseline: FaceTransform | undefined
-    if (key.startsWith('expression-component:')) baseline = state.faceAppearance?.components?.[key.split(':')[1] as FaceComponentPartId]?.transform
-    else { const part = key.split(':')[1]; baseline = state.faceAppearance?.transforms?.[(part.startsWith('mouth') ? 'mouth' : part) as FaceElementKind] }
-    if (baseline) { state.faceTransforms ??= {}; state.faceTransforms[key] = { ...(existing ?? neutral()), sourceTransformOverride: baseline } }
-  }
-}
-
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cacheEditorV6MotionAssetProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
@@ -166,8 +116,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const slotId = state.poseSlot === undefined ? request.character.customization.poseSlot : state.poseSlot
     return resolvePose(slotId)
   }
-  const [fromPose, toPose, from, to] = await Promise.all([pose(request.plan.from), pose(request.plan.to), prepareFace(structuredClone(request.plan.from), request, provider), prepareFace(structuredClone(request.plan.to), request, provider)])
-  calibratePair(from, to)
+  const [[fromPose, toPose], [from, to]] = await Promise.all([
+    Promise.all([pose(request.plan.from), pose(request.plan.to)]),
+    prepareEditorV6MotionFacePair(request.plan.from, request.plan.to, request.character.customization, provider)
+  ])
   const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
   const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
@@ -209,7 +161,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     return renderer
   }
   const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
-    const renderer = preparedRenderer ?? await prepare(progress), face = scaleMouthForExport(interpolateEditorV6Face(from, to, progress), mouthScale)
+    const renderer = preparedRenderer ?? await prepare(progress), face = scaleEditorV6MotionMouth(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
       const mode = faceMode ?? face.mode
       const renderMode = referenceMode ? mode : editorV6FaceModeDuringMotion(mode)
