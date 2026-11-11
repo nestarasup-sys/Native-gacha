@@ -1,16 +1,12 @@
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, type PointerEvent as ReactPointerEvent, type SyntheticEvent } from 'react'
+import { memo, useLayoutEffect, useMemo, useRef, type SyntheticEvent } from 'react'
 import type { EditorV6Asset, EditorV6Element, EditorV6SceneElement } from '../../../../shared/editorV6'
 import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 import { editorV6ElementsWithBalloonsOnTop } from './editorV6SceneLayerOrder'
 import { createSpeechBalloonPath, createThoughtBalloonPath, createThoughtBalloonSketchPath } from './speechBalloonPath'
+import { SceneVideoLayer, type SceneSurfaceInteraction } from './SceneVideoLayer'
 
-export type ScenePointerEvent = ReactPointerEvent<SVGElement>
-export type SceneSurfaceInteraction = {
-  start: (event: ScenePointerEvent, id: string) => void
-  move: (event: ScenePointerEvent) => void
-  end: (event: ScenePointerEvent) => void
-}
+export type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneVideoLayer'
 const FONT = 'Arial, sans-serif'
 let measurement: CanvasRenderingContext2D | null = null
 function measure(text: string, fontSize: number): number {
@@ -47,43 +43,6 @@ export function wrapSceneText(text: string, width: number, fontSize: number, max
 
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-
-const SceneVideoLayer = memo(function SceneVideoLayer({ scene, playing, selectedId, interaction }: { scene: EditorV6ResolvedScene; playing: boolean; selectedId: string | null; interaction?: SceneSurfaceInteraction }) {
-  const ref = useRef<HTMLVideoElement>(null)
-  const media = scene.mediaVideo
-  useEffect(() => {
-    const video = ref.current
-    if (!video || !media) return
-    video.volume = 1
-    const target = (media.sourceInFrame + scene.frame - media.startFrame) / 30
-    if (!playing) {
-      video.pause()
-      if (Math.abs(video.currentTime - target) > .015) { try { video.currentTime = target } catch { /* loadedmetadata will retry the paused seek */ } }
-      return
-    }
-    if (video.paused) {
-      if (Math.abs(video.currentTime - target) > .25) { try { video.currentTime = target } catch { /* loadedmetadata will retry the playback seek */ } }
-      void video.play().catch(() => {})
-    } else if (Math.abs(video.currentTime - target) > .18) {
-      try { video.currentTime = target } catch { /* The browser will recover at the next timeline update. */ }
-    }
-  }, [media?.mediaId, media?.startFrame, media?.sourceInFrame, media?.gain, scene.frame, playing])
-  if (!media) return null
-  const width = media.layout.width * 19.2, height = media.layout.height * 10.8
-  const x = (50 + media.layout.x) * 19.2, y = (50 + media.layout.y) * 10.8
-  return <>
-    <foreignObject x={x - width / 2} y={y - height / 2} width={width} height={height} transform={`rotate(${media.layout.rotation} ${x} ${y})`} data-editor-v6-video={media.mediaId}
-      style={{ cursor: interaction ? 'move' : undefined, touchAction: 'none' }}
-      onPointerDown={interaction ? (event) => interaction.start(event, `media-video:${media.blockId}`) : undefined} onPointerMove={interaction?.move} onPointerUp={interaction?.end} onPointerCancel={interaction?.end}>
-    <video ref={ref} src={media.url} muted playsInline preload="auto" data-media-id={media.mediaId} data-target-time={(media.sourceInFrame + scene.frame - media.startFrame) / 30} onLoadedMetadata={(event) => {
-      const video = event.currentTarget, target = Number(video.dataset.targetTime)
-      try { video.currentTime = target } catch { /* The browser will seek when it is ready. */ }
-      if (playing) void video.play().catch(() => {})
-    }} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', pointerEvents: 'none' }} />
-    </foreignObject>
-    {selectedId === media.blockId && <rect x={x - width / 2} y={y - height / 2} width={width} height={height} transform={`rotate(${media.layout.rotation} ${x} ${y})`} fill="none" stroke="#e84f88" strokeWidth={3} vectorEffect="non-scaling-stroke" pointerEvents="none" />}
-  </>
-})
 
 type SceneLayerProps = { element: EditorV6SceneElement; asset?: EditorV6Asset; mouthAsset?: EditorV6Asset; rasterCanvas?: HTMLCanvasElement; rasterFrame?: number; selected: boolean; interaction?: SceneSurfaceInteraction; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void }
 function ExportRasterCanvas({ canvas, frame }: { canvas: HTMLCanvasElement; frame: number }) {

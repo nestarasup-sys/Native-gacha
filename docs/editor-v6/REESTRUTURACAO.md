@@ -1040,3 +1040,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados ordem e IDs das peças, índice original usado na fase de animação mesmo quando uma peça é ocultada, erro de asset ausente, aplicação aditiva/multiplicativa dos overrides, flip, proporção entre as cabeças e deduplicação/coloração no cache limitado à exportação atual. Os dados persistidos do personagem e o pipeline de exportação não mudam.
 
 **Verificação:** 694 testes Vitest passaram em 156 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes sintéticos para composição de transforms, peça oculta, preparação de cor/textura e erro de referência ausente. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (840 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 122 — camada de vídeo da cena (implementado)
+
+**Objetivo:** mover o componente SVG/HTML de vídeo e sua sincronização com a timeline para `SceneVideoLayer.tsx`, deixando `SceneSurface.tsx` focado na composição visual das camadas. O componente e o tipo de interação continuam reexportados pelo módulo anterior para manter os imports atuais.
+
+**Compatibilidade:** preservados cálculo do tempo-alvo, volume, limites distintos de seek para pausa/início/reprodução, seek após `loadedmetadata`, tratamento de autoplay rejeitado, posição/rotação, seleção, ponteiros de interação e dependências do efeito.
+
+**Verificação:** 699 testes Vitest passaram em 157 arquivos (1 arquivo e 1 teste ignorados), incluindo 5 testes novos para tempo-alvo, sincronização pausada/em movimento, limites de seek e falhas recuperáveis. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (841 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
