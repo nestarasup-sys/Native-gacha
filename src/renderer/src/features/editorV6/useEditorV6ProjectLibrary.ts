@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import type { EditorV6Document, EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { loadLegacySceneCatalog } from '../../ui/legacySceneCatalog.ts'
 import { loadEditorV6ProjectCatalog } from './editorV6ProjectCatalog.ts'
+import { startEditorV6ActiveProjectLoad } from './editorV6ActiveProjectLoad'
 
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 
@@ -59,32 +60,14 @@ export function useEditorV6ProjectLibrary({
   }, [createTimeline, setError, setFolder, setLoading, setProjects, writeDocument])
 
   useEffect(() => {
-    const generation = ++activeLoadGenerationRef.current
-    if (!activeProjectId) {
-      pausePlayback()
-      publishPlayheadFrame(0)
-      setActiveProject(null)
-      setSaved(true)
-      return
-    }
-    setActiveProject(null)
-    void window.desktop.editorV6.loadEditorV6Project(activeProjectId).then((project) => {
-      if (generation !== activeLoadGenerationRef.current) return
-      if (!project) {
-        setError('Esse projeto não foi encontrado na biblioteca local do Editor V6.')
-        setActiveProjectId(null)
-        return
-      }
-      setError(null)
-      setActiveProject(project)
-      // Dirty state belongs to the previously active document. A project read
-      // from persistence is a clean baseline until a refresh/edit changes it.
-      setSaved(true)
-    }).catch((reason: unknown) => {
-      if (generation !== activeLoadGenerationRef.current) return
-      setError(reason instanceof Error ? reason.message : 'Não foi possível abrir o projeto do Editor V6.')
-      setActiveProjectId(null)
+    return startEditorV6ActiveProjectLoad(activeProjectId, activeLoadGenerationRef, {
+      loadProject: (projectId) => window.desktop.editorV6.loadEditorV6Project(projectId),
+      setError,
+      setSaved,
+      setActiveProjectId,
+      setActiveProject,
+      pausePlayback,
+      publishPlayheadFrame
     })
-    return () => { if (activeLoadGenerationRef.current === generation) activeLoadGenerationRef.current += 1 }
   }, [activeProjectId, pausePlayback, publishPlayheadFrame, setActiveProject, setActiveProjectId, setError, setSaved])
 }

@@ -448,3 +448,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a ordem permanece selecionar e depois ativar; criação/duplicação seguem apenas destacando o projeto na biblioteca, sem abri-lo automaticamente. A ref do ID ativo continua sendo atualizada pelo setter existente; carregamento stale-safe e persistência não mudam.
 
 **Verificação:** 3 testes de navegação/sessão passaram; `npm run typecheck`, `npm run audit:architecture` (761 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 48 — leitura stale-safe do projeto ativo (implementado e verificado)
+
+**Objetivo:** mover a coordenação assíncrona de abertura e a barreira de geração para `editorV6ActiveProjectLoad.ts`, cobrindo troca rápida, desmontagem e estados ausentes.
+
+**Compatibilidade:** preservados carregamento do documento mais recente selecionado, limpeza e playhead zero sem projeto, mensagens de erro, estado salvo limpo após leitura e descarte de resposta supersedida. Nenhum contrato IPC ou dado persistido mudou.
+
+**Verificação:** 6 testes de carregamento, navegação e sessão passaram em 3 arquivos; `npm run typecheck`, `npm run audit:architecture` (762 arquivos), `npm run build` e `git diff --check` passaram.
