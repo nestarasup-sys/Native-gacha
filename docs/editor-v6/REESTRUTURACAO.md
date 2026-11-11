@@ -1064,3 +1064,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos fonte/peso medidos, fallback proporcional quando canvas não está disponível, normalização de CR, limites de linha, quebra de palavras/código Unicode e reticências dentro da última linha. Preview e captura seguem usando a mesma função.
 
 **Verificação:** 703 testes Vitest passaram em 158 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 novos testes para parágrafos, palavras longas, Unicode, overflow e reexportação. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (843 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 125 — conteúdo de balões e texto da cena (implementado)
+
+**Objetivo:** extrair a geometria SVG, recorte e posicionamento do conteúdo de balões/narrador de `SceneLayer` para `SceneTextContent.tsx`. `SceneLayer` permanece responsável pela posição, interação, seleção e composição da imagem ou conteúdo textual.
+
+**Compatibilidade:** mantidos os caminhos de balão de fala/pensamento, escala já calculada pelo elemento, recorte dos textos, tamanho de fonte, truncamento do nome do personagem, cor e posição das linhas. O componente renderiza dentro da mesma árvore SVG utilizada pela prévia e captura.
+
+**Verificação:** 705 testes Vitest passaram em 159 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 testes novos de markup para fala, pensamento e narrador; os testes de exportação visível também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (844 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
