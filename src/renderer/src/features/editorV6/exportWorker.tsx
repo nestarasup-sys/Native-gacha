@@ -2,17 +2,14 @@ import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionInstancePhase } from '../../../../shared/editorV6HairMotion'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
-import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { createEditorV6ExportHairPieceDrawer } from './exportHairPieceDrawing'
 import { createEditorV6ExportHairSceneComposer } from './exportHairSceneComposition'
-import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
+import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResources'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
 import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
@@ -32,42 +29,15 @@ async function initialize() {
   // composition index separate from the small durable atlas cache.
   const projectAssetIndex = new Map(project.assets.map(asset => [asset.id, asset]))
   const assetsById = new Map(projectAssetIndex)
-  const hairSurfaces = new Map<string, HTMLImageElement>()
-  const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
-  const hairTextures = new Map<string, HTMLImageElement>()
+  const hairResources = await createEditorV6ExportWorkerHairResources(hairAnimation)
+  window.addEventListener('pagehide', hairResources.dispose, { once: true })
+  const { hairSurfaces, hairSurfaceDataById, hairTextures, hairMotionStates, hairMotionLoops, hairMotionInstancePhases,
+    hairFrameCanvases, motionHairFrameSurfaces, animatedElementIds, warpHairTexture } = hairResources
   const hairMotionPlanIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
   const { hairTransitionIndex, hairPoseReactionEnds } = hairMotionPlanIndex
   const { hairRigAtFrame } = createEditorV6ExportHairRigAtFrame(hairMotionPlanIndex)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
-  const hairMotionStates = new Map<string, HairMotionState>()
-  const hairMotionLoops = new Map<string, HairMotionLoop>()
-  const hairMotionInstancePhases = new Map([...new Set((hairAnimation?.rigs ?? []).map(rig => rig.elementId))].map(elementId => [elementId, editorV6HairMotionInstancePhase(elementId)]))
-  const hairWarpCanvases = new Map<string, HTMLCanvasElement>()
-  // Immutable, correctly padded source pixels for a stationary strand.
-  // Kept only for this worker, never across MP4 exports or character edits.
-  const staticHairWarpCanvases = new Map<string, HTMLCanvasElement>()
-  const hairMeshRenderer = createExportHairMeshRenderer()
-  const { warpHairTexture } = createEditorV6ExportHairTextureWarper({ hairWarpCanvases, staticHairWarpCanvases, hairMeshRenderer })
-  const hairFrameCanvases = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
-  // One live surface per transitioning actor lets the SVG embed the canvas
-  // directly. These surfaces are reused across frames instead of PNG round trips.
-  const motionHairFrameSurfaces = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
-  const animatedElementIds = [...new Set((hairAnimation?.rigs ?? []).filter(rig => rig.layers.length > 0).map(rig => rig.elementId))]
-  const loadHairImage = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
-    const image = new Image()
-    image.onload = () => { void image.decode().then(() => resolve(image), () => reject(Error('Não foi possível decodificar uma camada da animação de cabelo.'))) }
-    image.onerror = () => reject(Error('Não foi possível carregar uma camada da animação de cabelo.'))
-    image.src = dataUrl
-  })
-  if (hairAnimation) {
-    const [surfaceImages, textureImages] = await Promise.all([
-      Promise.all(hairAnimation.surfaces.map(async surface => [surface.id, await loadHairImage(surface.dataUrl)] as const)),
-      Promise.all(hairAnimation.textures.map(async texture => [texture.id, await loadHairImage(texture.dataUrl)] as const))
-    ])
-    for (const [id, image] of surfaceImages) hairSurfaces.set(id, image)
-    for (const [id, image] of textureImages) hairTextures.set(id, image)
-  }
   const { headXAtFrame, pieceFlipXAtFrame } = createEditorV6HairHeadPathTimeline({
     animatedElementIds,
     hasHairAnimation: Boolean(hairAnimation),
@@ -164,16 +134,6 @@ async function initialize() {
     frameReuse.recordRendered(key, layerKeys, activeLayer)
     return { reused: false, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
   }
-  window.addEventListener('pagehide', () => {
-    hairMeshRenderer.dispose()
-    for (const canvas of hairWarpCanvases.values()) canvas.width = canvas.height = 1
-    for (const canvas of staticHairWarpCanvases.values()) canvas.width = canvas.height = 1
-    for (const { canvas } of hairFrameCanvases.values()) canvas.width = canvas.height = 1
-    for (const { canvas } of motionHairFrameSurfaces.values()) canvas.width = canvas.height = 1
-    hairWarpCanvases.clear()
-    hairFrameCanvases.clear()
-    motionHairFrameSurfaces.clear()
-  }, { once: true })
   await worker.ready()
 }
 void initialize().catch((error: unknown) => worker.ready(error instanceof Error ? error.message : String(error)))

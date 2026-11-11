@@ -968,3 +968,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o job lembrado entre aberturas, polling/cancelamento, estado da pasta, edição/salvamento do preset, validações e perfil padrão, integração de áudio, callbacks de atividade e os botões para exportar com ou sem animação. Nenhuma exportação real foi iniciada.
 
 **Verificação:** 690 testes Vitest passaram em 154 arquivos (1 ignorado), incluindo o contrato dos botões de exportação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (830 arquivos), `npm run build` e `git diff --check` passaram. O harness Chromium do Editor V6 passou na comparação de superfície e no fluxo do painel com áudio vinculado e dois jobs simulados (com/sem cabelo). A busca do harness foi ajustada para encontrar elementos renderizados em portal; nenhum MP4 ou perfil grande foi criado.
+
+### Ciclo 113 — propriedade dos recursos de cabelo no worker de exportação (implementado e verificado)
+
+**Objetivo:** transferir a criação, decodificação e liberação dos recursos transitórios de cabelo para `exportWorkerHairResources.ts`, deixando `exportWorker.tsx` como orquestrador do quadro.
+
+**Compatibilidade:** mantidos IDs e conteúdo de mapas, fase por elemento, seleção de rigs animados, mensagens de erro de decodificação, canvases reutilizáveis e descarte em `pagehide`. O listener de limpeza agora é registrado assim que a fábrica entrega os recursos; ela também libera o renderer se a decodificação inicial falhar antes dessa entrega.
+
+**Verificação:** 692 testes Vitest passaram em 155 arquivos (1 ignorado), incluindo 2 novos testes de carregamento, ownership e descarte idempotente, e falha na decodificação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (831 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo real ou benchmark de mídia foi executado.
