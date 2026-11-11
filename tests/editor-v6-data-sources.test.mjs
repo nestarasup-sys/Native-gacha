@@ -89,10 +89,19 @@ function createMediaCommandHarness(overrides = {}) {
     addTimelineMedia: () => ({ document: source, block: { id: 'unused' }, startFrame: 0 }),
     findClipAtFrame: () => undefined,
     editBackgroundAtFrame: (project, _frame, values) => ({ ...project, ...values }),
+    backgroundLibrary: { importVideoBackground: async () => null },
+    mediaLibrary: { import: async (category) => {
+      calls.push(['import-image', category])
+      return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' }
+    } },
+    refreshObjectLibrary: async () => {},
+    refreshBackgroundLibrary: async () => {},
     bridge: {
       importEditorV6Image: async (category) => { calls.push(['import-image', category]); return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' } },
       importEditorV6Media: async (projectId, kind) => { calls.push(['import-media', projectId, kind]); return { id: 'audio-media', kind, name: 'Áudio', fileName: 'audio.wav', sourceFrames: 90, mimeType: 'audio/wav' } },
-      linkEditorV6LibraryVideo: async (projectId, libraryId) => { calls.push(['link-video', projectId, libraryId]); return { id: 'linked-video', kind: 'video', name: 'Vídeo da Base', fileName: 'video.mp4', sourceFrames: 90, mimeType: 'video/mp4', libraryVideoId: libraryId } }
+      linkEditorV6LibraryVideo: async (projectId, libraryId) => { calls.push(['link-video', projectId, libraryId]); return { id: 'linked-video', kind: 'video', name: 'Vídeo da Base', fileName: 'video.mp4', sourceFrames: 90, mimeType: 'video/mp4', libraryVideoId: libraryId } },
+      linkEditorV6LibraryAudio: async (projectId, libraryId) => { calls.push(['link-audio', projectId, libraryId]); return { id: 'linked-audio', kind: 'audio', name: 'Áudio da Base', fileName: 'audio.wav', sourceFrames: 90, mimeType: 'audio/wav', libraryAudioId: libraryId } },
+      linkEditorV6LibraryAsset: async (projectId, category, libraryId) => { calls.push(['link-object', projectId, category, libraryId]); return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' } }
     },
     pausePlayback: () => calls.push('pause'),
     publishPlayheadFrame: (frame) => calls.push(['playhead', frame]),
@@ -100,6 +109,7 @@ function createMediaCommandHarness(overrides = {}) {
     persistImportedDocument: async (before, next) => { calls.push(['persist', before, next]); return true },
     setError: (message) => calls.push(['error', message]),
     setVideoPickerOpen: (open) => calls.push(['picker', open]),
+    setAudioPickerOpen: (open) => calls.push(['audio-picker', open]),
     setSelectedElementId: (id) => { selections.elementId = id },
     setSelectedTimelineBlockId: (id) => { selections.blockId = id },
     setActiveTool: (tool) => { selections.tool = tool },
@@ -714,7 +724,7 @@ test('comandos da tela importam imagem pelo projeto mais recente antes de seleci
   await commands.importImage('object')
 
   assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
-    'track', 'pause', ['image-use-case', 'object', 42], ['import-image', 'object'], ['load-latest', 'project']
+    'track', 'pause', ['image-use-case', 'object', 42], ['import-image', 'object'], ['link-object', 'project', 'object', 'image-asset'], ['load-latest', 'project']
   ])
   const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
   assert.equal(persisted[1], source)
@@ -743,12 +753,15 @@ test('comandos da tela vinculam vídeo da biblioteca, salvam antes de selecionar
   assert.equal(selections.inspectorOpen, true)
 })
 
-test('comandos da tela importam áudio, persistem e só então selecionam o bloco', async () => {
+test('comandos da tela abrem o seletor de áudio e vinculam o item antes de selecionar o bloco', async () => {
   const { commands, calls, selections, source } = createMediaCommandHarness()
   await commands.importTimelineMedia('audio')
+  assert.deepEqual(calls, ['track', 'pause', ['audio-picker', true]])
+
+  await commands.linkAudioLibraryItem({ id: 'library-audio', name: 'Áudio escolhido' })
 
   assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
-    'track', 'pause', ['media-use-case', 42], ['import-media', 'project', 'audio'], ['load-latest', 'project'], ['playhead', 42]
+    'track', 'pause', ['audio-picker', true], 'track', 'pause', ['media-use-case', 42], ['link-audio', 'project', 'library-audio'], ['load-latest', 'project'], ['playhead', 42], ['audio-picker', false]
   ])
   const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
   assert.equal(persisted[1], source)

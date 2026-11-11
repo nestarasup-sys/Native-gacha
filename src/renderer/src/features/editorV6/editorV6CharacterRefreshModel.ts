@@ -1,7 +1,7 @@
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { fitElementToTrim } from '../../characters/characterGeometry.ts'
 import type { TrimmedImage } from '../../characters/transparentImageTrim.ts'
-import type { EditorV6CharacterRefreshResult } from './characterSnapshotRefresh'
+import type { EditorV6CharacterRefreshResult } from './editorV6CharacterRefreshTypes'
 
 export type EditorV6TimelineSnapshotPruner = (project: EditorV6Document) => EditorV6Document
 

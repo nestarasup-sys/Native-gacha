@@ -1104,3 +1104,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os mesmos exports públicos pelo caminho antigo do hook, identidade e critérios de obsolescência da prévia, chave do renderer baseada nas revisões do modelo/pose, descarte de renderer obsoleto ou duplicado e liberação explícita no dispose. Nenhum estado persistido ou formato do documento mudou. Também foi removida uma condição `if (!element)` duplicada sem efeito adicional.
 
 **Verificação:** 717 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo teste dos exports legados e cobertura existente para descarte concorrente, revisão da pose/modelo e rejeição de prévia obsoleta. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (848 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 130 — planejamento do refresh de snapshots (implementado)
+
+**Objetivo:** separar a decisão pura de quais snapshots de personagem precisam ser reconstruídos em `editorV6CharacterRefreshPlan.ts`, com os contratos do plano/resultados reunidos em `editorV6CharacterRefreshTypes.ts`. `characterSnapshotRefresh.ts` permanece dono do processamento assíncrono e reexporta a API anterior; o hook passa a importar o planejador de seu módulo proprietário.
+
+**Compatibilidade:** preservados agrupamento por assinatura, comparação de revisões de pose/modelo/roupa/cabelo/cabeça extra/olhos, inclusão de estados da cena e da timeline e identificação de personagens ausentes. A geração e aplicação dos snapshots, seus IDs/referências e o documento persistido não mudam. O teste integrado de mídia foi alinhado ao fluxo atual de biblioteca, que vincula imagem/áudio pelo picker antes de persistir.
+
+**Verificação:** 718 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo os cenários de refresh corporal e reexportação legada; 29 testes do fluxo de dados do Editor V6, os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (850 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

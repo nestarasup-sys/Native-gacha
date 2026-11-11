@@ -11,10 +11,8 @@ import {
   editorV6LegacyCharacterCropAssetIds,
   applyEditorV6CharacterRefreshResult
 } from './editorV6CharacterRefreshModel'
-import {
-  planEditorV6CharacterRefresh,
-  renderEditorV6CharacterRefresh
-} from './characterSnapshotRefresh'
+import { planEditorV6CharacterRefresh } from './editorV6CharacterRefreshPlan'
+import { renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 
 type EditorV6CharacterSnapshotRefreshOptions = {
   project: EditorV6Document | null

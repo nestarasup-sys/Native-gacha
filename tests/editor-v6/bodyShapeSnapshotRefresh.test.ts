@@ -5,9 +5,14 @@ import type { FabricatorProject } from '../../src/shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../src/shared/characterRenderAssets'
 import { resolveSavedCharacterSource } from '../../src/renderer/src/characters/characterSourceResolver'
 import { EDITOR_V6_FACE_RENDER_VERSION } from '../../src/renderer/src/features/editorV6/faceModeAssets'
-import { planEditorV6CharacterRefresh } from '../../src/renderer/src/features/editorV6/characterSnapshotRefresh'
+import { planEditorV6CharacterRefresh } from '../../src/renderer/src/features/editorV6/editorV6CharacterRefreshPlan'
+import * as legacyRefreshExports from '../../src/renderer/src/features/editorV6/characterSnapshotRefresh'
 
 describe('geometria corporal no refresh de snapshots do Editor V6', () => {
+  it('mantém o planejador disponível pelo módulo de refresh legado', () => {
+    expect(legacyRefreshExports.planEditorV6CharacterRefresh).toBe(planEditorV6CharacterRefresh)
+  })
+
   it('descarta fonte de snapshot de outro slot e recarrega o modelo da personagem', async () => {
     const source = { slot: 1, width: 10, height: 10, parts: [], layerOrder: [], hiddenPartIds: [] } as unknown as FabricatorProject
     const staleSource = { ...source, slot: 2 }
