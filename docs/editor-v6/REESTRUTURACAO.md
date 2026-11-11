@@ -656,3 +656,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o baseline ao abrir/trocar de projeto, a suspensão enquanto o ref de arraste está ativo, o salvamento imediato quando a assinatura muda e o debounce de 650 ms para atualizações do mesmo projeto. O hook compartilha o timer usado pelo flush em `useEditorV6DocumentPersistence`; não altera formato, IDs, persistência ou IPC.
 
 **Verificação:** 5 testes cobrem as decisões do autosave; com 2 testes da guarda de criação e 16 regressões de persistência, 23 testes passaram. `npm run typecheck`, `npm run audit:architecture` (791 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 74 — coordenação da aparência de personagem (implementado e verificado)
+
+**Objetivo:** agrupar em `useEditorV6CharacterAppearance.ts` a ligação do preview de rosto, preparação de aparência/pose e comandos de transformação. `EditorV6Page.tsx` fornece a seleção atual, as referências do canvas e os comandos de documento.
+
+**Compatibilidade:** o preview mantém sua cache e validação de trabalho obsoleto; aplicação de aparência e pose continua usando as mesmas preparações, renderizador carregado sob demanda e callbacks de cena/documento. Transformações seguem usando o mesmo ref, frame, atualização do elemento e agendamento/flush do preview. Sem alterações no formato ou persistência do projeto e sem mudanças nos contratos entre áreas.
+
+**Verificação:** 21 testes passaram em 5 arquivos, cobrindo comandos de aparência, preparo de rosto/pose, preview e transformações. `npm run typecheck`, `npm run audit:architecture` (792 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.

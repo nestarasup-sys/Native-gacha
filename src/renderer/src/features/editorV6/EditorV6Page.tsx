@@ -36,19 +36,14 @@ import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6Timeli
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
-import { useEditorV6FacePreview } from './useEditorV6FacePreview'
+import { useEditorV6CharacterAppearance } from './useEditorV6CharacterAppearance'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
 import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { createEditorV6SceneViewModel } from './editorV6SceneViewModel'
-import { faceRenderGeometry } from '../../characters/characterGeometry'
-import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
-import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
-import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
-import { createEditorV6FaceTransformCommands } from './editorV6FaceTransformCommands'
-import { createEditorV6CharacterAppearanceCommands } from './editorV6CharacterAppearanceCommands'
+import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
 import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -335,13 +330,31 @@ export function EditorV6Page() {
     bumpHistoryVersion: () => setHistoryVersion((value) => value + 1),
     getFrame: getEditorV6PlaybackFrame
   })
-  const editorV6FacePreview = useEditorV6FacePreview({
+  const {
+    facePreview: editorV6FacePreview,
+    applyFaceAppearance: applyStudioFaceAppearance,
+    applyPose: applyStudioPose,
+    updateFaceTransform: updateEditorV6FaceTransform,
+    finishFaceTransform: finishEditorV6FaceTransform
+  } = useEditorV6CharacterAppearance({
     activeProject: activeEditorV6,
     activeProjectId: activeEditorV6Id,
     sceneRef,
     transformsRef: editorV6FaceTransformsRef,
     patchProject: patchEditorV6FacePreview,
-    setError
+    setError,
+    selectedElement,
+    selectedCharacter: selectedEditorV6Character,
+    selectedFaceAppearance: selectedEditorV6FaceAppearance,
+    faceBusy: editorV6FaceBusy,
+    setFaceBusy: setEditorV6FaceBusy,
+    poseSourceSnapshot: activePoseSourceSnapshot,
+    changeScene,
+    patchDocument,
+    selectedTimelineBlockId,
+    defaultTransform: defaultStudioEyeTransform,
+    updateElement,
+    getFrame: getEditorV6PlaybackFrame
   })
   const { importImage, importTimelineMedia, linkVideoLibraryItem, linkAudioLibraryItem, selectBackground, linkSharedBackground, linkSharedObject } = createEditorV6MediaCommands({
     activeProject: activeEditorV6,
@@ -435,36 +448,6 @@ export function EditorV6Page() {
     setError
   })
 
-  const { applyFaceAppearance: applyStudioFaceAppearance, applyPose: applyStudioPose } = createEditorV6CharacterAppearanceCommands({
-    activeProject: activeEditorV6,
-    selectedElement,
-    selectedCharacter: selectedEditorV6Character,
-    faceBusy: editorV6FaceBusy,
-    setFaceBusy: setEditorV6FaceBusy,
-    facePreview: editorV6FacePreview,
-    sceneRef,
-    poseSourceSnapshot: activePoseSourceSnapshot,
-    prepareFaceAppearance: (input, renderer) => prepareEditorV6FaceAppearance(input, renderer, {
-      faceModeForElement: editorV6FaceModeForElement,
-      trimCanvas: trimTransparentCanvas,
-      bakeAssets: bakeFaceModeAssets
-    }),
-    preparePoseChange: async (input) => {
-      const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      return prepareEditorV6PoseChange(input, {
-        prepareRenderer: prepareSavedCharacterRenderer,
-        bakeAssets: bakeFaceModeAssets,
-        trimCanvas: trimTransparentCanvas,
-        faceModeForElement: editorV6FaceModeForElement,
-        getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
-        faceRenderGeometry
-      })
-    },
-    changeScene,
-    patchDocument,
-    setError
-  })
-
   const {
     applyBaseExpression: applyEditorV6BaseExpression,
     applyExpressionPreset: applyEditorV6ExpressionPreset,
@@ -485,21 +468,6 @@ export function EditorV6Page() {
     setError,
     loadCatalogItem: loadEditorV6FaceCatalogItem,
     applyAppearance: applyStudioFaceAppearance
-  })
-
-  const { update: updateEditorV6FaceTransform, finish: finishEditorV6FaceTransform } = createEditorV6FaceTransformCommands({
-    activeProject: activeEditorV6,
-    activeProjectId: activeEditorV6Id,
-    selectedElement,
-    selectedCharacter: selectedEditorV6Character,
-    selectedFaceAppearance: selectedEditorV6FaceAppearance,
-    selectedTimelineBlockId,
-    transformsRef: editorV6FaceTransformsRef,
-    defaultTransform: defaultStudioEyeTransform,
-    updateElement,
-    getFrame: getEditorV6PlaybackFrame,
-    schedulePreview: editorV6FacePreview.schedulePreview,
-    flushPreview: editorV6FacePreview.flushPreview
   })
 
   const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
