@@ -576,3 +576,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** exclusão segue bloqueada para faixas travadas e remove também blocos filhos referenciados por `parentBlockId`; divisão continua usando o frame atual e as regras de duração/normalização já existentes; duplicação mantém a função compartilhada e fecha o menu após executar. Cada mutação continua passando por `changeTimeline`, portanto mantém o fluxo de snapshots, normalização e histórico/autosave.
 
 **Verificação:** 3 testes novos cobrem exclusão com bloqueio e filhos, divisão e duplicação. Com regressões de zoom, viewport, view model, teclado e ponteiro, 20 testes passaram em 7 arquivos. `npm run typecheck`, `npm run audit:architecture` (776 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 64 — transação de atualização da timeline (implementado e verificado)
+
+**Objetivo:** centralizar em `editorV6TimelineDocumentUpdate.ts` a aplicação de uma transformação à timeline do documento, sua normalização, atualização de `updatedAt` e remoção de snapshots não mais referenciados. O componente permanece responsável por entregar a transformação ao callback de edição do projeto.
+
+**Compatibilidade:** mantida a ordem `update → normalize → timestamp → prune`, incluindo a retenção de snapshots ainda referenciados por blocos. A alteração continua usando o mesmo `onChange` do projeto e não muda schema, IPC, IDs nem armazenamento.
+
+**Verificação:** 2 testes novos cobrem normalização/immutabilidade, timestamp, remoção de snapshot órfão e retenção de referência viva. Com regressões de comandos de bloco, zoom, viewport, view model, teclado e ponteiro, 22 testes passaram em 8 arquivos. `npm run typecheck`, `npm run audit:architecture` (777 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

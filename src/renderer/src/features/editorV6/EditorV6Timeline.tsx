@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
-import { frameTimecode, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
+import { frameTimecode, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelineBlockCommands } from './editorV6TimelineBlockCommands'
+import { applyEditorV6TimelineUpdate } from './editorV6TimelineDocumentUpdate'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
@@ -56,7 +56,7 @@ export function EditorV6Timeline(props: Props) {
   const range = useMemo<[number, number]>(() => getEditorV6TimelineVisibleFrameRange({ scrollLeft: viewport.left, viewportWidth: viewport.width, heading, pixelsPerSecond: pps, durationFrames: timeline.durationFrames }), [viewport, heading, pps, timeline.durationFrames])
 
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {
-    latest.current.onChange((document) => pruneEditorV6TimelineSnapshots({ ...document, timeline: normalizeEditorV6Timeline(update(document.timeline)), updatedAt: new Date().toISOString() }))
+    latest.current.onChange((document) => applyEditorV6TimelineUpdate(document, update, new Date().toISOString()))
   }, [])
   const pointerCommands = useMemo(() => createEditorV6TimelinePointerCommands({
     scrollNode: () => scroll.current,
