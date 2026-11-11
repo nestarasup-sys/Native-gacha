@@ -1,29 +1,24 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
-import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult } from '../../../../shared/editorV6Motion'
+import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
-import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
 import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
 import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
 import { groupEditorV6HairMotionTargets } from './editorV6HairMotionGroups'
-import { createEditorV6HairMotionBundleAssets, type EditorV6SerializedMotionLayerAtlas } from './editorV6HairMotionBundleAssets'
+import { createEditorV6HairMotionBundleAssets } from './editorV6HairMotionBundleAssets'
 import { createEditorV6ExportStageProfiler } from './editorV6ExportStageProfiler'
+import { editorV6HairMotionCanvasDataUrl as canvasDataUrl } from './editorV6HairMotionCanvas'
+import { prepareEditorV6HairMotionTransitions } from './editorV6HairMotionTransitions'
 
 export { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from './editorV6HairMotionTargets'
-
-function canvasDataUrl(canvas: HTMLCanvasElement): string {
-  if (!canvas.width || !canvas.height) throw Error('Uma camada do personagem ficou vazia ao preparar a animação de cabelo.')
-  return canvas.toDataURL('image/png')
-}
 
 /** Build disposable, export-only split character layers from the current saved character/catalog snapshots. */
 export async function prepareEditorV6HairMotionBundle(
@@ -231,81 +226,10 @@ export async function prepareEditorV6HairMotionBundle(
   rawSources.clear()
   if (!rigs.length) throw Error('Nenhum personagem do projeto tem uma camada de cabelo visível para animar.')
 
-  const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
-  const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const exportMotionPlans = editorV6MotionPlans(project).filter(plan => motionBlocks.get(plan.blockId)?.incomingMotion?.key === plan.key)
-  const relevantPlans = selectEditorV6HairlessTransitionBakes(exportMotionPlans, exportOptions, plan => {
-    if (editorV6MotionChangesHairGeometry(plan)) return true
-    return !editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)
+  await prepareEditorV6HairMotionTransitions({
+    project, rigs, characterById, exportOptions, isCancelled, fabricator: window.desktop.fabricator,
+    recordStage, captureTransitionLayers
   })
-  if (relevantPlans.length) {
-    const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
-    // Reuse renderer material/provider caches only within this export's transition batch.
-    const transitionSession = createEditorV6BakeSession(window.desktop.fabricator)
-    const hairBakeBatch = createEditorV6HairBakeBatch<{ result: EditorV6MotionBakeResult; layerCapture: EditorV6SerializedMotionLayerAtlas }>()
-    const preparedTransitions = await mapConcurrentItems(relevantPlans, async (plan) => {
-      if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
-      const character = characterById.get(plan.characterId)
-      if (!character?.customization.hairAppearance) return undefined
-      const fromRig = plan.from.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
-      const toRig = plan.to.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-      if (!fromRig || !toRig) throw Error(`Não foi possível preparar o cabelo durante a troca de pose de ${plan.from.text || character.name}.`)
-      const hairlessCharacter: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
-      const mouthScaleSamples = exportOptions.mouthLoop && plan.samples.some(sample => sample.faceMode === 'talk')
-        ? plan.samples.map(sample => sample.faceMode === 'talk'
-          ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, exportOptions.startFrame, exportOptions.mouthLoopCycleFrames ?? 30)
-          : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0])
-        : undefined
-      const facialMotion = mouthScaleSamples?.some(scale => scale > 1) ? mouthScaleSamples : undefined
-      // Same visual transition may occur several times in a single timeline.
-      // Share only within THIS export's batch; mouth scales depend on absolute
-      // frame and are part of the key. No cross-export reuse is introduced.
-      const bakeKey = editorV6HairBakeContentKey({
-        planKey: plan.key,
-        characterId: character.id,
-        characterRevision: character.updatedAt,
-        source: character.customization,
-        fromCrop: fromRig.sourceCrop,
-        toCrop: toRig.sourceCrop,
-        fromDimensions: [fromRig.outputWidth, fromRig.outputHeight],
-        toDimensions: [toRig.outputWidth, toRig.outputHeight],
-        mouthScaleSamples: facialMotion
-      })
-      const prepared = await hairBakeBatch.run(bakeKey, async () => {
-        let layerCapture: EditorV6SerializedMotionLayerAtlas | undefined
-        const bakeStarted = performance.now()
-        const result = await bakeEditorV6Motion({
-          id: crypto.randomUUID(), plan, character: hairlessCharacter,
-          ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
-        }, window.desktop.fabricator, transitionSession, capture => {
-          // The baker releases its canvases after callback return. Serialize
-          // synchronously before crossing the await boundary.
-          layerCapture = {
-            frames: capture.frames,
-            behindFaceDataUrl: canvasDataUrl(capture.behindFace),
-            faceDataUrl: canvasDataUrl(capture.face),
-            eyesAboveRearHairDataUrl: capture.eyesAboveRearHair ? canvasDataUrl(capture.eyesAboveRearHair) : null,
-            inFrontOfFaceDataUrl: capture.inFrontOfFace ? canvasDataUrl(capture.inFrontOfFace) : null
-          }
-        }, {
-          from: { ...fromRig.sourceCrop, outputWidth: fromRig.outputWidth, outputHeight: fromRig.outputHeight },
-          to: { ...toRig.sourceCrop, outputWidth: toRig.outputWidth, outputHeight: toRig.outputHeight }
-        })
-        recordStage('bakeHairlessMotionTransition', performance.now() - bakeStarted)
-        if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
-        return { result, layerCapture }
-      })
-      if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
-      return { plan, ...prepared }
-    }, isCancelled, 2).finally(() => {
-      hairBakeBatch.clear()
-      transitionSession.materials.clear()
-    })
-    for (const transition of preparedTransitions) {
-      if (!transition) continue
-      captureTransitionLayers(transition.plan, transition.result, transition.layerCapture)
-    }
-  }
   const totalDataUrlCharacters = [...surfaces, ...textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
   if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação. Desative o preset experimental ou reduza o número de transições no trecho.')
   const preparationProfile = { totalMilliseconds: performance.now() - preparationStarted,

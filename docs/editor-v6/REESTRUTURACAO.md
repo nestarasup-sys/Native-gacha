@@ -1024,3 +1024,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados filtro por modelo/categoria, cache de detalhes por slot e asset, estados de carregamento, variantes faciais, modos de boca, transform por folha com fallback legado, registro de histórico e finalização do preview.
 
 **Verificação:** 689 testes Vitest passaram em 154 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes visuais do painel para folha/variantes, transforms do ator e estados de carregamento/atualização. Os testes focados do inspector e comandos faciais também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (837 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 120 — preparação dos atlases de transição do cabelo (implementado)
+
+**Objetivo:** mover o filtro e o bake dos atlases sem cabelo para `editorV6HairMotionTransitions.ts`, deixando o preparador principal responsável por montar rigs/superfícies e consolidar o bundle.
+
+**Compatibilidade:** mantidos o recorte pelo intervalo e mudança geométrica, o desvio quando o atlas facial já cobre todos os samples, o uso de snapshots existentes, escalas de boca por frame, deduplicação por conteúdo limitada à exportação, concorrência máxima de dois bakes, serialização síncrona dos canvases antes da liberação e limpeza dos materiais temporários.
+
+**Verificação:** 692 testes Vitest passaram em 155 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para seleção de transições por geometria/atlas facial, serialização dos canvases, modo posterior e limpeza de cache. Os testes de batch de bake e intervalo de alvos também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (839 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
