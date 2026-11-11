@@ -7,7 +7,6 @@ import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, Prepare
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
   changedMotionPixelBounds as changedBounds,
-  normalizedMotionReplacementBounds as normalizedReplacementBounds,
   unionMotionCrops as unionCrop,
   unionMotionPixelBounds as unionBounds,
   type MotionPixelBounds as PixelBounds,
@@ -22,11 +21,12 @@ import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSessi
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
-import { createChangedMotionPixelPatch, createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
+import { createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
 import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
 import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
+import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -166,34 +166,17 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         } finally { comparison.dispose() }
       }
       if (!bounds) throw Error('A animação da boca não alterou pixels do personagem; confira o vínculo da boca aberta no catálogo facial.')
-      const padding = 3
-      const left = Math.max(sourceCrop.left, bounds.left - padding), top = Math.max(sourceCrop.top, bounds.top - padding)
-      const right = Math.min(sourceCrop.left + sourceCrop.width - 1, bounds.right + padding), bottom = Math.min(sourceCrop.top + sourceCrop.height - 1, bounds.bottom + padding)
-      const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-      const count = request.plan.samples.length, gutter = 2
-      const cellWidth = patchWidth + gutter * 2, cellHeight = patchHeight + gutter * 2
-      const layout = chooseMotionAtlasLayout(count, cellWidth, cellHeight, 8192, Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000))
-      if (layout.ratio < 1) throw Error(`A camada facial em resolução nativa precisa de ${layout.pixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
-      const { columns, width: atlasWidth, height: atlasHeight, pixels: atlasPixels } = layout
-      const atlas = document.createElement('canvas'); atlas.width = atlasWidth; atlas.height = atlasHeight
-      const context = atlas.getContext('2d')!
-      const x = (left - sourceCrop.left) / sourceCrop.width, y = (top - sourceCrop.top) / sourceCrop.height
-      const width = patchWidth / sourceCrop.width, height = patchHeight / sourceCrop.height
-      if (x < 0 || y < 0 || x + width > 1.000001 || y + height > 1.000001) throw Error('A região facial não cabe no recorte original do personagem.')
-      const frames: EditorV6MotionFrame[] = []
-      for (const [index, sample] of request.plan.samples.entries()) {
-        const frame = await render(0, sample.faceMode, scales[index] ?? 1)
-        let patchCanvas: HTMLCanvasElement | undefined
-        try {
-          const cellX = index % columns * cellWidth, cellY = Math.floor(index / columns) * cellHeight, sx = cellX + gutter, sy = cellY + gutter
-          patchCanvas = createChangedMotionPixelPatch(frame.canvas, { left, top, right, bottom })
-          context.drawImage(patchCanvas, cellX, cellY)
-          frames.push({ offset: sample.offset, sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x: from.x, y: from.y, width: from.width, height: from.height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite: { x: sx, y: sy, width: patchWidth, height: patchHeight, atlasWidth, atlasHeight }, x, y, width, height, replace: true, replaceBounds: normalizedReplacementBounds(bounds, { left, top, right, bottom }) } })
-        } finally { if (patchCanvas) { patchCanvas.width = 1; patchCanvas.height = 1 }; frame.dispose() }
-      }
-      const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
-      atlas.width = atlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
+      const packed = await buildEditorV6LegacyMouthAtlas({
+        sourceCrop,
+        changedBounds: bounds,
+        samples: request.plan.samples,
+        scales,
+        from,
+        key: request.plan.key,
+        maxAtlasPixels: request.maxAtlasPixels,
+        render: (faceMode, mouthScale) => render(0, faceMode, mouthScale)
+      })
+      return { asset: packed.asset, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: packed.motion, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: request.plan.samples.length, atlasPixels: packed.atlasPixels } }
     }
     const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = await resolveMotionBakeEndpointGeometry({
       captureLayerAtlases: Boolean(captureLayerAtlases),

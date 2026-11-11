@@ -848,3 +848,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o limite de 8192 pixels por dimensão e 8 milhões de pixels (ou o limite menor do pedido), gutter e posições das células, coordenadas normalizadas, offsets/rotação/flip dos frames, nome/MIME/snapshot do asset, sequência do ID e mensagens de erro. O bake ainda controla a preparação e liberação dos patches, além de liberar o atlas após serialização; formatos persistidos e contrato de exportação não mudam.
 
 **Verificação:** 639 testes passaram na suíte Vitest oficial (137 arquivos; 1 ignorado), incluindo 4 novos testes de layout/metadados, limite nativo, crop fora do corpo e amostra ausente. `npm run typecheck`, `npm run audit:architecture` (815 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 98 — atlas facial do fallback legado de fala (implementado e verificado)
+
+**Objetivo:** extrair para `motionLegacyMouthAtlas.ts` a aplicação do padding e limite do crop, o layout nativo, a renderização/empacotamento das amostras e a construção dos frames e asset no fallback que usa diferenças de pixels.
+
+**Compatibilidade:** mantidos padding 3, gutter 2, orçamento/dimensão máxima, offsets e escalas amostradas, retângulos normalizados, transformação do elemento, `replaceBounds`, nome e formato do asset, bem como a mensagem de crop inválido. O callback continua renderizando cada face no bake; o novo módulo garante a liberação de cada frame/patch e do atlas também quando a composição falha. Sem alterações nos dados persistidos ou no contrato de exportação.
+
+**Verificação:** 642 testes passaram na suíte Vitest oficial (138 arquivos; 1 ignorado), incluindo 3 novos testes de padding/layout/metadados, limite nativo e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (816 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
