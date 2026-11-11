@@ -664,3 +664,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o preview mantém sua cache e validação de trabalho obsoleto; aplicação de aparência e pose continua usando as mesmas preparações, renderizador carregado sob demanda e callbacks de cena/documento. Transformações seguem usando o mesmo ref, frame, atualização do elemento e agendamento/flush do preview. Sem alterações no formato ou persistência do projeto e sem mudanças nos contratos entre áreas.
 
 **Verificação:** 21 testes passaram em 5 arquivos, cobrindo comandos de aparência, preparo de rosto/pose, preview e transformações. `npm run typecheck`, `npm run audit:architecture` (792 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 75 — superfície de renderização da exportação (implementado e verificado)
+
+**Objetivo:** mover de `exportWorker.tsx` para `exportWorkerSurface.tsx` a criação da superfície de captura e do token de composição, além da espera por imagens SVG carregadas.
+
+**Compatibilidade:** preservados tamanho/corte da superfície, codificação do token em 24 bits menos significativos primeiro, validação do intervalo do token, cache de origem carregada, espera pela origem SVG esperada e erros/timeout de imagem. O worker continua renderizando as mesmas cenas e enviando os mesmos quadros ao capturador; nenhuma mídia foi exportada.
+
+**Verificação:** 17 testes passaram em 3 arquivos, incluindo os novos casos de codificação do token e sincronização SVG, além das regressões do capturador/worker. `npm run typecheck`, `npm run audit:architecture` (793 arquivos), `npm run build` e `git diff --check` passaram.
