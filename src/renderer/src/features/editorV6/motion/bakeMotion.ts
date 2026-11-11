@@ -19,6 +19,7 @@ import {
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
+import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type CroppedMotionLayers = { behindFace: HTMLCanvasElement; face: HTMLCanvasElement; posteriorHair: HTMLCanvasElement | null; inFrontOfFace: HTMLCanvasElement | null; eyesAboveRearHair: HTMLCanvasElement | null }
@@ -102,25 +103,6 @@ function croppedCanvas(source: HTMLCanvasElement, bounds: Crop): HTMLCanvasEleme
 function isBlinkUnavailable(error: unknown): boolean {
   return error instanceof Error && /Blink precisa|olho fechado correspondente|Selecione olhos do catálogo|assets de Olhos Dev/.test(error.message)
 }
-function cachedProvider(provider: CharacterRenderAssetProvider, sharedOnly = false): CharacterRenderAssetProvider {
-  const cache = new Map<string, Promise<unknown>>()
-  return new Proxy({} as CharacterRenderAssetProvider, { get: (_target, property) => (...args: unknown[]) => {
-    // Session-local immutable read-through memo for one character/source revision.
-    // Include face catalog metadata: expressions are still repainted per frame,
-    // but fetching the same catalog PNG and transform via IPC is redundant.
-    if (sharedOnly && !['loadFabricatorSlot', 'loadFabricatorPose', 'loadHairStyle', 'loadWardrobeSet', 'loadFaceSet', 'listFaceCatalog', 'loadFaceCatalogItem', 'listFaceComponentAssets', 'loadFaceComponentAsset', 'listFaceExpressionPresets', 'loadFaceExpressionPreset'].includes(String(property))) {
-      return (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args)
-    }
-    const key = JSON.stringify([property, args]); let result = cache.get(key)
-    if (!result) {
-      result = (provider[property as keyof CharacterRenderAssetProvider] as (...args: unknown[]) => Promise<unknown>)(...args)
-      cache.set(key, result)
-      void result.catch(() => { if (cache.get(key) === result) cache.delete(key) })
-      while (cache.size > 32) cache.delete(cache.keys().next().value!)
-    }
-    return result
-  } })
-}
 const neutral = (): EditorV6FaceTransform => ({ x: 0, y: 0, width: 100, height: 100, rotation: 0 })
 
 function scaleMouthForExport(face: Awaited<ReturnType<typeof interpolateEditorV6Face>>, factor: number) {
@@ -192,7 +174,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
   const poseHistory = new Set<string>()
   const materials: GachaReusableMaterialCache = new Map()
   return {
-    provider: cachedProvider(provider, true),
+    provider: cacheEditorV6MotionAssetProvider(provider, true),
     materials,
     endpointRenderers,
     hasSeenPose(key) { return poseHistory.has(key) },
@@ -223,7 +205,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
   }
 }
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
-  const began = performance.now(), provider = cachedProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
+  const began = performance.now(), provider = cacheEditorV6MotionAssetProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)
   if (!source) throw Error('O modelo do personagem não está disponível para animar.')
   const resolvePose = createMotionPoseResolver(source, provider)

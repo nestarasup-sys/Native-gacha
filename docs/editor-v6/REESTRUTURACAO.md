@@ -760,3 +760,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** `bakeMotion.ts` continua responsável pelo acesso a canvas e pela preparação dos atlas. Foram mantidos o percurso RGBA e a semente/ordem do fingerprint, o limiar estrito de alpha, o recorte vazio de 1×1, limites inclusivos, padding padrão de 2 pixels e a união de retângulos.
 
 **Verificação:** a suíte Vitest oficial do Editor V6 passou com 595 testes em 126 arquivos e 1 ignorado; os testes focados de pixel e preparo de movimento passaram com 54 testes em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (804 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 87 — cache limitado de leituras de assets no bake de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionAssetProviderCache.ts` o cache session-local do provider usado no preparo do movimento.
+
+**Compatibilidade:** preservados o escopo de métodos compartilháveis, a chave por método e argumentos, o compartilhamento de Promises pendentes, a remoção imediata de falhas e o limite FIFO de 32 entradas. O wrapper continua no processo do worker e não altera canais IPC nem dados persistidos.
+
+**Verificação:** 599 testes passaram na suíte Vitest oficial (127 arquivos; 1 ignorado), incluindo testes de concorrência, rejeição/repetição, limite de cache e bypass de método não compartilhado. `npm run typecheck`, `npm run audit:architecture` (805 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
