@@ -648,3 +648,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o mesmo fluxo de criação/duplicação, mensagens e gravação dos documentos; chamadas repetidas enquanto uma criação está pendente continuam ignoradas e a guarda é liberada também em caso de erro. IDs, formato do projeto, persistência e IPC não mudaram. O teste estrutural de persistência agora verifica exclusão e impressão nos módulos de comando que já são donos desses fluxos.
 
 **Verificação:** 2 testes da guarda passaram; 16 regressões de persistência passaram. `npm run typecheck`, `npm run audit:architecture` (789 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 73 — autosave da projeção de personagem (implementado e verificado)
+
+**Objetivo:** extrair de `EditorV6Page.tsx` o efeito de autosave da projeção do elenco para `useEditorV6ProjectionAutosave.ts`, com as decisões de reset, baseline, skip durante arraste, salvamento imediato e debounce em `editorV6ProjectionAutosaveModel.ts`.
+
+**Compatibilidade:** preservados o baseline ao abrir/trocar de projeto, a suspensão enquanto o ref de arraste está ativo, o salvamento imediato quando a assinatura muda e o debounce de 650 ms para atualizações do mesmo projeto. O hook compartilha o timer usado pelo flush em `useEditorV6DocumentPersistence`; não altera formato, IDs, persistência ou IPC.
+
+**Verificação:** 5 testes cobrem as decisões do autosave; com 2 testes da guarda de criação e 16 regressões de persistência, 23 testes passaram. `npm run typecheck`, `npm run audit:architecture` (791 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.

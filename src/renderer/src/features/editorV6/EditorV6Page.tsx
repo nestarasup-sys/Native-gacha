@@ -60,6 +60,7 @@ import { useEditorV6CharacterSources } from './useEditorV6CharacterSources'
 import { resolveEditorV6CharacterSourceRefresh } from './editorV6CharacterSourceModel'
 import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnapshotRefresh'
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
+import { useEditorV6ProjectionAutosave } from './useEditorV6ProjectionAutosave'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
 import { getEditorV6InspectorSide } from './editorV6InspectorPlacement'
@@ -136,7 +137,6 @@ export function EditorV6Page() {
   const sceneRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<EditorV6StageDrag | null>(null)
   const editorV6FaceTransformsRef = useRef<Record<string, EditorV6FaceTransforms>>({})
-  const expressionSaveSignatureRef = useRef<{ studioId: string; value: string } | null>(null)
   const nextStudioNumber = useRef(1)
   const editorV6SaveTimerRef = useRef<number | null>(null)
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
@@ -290,34 +290,14 @@ export function EditorV6Page() {
   })
   const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => duplicateEditorV6Project(sourceSummary)
 
-  useEffect(() => {
-    if (!activeEditorV6) {
-      expressionSaveSignatureRef.current = null
-      return
-    }
-    if (dragRef.current) return
-    const signature = sceneCharacterProjection.autosaveSignature
-    const previous = expressionSaveSignatureRef.current
-    expressionSaveSignatureRef.current = { studioId: activeEditorV6.id, value: signature }
-    // Loading a persisted project establishes the autosave baseline; opening it
-    // must not mark it dirty and immediately rewrite an otherwise untouched file.
-    if (previous?.studioId !== activeEditorV6.id) return
-    markEditorV6Unsaved()
-    if (previous.value !== signature) {
-      void saveActiveEditorV6Project(activeEditorV6)
-      return
-    }
-    if (editorV6SaveTimerRef.current !== null) window.clearTimeout(editorV6SaveTimerRef.current)
-    const timer = window.setTimeout(() => {
-      if (editorV6SaveTimerRef.current === timer) editorV6SaveTimerRef.current = null
-      void saveActiveEditorV6Project(activeEditorV6)
-    }, 650)
-    editorV6SaveTimerRef.current = timer
-    return () => {
-      window.clearTimeout(timer)
-      if (editorV6SaveTimerRef.current === timer) editorV6SaveTimerRef.current = null
-    }
-  }, [activeEditorV6, markEditorV6Unsaved, saveActiveEditorV6Project, sceneCharacterProjection.autosaveSignature])
+  useEditorV6ProjectionAutosave({
+    project: activeEditorV6,
+    signature: sceneCharacterProjection.autosaveSignature,
+    dragRef,
+    saveTimerRef: editorV6SaveTimerRef,
+    markUnsaved: markEditorV6Unsaved,
+    saveProject: saveActiveEditorV6Project
+  })
 
   const {
     patchDocument,
