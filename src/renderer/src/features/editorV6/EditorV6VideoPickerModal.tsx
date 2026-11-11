@@ -4,6 +4,7 @@ import { Icon } from '../../ui/components/Icon'
 import './editorV6VideoPicker.css'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { BaseVideoDetails } from '../../../../shared/baseVideos'
+import { editorV6VideoPickerEmptyState, filterAndSortEditorV6Videos, type EditorV6VideoPickerSort, type EditorV6VideoPickerTimeline, type EditorV6VideoPickerView } from './editorV6VideoPickerModel'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 
@@ -29,10 +30,10 @@ async function recognizeDuration(item: VideoLibraryItem): Promise<VideoLibraryIt
 export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () => void; onSelect: (item: VideoLibraryItem) => Promise<void> }) {
   const [items, setItems] = useState<VideoLibraryItem[]>([])
   const [details, setDetails] = useState<Record<string, BaseVideoDetails>>({})
-  const [view, setView] = useState<'main' | 'drafts'>('main')
+  const [view, setView] = useState<EditorV6VideoPickerView>('main')
   const [query, setQuery] = useState('')
-  const [timeline, setTimeline] = useState<'all' | BaseVideoDetails['timeline']>('all')
-  const [sort, setSort] = useState<'number' | 'name' | 'duration' | 'newest'>('number')
+  const [timeline, setTimeline] = useState<EditorV6VideoPickerTimeline>('all')
+  const [sort, setSort] = useState<EditorV6VideoPickerSort>('number')
   const [previewId, setPreviewId] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -59,23 +60,8 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose, previewId])
 
-  const visible = useMemo(() => {
-    const search = query.trim().toLocaleLowerCase('pt-BR')
-    return items.filter((item) => {
-      const isDraft = details[item.id]?.videoNumber === undefined
-      return item.available && (view === 'drafts' ? isDraft : !isDraft)
-        && (!search || item.name.toLocaleLowerCase('pt-BR').includes(search)
-          || item.id.toLocaleLowerCase().includes(search)
-          || String(details[item.id]?.videoNumber ?? '').includes(search)
-          || (details[item.id]?.description ?? '').toLocaleLowerCase('pt-BR').includes(search))
-        && (timeline === 'all' || (details[item.id]?.timeline ?? 'unspecified') === timeline)
-    }).sort((a, b) => {
-      if (sort === 'name') return a.name.localeCompare(b.name, 'pt-BR')
-      if (sort === 'duration') return (a.durationFrames ?? 0) - (b.durationFrames ?? 0)
-      if (sort === 'newest' || view === 'drafts') return b.createdAt.localeCompare(a.createdAt)
-      return (details[a.id]?.videoNumber ?? Number.MAX_SAFE_INTEGER) - (details[b.id]?.videoNumber ?? Number.MAX_SAFE_INTEGER)
-    })
-  }, [items, details, query, timeline, sort, view])
+  const visible = useMemo(() => filterAndSortEditorV6Videos(items, details, { view, query, timeline, sort }), [items, details, query, timeline, sort, view])
+  const emptyState = editorV6VideoPickerEmptyState(items, details, view)
   const previewItem = previewId ? visible.find((item) => item.id === previewId) ?? null : null
 
   const addVideo = async () => {
@@ -135,7 +121,7 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
               <button className="v6-picker-thumb" type="button" disabled={busy} onClick={() => setPreviewId(item.id)} aria-label={`Abrir prévia de ${item.name}`}><video src={`gacha-video://library/${item.id}`} muted playsInline preload="metadata" tabIndex={-1} /><span className="v6-picker-play">▶</span><small>{item.durationFrames === null ? '—' : `${(item.durationFrames / 30).toFixed(1)} s`}</small></button>
               <div className="v6-picker-card-info"><div><span className="v6-picker-number">{number === undefined ? 'RASCUNHO' : `VÍDEO ${String(number).padStart(2, '0')}`}</span><strong title={item.name}>{item.name}</strong></div><small>{item.durationFrames === null ? 'Duração pendente' : `${(item.durationFrames / 30).toFixed(2)} s`} · {(item.size / 1024 ** 2).toFixed(1)} MB · ID {item.id.slice(0, 8).toUpperCase()}</small><div className="v6-picker-card-actions"><button type="button" disabled={busy} onClick={() => setPreviewId(item.id)}>▶ Prévia</button><button className="primary" type="button" disabled={busy} onClick={() => void choose(item)}>{busy ? 'Aguarde…' : 'Selecionar'}</button></div></div>
             </article>
-          }) : <div className="v6-picker-empty"><Icon name="frame" /><strong>{items.some((item) => item.available && (view === 'drafts' ? details[item.id]?.videoNumber === undefined : details[item.id]?.videoNumber !== undefined)) ? 'Nenhum resultado para essa busca' : view === 'main' ? 'A Base de vídeos está vazia' : 'Nenhum vídeo nos Rascunhos'}</strong><span>{items.some((item) => item.available && (view === 'drafts' ? details[item.id]?.videoNumber === undefined : details[item.id]?.videoNumber !== undefined)) ? 'Tente outro nome ou ajuste os filtros.' : view === 'main' ? 'Vídeos publicados na Base aparecem aqui. Rascunhos ficam na aba ao lado.' : 'Importe um vídeo para adicioná-lo aos Rascunhos.'}</span></div>}
+          }) : <div className="v6-picker-empty"><Icon name="frame" /><strong>{emptyState.title}</strong><span>{emptyState.hint}</span></div>}
         </div>
       </>}
       {error && previewItem && <p className="v6-library-picker-error" role="alert">{error}</p>}

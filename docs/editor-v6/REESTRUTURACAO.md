@@ -1080,3 +1080,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos flip, `preserveAspectRatio` distinto para personagem e objeto, dimensões e `viewBox` do atlas, bounds locais da máscara de boca, overlay facial, notificações de carregamento e montagem do canvas de exportação.
 
 **Verificação:** 709 testes Vitest passaram em 160 arquivos (1 arquivo e 1 teste ignorados), incluindo 4 testes novos para imagem/flip, atlas animado, máscara/overlay facial e canvas raster. Os testes de assets visíveis da exportação também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (845 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 127 — regras da galeria de vídeos do Editor V6 (implementado)
+
+**Objetivo:** mover filtragem, busca, ordenação e decisão do estado vazio para `editorV6VideoPickerModel.ts`, deixando `EditorV6VideoPickerModal.tsx` consumir um modelo puro.
+
+**Compatibilidade:** preservados disponibilidade do item, distinção entre publicados e rascunhos, busca por nome/ID/número/descrição em pt-BR, filtros de linha do tempo, ordenações, prioridade de data recente em rascunhos e mensagens de vazio/busca sem resultado. Nenhum vínculo, importação ou dado da biblioteca foi alterado.
+
+**Verificação:** 712 testes Vitest passaram em 161 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos do modelo para filtros, ordenações e estados vazios. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (846 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
