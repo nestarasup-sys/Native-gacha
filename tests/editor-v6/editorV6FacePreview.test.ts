@@ -7,7 +7,8 @@ import {
   isCurrentEditorV6FacePreviewTarget,
   type EditorV6FacePreviewJob,
   type PreparedEditorV6FaceRenderer
-} from '../../src/renderer/src/features/editorV6/useEditorV6FacePreview'
+} from '../../src/renderer/src/features/editorV6/editorV6FacePreviewModel'
+import * as legacyFacePreviewExports from '../../src/renderer/src/features/editorV6/useEditorV6FacePreview'
 
 function character(name = 'Teste'): CustomizerCharacter {
   return { name, customization: { modelSlot: 1, poseSlot: null } } as CustomizerCharacter
@@ -22,6 +23,12 @@ function createCache(prepare: (value: CustomizerCharacter) => Promise<PreparedEd
 }
 
 describe('cache da prévia facial do Editor V6', () => {
+  it('mantém os exports do modelo disponíveis pelo hook existente', () => {
+    expect(legacyFacePreviewExports.createEditorV6FaceRendererCache).toBe(createEditorV6FaceRendererCache)
+    expect(legacyFacePreviewExports.editorV6FacePreviewTarget).toBe(editorV6FacePreviewTarget)
+    expect(legacyFacePreviewExports.isCurrentEditorV6FacePreviewTarget).toBe(isCurrentEditorV6FacePreviewTarget)
+  })
+
   it('reutiliza o renderer e descarta a versão anterior quando muda a revisão da pose', async () => {
     const first = renderer()
     const second = renderer()

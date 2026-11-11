@@ -1096,3 +1096,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** itens com duração já salva retornam sem abrir mídia; para itens pendentes, são mantidos protocolo `gacha-video://library`, timeout de 30 segundos, mensagens de erro, validação de 24 horas, arredondamento para cima em 30 fps, IPC `finishImport` e liberação do elemento em `finally`.
 
 **Verificação:** 716 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo 4 testes novos para item já medido, metadados/IPC, falha/valor inválido, timeout e limpeza. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (847 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 129 — modelo e cache da prévia facial (implementado)
+
+**Objetivo:** separar de `useEditorV6FacePreview.ts` a seleção/validação do alvo de publicação e o ciclo de vida do renderer reutilizável para `editorV6FacePreviewModel.ts`. O hook permanece responsável pelo agendamento React, cancelamento e publicação da renderização.
+
+**Compatibilidade:** mantidos os mesmos exports públicos pelo caminho antigo do hook, identidade e critérios de obsolescência da prévia, chave do renderer baseada nas revisões do modelo/pose, descarte de renderer obsoleto ou duplicado e liberação explícita no dispose. Nenhum estado persistido ou formato do documento mudou. Também foi removida uma condição `if (!element)` duplicada sem efeito adicional.
+
+**Verificação:** 717 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo teste dos exports legados e cobertura existente para descarte concorrente, revisão da pose/modelo e rejeição de prévia obsoleta. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (848 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
