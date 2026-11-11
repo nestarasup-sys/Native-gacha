@@ -992,3 +992,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados tamanho do token e da janela, buffer/offset reutilizados, tempos e contagens de readback, retries após detectar imagem antiga, cancelamento/timeouts, captura do mesmo bitmap validado e encerramento da assinatura quando o worker fecha.
 
 **Verificação:** 697 testes Vitest passaram em 156 arquivos (1 ignorado), incluindo um novo caso de fechamento com captura de pintura pendente; os testes do worker também cobrem token stale, retries, cancelamento e os modos `capturePage`/assinatura de pintura. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (833 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real foi iniciada.
+
+### Ciclo 116 — registro IPC e prontidão dos workers (implementado)
+
+**Objetivo:** mover a tabela de workers autorizados, o handshake de prontidão e a retenção limitada dos IDs encerrados para `exportWorkerRegistry.ts`, deixando `exportWorkers.ts` responsável por criar, executar e fechar as janelas.
+
+**Compatibilidade:** mantidos os mesmos canais, restrição ao frame principal, payload associado ao `webContents.id`, rejeição de erros de inicialização, aceitação segura de mensagens tardias após o fechamento e limite de 128 IDs aposentados. O descarte continua removendo os dois handlers IPC.
+
+**Verificação:** 685 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes do registro para autorização do frame principal, prontidão, erro reportado, mensagens tardias e descarte dos handlers. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (834 arquivos), `npm run build` e `git diff --check` passaram. Nenhum projeto real, MP4 ou benchmark de mídia foi executado.

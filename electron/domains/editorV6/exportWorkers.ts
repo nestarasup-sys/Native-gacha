@@ -1,5 +1,5 @@
 import { BrowserWindow, type IpcMain } from 'electron'
-import { editorV6WorkerChannels, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
+import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
@@ -7,24 +7,14 @@ import { restrictRendererResources } from '../../windowResourcePolicy'
 import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6WorkerMediaProtocolHandler, hasEditorV6WorkerMedia } from './exportWorkerMediaProtocol'
 import { captureEditorV6PaintedFrame, createEditorV6PaintFrameCapture, EDITOR_V6_PAINT_TOKEN_SIZE, type EditorV6PaintFrameCapture } from './exportFrameCapture'
+import { createEditorV6WorkerRegistry } from './exportWorkerRegistry'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
 export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; html: string; preload: string; devUrl?: string; mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>; resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' }) {
-  const entries = new Map<number, { payload: EditorV6WorkerPayload; ready: (error?: string) => void }>()
+  const registry = createEditorV6WorkerRegistry(deps.ipcMain)
   const activeWorkers = new Set<() => void>()
-  const retiredWorkers = new Set<number>()
   let disposed = false
-  function entry(event: Electron.IpcMainInvokeEvent) {
-    const found = entries.get(event.sender.id)
-    if (!found || event.senderFrame !== event.sender.mainFrame) throw Error('Renderizador de exportação não autorizado.')
-    return found
-  }
-  deps.ipcMain.handle(editorV6WorkerChannels.payload, (event) => entry(event).payload)
-  deps.ipcMain.handle(editorV6WorkerChannels.ready, (event, error?: string) => {
-    if (retiredWorkers.has(event.sender.id) && event.senderFrame === event.sender.mainFrame) return
-    return entry(event).ready(error)
-  })
   const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal): Promise<EditorV6FrameWorker> => {
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
@@ -47,11 +37,8 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       devUrl: deps.devUrl,
       allowedSchemes: hasWorkerMedia ? ['gacha-editor-media'] : []
     })
-    let resolveReady!: () => void, rejectReady!: (error: Error) => void
-    const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
-    void ready.catch(() => {})
-    entries.set(window.webContents.id, { payload, ready: (error) => error ? rejectReady(Error(error)) : resolveReady() })
     const id = window.webContents.id
+    const registration = registry.register(id, payload)
     let closed = false
     // exportRunner awaits each FFmpeg stdin callback before requesting the next
     // frame from this worker, so this owned buffer can be safely reused.
@@ -62,13 +49,11 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
       if (closed) return
       closed = true
       activeWorkers.delete(close)
-      entries.delete(id)
-      retiredWorkers.add(id)
-      while (retiredWorkers.size > 128) retiredWorkers.delete(retiredWorkers.values().next().value!)
+      registration.retire()
       layeredBitmap = undefined
       paintCapture?.close()
       signal.removeEventListener('abort', close)
-      rejectReady(Error('A janela de exportação foi fechada.'))
+      registration.rejectReady(Error('A janela de exportação foi fechada.'))
       if (!window.isDestroyed()) window.destroy()
     }
     activeWorkers.add(close)
@@ -76,7 +61,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     window.once('closed', close)
     try {
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
-      await waitForExport(ready, signal, 60000, 'preparar renderizador')
+      await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
       if (deps.captureMode === 'paint-event') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
       let nextPaintToken = 0
@@ -148,7 +133,6 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
   return { create, dispose: () => {
     disposed = true
     for (const close of activeWorkers) close()
-    deps.ipcMain.removeHandler(editorV6WorkerChannels.payload)
-    deps.ipcMain.removeHandler(editorV6WorkerChannels.ready)
+    registry.dispose()
   } }
 }
