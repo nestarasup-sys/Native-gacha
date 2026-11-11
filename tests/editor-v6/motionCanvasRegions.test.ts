@@ -39,7 +39,12 @@ function canvasFactory() {
 describe('Editor V6 motion canvas regions', () => {
   it('copies an exact RGBA changed region and extends edge texels into a two-pixel gutter', () => {
     const rgba = new Uint8ClampedArray(3 * 3 * 4)
-    for (let pixel = 0; pixel < 9; pixel++) rgba[pixel * 4] = pixel + 1
+    for (let pixel = 0; pixel < 9; pixel++) {
+      rgba[pixel * 4] = pixel + 1
+      rgba[pixel * 4 + 1] = pixel + 11
+      rgba[pixel * 4 + 2] = pixel + 21
+      rgba[pixel * 4 + 3] = pixel + 31
+    }
     const source = memoryCanvas(3, 3, rgba), targets = canvasFactory()
 
     const patch = createChangedMotionPixelPatch(source.canvas, { left: 0, top: 1, right: 1, bottom: 2 }, targets.create)
@@ -50,7 +55,8 @@ describe('Editor V6 motion canvas regions', () => {
     expect([image.width, image.height]).toEqual([6, 6])
     for (let y = 0; y < 6; y++) for (let x = 0; x < 6; x++) {
       const sourceX = Math.max(0, Math.min(2, x - 2)), sourceY = Math.max(0, Math.min(2, y - 1))
-      expect(image.data[(y * 6 + x) * 4]).toBe(sourceY * 3 + sourceX + 1)
+      const sourcePixel = sourceY * 3 + sourceX, targetOffset = (y * 6 + x) * 4
+      expect([...image.data.slice(targetOffset, targetOffset + 4)]).toEqual([sourcePixel + 1, sourcePixel + 11, sourcePixel + 21, sourcePixel + 31])
     }
     expect(targets.made[0]!.context.putImageData).toHaveBeenCalledWith(image, 0, 0)
   })
