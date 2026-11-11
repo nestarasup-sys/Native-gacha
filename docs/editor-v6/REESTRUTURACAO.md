@@ -920,3 +920,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o texto de erro quando falta uma textura preparada, a seleção do flip usada no caminho da cabeça, o estado/loop/phase por instância, o encadeamento de transforms do canvas, a compensação da superfície deformada e a métrica `hairLayerDrawMs`. A composição continua controlando a ordem das camadas; o worker apenas conecta seus índices e caches ao novo desenhador.
 
 **Verificação:** 679 testes Vitest passaram em 150 arquivos (1 ignorado), incluindo 2 novos testes de coordenadas/transformações, injeção da física e ausência de textura. Os 29 testes do comando Node padrão, `npm run typecheck`, `npm run audit:architecture` (824 arquivos), `npm run build` e `git diff --check` passaram. A execução Vitest ampla foi filtrada para `.ts`/`.tsx`, pois o repositório mantém testes Node `.mjs`/`.cjs` separados; a execução sem filtro mistura os runners e reporta “No test suite found”. Nenhuma exportação de vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 107 — composição das camadas de cabelo por frame de exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportHairSceneComposition.ts` a seleção dos personagens com cabelo animado, a composição de rigs normais e atlas de transição, o remapeamento de geometria/patch facial e o registro dos atlases faciais reutilizados no render de cada frame.
+
+**Compatibilidade:** mantidos o critério de rig ativo para cabelo normal, reação de pose e transições; a escolha entre rig expression-only e atlas de transição; a ordem e a geometria das camadas; os patches faciais normalizados em relação ao crop; o cache de assets faciais entre frames; mensagens de erro e métricas. O worker conserva a preparação dos mapas e do conjunto de personagens rigged no mesmo trecho temporal, mantendo o custo na mesma métrica de resolução/composição facial.
+
+**Verificação:** 682 testes Vitest passaram em 151 arquivos (1 ignorado), incluindo 3 novos testes de frames sem cabelo ativo, cabelo normal e transição com reuso do atlas facial. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (825 arquivos), `npm run build` e `git diff --check` passaram. Foram executados benchmarks sintéticos da timeline já presentes na suíte; não foi feita exportação real de vídeo.

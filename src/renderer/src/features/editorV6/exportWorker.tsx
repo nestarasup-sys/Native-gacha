@@ -3,9 +3,7 @@ import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionInstancePhase, interpolateEditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
-import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
-import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
+import { editorV6HairMotionInstancePhase } from '../../../../shared/editorV6HairMotion'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
@@ -13,6 +11,7 @@ import { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { createEditorV6ExportHairPieceDrawer } from './exportHairPieceDrawing'
+import { createEditorV6ExportHairSceneComposer } from './exportHairSceneComposition'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
@@ -37,7 +36,7 @@ async function initialize() {
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
   const hairMotionPlanIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
-  const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds } = hairMotionPlanIndex
+  const { hairTransitionIndex, hairPoseReactionEnds } = hairMotionPlanIndex
   const { hairRigAtFrame } = createEditorV6ExportHairRigAtFrame(hairMotionPlanIndex)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
@@ -95,6 +94,9 @@ async function initialize() {
     drawHairPiece
   })
   const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
+  const { hasAnimatedHair, compose: composeHairScene } = createEditorV6ExportHairSceneComposer({
+    animation: hairAnimation, planIndex: hairMotionPlanIndex, hairRigAtFrame, hairSourceAssetId, composeHairFrame, composeMotionHairFrame
+  })
   const frameReuse = createEditorV6ExportFrameReuseState()
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
     const timings: EditorV6FrameTimings = {}
@@ -107,13 +109,9 @@ async function initialize() {
       resolvedFrame = frame
     }
     const scene = applyMouthLoop(resolvedRawScene, frame)
-    const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
-      element.motionSprite
-        ? !hairAnimation?.poseReactionOnly && Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
-        : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
-    )
     const framePlan = resolveEditorV6ExportFramePlan({
-      scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds, hasAnimatedHair
+      scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds,
+      hasAnimatedHair: element => hasAnimatedHair(element, frame)
     })
     const { activeLayer, activeHair, key, layerKeys } = framePlan
     timings.sceneResolutionMs = performance.now() - resolutionStarted
@@ -122,7 +120,7 @@ async function initialize() {
     if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
     const faceCompositionStarted = performance.now()
     const originalElements = new Map(scene.elements.map(element => [element.id, element]))
-    const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => hasAnimatedHair(element) ? [element.id] : []) : [])
+    const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => hasAnimatedHair(element, frame) ? [element.id] : []) : [])
     const faceCompositionInput = riggedIds.size
       ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }
       : { ...scene, mediaVideo: undefined }
@@ -137,90 +135,10 @@ async function initialize() {
     // Inserting them into assetsById would retain every evicted PNG for the
     // entire export, causing renderer memory to grow with video duration.
     const { current: renderAssetsById, resolve: resolveFrameAsset } = createEditorV6FrameAssetRegistry(assetsById, composed.assets)
-    let renderScene = composed.scene
-    const hairCompositionStarted = performance.now()
-    const hairDetailKeys = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
-    const hairDetailBefore = Object.fromEntries(hairDetailKeys.map(key => [key, timings[key] ?? 0])) as Record<typeof hairDetailKeys[number], number>
-    const rasterCanvases = new Map<string, HTMLCanvasElement>()
-    if (activeHair) {
-      const animatedElements: typeof composed.scene.elements = []
-      for (const element of composed.scene.elements) {
-        if (!riggedIds.has(element.id)) { animatedElements.push(element); continue }
-        const original = originalElements.get(element.id)
-        if (!original) { animatedElements.push(element); continue }
-        if (original.motionSprite) {
-          const indexed = hairTransitionIndex.get(original.id, frame)
-          const transition = indexed?.transition
-          const transitionFrame = indexed?.atlasFrame
-          const poseSample = indexed?.poseSample
-          if (!transition?.from || !transition.to || !transitionFrame || !poseSample || !transition.atlas) {
-            const expressionPlan = expressionOnlyPlansByElement.get(original.id)?.find(plan => frame > plan.startFrame && frame < plan.endFrame)
-            const resolvedHairRig = expressionPlan ? hairRigAtFrame(original, frame) : undefined
-            const rig = resolvedHairRig?.rig
-            if (!rig) { animatedElements.push(element); continue }
-            rasterCanvases.set(element.id, composeHairFrame(rig, resolvedHairRig.element, frame, timings, metrics))
-            const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
-            const patch = original.mouthPatch
-            const mouthPatch = patch ? {
-              ...patch,
-              x: (rig.sourceCrop.left + patch.x * rig.sourceCrop.width) / rig.outputWidth,
-              y: (rig.sourceCrop.top + patch.y * rig.sourceCrop.height) / rig.outputHeight,
-              width: patch.width * rig.sourceCrop.width / rig.outputWidth,
-              height: patch.height * rig.sourceCrop.height / rig.outputHeight
-            } : undefined
-            animatedElements.push({ ...element, assetId: undefined, motionSprite: undefined, ...geometry, mouthPatch })
-            continue
-          }
-          const rigInterpolationStarted = performance.now()
-          const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
-          timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - rigInterpolationStarted
-          rasterCanvases.set(element.id, composeMotionHairFrame(element.id, rig, original, frame, { atlas: transition.atlas }, transitionFrame, timings, metrics))
-          let mouthPatch: typeof element.mouthPatch = undefined
-          if (transitionFrame.facePatch && transition.atlas.faceAtlasSurfaceId) {
-            const faceSurfaceId = transition.atlas.faceAtlasSurfaceId
-            let faceAsset = assetsById.get(faceSurfaceId)
-            if (!faceAsset) {
-              const dataUrl = hairSurfaceDataById.get(faceSurfaceId)
-              if (!dataUrl) throw Error('A exportação perdeu as expressões faciais da troca de pose.')
-              faceAsset = { id: faceSurfaceId, category: 'character', name: `${element.text || 'Personagem'} · rosto da transição`, mimeType: 'image/png', dataUrl, timelineSnapshot: true }
-              assetsById.set(faceSurfaceId, faceAsset)
-            }
-            // assetsById is a cross-frame cache, but renderAssetsById is rebuilt
-            // for every frame from the base composition. Re-register the cached
-            // face atlas so the patch remains available after the first sample.
-            renderAssetsById.set(faceSurfaceId, faceAsset)
-            mouthPatch = { assetId: faceSurfaceId, ...transitionFrame.facePatch }
-          }
-          // Transition geometry describes the cropped body atlas. Expand it to
-          // the complete artwork so hair outside that crop is not clipped.
-          const crop = transitionFrame.crop
-          const geometryStarted = performance.now()
-          const geometry = expandEditorV6HairCrop({ ...element, ...transitionFrame }, { width: rig.outputWidth, height: rig.outputHeight }, crop)
-          if (mouthPatch) mouthPatch = { ...mouthPatch, x: (crop.left + mouthPatch.x * crop.width) / rig.outputWidth, y: (crop.top + mouthPatch.y * crop.height) / rig.outputHeight, width: mouthPatch.width * crop.width / rig.outputWidth, height: mouthPatch.height * crop.height / rig.outputHeight }
-          timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - geometryStarted
-          animatedElements.push({ ...element, assetId: undefined, motionSprite: undefined, ...geometry, rotation: transitionFrame.rotation, flipX: transitionFrame.flipX, mouthPatch })
-          continue
-        }
-        const sourceAssetId = hairSourceAssetId(original)
-        const rig = sourceAssetId ? hairRigs.get(`${element.id}:${sourceAssetId}`) : undefined
-        if (!rig) { animatedElements.push(element); continue }
-        rasterCanvases.set(element.id, composeHairFrame(rig, original, frame, timings, metrics))
-        const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
-        const patch = original.mouthPatch
-        const mouthPatch = patch ? {
-          ...patch,
-          x: (rig.sourceCrop.left + patch.x * rig.sourceCrop.width) / rig.outputWidth,
-          y: (rig.sourceCrop.top + patch.y * rig.sourceCrop.height) / rig.outputHeight,
-          width: patch.width * rig.sourceCrop.width / rig.outputWidth,
-          height: patch.height * rig.sourceCrop.height / rig.outputHeight
-        } : undefined
-        animatedElements.push({ ...element, ...geometry, assetId: undefined, mouthPatch })
-      }
-      renderScene = { ...composed.scene, elements: animatedElements }
-      timings.hairCompositionMs = performance.now() - hairCompositionStarted
-      const instrumented = hairDetailKeys.reduce((total, key) => total + (timings[key] ?? 0) - hairDetailBefore[key], 0)
-      timings.hairCompositionOtherMs = Math.max(0, timings.hairCompositionMs - instrumented)
-    }
+    const { renderScene, rasterCanvases } = composeHairScene({
+      composedScene: composed.scene, originalElements, frame, activeHair, riggedElementIds: riggedIds, assetsById, renderAssetsById,
+      hairSurfaceDataById, timings, metrics
+    })
     // SceneSurface and the image preloader only need the assets actually
     // referenced by this layer/frame. Previously the whole project catalog was
     // rebuilt and passed to React on every animated-hair frame.
