@@ -21,12 +21,12 @@ import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
+import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
-type CroppedMotionLayers = { behindFace: HTMLCanvasElement; face: HTMLCanvasElement; posteriorHair: HTMLCanvasElement | null; inFrontOfFace: HTMLCanvasElement | null; eyesAboveRearHair: HTMLCanvasElement | null }
 type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; mouthCanvas?: HTMLCanvasElement; mouthCrop?: Crop; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
 type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed?: PixelBounds; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
@@ -37,33 +37,6 @@ export type EditorV6MotionLayerAtlasCapture = {
   posteriorHair: HTMLCanvasElement | null
   inFrontOfFace: HTMLCanvasElement | null
   eyesAboveRearHair: HTMLCanvasElement | null
-}
-function cropPreparedLayer(source: HTMLCanvasElement, layers: PreparedGachaLayerFrame, crop: Crop): HTMLCanvasElement {
-  const canvas = document.createElement('canvas'); canvas.width = crop.width; canvas.height = crop.height
-  const context = canvas.getContext('2d')
-  if (!context) throw Error('Não foi possível preparar uma camada de cabelo durante a pose.')
-  context.translate(-crop.left, -crop.top)
-  context.translate(layers.outputWidth / 2, layers.outputHeight / 2)
-  context.scale(layers.shapeScaleX, layers.shapeScaleY)
-  context.drawImage(source, -layers.width / 2, -layers.height / 2)
-  return canvas
-}
-function cropPreparedLayers(layers: PreparedGachaLayerFrame, crop: Crop): CroppedMotionLayers {
-  return {
-    behindFace: cropPreparedLayer(layers.behindFace, layers, crop),
-    face: cropPreparedLayer(layers.face, layers, crop),
-    posteriorHair: layers.posteriorHair ? cropPreparedLayer(layers.posteriorHair, layers, crop) : null,
-    inFrontOfFace: layers.inFrontOfFace ? cropPreparedLayer(layers.inFrontOfFace, layers, crop) : null,
-    eyesAboveRearHair: layers.eyesAboveRearHair ? cropPreparedLayer(layers.eyesAboveRearHair, layers, crop) : null
-  }
-}
-function disposeCroppedLayers(layers?: CroppedMotionLayers): void {
-  if (!layers) return
-  layers.behindFace.width = layers.behindFace.height = 1
-  layers.face.width = layers.face.height = 1
-  if (layers.posteriorHair) layers.posteriorHair.width = layers.posteriorHair.height = 1
-  if (layers.inFrontOfFace) layers.inFrontOfFace.width = layers.inFrontOfFace.height = 1
-  if (layers.eyesAboveRearHair) layers.eyesAboveRearHair.width = layers.eyesAboveRearHair.height = 1
 }
 /** Store the complete RGBA rectangle and real source pixels as a texture gutter for clean resampling. */
 function changedPixelPatch(source: HTMLCanvasElement, bounds: PixelBounds): HTMLCanvasElement {
@@ -386,7 +359,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
           maximumHeight = Math.max(maximumHeight, frame.crop.height)
           const cropped = document.createElement('canvas'); cropped.width = frame.crop.width; cropped.height = frame.crop.height
           cropped.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
-          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop, ...(frame.layers ? { layers: cropPreparedLayers(frame.layers, frame.crop) } : {}) })
+          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop, ...(frame.layers ? { layers: cropPreparedMotionLayers(frame.layers, frame.crop) } : {}) })
           await prepareFacePatch(index, sample, t, mouthScale, frame)
         } finally { frame.dispose() }
       }
@@ -433,7 +406,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX }
         frames.push(motionFrame)
         if (captureLayerAtlases) {
-          const layers = baked?.layers ?? (frame?.layers ? cropPreparedLayers(frame.layers, crop) : undefined)
+          const layers = baked?.layers ?? (frame?.layers ? cropPreparedMotionLayers(frame.layers, crop) : undefined)
           if (!layers || !behindFaceAtlas || !faceLayerAtlas || !inFrontOfFaceAtlas) throw Error('A preparação do cabelo não capturou as camadas da pose intermediária.')
           const drawLayer = (target: HTMLCanvasElement, source: HTMLCanvasElement | null) => {
             if (!source) return
@@ -452,8 +425,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
             drawLayer(eyesAboveRearHairAtlas, layers.eyesAboveRearHair)
           }
           layerFrames.push({ offset: sample.offset, sprite: motionFrame.sprite, x: motionFrame.x, y: motionFrame.y, width: motionFrame.width, height: motionFrame.height, rotation: motionFrame.rotation, flipX: motionFrame.flipX, crop: { left: crop.left, top: crop.top, width: crop.width, height: crop.height } })
-          if (baked?.layers) disposeCroppedLayers(baked.layers)
-          else if (layers !== baked?.layers) disposeCroppedLayers(layers)
+          if (baked?.layers) disposeCroppedMotionLayers(baked.layers)
+          else if (layers !== baked?.layers) disposeCroppedMotionLayers(layers)
         }
         if (frame) await prepareFacePatch(index, sample, t, mouthScale, frame)
       } finally {
@@ -502,7 +475,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     atlas.width = atlas.height = 1
     return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
   } finally {
-    preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedLayers(layers) })
+    preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedMotionLayers(layers) })
     pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
     if (behindFaceAtlas) behindFaceAtlas.width = behindFaceAtlas.height = 1
     if (faceLayerAtlas) faceLayerAtlas.width = faceLayerAtlas.height = 1

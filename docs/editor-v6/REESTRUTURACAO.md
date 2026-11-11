@@ -792,3 +792,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os campos da assinatura da pose, a serialização exata do personagem/revisão/arte, a promoção LRU em acerto, a contagem de reconstruções após eviction, o reaproveitamento de pose idêntica, o repaint facial por quadro e o ownership de renderers retidos pela sessão. Nenhum formato de projeto ou contrato de exportação foi alterado. O isolamento da suíte Vitest foi ativado porque arquivos com mocks distintos do mesmo módulo interferiam entre si quando executados juntos.
 
 **Verificação:** a suíte Vitest oficial passou com 611 testes em 130 arquivos e 1 ignorado; os 4 novos testes cobrem reutilização por pose, hit e ordenação do cache, reconstrução após eviction, revisão da fonte e descarte temporário. `npm run typecheck`, `npm run audit:architecture` (808 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 91 — recorte e liberação das camadas do rig de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionLayerCrops.ts` o recorte de cada camada renderizada na viewport comum do quadro e a liberação dos canvases temporários após o empacotamento.
+
+**Compatibilidade:** preservados o deslocamento pelo recorte, a centralização pelo tamanho de saída, as escalas da forma, a origem de desenho baseada no tamanho do rig, a lista/ordem de camadas opcionais e o redimensionamento para 1×1 ao liberar memória. A fábrica de canvas é injetável nos testes; em produção continua usando `document.createElement('canvas')`. Sem mudança de pixels, persistência ou contrato de exportação.
+
+**Verificação:** 615 testes passaram na suíte Vitest oficial (131 arquivos; 1 ignorado), incluindo 4 testes novos de transformação geométrica, camadas opcionais, falha de contexto e descarte. `npm run typecheck`, `npm run audit:architecture` (809 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
