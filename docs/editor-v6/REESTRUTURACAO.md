@@ -752,3 +752,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o worker continua resolvendo a cena e o loop de boca como antes. A regra preserva a exclusão do vídeo de fundo da chave do cenário, a assinatura integral dos elementos quando a reação está em repouso e a inclusão do quadro nas chaves durante animação ativa.
 
 **Verificação:** 70 testes passaram em 14 arquivos, cobrindo capturas em camadas, cabelo ativo/inativo, reação após pose, chaves com/sem vídeo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (803 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 86 — análise de pixels e recortes do bake de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionPixelAnalysis.ts` os cálculos puros de retângulos de pixels alterados, recortes por alpha, fingerprint RGBA, limites normalizados de substituição e união de limites/recortes.
+
+**Compatibilidade:** `bakeMotion.ts` continua responsável pelo acesso a canvas e pela preparação dos atlas. Foram mantidos o percurso RGBA e a semente/ordem do fingerprint, o limiar estrito de alpha, o recorte vazio de 1×1, limites inclusivos, padding padrão de 2 pixels e a união de retângulos.
+
+**Verificação:** a suíte Vitest oficial do Editor V6 passou com 595 testes em 126 arquivos e 1 ignorado; os testes focados de pixel e preparo de movimento passaram com 54 testes em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (804 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
