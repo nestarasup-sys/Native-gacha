@@ -22,9 +22,10 @@ import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSessi
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
-import { createChangedMotionPixelPatch, cropMotionCanvas, createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
+import { createChangedMotionPixelPatch, createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
+import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -39,9 +40,6 @@ export type EditorV6MotionLayerAtlasCapture = {
   posteriorHair: HTMLCanvasElement | null
   inFrontOfFace: HTMLCanvasElement | null
   eyesAboveRearHair: HTMLCanvasElement | null
-}
-function isBlinkUnavailable(error: unknown): boolean {
-  return error instanceof Error && /Blink precisa|olho fechado correspondente|Selecione olhos do catálogo|assets de Olhos Dev/.test(error.message)
 }
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
@@ -104,32 +102,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       const scales = request.mouthScaleSamples!
       const baseline = await render(0, from.activeFaceMode, 1, true)
       if (baseline.mouthCanvas && baseline.mouthCrop) {
-        const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
-        let sourceCrop = readMotionCanvasCrop(fullTalk.canvas, false, 0)
-        try {
-          const fullTalkBlink = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, 'talk-blink', { mouthLayer: 'all' })
-          sourceCrop = unionCrop(sourceCrop, readMotionCanvasCrop(fullTalkBlink.canvas, false, 0))
-        } catch (error) { if (!isBlinkUnavailable(error)) throw error }
-        const isolatedBaseline = await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
-        const baseTalkId = crypto.randomUUID()
-        const baseTalkCanvas = cropMotionCanvas(isolatedBaseline.canvas, sourceCrop)
-        const baseTalkDataUrl = baseTalkCanvas.toDataURL('image/png')
-        const mouthlessBaseAssets: NonNullable<EditorV6MotionBakeResult['mouthlessBaseAssets']> = [{
-          faceMode: 'talk', asset: { id: baseTalkId, category: 'character', name: 'Personagem sem boca · fala', mimeType: 'image/png', dataUrl: baseTalkDataUrl, timelineSnapshot: true }
-        }]
-        baseTalkCanvas.width = baseTalkCanvas.height = 1
-        try {
-          const talkBlink = await render(0, 'talk-blink', 1, false, isolatedBaseline.renderer, true)
-          try {
-            const baseTalkBlinkId = crypto.randomUUID()
-            const baseTalkBlinkCanvas = cropMotionCanvas(talkBlink.canvas, sourceCrop)
-            mouthlessBaseAssets.push({ faceMode: 'talk-blink', asset: { id: baseTalkBlinkId, category: 'character', name: 'Personagem sem boca · fala e piscada', mimeType: 'image/png', dataUrl: baseTalkBlinkCanvas.toDataURL('image/png'), timelineSnapshot: true } })
-            baseTalkBlinkCanvas.width = baseTalkBlinkCanvas.height = 1
-          } finally { talkBlink.dispose() }
-        } catch (error) {
-          if (!isBlinkUnavailable(error)) throw error
-          mouthlessBaseAssets.push({ faceMode: 'talk-blink', asset: { id: crypto.randomUUID(), category: 'character', name: 'Personagem sem boca · fala e piscada', mimeType: 'image/png', dataUrl: baseTalkDataUrl, timelineSnapshot: true } })
-        }
+        const { sourceCrop, isolatedBaseline, assets: mouthlessBaseAssets } = await prepareEditorV6MouthlessBaseAssets({ from, baseline, render })
 
         const isolatedPatches: Array<{ canvas: HTMLCanvasElement; crop: Crop }> = []
         let mouthAtlas: HTMLCanvasElement | undefined

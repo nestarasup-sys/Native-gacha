@@ -832,3 +832,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos gutter 2, ordem de empacotamento, offsets e sprites, coordenadas normalizadas, `replaceBounds`, sequência dos IDs, nome/MIME/tipo do asset e limite combinado do atlas facial com o corporal. O callback de captura de camadas e a resposta final de movimento continuam no bake. O novo módulo libera o canvas facial se a composição/serialização falhar; o caminho de sucesso mantém a liberação após captura.
 
 **Verificação:** 632 testes passaram na suíte Vitest oficial (135 arquivos; 1 ignorado), incluindo 3 novos testes de posicionamento/metadados, orçamento nativo e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (813 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 96 — bases faciais sem boca para o ciclo de fala (implementado e verificado)
+
+**Objetivo:** extrair para `motionMouthlessBaseAssets.ts` a união dos crops `talk`/`talk-blink`, a geração dos snapshots sem a boca e o fallback de piscada ausente.
+
+**Compatibilidade:** preservados os argumentos e renderer da captura facial, os IDs e nomes dos assets, as dimensões da região unificada, o fallback que reutiliza a base `talk` para `talk-blink` e a propagação de erros que não indicam asset de piscada ausente. O frame facial isolado continua retornando ao bake para ser reutilizado na montagem do atlas. Os canvases intermediários são liberados após leitura/serialização; frames são descartados conforme seu ownership.
+
+**Verificação:** 635 testes passaram na suíte Vitest oficial (136 arquivos; 1 ignorado), incluindo 3 novos testes de união/serialização, fallback de piscada e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (814 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
