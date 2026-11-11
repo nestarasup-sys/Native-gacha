@@ -584,3 +584,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantida a ordem `update → normalize → timestamp → prune`, incluindo a retenção de snapshots ainda referenciados por blocos. A alteração continua usando o mesmo `onChange` do projeto e não muda schema, IPC, IDs nem armazenamento.
 
 **Verificação:** 2 testes novos cobrem normalização/immutabilidade, timestamp, remoção de snapshot órfão e retenção de referência viva. Com regressões de comandos de bloco, zoom, viewport, view model, teclado e ponteiro, 22 testes passaram em 8 arquivos. `npm run typecheck`, `npm run audit:architecture` (777 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 65 — menu contextual de blocos (implementado e verificado)
+
+**Objetivo:** extrair a renderização do menu contextual para `EditorV6TimelineContextMenu.tsx` e separar em `editorV6TimelineContextMenuModel.ts` o posicionamento e a disponibilidade das ações.
+
+**Compatibilidade:** preservados as classes/ARIA do menu, os deslocamentos e limites de posicionamento, fechar ao clicar fora, seek no início/fim e regras de desabilitação por faixa travada ou cursor fora do bloco. Os handlers seguem usando os comandos de bloco já conectados a `changeTimeline`.
+
+**Verificação:** 3 testes novos cobrem posições nos limites da janela, ações em faixa travada e fronteiras de divisão. Com regressões da transação do documento, comandos de bloco, zoom, viewport, view model, teclado e ponteiro, 25 testes passaram em 9 arquivos. `npm run typecheck`, `npm run audit:architecture` (779 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

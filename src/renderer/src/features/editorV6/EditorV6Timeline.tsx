@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
+import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block } from '../../../../shared/editorV6'
 import { frameTimecode, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelineBlockCommands } from './editorV6TimelineBlockCommands'
 import { applyEditorV6TimelineUpdate } from './editorV6TimelineDocumentUpdate'
+import { EditorV6TimelineContextMenu } from './EditorV6TimelineContextMenu'
+import { getEditorV6TimelineContextMenuPosition, type EditorV6TimelineContextMenuState } from './editorV6TimelineContextMenuModel'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
@@ -33,7 +35,7 @@ export function EditorV6Timeline(props: Props) {
   const [draft, setDraft] = useState<Timeline | null>(null)
   const [guide, setGuide] = useState<number | undefined>()
   const [readout, setReadout] = useState<Block | null>(null)
-  const [menu, setMenu] = useState<{ x: number; y: number; track: Track; block: Block } | null>(null)
+  const [menu, setMenu] = useState<EditorV6TimelineContextMenuState | null>(null)
   const [notice, setNotice] = useState('')
   const scroll = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLElement>(null)
@@ -95,7 +97,10 @@ export function EditorV6Timeline(props: Props) {
   }), [changeTimeline, select])
 
   const { onPointer, onScrub, cancel, movePointer, endPointer } = pointerCommands
-  const onMenu = useCallback<EditorV6TimelineRowsProps['onMenu']>((x, y, track, block) => { if (latest.current.selectedId !== block.id) select(block); setMenu({ x: Math.min(x, window.innerWidth - 195), y: Math.max(8, Math.min(y, window.innerHeight - 225)), track, block }) }, [select])
+  const onMenu = useCallback<EditorV6TimelineRowsProps['onMenu']>((x, y, track, block) => {
+    if (latest.current.selectedId !== block.id) select(block)
+    setMenu({ ...getEditorV6TimelineContextMenuPosition(x, y, window.innerWidth, window.innerHeight), track, block })
+  }, [select])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -162,12 +167,13 @@ export function EditorV6Timeline(props: Props) {
     </div>
     {readout && <div className="v6-drag-readout" role="status">Início {frameTimecode(readout.startFrame)} · Fim {frameTimecode(readout.startFrame + readout.durationFrames)} · Duração {frameTimecode(readout.durationFrames)} <kbd>Esc cancela</kbd></div>}
     {notice && <button type="button" className="v6-timeline-notice" onClick={() => setNotice('')}>{notice} ×</button>}
-    {menu && <div className="v6-timeline-menu" role="menu" style={{ left: menu.x, top: menu.y }}>
-      <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame); setMenu(null) }}>Ir ao início</button>
-      <button type="button" role="menuitem" onClick={() => { latest.current.onSeek(menu.block.startFrame + menu.block.durationFrames); setMenu(null) }}>Ir ao fim</button>
-      <button type="button" role="menuitem" disabled={menu.track.locked} onClick={() => duplicate(menu.block.id)}>Duplicar <kbd>Ctrl+D</kbd></button>
-      <button type="button" role="menuitem" disabled={menu.track.locked || playbackFrame <= menu.block.startFrame || playbackFrame >= menu.block.startFrame + menu.block.durationFrames} onClick={() => split(menu.block.id)}>Dividir no cursor <kbd>Ctrl+K</kbd></button>
-      <button type="button" role="menuitem" disabled={menu.track.locked} onClick={() => remove(menu.block.id)}>Excluir <kbd>Del</kbd></button>
-    </div>}
+    {menu && <EditorV6TimelineContextMenu
+      menu={menu}
+      frame={playbackFrame}
+      onSeekAndClose={(frame) => { latest.current.onSeek(frame); setMenu(null) }}
+      onDuplicate={duplicate}
+      onSplit={split}
+      onRemove={remove}
+    />}
   </section>
 }
