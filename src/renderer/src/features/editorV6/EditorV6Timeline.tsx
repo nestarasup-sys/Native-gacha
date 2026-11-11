@@ -7,7 +7,7 @@ import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
-import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineFollowScroll, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
+import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
 import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
 import { useEditorV6TimelineViewport } from './useEditorV6TimelineViewport'
 
@@ -34,8 +34,6 @@ export function EditorV6Timeline(props: Props) {
   const [readout, setReadout] = useState<Block | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track; block: Block } | null>(null)
   const [notice, setNotice] = useState('')
-  const scroll = useRef<HTMLDivElement>(null)
-  const { viewport, onScroll } = useEditorV6TimelineViewport(scroll)
   const root = useRef<HTMLElement>(null)
   const didDrag = useRef(false)
   const previousZoom = useRef(72)
@@ -43,6 +41,7 @@ export function EditorV6Timeline(props: Props) {
   const settings = useRef({ pps, snap, heading: compact ? 116 : 210 })
   settings.current = { pps, snap, heading: compact ? 116 : 210 }
   const heading = settings.current.heading
+  const { scrollRef: scroll, viewport, onScroll } = useEditorV6TimelineViewport({ playing: props.playing, playbackFrame, pixelsPerSecond: pps, heading })
   const timeline = draft ?? props.document.timeline
   const width = getEditorV6TimelineContentWidth({ viewportWidth: viewport.width, heading, durationFrames: timeline.durationFrames, pixelsPerSecond: pps })
   const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
@@ -111,12 +110,6 @@ export function EditorV6Timeline(props: Props) {
   const { onPointer, onScrub, cancel, movePointer, endPointer } = pointerCommands
   const onMenu = useCallback<EditorV6TimelineRowsProps['onMenu']>((x, y, track, block) => { if (latest.current.selectedId !== block.id) select(block); setMenu({ x: Math.min(x, window.innerWidth - 195), y: Math.max(8, Math.min(y, window.innerHeight - 225)), track, block }) }, [select])
 
-  useEffect(() => {
-    if (!props.playing || !scroll.current) return
-    const node = scroll.current
-    const nextScroll = getEditorV6TimelineFollowScroll({ scrollLeft: node.scrollLeft, clientWidth: node.clientWidth, heading }, pps, playbackFrame)
-    if (nextScroll !== null) node.scrollLeft = nextScroll
-  }, [playbackFrame, props.playing, heading, pps])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const current = latest.current

@@ -552,3 +552,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o viewport inicial de 800 px, o `ResizeObserver` ligado ao elemento de scroll, atualização de `scrollLeft`/`clientWidth` em scroll e resize e a limpeza do observer ao desmontar. Sem mudanças de persistência, documento ou IPC.
 
 **Verificação:** teste unitário valida o mapeamento das métricas DOM para o estado consumido pelo modelo visual. Com regressões de view model, zoom, teclado e ponteiro, 15 testes passaram em 5 arquivos. `npm run typecheck`, `npm run audit:architecture` (774 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 61 — acompanhamento do playhead no hook de viewport (implementado e verificado)
+
+**Objetivo:** concentrar em `useEditorV6TimelineViewport.ts` também a posse do ref de scroll e o efeito de acompanhamento automático do playhead. A tela passa as entradas atuais de reprodução, frame, escala e cabeçalho, sem manipular o scroll diretamente nesse efeito.
+
+**Compatibilidade:** a reprodução continua rolando somente quando o playhead ultrapassa 80% da área ou retorna antes do início visível; o destino permanece centralizado na viewport e limitado a zero. A regra matemática existente segue em `editorV6TimelineViewport.ts` e seus testes continuam cobrindo os limites; observer e listener de scroll permanecem conectados ao mesmo elemento.
+
+**Verificação:** 15 testes passaram em 5 arquivos, cobrindo métricas, decisão de follow, view model, atalhos e interações de ponteiro. `npm run typecheck`, `npm run audit:architecture` (774 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
