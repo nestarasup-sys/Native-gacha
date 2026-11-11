@@ -440,3 +440,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantém a mesma sequência e só executa para um ID de projeto ativo; sem alteração de persistência, histórico salvo, documento, IPC ou biblioteca.
 
 **Verificação:** 2 testes sintéticos passaram; `npm run typecheck`, `npm run audit:architecture` (760 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 47 — navegação para projeto ativo (implementado e verificado)
+
+**Objetivo:** centralizar a transição que sincroniza o projeto destacado na biblioteca com o ID ativo do editor, usada ao abrir projeto existente e após importar.
+
+**Compatibilidade:** a ordem permanece selecionar e depois ativar; criação/duplicação seguem apenas destacando o projeto na biblioteca, sem abri-lo automaticamente. A ref do ID ativo continua sendo atualizada pelo setter existente; carregamento stale-safe e persistência não mudam.
+
+**Verificação:** 3 testes de navegação/sessão passaram; `npm run typecheck`, `npm run audit:architecture` (761 arquivos), `npm run build` e `git diff --check` passaram.
