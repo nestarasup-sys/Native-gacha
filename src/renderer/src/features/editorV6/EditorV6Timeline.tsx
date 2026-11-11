@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { frameTimecode, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
-import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
+import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
+import { createEditorV6TimelineBlockCommands } from './editorV6TimelineBlockCommands'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
@@ -76,14 +77,12 @@ export function EditorV6Timeline(props: Props) {
     latest.current.onSeek(block.startFrame)
     latest.current.onSelect(block)
   }, [])
-  const remove = useCallback((id: string) => {
-    const found = timelineClips(latest.current.document.timeline).find(({ block }) => block.id === id)
-    if (!found || found.track.locked) return
-    changeTimeline((current) => ({ ...current, tracks: current.tracks.map((track) => ({ ...track, blocks: track.blocks.filter((block) => block.id !== id && block.parentBlockId !== id) })) }))
-    setMenu(null)
-  }, [changeTimeline])
-  const split = useCallback((id: string) => { changeTimeline((current) => splitEditorV6Block(current, id, latest.current.frame)); setMenu(null) }, [changeTimeline])
-  const duplicate = useCallback((id: string) => { changeTimeline((current) => duplicateEditorV6Block(current, id)); setMenu(null) }, [changeTimeline])
+  const { remove, split, duplicate } = useMemo(() => createEditorV6TimelineBlockCommands({
+    getTimeline: () => latest.current.document.timeline,
+    getFrame: () => latest.current.frame,
+    changeTimeline,
+    closeMenu: () => setMenu(null)
+  }), [changeTimeline])
   const { onTrack } = useMemo(() => createEditorV6TimelineTrackCommands({
     getDocument: () => latest.current.document,
     getFrame: () => latest.current.frame,

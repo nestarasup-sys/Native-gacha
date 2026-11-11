@@ -568,3 +568,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os limites de 0,25 a 960 px/s, o centro durante zoom, os fatores manuais de 1,25, a centralização do Fit em zero, a alternância para a escala anterior e o cancelamento do estado Fit após zoom manual. O ref permanece compartilhado com viewport e arraste. Nenhum formato de projeto, persistência ou contrato IPC mudou.
 
 **Verificação:** 2 testes novos cobrem zoom centralizado, Fit/restauração, limites e novo Fit após ajuste manual. Com regressões de viewport, view model, teclado e ponteiro, 17 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (775 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 63 — comandos de edição de blocos da timeline (implementado e verificado)
+
+**Objetivo:** mover exclusão, divisão e duplicação de blocos de `EditorV6Timeline.tsx` para `editorV6TimelineBlockCommands.ts`, deixando a tela ligar os comandos ao menu, atalhos e callback de gravação.
+
+**Compatibilidade:** exclusão segue bloqueada para faixas travadas e remove também blocos filhos referenciados por `parentBlockId`; divisão continua usando o frame atual e as regras de duração/normalização já existentes; duplicação mantém a função compartilhada e fecha o menu após executar. Cada mutação continua passando por `changeTimeline`, portanto mantém o fluxo de snapshots, normalização e histórico/autosave.
+
+**Verificação:** 3 testes novos cobrem exclusão com bloqueio e filhos, divisão e duplicação. Com regressões de zoom, viewport, view model, teclado e ponteiro, 20 testes passaram em 7 arquivos. `npm run typecheck`, `npm run audit:architecture` (776 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
