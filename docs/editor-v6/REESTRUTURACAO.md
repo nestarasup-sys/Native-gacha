@@ -976,3 +976,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos IDs e conteúdo de mapas, fase por elemento, seleção de rigs animados, mensagens de erro de decodificação, canvases reutilizáveis e descarte em `pagehide`. O listener de limpeza agora é registrado assim que a fábrica entrega os recursos; ela também libera o renderer se a decodificação inicial falhar antes dessa entrega.
 
 **Verificação:** 692 testes Vitest passaram em 155 arquivos (1 ignorado), incluindo 2 novos testes de carregamento, ownership e descarte idempotente, e falha na decodificação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (831 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo real ou benchmark de mídia foi executado.
+
+### Ciclo 114 — protocolo de mídia das janelas de exportação (implementado e verificado)
+
+**Objetivo:** extrair do criador de workers o registro e a autorização das URLs `gacha-editor-media` para `exportWorkerMediaProtocol.ts`, mantendo explícita a relação entre cada arquivo e o snapshot do projeto.
+
+**Compatibilidade:** preservados a allowlist de hosts, ID do projeto, membership dos vídeos locais/compartilhados, validação de nome/extensão, vínculo do asset compartilhado, retorno 404 para referências inválidas e registro da scheme apenas quando há mídia resolvível. Nenhum formato ou caminho persistido foi alterado.
+
+**Verificação:** 696 testes Vitest passaram em 156 arquivos (1 ignorado), incluindo 4 novos testes sintéticos de rotas válidas, rejeição de referências, falha do resolver e registro condicional. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (832 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real foi iniciada.

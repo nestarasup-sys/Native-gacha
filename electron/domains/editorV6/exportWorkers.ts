@@ -1,4 +1,3 @@
-import { createMediaFileResponse } from '../mediaLibrary/mediaFileResponse'
 import { BrowserWindow, type IpcMain } from 'electron'
 import { editorV6WorkerChannels, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
@@ -7,6 +6,7 @@ import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
 import { captureEditorV6FrameBitmap } from './exportCaptureBitmap'
 import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
+import { createEditorV6WorkerMediaProtocolHandler, hasEditorV6WorkerMedia } from './exportWorkerMediaProtocol'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
@@ -119,24 +119,10 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
     const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
       webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
-    const mediaList = payload.project.media, mediaPath = deps.mediaPath
-    const sharedAssets = payload.project.assets.filter((asset) => asset.libraryAssetId)
-    if ((mediaPath && mediaList?.length) || (deps.resolveLibraryAsset && sharedAssets.length)) window.webContents.session.protocol.handle('gacha-editor-media', async (request) => {
-      try {
-        const url = new URL(request.url), parts = url.pathname.split('/').filter(Boolean)
-        if (!['project', 'library', 'asset'].includes(url.hostname) || parts.length !== 2 || parts[0] !== payload.project.id) return new Response('Not found', { status: 404 })
-        if (url.hostname === 'asset') {
-          if (parts.length !== 2 || !deps.resolveLibraryAsset || !sharedAssets.some((asset) => asset.id === parts[1] && asset.libraryAssetId === parts[1])) return new Response('Not found', { status: 404 })
-          const resolved = await deps.resolveLibraryAsset(parts[1])
-          return await createMediaFileResponse(request, resolved.path, resolved.mimeType)
-        }
-        if (!mediaPath || !mediaList?.length) return new Response('Not found', { status: 404 })
-        const media = url.hostname === 'library' ? mediaList.find((item) => item.libraryVideoId === parts[1]) : mediaList.find((item) => item.fileName === parts[1])
-        if (!media || !/^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(media.fileName)) return new Response('Not found', { status: 404 })
-        const path = await mediaPath(payload.project.id, media.fileName, media.libraryVideoId)
-        return await createMediaFileResponse(request, path, media.mimeType)
-      } catch { return new Response('Not found', { status: 404 }) }
-    })
+    const hasWorkerMedia = hasEditorV6WorkerMedia({ payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
+    if (hasWorkerMedia) window.webContents.session.protocol.handle('gacha-editor-media', createEditorV6WorkerMediaProtocolHandler({
+      payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset
+    }))
     restrictRendererNavigation(window.webContents)
     restrictRendererPermissions(window.webContents.session)
     window.removeMenu()
@@ -146,7 +132,7 @@ export function createEditorV6WorkerFactory(deps: { ipcMain: Pick<IpcMain, 'hand
     restrictRendererResources(window.webContents.session, {
       html: deps.html,
       devUrl: deps.devUrl,
-      allowedSchemes: ((mediaPath && mediaList?.length) || (deps.resolveLibraryAsset && sharedAssets.length)) ? ['gacha-editor-media'] : []
+      allowedSchemes: hasWorkerMedia ? ['gacha-editor-media'] : []
     })
     let resolveReady!: () => void, rejectReady!: (error: Error) => void
     const ready = new Promise<void>((resolve, reject) => { resolveReady = resolve; rejectReady = reject })
