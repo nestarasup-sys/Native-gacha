@@ -10,6 +10,7 @@ import { EditorV6TimelineContextMenu } from './EditorV6TimelineContextMenu'
 import { getEditorV6TimelineContextMenuPosition, type EditorV6TimelineContextMenuState } from './editorV6TimelineContextMenuModel'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
+import { executeEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboardActions'
 import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
 import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
 import { useEditorV6TimelineViewport } from './useEditorV6TimelineViewport'
@@ -118,18 +119,20 @@ export function EditorV6Timeline(props: Props) {
       })
       if (!command) return
       if (command.preventDefault) event.preventDefault()
-      switch (command.action) {
-        case 'cancel': cancel(); setMenu(null); break
-        case 'split': if (current.selectedId) split(current.selectedId); break
-        case 'duplicate': if (current.selectedId) duplicate(current.selectedId); break
-        case 'toggle-snap': setSnap((value) => !value); break
-        case 'zoom-in': zoomIn(); break
-        case 'zoom-out': zoomOut(); break
-        case 'fit': fit(); break
-        case 'seek': current.onSeek(command.frame); break
-        case 'play': current.onPlay(); break
-        case 'remove': remove(command.blockId); break
-      }
+      executeEditorV6TimelineKeyCommand(command, {
+        selectedId: current.selectedId,
+        cancelDrag: cancel,
+        closeMenu: () => setMenu(null),
+        split,
+        duplicate,
+        toggleSnap: () => setSnap((value) => !value),
+        zoomIn,
+        zoomOut,
+        fit,
+        seek: (frame) => current.onSeek(frame),
+        play: () => current.onPlay(),
+        remove
+      })
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
