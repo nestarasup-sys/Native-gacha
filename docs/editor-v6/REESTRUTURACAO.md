@@ -936,3 +936,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o caminho legado sem intervalo, a inclusão do estado inicial, as janelas semiabertas, o hold de poses de personagem até o estado seguinte, os endpoints de transição, a ordem dos alvos, os modos faciais válidos e a validação de um retrato associado a personagens diferentes. Os exports anteriores de `editorV6HairMotionPreparation.ts` permanecem aliases para os consumidores existentes; nenhum documento ou snapshot é alterado.
 
 **Verificação:** 684 testes Vitest passaram em 151 arquivos (1 ignorado), incluindo 2 novos testes de compatibilidade de exports, modos faciais e colisão de IDs. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (826 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.
+
+### Ciclo 109 — agrupamento de alvos por personagem e pose (implementado e verificado)
+
+**Objetivo:** extrair para `editorV6HairMotionGroups.ts` a resolução da pose efetiva e o agrupamento dos alvos da exportação por personagem/pose, deixando a preparação de renderers focada no trabalho visual.
+
+**Compatibilidade:** a pose do estado continua prevalecendo; a pose do Customizador é herdada somente quando o estado não define uma. Poses diferentes seguem em grupos separados, estados sem personagem catalogado ou sem cabelo são ignorados, e o objeto de personagem é copiado com o slot efetivo sem alterar o catálogo. O mapa de personagens é compartilhado com a etapa seguinte, sem cópia de estrutura persistente.
+
+**Verificação:** 686 testes Vitest passaram em 152 arquivos (1 ignorado), incluindo 2 novos testes de herança/override de pose, separação de grupos, filtragem e imutabilidade do catálogo. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (827 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.

@@ -14,7 +14,8 @@ import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6
 import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
 import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
-import { collectEditorV6HairMotionTargets, type EditorV6HairMotionTarget } from './editorV6HairMotionTargets'
+import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
+import { groupEditorV6HairMotionTargets } from './editorV6HairMotionGroups'
 
 export { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from './editorV6HairMotionTargets'
 
@@ -55,17 +56,7 @@ export async function prepareEditorV6HairMotionBundle(
   reportStage('loadCustomizerCharacters', stageStarted)
   if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
   const characterById = new Map(characters.map(character => [character.id, character]))
-  const groups = new Map<string, { character: CustomizerCharacter; targets: EditorV6HairMotionTarget[] }>()
-  for (const target of targets) {
-    const character = characterById.get(target.state.characterId!)
-    if (!character || !character.customization.hairAppearance) continue
-    const poseSlot = target.state.poseSlot === undefined ? character.customization.poseSlot : target.state.poseSlot
-    const characterCopy: CustomizerCharacter = { ...character, customization: { ...character.customization, poseSlot } }
-    const key = `${character.id}:${poseSlot ?? 'base'}`
-    const group = groups.get(key) ?? { character: characterCopy, targets: [] }
-    group.targets.push(target)
-    groups.set(key, group)
-  }
+  const groups = groupEditorV6HairMotionTargets(targets, characterById)
   if (!groups.size) throw Error('Nenhum personagem usado neste projeto tem cabelo selecionado no Customizador.')
 
   const surfaces: EditorV6HairMotionBundle['surfaces'] = []
