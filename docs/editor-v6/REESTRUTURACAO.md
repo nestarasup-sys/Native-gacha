@@ -888,3 +888,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservadas as mesmas condições de fallback quando `characterCanvasWidth` não existe, as escalas obtidas de `editorV6ElementSize`, interpolação de posição e escala, origem pela união dos crops, rotação angular e troca de flip no ponto médio. Os divisores de conversão 19.2/10.8 e a forma do objeto de movimento permanecem iguais.
 
 **Verificação:** 653 testes passaram na suíte Vitest oficial (142 arquivos; 1 ignorado), incluindo 3 novos testes de fallback legado, escala no endpoint alterado e geometria/rotação/flip interpolados. `npm run typecheck`, `npm run audit:architecture` (820 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 103 — preparação de frames recortados do atlas (implementado e verificado)
+
+**Objetivo:** extrair para `motionAtlasSourcePreparation.ts` a renderização das amostras em resolução nativa, o recorte dos buffers, a preparação opcional das camadas e dos patches faciais para o layout compacto.
+
+**Compatibilidade:** preservados o easing, os modos e escalas faciais por amostra, o crop e a ordem das amostras, as dimensões máximas derivadas dos endpoints e quadros, e a criação de camadas somente quando solicitada. A função assume propriedade dos buffers durante a preparação, devolve-os ao bake em sucesso e libera os buffers/patches parciais se uma etapa falhar.
+
+**Verificação:** 657 testes passaram na suíte Vitest oficial (143 arquivos; 1 ignorado), incluindo 4 novos testes de recorte/easing, camadas capturadas, preparação facial e limpeza em erros. `npm run typecheck`, `npm run audit:architecture` (821 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

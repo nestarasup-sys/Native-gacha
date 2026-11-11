@@ -27,6 +27,7 @@ import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
 import { createEditorV6MotionLayerAtlasCapture, type EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 import { createEditorV6MotionLayerAtlases, disposeEditorV6MotionLayerAtlases, writeEditorV6MotionLayerAtlasFrame, type MotionLayerAtlases } from './motionLayerAtlasWriter'
 import { interpolateEditorV6MotionFrameGeometry, resolveEditorV6MotionElementScales } from './motionFrameGeometry'
+import { prepareEditorV6MotionAtlasSources } from './motionAtlasSourcePreparation'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -176,22 +177,19 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (ratio < 1) {
       // The canvas can contain large transparent margins. Keep native cropped samples so
       // the atlas uses visible bounds without rendering the same transition twice.
-      preparedAtlasFrames = []
-      maximumWidth = Math.max(fromCrop.width, toCrop.width)
-      maximumHeight = Math.max(fromCrop.height, toCrop.height)
-      for (const [index, sample] of request.plan.samples.entries()) {
-        const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
-        const frame = await render(t, sample.faceMode, 1, false, undefined, false, Boolean(captureLayerAtlases))
-        try {
-          maximumWidth = Math.max(maximumWidth, frame.crop.width)
-          maximumHeight = Math.max(maximumHeight, frame.crop.height)
-          const cropped = document.createElement('canvas'); cropped.width = frame.crop.width; cropped.height = frame.crop.height
-          cropped.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
-          preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop, ...(frame.layers ? { layers: cropPreparedMotionLayers(frame.layers, frame.crop) } : {}) })
-          const facePatch = await prepareEditorV6MotionFacePatch({ index, faceMode: sample.faceMode, progress: t, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
-          if (facePatch) facePatches.push(facePatch)
-        } finally { frame.dispose() }
-      }
+      const prepared = await prepareEditorV6MotionAtlasSources({
+        samples: request.plan.samples,
+        fromCrop,
+        toCrop,
+        mouthScaleSamples: request.mouthScaleSamples,
+        captureLayers: Boolean(captureLayerAtlases),
+        render: (progress, faceMode, mouthScale, captureLayers) => render(progress, faceMode, mouthScale, false, undefined, false, captureLayers),
+        prepareFacePatch: ({ index, faceMode, progress, mouthScale, frame }) => prepareEditorV6MotionFacePatch({ index, faceMode, progress, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
+      })
+      preparedAtlasFrames = prepared.frames
+      facePatches.push(...prepared.facePatches)
+      maximumWidth = prepared.maximumWidth
+      maximumHeight = prepared.maximumHeight
       layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
       ratio = layout.ratio
     }
