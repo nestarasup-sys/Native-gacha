@@ -688,3 +688,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o worker injeta os mesmos resolvedores de cena, rig e amostra de transição. Mantidos o reaproveitamento da cena bruta do quadro exportado, o fallback para transformações do personagem sem rig, a continuidade do último deslocamento quando o personagem some e o uso da geometria física durante transições, sem derivar movimento do recorte visual do atlas.
 
 **Verificação:** 35 testes passaram em 5 arquivos, incluindo os novos casos de acumulação de caminho, personagem ausente, interpolação de geometria física, busca de mudanças de espelhamento e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (795 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 78 — resolução das amostras de boca na exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportMouthLoop.ts` o índice das amostras de boca por bloco, os aliases entre assets faciais sem boca e o compositor de amostras faladas.
+
+**Compatibilidade:** mantidos o vínculo por ID do personagem e bloco ativo, a seleção entre fala e fala com piscada, o mapeamento do asset base sem boca, o desvio para transições já preparadas e os erros quando falta geometria facial necessária. A função continua recebendo a cena resolvida e devolvendo uma cena imutável.
+
+**Verificação:** 51 testes passaram em 8 arquivos, cobrindo aliases, troca da amostra falada, personagem fora da fala, transição sem patch facial, preparo de amostras, regressões do caminho/rig de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (796 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

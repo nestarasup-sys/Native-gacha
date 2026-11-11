@@ -1,9 +1,7 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
-import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
-import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
-import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
+import { editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
@@ -13,6 +11,7 @@ import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
+import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
 
@@ -300,35 +299,8 @@ async function initialize() {
     metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height
     return canvas
   }
-  const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
-  const mouthlessSourceAssetById = new Map<string, string>()
-  for (const state of mouthLoops?.states ?? []) {
-    for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
-    if (state.sourceAssetId) for (const baseAssetId of Object.values(state.baseAssetIds ?? {})) mouthlessSourceAssetById.set(baseAssetId, state.sourceAssetId)
-  }
-  const hairSourceAssetId = (element: { assetId?: string }) => element.assetId ? mouthlessSourceAssetById.get(element.assetId) ?? element.assetId : undefined
+  const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
   let previous = '', previousBackground = '', previousForeground = ''
-  const applyMouthLoop = (scene: ReturnType<typeof resolveEditorV6SceneAtFrame>, frame: number) => {
-    if (!mouthLoops) return scene
-    const scale = editorV6MouthLoopScaleAtFrame(frame, mouthLoops.startFrame, mouthLoops.cycleFrames)
-    const sampleIndex = Math.round((scale - 1) / (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[2] - 1) * 2)
-    return { ...scene, elements: scene.elements.map((element) => {
-      if (element.kind !== 'character' || !element.characterId) return element
-      const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
-      if (faceMode !== 'talk' && faceMode !== 'talk-blink') return element
-      const block = editorV6ClipAtFrame(project.timeline, element.id, frame)?.block
-      const state = mouthLoopByBlock.get(`${element.id}:${block?.id ?? element.id}`)
-      if (!state || state.characterId !== element.characterId) return element
-      if (element.motionSprite) {
-        if (!element.mouthPatch && scale > 1.000001) throw Error(`A transição de ${element.text || element.characterId} não tem uma camada facial preparada durante a fala; a exportação foi interrompida para preservar a qualidade.`)
-        return element
-      }
-      const motion = state.frames[sampleIndex] ?? state.frames[0]
-      if (!motion?.facePatch) throw Error(`A camada facial de ${element.text || element.characterId} está incompleta; a exportação foi interrompida para evitar um vídeo sem animação de boca.`)
-      const mouthlessAssetId = state.baseAssetIds?.[faceMode]
-      return { ...element, ...(mouthlessAssetId ? { assetId: mouthlessAssetId } : {}), mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
-    }) }
-  }
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
     const timings: EditorV6FrameTimings = {}
     const metrics: EditorV6FrameMetrics = {}
