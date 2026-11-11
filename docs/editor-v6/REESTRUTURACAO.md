@@ -4,7 +4,7 @@
 **Início:** 10/11/2026
 **Base:** `Dev-V2` em `eb248d35`
 **Branch de trabalho:** `codex/editor-v6-refactor`
-**Isolamento:** worktree `GACHA EM C++-V6-REFACTOR`; a branch `Dev-V2` continua intacta.
+**Isolamento:** o trabalho continua na worktree `GACHA EM C++-V6-REFACTOR`, branch `codex/editor-v6-refactor`. Por solicitação explícita do usuário, a pasta principal (`Dev-V2`) foi avançada até `6924d792`; as duas branches estavam alinhadas nesse commit antes deste ciclo.
 
 ## Objetivo
 
@@ -21,7 +21,7 @@ Este documento acompanha a execução. A pesquisa técnica, o mapa de integraç�
 
 - O documento V6 continua sendo a fonte persistida; esta refatoração não altera schema, IDs, caminhos, canais IPC ou formato dos projetos.
 - Preview, timeline e exportação continuam usando os mesmos contratos e regras visuais.
-- Cada ciclo tem escopo pequeno e commit local próprio. Não publicar nem integrar em `Dev-V2` sem solicitação explícita.
+- Cada ciclo tem escopo pequeno e commit local próprio. A integração em `Dev-V2` requer solicitação explícita; a transferência até `6924d792` foi autorizada pelo usuário.
 - Experimentos de desempenho permanecem no harness isolado. Nenhum dado real de projeto entra como fixture de teste.
 - Um resultado de código ou de compilação não é apresentado como benchmark.
 
@@ -1128,3 +1128,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os critérios do caso estático, a ordem e os offsets das amostras, uso das escalas de boca, comparação por fingerprint, normalização/unidade dos patches, assets mouthless, mensagens de erro, modalidade facial, métricas e limites de pixels. Não alterei protocolo de exportação nem conteúdo persistido.
 
 **Verificação:** 724 testes Vitest passaram em 164 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para guarda do caso estático, caminho isolado e fallback legacy. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (852 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 133 — runtime de cabelo do worker de exportação (implementado)
+
+**Objetivo:** concentrar em `exportWorkerHairRuntime.ts` a montagem dos índices de movimento, resolução do rig por quadro, timeline de inércia/flip, composição das camadas de cabelo, overlay da boca e cache da cena bruta por quadro. `exportWorker.tsx` mantém a inicialização do worker, composição facial, renderização React e captura; agora consome o runtime como serviço do ciclo de exportação.
+
+**Compatibilidade:** o cache continua reutilizando a mesma cena bruta nas duas capturas de camada do quadro; o caminho de cabelo segue recebendo a cena sem overlay de boca para física, e a composição de quadro mantém a cena com overlay para renderização e os mesmos assets/snapshots. Nenhum IPC, formato persistido, regra visual ou sequência de renderização foi alterado.
+
+**Verificação:** 725 testes Vitest passaram em 165 arquivos (1 arquivo e 1 teste ignorados), incluindo um novo teste sintético do runtime de cabelo e cache por quadro. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (853 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

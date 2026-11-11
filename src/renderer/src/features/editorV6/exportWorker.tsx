@@ -1,19 +1,12 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
-import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
-import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
-import { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
-import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
-import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
-import { createEditorV6ExportHairPieceDrawer } from './exportHairPieceDrawing'
-import { createEditorV6ExportHairSceneComposer } from './exportHairSceneComposition'
 import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResources'
+import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
 import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
-import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
 
@@ -31,42 +24,8 @@ async function initialize() {
   const assetsById = new Map(projectAssetIndex)
   const hairResources = await createEditorV6ExportWorkerHairResources(hairAnimation)
   window.addEventListener('pagehide', hairResources.dispose, { once: true })
-  const { hairSurfaces, hairSurfaceDataById, hairTextures, hairMotionStates, hairMotionLoops, hairMotionInstancePhases,
-    hairFrameCanvases, motionHairFrameSurfaces, animatedElementIds, warpHairTexture } = hairResources
-  const hairMotionPlanIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
-  const { hairTransitionIndex, hairPoseReactionEnds } = hairMotionPlanIndex
-  const { hairRigAtFrame } = createEditorV6ExportHairRigAtFrame(hairMotionPlanIndex)
-  let resolvedFrame = -1
-  let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
-  const { headXAtFrame, pieceFlipXAtFrame } = createEditorV6HairHeadPathTimeline({
-    animatedElementIds,
-    hasHairAnimation: Boolean(hairAnimation),
-    resolveScene: frame => frame === resolvedFrame && resolvedRawScene
-      // Reuse the raw scene already resolved for this exported frame; mouth
-      // overlays must not change the physical rig used by head-path inertia.
-      ? resolvedRawScene
-      : resolveEditorV6SceneAtFrame(project, frame),
-    getTransitionSample: (elementId, frame) => {
-      const indexed = hairTransitionIndex.get(elementId, frame)
-      return indexed ? { transition: indexed.transition, poseSample: indexed.poseSample } : undefined
-    },
-    hairRigAtFrame
-  })
-  const drawHairPiece = createEditorV6ExportHairPieceDrawer({
-    animation: hairAnimation!, textures: hairTextures, states: hairMotionStates, loops: hairMotionLoops,
-    instancePhases: hairMotionInstancePhases, poseReactionEnds: hairPoseReactionEnds,
-    headXAtFrame, pieceFlipXAtFrame, warpHairTexture
-  })
-  const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
-    hairSurfaces,
-    hairFrameCanvases,
-    motionHairFrameSurfaces,
-    drawHairPiece
-  })
-  const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
-  const { hasAnimatedHair, compose: composeHairScene } = createEditorV6ExportHairSceneComposer({
-    animation: hairAnimation, planIndex: hairMotionPlanIndex, hairRigAtFrame, hairSourceAssetId, composeHairFrame, composeMotionHairFrame
-  })
+  const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops)
+  const { hairPoseReactionEnds, resolveRawSceneAtFrame, applyMouthLoop, hasAnimatedHair, composeHairScene, hairSurfaceDataById } = hairRuntime
   const frameReuse = createEditorV6ExportFrameReuseState()
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
     const timings: EditorV6FrameTimings = {}
@@ -74,11 +33,8 @@ async function initialize() {
     const resolutionStarted = performance.now()
     // Two layered captures of the same frame share one immutable raw timeline
     // resolution. Head-path preparation consumes this same scene where possible.
-    if (resolvedFrame !== frame || !resolvedRawScene) {
-      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame)
-      resolvedFrame = frame
-    }
-    const scene = applyMouthLoop(resolvedRawScene, frame)
+    const rawScene = resolveRawSceneAtFrame(frame)
+    const scene = applyMouthLoop(rawScene, frame)
     const framePlan = resolveEditorV6ExportFramePlan({
       scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds,
       hasAnimatedHair: element => hasAnimatedHair(element, frame)
