@@ -3,6 +3,7 @@ import type { EditorV6Document, EditorV6ProjectSummary } from '../../../../share
 import { loadLegacySceneCatalog } from '../../ui/legacySceneCatalog.ts'
 import { loadEditorV6ProjectCatalog } from './editorV6ProjectCatalog.ts'
 import { startEditorV6ActiveProjectLoad } from './editorV6ActiveProjectLoad'
+import { startEditorV6ProjectCatalogLoad } from './editorV6ProjectCatalogLoad'
 
 const STORAGE_KEY = 'gacha-nymi-editor-v6-catalog-v1'
 
@@ -39,24 +40,20 @@ export function useEditorV6ProjectLibrary({
   const activeLoadGenerationRef = useRef(0)
 
   useEffect(() => {
-    let cancelled = false
-    void loadEditorV6ProjectCatalog({
-      listProjects: () => window.desktop.editorV6.listEditorV6Projects(),
-      getFolder: () => window.desktop.editorV6.getEditorV6Folder(),
-      legacyCatalog: () => loadLegacySceneCatalog(STORAGE_KEY),
-      writeDocument,
-      createTimeline
-    }).then(({ projects, folder, clearLegacyCatalog }) => {
-      if (cancelled) return
-      setProjects(projects)
-      setFolder(folder)
-      if (clearLegacyCatalog) window.localStorage.removeItem(STORAGE_KEY)
-    }).catch((reason: unknown) => {
-      if (!cancelled) setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os projetos do Editor V6.')
-    }).finally(() => {
-      if (!cancelled) setLoading(false)
+    return startEditorV6ProjectCatalogLoad({
+      loadCatalog: () => loadEditorV6ProjectCatalog({
+        listProjects: () => window.desktop.editorV6.listEditorV6Projects(),
+        getFolder: () => window.desktop.editorV6.getEditorV6Folder(),
+        legacyCatalog: () => loadLegacySceneCatalog(STORAGE_KEY),
+        writeDocument,
+        createTimeline
+      }),
+      clearLegacyCatalog: () => window.localStorage.removeItem(STORAGE_KEY),
+      setProjects,
+      setFolder,
+      setLoading,
+      setError
     })
-    return () => { cancelled = true }
   }, [createTimeline, setError, setFolder, setLoading, setProjects, writeDocument])
 
   useEffect(() => {

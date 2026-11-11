@@ -456,3 +456,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados carregamento do documento mais recente selecionado, limpeza e playhead zero sem projeto, mensagens de erro, estado salvo limpo após leitura e descarte de resposta supersedida. Nenhum contrato IPC ou dado persistido mudou.
 
 **Verificação:** 6 testes de carregamento, navegação e sessão passaram em 3 arquivos; `npm run typecheck`, `npm run audit:architecture` (762 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 49 — bootstrap cancelável do catálogo (implementado e verificado)
+
+**Objetivo:** tirar do hook a publicação do catálogo inicial, a limpeza do loading e o cancelamento após desmontagem; manter o serviço de migração como dono da leitura e gravação dos documentos legados.
+
+**Compatibilidade:** preservados a ordem de publicação, a limpeza do `localStorage` somente após sucesso, a mensagem de falha e a conclusão do estado loading. Respostas de um efeito cancelado não alteram estado nem removem dados legados.
+
+**Verificação:** 9 testes de bootstrap e lifecycle passaram em 4 arquivos; `npm run typecheck`, `npm run audit:architecture` (763 arquivos), `npm run build` e `git diff --check` passaram.
