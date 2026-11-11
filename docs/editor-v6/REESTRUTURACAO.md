@@ -728,3 +728,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a função consome os mesmos índices criados pelo planejador de exportação. Mantidos os limites estritos dos planos de expressão, a prioridade da transição preparada, o fallback asset/pose para expressão e a combinação do rig interpolado com a geometria do atlas.
 
 **Verificação:** 61 testes passaram em 11 arquivos, cobrindo rig direto, expressão em andamento e limite do plano, transição com atlas, índices de movimento, física, deformação/composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (800 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 83 — carregamento e cache de imagens da cena de exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportFrameAssetImageLoader.ts` a criação e decodificação das imagens necessárias à camada/quadro atual, com cache de promises limitado a 32 entradas.
+
+**Compatibilidade:** o worker mantém a mesma seleção de assets antes do carregamento e o loader preserva a ordem, a deduplicação por ID, a remoção da entrada mais antiga e as mensagens distintas de erro para falha de carga ou decodificação.
+
+**Verificação:** 64 testes passaram em 12 arquivos, cobrindo reuso, limite de cache, falhas de carga/decodificação, seleção de assets, rig e composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (801 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

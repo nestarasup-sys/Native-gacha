@@ -14,6 +14,7 @@ import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
+import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -24,6 +25,7 @@ async function initialize() {
   const surface = createEditorV6ExportWorkerSurface(width, height)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
+  const { prepare: prepareFrameAssets } = createEditorV6ExportFrameAssetImageLoader(images)
   const { onLoad: onSvgImageLoad, waitForImage: waitForSvgImage } = createEditorV6SvgImageReadiness()
   // The document catalog is immutable during this worker's lifetime. Keep its
   // composition index separate from the small durable atlas cache.
@@ -270,24 +272,7 @@ async function initialize() {
     // rebuilt and passed to React on every animated-hair frame.
     const renderAssets = selectEditorV6RenderableAssets(renderScene, activeLayer ?? 'all', resolveFrameAsset)
     const assetPreparationStarted = performance.now()
-    for (const asset of renderAssets) {
-      let prepared = images.get(asset.id)
-      if (!prepared) {
-        prepared = new Promise<void>((resolve, reject) => {
-          const image = new Image()
-          image.onerror = () => reject(Error(`Não foi possível preparar ${asset.name}.`))
-          image.onload = () => {
-            void image.decode().then(() => {
-              resolve()
-            }, () => reject(Error(`Não foi possível decodificar ${asset.name}.`)))
-          }
-          image.src = asset.dataUrl
-        })
-        if (images.size >= 32) images.delete(images.keys().next().value!)
-        images.set(asset.id, prepared)
-      }
-      await prepared
-    }
+    await prepareFrameAssets(renderAssets)
     timings.assetPreparationMs = performance.now() - assetPreparationStarted
     const reactCommitStarted = performance.now()
     flushSync(() => root.render(<SceneSurface scene={renderScene} assets={renderAssets} outputWidth={width} outputHeight={height} renderLayer={activeLayer ?? 'all'} onImageLoad={onSvgImageLoad} rasterCanvases={rasterCanvases} />))
