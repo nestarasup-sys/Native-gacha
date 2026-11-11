@@ -2,17 +2,17 @@ import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { hairMotionNeedsWarp, hairMotionPoseReactionIsActive, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { hairMotionPoseReactionIsActive, type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
-import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
+import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -42,6 +42,7 @@ async function initialize() {
   // Kept only for this worker, never across MP4 exports or character edits.
   const staticHairWarpCanvases = new Map<string, HTMLCanvasElement>()
   const hairMeshRenderer = createExportHairMeshRenderer()
+  const { warpHairTexture } = createEditorV6ExportHairTextureWarper({ hairWarpCanvases, staticHairWarpCanvases, hairMeshRenderer })
   const hairFrameCanvases = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
   // One live surface per transitioning actor lets the SVG embed the canvas
   // directly. These surfaces are reused across frames instead of PNG round trips.
@@ -102,57 +103,6 @@ async function initialize() {
     },
     hairRigAtFrame
   })
-  const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number, timings: EditorV6FrameTimings): HTMLCanvasElement => {
-    const clearCanvas = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
-      const started = performance.now()
-      context.clearRect(0, 0, canvas.width, canvas.height)
-      timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - started
-    }
-    const imageWidth = image.naturalWidth
-    const imageHeight = image.naturalHeight
-    const outputWidth = Math.max(1, Math.ceil(imageWidth * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(imageHeight * HAIR_MOTION_MESH_HEIGHT))
-    if (!hairMotionNeedsWarp(state, settings, intensity)) {
-      const ready = staticHairWarpCanvases.get(textureId)
-      if (ready) return ready
-      // Exactly the same Canvas2D draw as the historical static branch.
-      // Static and dynamic surfaces are separate, so drawing another frame
-      // never mutates the pixels already handed to the scene compositor.
-      const canvas = document.createElement('canvas')
-      canvas.width = outputWidth; canvas.height = outputHeight
-      const context = canvas.getContext('2d')
-      if (!context) throw Error('Não foi possível preparar o cabelo estático para a exportação.')
-      clearCanvas(context, canvas)
-      context.imageSmoothingEnabled = true
-      context.imageSmoothingQuality = 'high'
-      context.drawImage(image, 0, 0, imageWidth, imageHeight, imageWidth * .4, imageHeight * .15, imageWidth, imageHeight)
-      staticHairWarpCanvases.set(textureId, canvas)
-      return canvas
-    }
-    let canvas = hairWarpCanvases.get(textureId)
-    if (!canvas) { canvas = document.createElement('canvas'); hairWarpCanvases.set(textureId, canvas) }
-    if (canvas.width !== outputWidth || canvas.height !== outputHeight) { canvas.width = outputWidth; canvas.height = outputHeight }
-    const context = canvas.getContext('2d')
-    if (!context) throw Error('Não foi possível deformar o cabelo durante a exportação.')
-    clearCanvas(context, canvas)
-    context.imageSmoothingEnabled = true
-    context.imageSmoothingQuality = 'high'
-    const previousMeshTimings = hairMeshRenderer.getTimings()
-    const mesh = hairMeshRenderer.render(image, state, settings, intensity, phase)
-    const nextMeshTimings = hairMeshRenderer.getTimings()
-    timings.hairMeshPositionMs = (timings.hairMeshPositionMs ?? 0) + nextMeshTimings.positionMs - previousMeshTimings.positionMs
-    timings.hairMeshUploadMs = (timings.hairMeshUploadMs ?? 0) + nextMeshTimings.uploadMs - previousMeshTimings.uploadMs
-    timings.hairMeshTextureUploadMs = (timings.hairMeshTextureUploadMs ?? 0) + nextMeshTimings.textureUploadMs - previousMeshTimings.textureUploadMs
-    timings.hairMeshDrawMs = (timings.hairMeshDrawMs ?? 0) + nextMeshTimings.drawMs - previousMeshTimings.drawMs
-    timings.hairMeshContextCheckMs = (timings.hairMeshContextCheckMs ?? 0) + nextMeshTimings.contextCheckMs - previousMeshTimings.contextCheckMs
-    timings.hairMeshStateSetupMs = (timings.hairMeshStateSetupMs ?? 0) + nextMeshTimings.stateSetupMs - previousMeshTimings.stateSetupMs
-    const blitStarted = performance.now()
-    // WebGL's viewport is anchored at the drawing buffer's bottom-left.
-    // Crop that viewport from a grow-only canvas to keep the previous exact
-    // per-texture raster dimensions and avoid rescaling the mesh.
-    context.drawImage(mesh, 0, mesh.height - outputHeight, outputWidth, outputHeight, 0, 0, outputWidth, outputHeight)
-    timings.hairCanvasBlitMs = (timings.hairCanvasBlitMs ?? 0) + performance.now() - blitStarted
-    return canvas
-  }
   const drawHairPiece = (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number, timings: EditorV6FrameTimings) => {
     const motionStateStarted = performance.now()
     const texture = hairTextures.get(piece.textureId)

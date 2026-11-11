@@ -712,3 +712,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o worker mantém a propriedade dos mapas de estado por exportação e injeta presets, fase, caminho da cabeça e relógio. A deformação gráfica e composição de pixels continuam separadas. `hairMotionStateMs` mantém o mesmo intervalo medido, desde a consulta da textura até o fim da simulação.
 
 **Verificação:** 55 testes passaram em 9 arquivos, cobrindo avanço e busca para trás, cache de ciclo, reação apenas em `rearHair:`, regra posterior-only, deformação/composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (798 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 81 — deformação estática e animada de texturas de cabelo (implementado e verificado)
+
+**Objetivo:** extrair para `exportHairTextureWarper.ts` a escolha entre o canvas estático acolchoado e a deformação WebGL, seus caches e o recorte/blit da viewport para o tamanho original da textura.
+
+**Compatibilidade:** o renderizador WebGL permanece propriedade do worker e é injetado no warper. Preservados dimensões, offsets da textura estática, qualidade de suavização, reutilização separada dos dois canvases, contadores de tempo, recorte do buffer WebGL e mensagens de falha de contexto.
+
+**Verificação:** 58 testes passaram em 10 arquivos, cobrindo cache estático, recorte exato da saída WebGL, acumulação dos tempos, falha de contexto, simulação física, composição raster e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (799 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
