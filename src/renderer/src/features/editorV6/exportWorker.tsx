@@ -3,7 +3,7 @@ import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
+import { editorV6HairMotionInstancePhase, interpolateEditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
@@ -12,7 +12,7 @@ import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanI
 import { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
-import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
+import { createEditorV6ExportHairPieceDrawer } from './exportHairPieceDrawing'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
@@ -83,42 +83,11 @@ async function initialize() {
     },
     hairRigAtFrame
   })
-  const drawHairPiece = (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number, timings: EditorV6FrameTimings) => {
-    const motionStateStarted = performance.now()
-    const texture = hairTextures.get(piece.textureId)
-    if (!texture) throw Error('A exportação perdeu uma imagem do cabelo preparado.')
-    const headAtFrame = (sample: number) => editorV6HairMotionLayerHeadPosition(headXAtFrame(element.id, sample), pieceFlipXAtFrame(element.id, piece.id, sample, piece.flipX))
-    const { state, settings, phase, intensity } = prepareEditorV6ExportHairPieceMotion({
-      animation: hairAnimation!, elementId: element.id, piece, frame,
-      poseReactionEnds: hairPoseReactionEnds.get(element.id) ?? [],
-      motionStateStarted,
-      states: hairMotionStates,
-      loops: hairMotionLoops,
-      instancePhases: hairMotionInstancePhases,
-      headAtFrame,
-      timings
-    })
-    const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, phase, timings)
-    const layerDrawStarted = performance.now()
-    context.save()
-    context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
-    context.scale(rig.shapeScaleX, rig.shapeScaleY)
-    context.translate(-rig.artworkWidth / 2, -rig.artworkHeight / 2)
-    const headCenterX = rig.targetHead.x + rig.targetHead.width / 2
-    const headCenterY = rig.targetHead.y + rig.targetHead.height / 2
-    context.translate(headCenterX, headCenterY)
-    context.rotate(rig.targetHead.rotation * Math.PI / 180)
-    context.translate(piece.x, piece.y)
-    context.rotate(piece.rotation * Math.PI / 180)
-    context.scale(piece.flipX ? -1 : 1, 1)
-    const drawWidth = piece.width * piece.scaleX
-    const drawHeight = piece.height * piece.scaleY
-    // The padded warp canvas holds the original image at (0.4w, 0.15h).
-    // Center that original image on the same anchor used by the character renderer.
-    context.drawImage(warped, -drawWidth * 0.9, -drawHeight * 0.65, drawWidth * 1.8, drawHeight * 1.3)
-    context.restore()
-    timings.hairLayerDrawMs = (timings.hairLayerDrawMs ?? 0) + performance.now() - layerDrawStarted
-  }
+  const drawHairPiece = createEditorV6ExportHairPieceDrawer({
+    animation: hairAnimation!, textures: hairTextures, states: hairMotionStates, loops: hairMotionLoops,
+    instancePhases: hairMotionInstancePhases, poseReactionEnds: hairPoseReactionEnds,
+    headXAtFrame, pieceFlipXAtFrame, warpHairTexture
+  })
   const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
     hairSurfaces,
     hairFrameCanvases,
