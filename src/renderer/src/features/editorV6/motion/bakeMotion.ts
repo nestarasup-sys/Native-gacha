@@ -25,21 +25,15 @@ import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
 import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
 import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
 import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
+import { createEditorV6MotionLayerAtlasCapture, type EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
+export type { EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; mouthCanvas?: HTMLCanvasElement; mouthCrop?: Crop; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
-export type EditorV6MotionLayerAtlasCapture = {
-  frames: Array<Pick<EditorV6MotionFrame, 'offset' | 'sprite' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX'> & { crop: Omit<Crop, 'fingerprint'>; facePatch?: EditorV6MotionFrame['facePatch'] }>
-  behindFace: HTMLCanvasElement
-  face: HTMLCanvasElement
-  posteriorHair: HTMLCanvasElement | null
-  inFrontOfFace: HTMLCanvasElement | null
-  eyesAboveRearHair: HTMLCanvasElement | null
-}
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cacheEditorV6MotionAssetProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
@@ -279,22 +273,14 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       faceAsset = faceAtlas.faceAsset
       const { faceAssetId, assetId, facePixels } = faceAtlas
       const bodyDataUrl = atlas.toDataURL('image/png')
-      if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
-        const captured = layerFrames.find(item => item.offset === frame.offset)
-        if (!captured) throw Error('A preparação perdeu um quadro da pose sem cabelo.')
-        return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
-      }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null })
+      if (captureLayerAtlases) captureLayerAtlases(createEditorV6MotionLayerAtlasCapture({ frames, layerFrames, behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null }))
       atlas.width = atlas.height = 1
       facePatchAtlas.width = facePatchAtlas.height = 1
       facePatchAtlas = undefined
       return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
     }
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
-    if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
-      const captured = layerFrames.find(item => item.offset === frame.offset)
-      if (!captured) throw Error('A preparação perdeu um quadro da pose sem cabelo.')
-      return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
-    }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null })
+    if (captureLayerAtlases) captureLayerAtlases(createEditorV6MotionLayerAtlasCapture({ frames, layerFrames, behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null }))
     atlas.width = atlas.height = 1
     return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
   } finally {

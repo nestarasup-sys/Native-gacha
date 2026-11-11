@@ -864,3 +864,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os índices/escalas comparados, o fingerprint exigido apenas na última amostra, as mensagens para variante sem resposta e ausência de pixels alterados, a união inclusiva dos limites e a liberação de cada frame comparativo. O crop de origem continua sendo o do baseline; nenhum dado persistido ou contrato de exportação mudou.
 
 **Verificação:** 645 testes passaram na suíte Vitest oficial (139 arquivos; 1 ignorado), incluindo 3 novos testes de união entre escalas, validação por fingerprint e erro sem mudança com descarte. `npm run typecheck`, `npm run audit:architecture` (817 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 100 — contrato de captura das camadas para cabelo (implementado e verificado)
+
+**Objetivo:** mover `EditorV6MotionLayerAtlasCapture` e a combinação dos quadros de movimento com a geometria capturada para `motionLayerAtlasCapture.ts`.
+
+**Compatibilidade:** `bakeMotion.ts` reexporta o mesmo tipo para os consumidores antigos. A preparação de cabelo passou a importar diretamente o contrato, sem depender do módulo de implementação do bake. Mantidos o pareamento por offset, a inclusão condicional de `facePatch`, os nomes/referências dos canvases e a mensagem quando falta a geometria de um quadro.
+
+**Verificação:** 647 testes passaram na suíte Vitest oficial (140 arquivos; 1 ignorado), incluindo 2 novos testes de combinação e erro por quadro ausente. `npm run typecheck`, `npm run audit:architecture` (818 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

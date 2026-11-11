@@ -5,7 +5,7 @@ import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type
 import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import type { EditorV6MotionLayerAtlasCapture } from './motion/bakeMotion'
+import type { EditorV6MotionLayerAtlasCapture } from './motion/motionLayerAtlasCapture'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'

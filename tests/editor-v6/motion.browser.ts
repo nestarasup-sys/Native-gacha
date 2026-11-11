@@ -94,7 +94,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(behindLayerAlpha > 100, 'The serialized hairless body atlas is blank')
   assert(result.metrics.preparedRigs === 9, 'Pose rigs were incorrectly reused')
   assert(reads.loadFabricatorSlot === 1 && reads.loadFabricatorPose === 2, 'Source reads were repeated per sample')
-  let hairlessFrames: import('../../src/renderer/src/features/editorV6/motion/bakeMotion').EditorV6MotionLayerAtlasCapture['frames'] = []
+  let hairlessFrames: import('../../src/renderer/src/features/editorV6/motion/motionLayerAtlasCapture').EditorV6MotionLayerAtlasCapture['frames'] = []
   const originalBounds = { left: 0, top: 0, width: 100, height: 100 }
   await bakeEditorV6Motion({ id: crypto.randomUUID(), plan, character }, provider, undefined, capture => { hairlessFrames = capture.frames }, { from: originalBounds, to: originalBounds })
   assert(hairlessFrames.length === 7 && hairlessFrames.every(frame => Math.abs(frame.width / frame.crop.width - actor.width / originalBounds.width) < 1e-9 && Math.abs(frame.height / frame.crop.height - actor.height / originalBounds.height) < 1e-9), 'The hairless transition scaled its body using its own crop instead of the original character bounds')
