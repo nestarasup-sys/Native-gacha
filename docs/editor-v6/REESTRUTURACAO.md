@@ -984,3 +984,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados a allowlist de hosts, ID do projeto, membership dos vídeos locais/compartilhados, validação de nome/extensão, vínculo do asset compartilhado, retorno 404 para referências inválidas e registro da scheme apenas quando há mídia resolvível. Nenhum formato ou caminho persistido foi alterado.
 
 **Verificação:** 696 testes Vitest passaram em 156 arquivos (1 ignorado), incluindo 4 novos testes sintéticos de rotas válidas, rejeição de referências, falha do resolver e registro condicional. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (832 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real foi iniciada.
+
+### Ciclo 115 — captura do quadro identificado por token de pintura (implementado e verificado)
+
+**Objetivo:** mover para `exportFrameCapture.ts` a captura via `capturePage` com readback/fence de token e a variante por assinatura de pintura do worker, mantendo a fábrica responsável por criar a janela e pedir os quadros.
+
+**Compatibilidade:** preservados tamanho do token e da janela, buffer/offset reutilizados, tempos e contagens de readback, retries após detectar imagem antiga, cancelamento/timeouts, captura do mesmo bitmap validado e encerramento da assinatura quando o worker fecha.
+
+**Verificação:** 697 testes Vitest passaram em 156 arquivos (1 ignorado), incluindo um novo caso de fechamento com captura de pintura pendente; os testes do worker também cobrem token stale, retries, cancelamento e os modos `capturePage`/assinatura de pintura. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (833 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real foi iniciada.

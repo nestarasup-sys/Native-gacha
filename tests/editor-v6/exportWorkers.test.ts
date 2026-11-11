@@ -169,6 +169,29 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('rejects a paint-token capture and ends the subscription when its worker closes', async () => {
+    const { factory, payload, ready } = fixture('paint-event')
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = script.match(/,\s*(\d+)\)\s*$/)
+      if (token) window.paintToken = Number(token[1])
+      contents.paintFrame(state.imageFor(payload.width + 24, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width + 24, height: payload.height })
+      return { reused: false, timings: {} }
+    })
+
+    const frame = worker.frame(18)
+    await vi.waitFor(() => expect(contents.invalidate).toHaveBeenCalled())
+    worker.close()
+
+    await expect(frame).rejects.toThrow('A captura paint foi encerrada.')
+    expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+    factory.dispose()
+  })
+
   it('never returns a stale readback and cancels while waiting for the matching token', async () => {
     const { factory, payload, ready } = fixture()
     const controller = new AbortController()
