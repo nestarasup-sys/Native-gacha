@@ -856,3 +856,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos padding 3, gutter 2, orçamento/dimensão máxima, offsets e escalas amostradas, retângulos normalizados, transformação do elemento, `replaceBounds`, nome e formato do asset, bem como a mensagem de crop inválido. O callback continua renderizando cada face no bake; o novo módulo garante a liberação de cada frame/patch e do atlas também quando a composição falha. Sem alterações nos dados persistidos ou no contrato de exportação.
 
 **Verificação:** 642 testes passaram na suíte Vitest oficial (138 arquivos; 1 ignorado), incluindo 3 novos testes de padding/layout/metadados, limite nativo e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (816 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 99 — detecção das mudanças de boca no fallback legado (implementado e verificado)
+
+**Objetivo:** extrair para `motionLegacyMouthBounds.ts` a leitura do frame de referência, as comparações entre escalas, a união dos pixels alterados e a validação de que a variante aberta respondeu.
+
+**Compatibilidade:** mantidos os índices/escalas comparados, o fingerprint exigido apenas na última amostra, as mensagens para variante sem resposta e ausência de pixels alterados, a união inclusiva dos limites e a liberação de cada frame comparativo. O crop de origem continua sendo o do baseline; nenhum dado persistido ou contrato de exportação mudou.
+
+**Verificação:** 645 testes passaram na suíte Vitest oficial (139 arquivos; 1 ignorado), incluindo 3 novos testes de união entre escalas, validação por fingerprint e erro sem mudança com descarte. `npm run typecheck`, `npm run audit:architecture` (817 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

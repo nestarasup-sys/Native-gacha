@@ -6,10 +6,7 @@ import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEa
 import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
-  changedMotionPixelBounds as changedBounds,
   unionMotionCrops as unionCrop,
-  unionMotionPixelBounds as unionBounds,
-  type MotionPixelBounds as PixelBounds,
   type MotionPixelCrop as Crop
 } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
@@ -27,6 +24,7 @@ import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
 import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
 import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
 import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
+import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -152,23 +150,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
           baseline.dispose(); isolatedBaseline.dispose()
         }
       }
-      const baselineContext = baseline.canvas.getContext('2d', { willReadFrequently: true })!
-      const baselinePixels = new Uint8ClampedArray(baselineContext.getImageData(0, 0, baseline.width, baseline.height).data)
-      const sourceCrop = baseline.crop
-      let bounds: PixelBounds | undefined
-      for (let index = 1; index < scales.length; index++) {
-        const comparison = await render(0, from.activeFaceMode, scales[index], index === scales.length - 1)
-        try {
-          if (index === scales.length - 1 && comparison.crop.fingerprint === sourceCrop.fingerprint) throw Error('A boca aberta não respondeu à ampliação; confira se o personagem tem uma variante de boca aberta editável no catálogo facial.')
-          const pixels = comparison.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, comparison.width, comparison.height).data
-          const changed = changedBounds(baselinePixels, pixels, comparison.width, comparison.height)
-          if (changed) bounds = unionBounds(bounds, changed)
-        } finally { comparison.dispose() }
-      }
-      if (!bounds) throw Error('A animação da boca não alterou pixels do personagem; confira o vínculo da boca aberta no catálogo facial.')
+      const { sourceCrop, changedBounds } = await detectEditorV6LegacyMouthBounds({ baseline, scales, faceMode: from.activeFaceMode, render })
       const packed = await buildEditorV6LegacyMouthAtlas({
         sourceCrop,
-        changedBounds: bounds,
+        changedBounds,
         samples: request.plan.samples,
         scales,
         from,
