@@ -1,16 +1,12 @@
 import { memo, useMemo, useState, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
-import { videoCharacterTrackColor } from '../../../../shared/editorV6'
-import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import type { TrackAction } from './editorV6TimelineTrackCommands'
+import { EditorV6TimelineLane } from './EditorV6TimelineLane'
 import { EditorV6TimelineTrackHeader } from './EditorV6TimelineTrackHeader'
 import {
   createEditorV6TimelineDisplayRows,
   createEditorV6TimelineSortedBlocks,
   createEditorV6TimelineTransitionMap,
-  getEditorV6TimelineBlockPixels,
-  getEditorV6TimelineMotionPixels,
-  getEditorV6TimelineVisibleBlocks,
   type EditorV6TimelineDisplayRow
 } from './editorV6TimelineRowsModel'
 
@@ -40,25 +36,20 @@ export const EditorV6TimelineRows = memo(function EditorV6TimelineRows({ timelin
     const { key, track, backgroundLane } = row
     return <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${!backgroundLane && track.collapsed ? ' collapsed' : ''}`} key={key} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
     <EditorV6TimelineTrackHeader row={row} rows={displayRows} renameId={renameId} setRenameId={setRenameId} onTrack={onTrack} />
-    <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
-      {transitions.get(key)!.map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={getEditorV6TimelineMotionPixels(plan, pps)} />)}
-      {getEditorV6TimelineVisibleBlocks(sortedTracks.get(key)!, range).map((block) => {
-        const characterId = block.state?.characterId ?? block.characterId ?? track.characterId
-        const characterColor = characterId ? characterNameColors?.[characterId] ?? videoCharacterTrackColor(characterId) : undefined
-        const pixels = getEditorV6TimelineBlockPixels(block, pps)
-        return <div key={block.id}
-        className={`editor-v6-timeline-block kind-${backgroundLane ? 'background' : track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
-        style={{ ...pixels, ...(characterColor ? { borderColor: characterColor, background: `linear-gradient(180deg, ${characterColor}28, ${characterColor}16)` } : {}) }}
-        tabIndex={0} role="button" aria-label={`${block.label}, ${frameTimecode(block.startFrame)}, duração ${frameTimecode(block.durationFrames)}`}
-        title={`${block.label}\nInício ${frameTimecode(block.startFrame)} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${frameTimecode(block.durationFrames)}`}
-        onPointerDown={(event) => { if (event.button === 0) onPointer(event, track, block, 'move'); else event.stopPropagation() }}
-        onClick={(event) => { event.stopPropagation(); onSelect(block) }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
-        onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY, track, block) }}>
-        <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
-        {(backgroundLane || !track.collapsed) && <small>{frameTimecode(block.durationFrames)}</small>}
-        <i className="editor-v6-timeline-resize" onPointerDown={(event) => onPointer(event, track, block, 'resize')} aria-label="Alterar duração" />
-      </div>
-      })}
-    </div>
+    <EditorV6TimelineLane
+      track={track}
+      backgroundLane={backgroundLane}
+      blocks={sortedTracks.get(key)!}
+      transitions={transitions.get(key)!}
+      characterNameColors={characterNameColors}
+      pixelsPerSecond={pps}
+      width={width}
+      range={range}
+      selectedId={selectedId}
+      onPointer={onPointer}
+      onSelect={onSelect}
+      onMenu={onMenu}
+      onScrub={onScrub}
+    />
   </div>})}</>
 })

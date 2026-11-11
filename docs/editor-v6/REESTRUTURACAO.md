@@ -616,3 +616,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os textos, títulos, estados/ARIA, condição de faixa de fundo, bloqueios de edição e política de movimentação por grupo/faixas fixas. O estado de renomeação segue único na lista e a gravação continua pelo comando `onTrack`.
 
 **Verificação:** com regressões do modelo de linhas, comandos de faixa, blocos e ponteiro, 18 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (782 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 69 — renderização das faixas e blocos (implementado e verificado)
+
+**Objetivo:** extrair o conteúdo visual/interativo de cada faixa para `EditorV6TimelineLane.tsx`: overlays de transição, blocos visíveis, foco/seleção, arraste, resize e menu contextual. `EditorV6TimelineRows.tsx` fica responsável por compor cabeçalho e faixa.
+
+**Compatibilidade:** mantidos classes, estilos, limites e rótulos dos blocos; eventos continuam encaminhados aos mesmos comandos de ponteiro, seleção, menu e scrubbing. A cor do personagem, visibilidade por range e fade de transição usam o mesmo modelo e dados.
+
+**Verificação:** com regressões do modelo de linhas, planos de movimento, comandos de faixa/bloco e ponteiro, 23 testes passaram em 5 arquivos. `npm run typecheck`, `npm run audit:architecture` (783 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
