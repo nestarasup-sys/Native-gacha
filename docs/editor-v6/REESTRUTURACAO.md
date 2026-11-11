@@ -800,3 +800,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o deslocamento pelo recorte, a centralização pelo tamanho de saída, as escalas da forma, a origem de desenho baseada no tamanho do rig, a lista/ordem de camadas opcionais e o redimensionamento para 1×1 ao liberar memória. A fábrica de canvas é injetável nos testes; em produção continua usando `document.createElement('canvas')`. Sem mudança de pixels, persistência ou contrato de exportação.
 
 **Verificação:** 615 testes passaram na suíte Vitest oficial (131 arquivos; 1 ignorado), incluindo 4 testes novos de transformação geométrica, camadas opcionais, falha de contexto e descarte. `npm run typecheck`, `npm run audit:architecture` (809 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 92 — regiões de canvas para patches e recortes faciais (implementado e verificado)
+
+**Objetivo:** extrair para `motionCanvasRegions.ts` a leitura do crop alfa/fingerprint e as operações de canvas para patches RGBA com gutter, patches faciais transparentes e cópias exatas de regiões.
+
+**Compatibilidade:** preservados os limites alfa e o fingerprint delegado à análise de pixels, o limiar padrão 8, a ordem RGBA, o gutter de 2 pixels com extensão dos texels da borda para patches alterados, o gutter transparente para patches faciais, as coordenadas de origem/destino e as mensagens de erro por contexto ausente. A fábrica de canvas é injetável em testes; em produção usa o mesmo canvas DOM. Sem mudança de pixels, persistência ou contrato de exportação.
+
+**Verificação:** 620 testes passaram na suíte Vitest oficial (132 arquivos; 1 ignorado), incluindo 5 novos testes de gutter/bordas, leitura alfa, coordenadas de recorte e falhas de contexto. `npm run typecheck`, `npm run audit:architecture` (810 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
