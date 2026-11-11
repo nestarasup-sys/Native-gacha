@@ -24,15 +24,16 @@ const state = vi.hoisted(() => {
       resize: vi.fn()
     }
   }
-  return { windows: [] as any[], imageFor }
+  return { windows: [] as any[], windowOptions: [] as any[], imageFor }
 })
 vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
   destroyed = false
   paintToken = 0
   webContents: any
-  constructor() {
+  constructor(options: unknown) {
     super()
     const window = this
+    state.windowOptions.push(options)
     this.webContents = Object.assign(new EventEmitter(), {
       setWindowOpenHandler: vi.fn(),
       id: state.windows.length + 1, mainFrame: {}, setFrameRate: vi.fn(), setZoomFactor: vi.fn(),
@@ -48,7 +49,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
         return { reused: false, timings: {} }
       }),
       capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height, window.paintToken)),
-      session: { setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
+      session: { protocol: { handle: vi.fn() }, setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
     })
     state.windows.push(this)
   }
@@ -60,20 +61,41 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event', options: { layeredVideo?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
+function fixture(captureMode?: 'capturePage' | 'paint-event', options: { layeredVideo?: boolean; projectMedia?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture: options.inspectCapture })
-  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: options.layeredVideo ?? false } as unknown as EditorV6WorkerPayload
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture: options.inspectCapture, mediaPath: options.projectMedia ? () => 'project-media.mp4' : undefined })
+  const payload = { project: { media: options.projectMedia ? [{ fileName: '00000000-0000-4000-8000-000000000001.mp4' }] : [], assets: [] }, width: 320, height: 180, layeredVideo: options.layeredVideo ?? false } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
     handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })
   }
   return { factory, payload, ready, handlers }
 }
-beforeEach(() => { state.windows = [] })
+beforeEach(() => { state.windows = []; state.windowOptions = [] })
 
 describe('export worker lifecycle', () => {
+  it('creates an isolated, secured offscreen window and enables project media only for its snapshot', async () => {
+    const { factory, payload, ready } = fixture(undefined, { layeredVideo: true, projectMedia: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const options = state.windowOptions[0] as any
+
+    expect(options).toMatchObject({ show: false, useContentSize: true, width: payload.width + 24, height: payload.height, transparent: true, backgroundColor: '#00000000' })
+    expect(options.webPreferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, preload: 'preload.cjs' })
+    expect(options.webPreferences.partition).toMatch(/^editor-v6-export-/)
+    expect(window.webContents.session.protocol.handle).toHaveBeenCalledWith('gacha-editor-media', expect.any(Function))
+    expect(window.webContents.session.setPermissionCheckHandler).toHaveBeenCalledOnce()
+    expect(window.webContents.session.setPermissionRequestHandler).toHaveBeenCalledOnce()
+    const resourcePolicy = window.webContents.session.webRequest.onBeforeRequest.mock.calls[0][0]
+    resourcePolicy({ url: 'gacha-editor-media://project/id/file.mp4', resourceType: 'media' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(false))
+    resourcePolicy({ url: 'https://example.com/untrusted.js', resourceType: 'script' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(true))
+    worker.close()
+    factory.dispose()
+  })
+
   it('cleans external closure and rejects later frame requests', async () => {
     const { factory, payload, ready, handlers } = fixture()
     const controller = new AbortController()

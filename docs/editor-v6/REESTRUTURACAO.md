@@ -1008,3 +1008,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o arredondamento do frame, incremento e fence do token, retries/cancelamento da captura, ordem das camadas, buffer combinado sem cópia intermediária, validação de dimensões, inspeção dos pixels e agregação de tempos/métricas. O fechamento do worker libera os buffers da montagem.
 
 **Verificação:** 686 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo teste de integração que confirma os pixels distintos do buffer combinado, ordem das chamadas de camada, inspeção individual e soma de métricas. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (835 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 118 — inicialização segura da janela de exportação (implementado)
+
+**Objetivo:** mover a criação e configuração da `BrowserWindow` isolada para `exportWorkerWindow.ts`, agrupando protocolo de mídia, bloqueio de navegação/permissões, allowlist de recursos, dimensão de captura e preferências seguras do renderer.
+
+**Compatibilidade:** mantidos o tamanho com faixa do token, transparência para vídeo em camadas, partição única por janela, preload/sandbox, 60 FPS, política de recursos e registro condicional da scheme de mídia conforme o snapshot/resolvers disponíveis.
+
+**Verificação:** 687 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo integração que confere as preferências isoladas da janela, o bloqueio de recursos externos e a permissão da mídia somente para o snapshot que a referencia. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (836 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
