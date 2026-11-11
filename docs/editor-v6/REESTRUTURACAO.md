@@ -504,3 +504,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** edições registradas continuam usando `changeScene`; ajustes diretos seguem usando `patchDocument`; valores de fundo continuam aplicados no playhead e blocos de vídeo continuam normalizados. Ao remover personagem, só se elimina asset sem referência, preservando imagens ainda usadas por outro elemento. Sem mudança no formato persistido ou IPC.
 
 **Verificação:** 6 testes novos cobrem remoção e retenção de assets, histórico vs. patch, propriedades de balão/nome, normalização de vídeo e fundo no playhead. Com regressões de cena, timeline, seleção, arraste, histórico e importação, 79 testes passaram em 12 arquivos. `npm run typecheck`, `npm run audit:architecture` (768 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 55 — transações de edição do documento (implementado e verificado)
+
+**Objetivo:** extrair o registro de histórico, os patches no documento ou snapshot selecionado, a prévia facial stale-safe e a sincronização de alterações de cena para `editorV6DocumentEditing.ts`.
+
+**Compatibilidade:** mantém a prioridade do bloco selecionado e o fallback ao clip no playhead, a edição global quando não há seleção aplicável, a normalização/reparo/limpeza de snapshots após o patch e o registro de histórico antes da sincronização de cena. A prévia facial continua protegida pelo ID ativo e não grava snapshot de outro projeto. Nenhum contrato salvo ou IPC mudou.
+
+**Verificação:** 6 testes novos cobrem edição do bloco selecionado, fallback do playhead, edição base sem seleção, descarte de prévia stale, sincronização de faixas e ausência de projeto ativo. Com regressões de documento, timeline, motions e arraste, 103 testes passaram em 9 arquivos. `npm run typecheck`, `npm run audit:architecture` (769 arquivos), `npm run build` e `git diff --check` passaram.
