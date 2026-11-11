@@ -672,3 +672,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados tamanho/corte da superfície, codificação do token em 24 bits menos significativos primeiro, validação do intervalo do token, cache de origem carregada, espera pela origem SVG esperada e erros/timeout de imagem. O worker continua renderizando as mesmas cenas e enviando os mesmos quadros ao capturador; nenhuma mídia foi exportada.
 
 **Verificação:** 17 testes passaram em 3 arquivos, incluindo os novos casos de codificação do token e sincronização SVG, além das regressões do capturador/worker. `npm run typecheck`, `npm run audit:architecture` (793 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 76 — índices de planos de movimento do cabelo na exportação (implementado e verificado)
+
+**Objetivo:** mover de `exportWorker.tsx` para `exportHairMotionPlanIndex.ts` a indexação dos rigs por asset/pose, transições preparadas, planos de expressão facial e finais de reação de pose.
+
+**Compatibilidade:** mantidos o primeiro rig por pose, a preferência pela pose com fallback para asset direto, a seleção de transições com atlas preparado, a separação de planos só faciais e o uso dos planos de timeline para reações sem atlas. O worker continua consumindo os mesmos mapas e chaves; nenhum dado persistido ou formato de exportação mudou.
+
+**Verificação:** 31 testes passaram em 4 arquivos, incluindo modelo de movimento, índice de transição e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (794 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo foi exportado.

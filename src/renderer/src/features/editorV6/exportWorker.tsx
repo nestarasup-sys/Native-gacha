@@ -4,15 +4,14 @@ import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionEndFrames, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
-import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
+import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
 
@@ -30,50 +29,7 @@ async function initialize() {
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
-  const hairRigs = new Map((hairAnimation?.rigs ?? []).map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
-  const hairPoseRigs = new Map<string, EditorV6HairMotionRig>()
-  for (const rig of hairAnimation?.rigs ?? []) {
-    const key = `${rig.elementId}:${rig.poseSlot ?? 'base'}`
-    if (!hairPoseRigs.has(key)) hairPoseRigs.set(key, rig)
-  }
-  const hairRigForElement = (element: { id: string; assetId?: string; poseSlot?: number | null }) => {
-    const direct = element.assetId ? hairRigs.get(`${element.id}:${element.assetId}`) : undefined
-    const poseSlot = element.poseSlot ?? direct?.poseSlot
-    return hairPoseRigs.get(`${element.id}:${poseSlot ?? 'base'}`) ?? direct
-  }
-  const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const motionPlans = editorV6MotionPlans(project)
-  const hairMotionTransitions: Array<{ elementId: string; key: string; startFrame: number; endFrame: number; samples: Array<{ offset: number; progress: number }>; from?: EditorV6HairMotionRig; to?: EditorV6HairMotionRig; physicsFrom?: EditorV6HairMotionRig; physicsTo?: EditorV6HairMotionRig; fromElement: typeof project.elements[number]; toElement: typeof project.elements[number]; atlas?: EditorV6HairMotionTransition }> = []
-  const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map(transition => [`${transition.elementId}:${transition.key}`, transition]))
-  const expressionOnlyPlansByElement = new Map<string, typeof motionPlans>()
-  for (const plan of motionPlans) {
-    // One-shot pose reaction keeps the canonical full-character motion atlas.
-    // It needs only the end-of-pose events, not interpolated hairless layers.
-    if (hairAnimation?.poseReactionOnly || motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
-    // Face-only plans still animate through their normal motionSprite and face
-    // atlas. Do not let that facial atlas replace an in-flight hair pose atlas.
-    if (!editorV6MotionChangesHairGeometry(plan)) {
-      if (editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)) {
-        const entries = expressionOnlyPlansByElement.get(plan.elementId) ?? []
-        entries.push(plan)
-        expressionOnlyPlansByElement.set(plan.elementId, entries)
-      }
-      continue
-    }
-    const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
-    const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-    hairMotionTransitions.push({ elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame, samples: plan.samples, from, to, physicsFrom: hairRigForElement(plan.from), physicsTo: hairRigForElement(plan.to), fromElement: plan.from, toElement: plan.to, atlas: preparedTransitions.get(`${plan.elementId}:${plan.key}`) })
-  }
-  // The worker owns one immutable export document. Pre-index only prepared interior
-  // frames, keeping the first eligible transition when authored ranges overlap.
-  const hairTransitionIndex = createExportHairTransitionFrameIndex(hairMotionTransitions)
-  // Pose events must not depend on an incomingMotion atlas being prepared
-  // before the UI sent the export. The main MP4 runner prepares any missing
-  // canonical atlases later; these timeline plans are the source of truth.
-  const hairPoseReactionEnds = hairAnimation?.poseReactionOnly
-    ? hairMotionPoseReactionEndFrames(motionPlans.map(plan => ({ elementId: plan.elementId, endFrame: plan.endFrame, fromElement: plan.from, toElement: plan.to })))
-    : new Map<string, number[]>()
-  const transitionForFrame = (elementId: string, frame: number) => hairTransitionIndex.get(elementId, frame)?.transition
+  const { hairRigs, hairPoseRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds, transitionForFrame } = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const hairMotionStates = new Map<string, HairMotionState>()
