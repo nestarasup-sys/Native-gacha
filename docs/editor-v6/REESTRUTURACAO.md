@@ -696,3 +696,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o vínculo por ID do personagem e bloco ativo, a seleção entre fala e fala com piscada, o mapeamento do asset base sem boca, o desvio para transições já preparadas e os erros quando falta geometria facial necessária. A função continua recebendo a cena resolvida e devolvendo uma cena imutável.
 
 **Verificação:** 51 testes passaram em 8 arquivos, cobrindo aliases, troca da amostra falada, personagem fora da fala, transição sem patch facial, preparo de amostras, regressões do caminho/rig de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (796 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 79 — composição raster das camadas de cabelo (implementado e verificado)
+
+**Objetivo:** mover para `exportHairFrameComposer.ts` a montagem das superfícies normais e dos atlas de transição em canvases reutilizáveis. O worker conserva o desenho/warp de cada fio e injeta essa operação no compositor.
+
+**Compatibilidade:** mantidos a ordem posterior/base/rosto/cabelo posterior/olhos sobre cabelo posterior/franja/overlay, a composição e geometria dos atlas, as chaves e o reaproveitamento dos canvases, os erros de superfície ausente e as métricas de quadros/pixels. Nenhum dado de projeto, contrato de exportação ou persistência foi alterado.
+
+**Verificação:** 51 testes passaram em 8 arquivos, incluindo os novos casos de ordem das camadas, reutilização/redimensionamento dos canvases, métricas e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (797 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

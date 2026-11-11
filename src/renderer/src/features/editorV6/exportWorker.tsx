@@ -3,7 +3,7 @@ import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
+import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
@@ -11,6 +11,7 @@ import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
+import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -29,7 +30,7 @@ async function initialize() {
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
-  const { hairRigs, hairPoseRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds, transitionForFrame } = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
+  const { hairRigs, hairPoseRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds } = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const hairMotionStates = new Map<string, HairMotionState>()
@@ -219,86 +220,12 @@ async function initialize() {
     context.restore()
     timings.hairLayerDrawMs = (timings.hairLayerDrawMs ?? 0) + performance.now() - layerDrawStarted
   }
-  const composeHairFrame = (rig: EditorV6HairMotionRig, element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number, timings: EditorV6FrameTimings, metrics: EditorV6FrameMetrics): HTMLCanvasElement => {
-    const canvasKey = `${element.id}:${rig.assetId}`
-    let surface = hairFrameCanvases.get(canvasKey)
-    if (!surface) {
-      const canvas = document.createElement('canvas')
-      canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
-      const context = canvas.getContext('2d')
-      if (!context) throw Error('Não foi possível compor o personagem animado.')
-      surface = { canvas, context }
-      hairFrameCanvases.set(canvasKey, surface)
-    }
-    const { canvas, context } = surface
-    const clearStarted = performance.now()
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
-    const drawSurface = (id: string | null) => {
-      if (!id) return
-      const image = hairSurfaces.get(id)
-      if (!image) throw Error('A exportação perdeu uma camada do personagem preparado.')
-      const surfaceStarted = performance.now()
-      context.save()
-      context.translate(rig.outputWidth / 2, rig.outputHeight / 2)
-      context.scale(rig.shapeScaleX, rig.shapeScaleY)
-      context.drawImage(image, -rig.artworkWidth / 2, -rig.artworkHeight / 2, rig.artworkWidth, rig.artworkHeight)
-      context.restore()
-      timings.hairSurfaceComposeMs = (timings.hairSurfaceComposeMs ?? 0) + performance.now() - surfaceStarted
-    }
-    for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
-    drawSurface(rig.baseSurfaceId)
-    drawSurface(rig.faceSurfaceId)
-    for (const piece of rig.layers) if (piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
-    drawSurface(rig.eyesAboveRearHairSurfaceId ?? null)
-    for (const piece of rig.layers) if (piece.side !== 'back' && !piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
-    drawSurface(rig.overlaySurfaceId)
-    metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
-    metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height
-    return canvas
-  }
-  const composeMotionHairFrame = (
-    elementId: string,
-    rig: EditorV6HairMotionRig,
-    element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number],
-    frame: number,
-    transition: NonNullable<ReturnType<typeof transitionForFrame>>,
-    sample: EditorV6HairMotionTransition['frames'][number],
-    timings: EditorV6FrameTimings,
-    metrics: EditorV6FrameMetrics
-  ): HTMLCanvasElement => {
-    let motionHairFrameSurface = motionHairFrameSurfaces.get(elementId)
-    if (!motionHairFrameSurface) {
-      const canvas = document.createElement('canvas')
-      const context = canvas.getContext('2d')
-      if (!context) throw Error('Não foi possível compor o cabelo durante a troca de pose.')
-      motionHairFrameSurface = { canvas, context }
-      motionHairFrameSurfaces.set(elementId, motionHairFrameSurface)
-    }
-    const { canvas, context } = motionHairFrameSurface
-    if (canvas.width !== rig.outputWidth || canvas.height !== rig.outputHeight) {
-      canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
-    }
-    const clearStarted = performance.now()
-    context.clearRect(0, 0, canvas.width, canvas.height)
-    timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
-    const drawAtlasSurface = (surfaceId: string | null) => {
-      if (!surfaceId) return
-      const image = hairSurfaces.get(surfaceId)
-      if (!image) throw Error('A exportação perdeu uma camada sem cabelo da troca de pose.')
-      context.drawImage(image, sample.sprite.x, sample.sprite.y, sample.sprite.width, sample.sprite.height, sample.crop.left, sample.crop.top, sample.crop.width, sample.crop.height)
-    }
-    for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
-    drawAtlasSurface(transition.atlas!.behindFaceSurfaceId)
-    drawAtlasSurface(transition.atlas!.faceSurfaceId)
-    for (const piece of rig.layers) if (piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
-    drawAtlasSurface(transition.atlas!.eyesAboveRearHairSurfaceId ?? null)
-    for (const piece of rig.layers) if (piece.side !== 'back' && !piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
-    drawAtlasSurface(transition.atlas!.overlaySurfaceId)
-    metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
-    metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height
-    return canvas
-  }
+  const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
+    hairSurfaces,
+    hairFrameCanvases,
+    motionHairFrameSurfaces,
+    drawHairPiece
+  })
   const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
   let previous = '', previousBackground = '', previousForeground = ''
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
@@ -396,7 +323,7 @@ async function initialize() {
           const rigInterpolationStarted = performance.now()
           const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
           timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - rigInterpolationStarted
-          rasterCanvases.set(element.id, composeMotionHairFrame(element.id, rig, original, frame, transition, transitionFrame, timings, metrics))
+          rasterCanvases.set(element.id, composeMotionHairFrame(element.id, rig, original, frame, { atlas: transition.atlas }, transitionFrame, timings, metrics))
           let mouthPatch: typeof element.mouthPatch = undefined
           if (transitionFrame.facePatch && transition.atlas.faceAtlasSurfaceId) {
             const faceSurfaceId = transition.atlas.faceAtlasSurfaceId
