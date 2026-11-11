@@ -600,3 +600,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados todos os destinos do switch, o cancelamento conjunto de arraste/menu, os IDs da seleção para divisão/duplicação, o bloqueio dessas ações sem seleção e os callbacks atuais de snap, zoom, fit, seek, play e remoção. Os filtros de campo editável, diálogo e evento já tratado continuam no resolvedor.
 
 **Verificação:** 2 testes novos cobrem roteamento de ações e ausência de seleção; com testes do resolvedor, menu, documento, blocos, zoom, viewport, view model e ponteiro, 27 testes passaram em 10 arquivos. `npm run typecheck`, `npm run audit:architecture` (780 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 67 — modelo de apresentação das faixas (implementado e verificado)
+
+**Objetivo:** extrair para `editorV6TimelineRowsModel.ts` a montagem das linhas de timeline, separação da faixa de fundo, ordenação dos blocos, seleção de blocos visíveis, cálculo de pixels e regra de movimentação entre faixas.
+
+**Compatibilidade:** preservados a ordenação oficial das faixas, a linha de fundo sintética quando não há faixa de vídeo, a exclusão de estados de fundo da linha normal, os limites inclusivos de visibilidade, a largura mínima de 3 px e grupos/faixas fixas usados nos botões de reordenação. O cálculo de transições continua usando `editorV6VisibleMotionPlans` e o mesmo range do viewport.
+
+**Verificação:** 4 testes novos cobrem linhas e faixa de fundo, política de movimento, visibilidade/ordenação e geometria; junto com regressões de planos de movimento (incluindo benchmark unitário), 10 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (781 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
