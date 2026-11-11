@@ -555,8 +555,16 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 ### Ciclo 61 — acompanhamento do playhead no hook de viewport (implementado e verificado)
 
-**Objetivo:** concentrar em `useEditorV6TimelineViewport.ts` também a posse do ref de scroll e o efeito de acompanhamento automático do playhead. A tela passa as entradas atuais de reprodução, frame, escala e cabeçalho, sem manipular o scroll diretamente nesse efeito.
+**Objetivo:** concentrar em `useEditorV6TimelineViewport.ts` também o efeito de acompanhamento automático do playhead. O ref do elemento permanece compartilhado pela tela porque ações de ponteiro, zoom e medição usam o mesmo nó.
 
 **Compatibilidade:** a reprodução continua rolando somente quando o playhead ultrapassa 80% da área ou retorna antes do início visível; o destino permanece centralizado na viewport e limitado a zero. A regra matemática existente segue em `editorV6TimelineViewport.ts` e seus testes continuam cobrindo os limites; observer e listener de scroll permanecem conectados ao mesmo elemento.
 
 **Verificação:** 15 testes passaram em 5 arquivos, cobrindo métricas, decisão de follow, view model, atalhos e interações de ponteiro. `npm run typecheck`, `npm run audit:architecture` (774 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 62 — comandos de zoom da timeline (implementado e verificado)
+
+**Objetivo:** mover o zoom manual, o toggle de Fit e a restauração da escala anterior para `editorV6TimelineZoomCommands.ts`. O componente fornece getters atuais, o setter React e o agendador de frames; não carrega mais o estado interno do toggle.
+
+**Compatibilidade:** preservados os limites de 0,25 a 960 px/s, o centro durante zoom, os fatores manuais de 1,25, a centralização do Fit em zero, a alternância para a escala anterior e o cancelamento do estado Fit após zoom manual. O ref permanece compartilhado com viewport e arraste. Nenhum formato de projeto, persistência ou contrato IPC mudou.
+
+**Verificação:** 2 testes novos cobrem zoom centralizado, Fit/restauração, limites e novo Fit após ajuste manual. Com regressões de viewport, view model, teclado e ponteiro, 17 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (775 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

@@ -7,7 +7,7 @@ import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
-import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
+import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
 import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
 import { useEditorV6TimelineViewport } from './useEditorV6TimelineViewport'
 
@@ -34,15 +34,22 @@ export function EditorV6Timeline(props: Props) {
   const [readout, setReadout] = useState<Block | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track; block: Block } | null>(null)
   const [notice, setNotice] = useState('')
+  const scroll = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLElement>(null)
   const didDrag = useRef(false)
-  const previousZoom = useRef(72)
-  const fitActive = useRef(false)
   const settings = useRef({ pps, snap, heading: compact ? 116 : 210 })
   settings.current = { pps, snap, heading: compact ? 116 : 210 }
   const heading = settings.current.heading
-  const { scrollRef: scroll, viewport, onScroll } = useEditorV6TimelineViewport({ playing: props.playing, playbackFrame, pixelsPerSecond: pps, heading })
+  const { viewport, onScroll } = useEditorV6TimelineViewport(scroll, { playing: props.playing, playbackFrame, pixelsPerSecond: pps, heading })
   const timeline = draft ?? props.document.timeline
+  const { zoomIn, zoomOut, fit } = useMemo(() => createEditorV6TimelineZoomCommands({
+    getScrollNode: () => scroll.current,
+    getPixelsPerSecond: () => settings.current.pps,
+    setPixelsPerSecond: setPps,
+    getHeading: () => settings.current.heading,
+    getDurationFrames: () => latest.current.document.timeline.durationFrames,
+    requestFrame: (callback) => { requestAnimationFrame(callback) }
+  }), [])
   const width = getEditorV6TimelineContentWidth({ viewportWidth: viewport.width, heading, durationFrames: timeline.durationFrames, pixelsPerSecond: pps })
   const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
   const range = useMemo<[number, number]>(() => getEditorV6TimelineVisibleFrameRange({ scrollLeft: viewport.left, viewportWidth: viewport.width, heading, pixelsPerSecond: pps, durationFrames: timeline.durationFrames }), [viewport, heading, pps, timeline.durationFrames])
@@ -77,25 +84,6 @@ export function EditorV6Timeline(props: Props) {
   }, [changeTimeline])
   const split = useCallback((id: string) => { changeTimeline((current) => splitEditorV6Block(current, id, latest.current.frame)); setMenu(null) }, [changeTimeline])
   const duplicate = useCallback((id: string) => { changeTimeline((current) => duplicateEditorV6Block(current, id)); setMenu(null) }, [changeTimeline])
-  const zoomTo = useCallback((next: number) => {
-    const node = scroll.current
-    const old = settings.current.pps
-    const viewport = node ? { scrollLeft: node.scrollLeft, clientWidth: node.clientWidth, heading: settings.current.heading } : null
-    const center = viewport ? getEditorV6TimelineCenterSeconds(viewport, old) : 0
-    const value = clampEditorV6TimelineZoom(next)
-    setPps(value)
-    requestAnimationFrame(() => {
-      if (node && viewport) node.scrollLeft = getEditorV6TimelineScrollForZoom({ ...viewport, clientWidth: node.clientWidth, heading: settings.current.heading }, center, value)
-    })
-  }, [])
-  const fit = useCallback(() => {
-    if (fitActive.current) { zoomTo(previousZoom.current); fitActive.current = false; return }
-    previousZoom.current = settings.current.pps
-    fitActive.current = true
-    zoomTo(getEditorV6TimelineFitZoom(scroll.current?.clientWidth ?? 800, settings.current.heading, latest.current.document.timeline.durationFrames))
-    requestAnimationFrame(() => { if (scroll.current) scroll.current.scrollLeft = 0 })
-  }, [zoomTo])
-
   const { onTrack } = useMemo(() => createEditorV6TimelineTrackCommands({
     getDocument: () => latest.current.document,
     getFrame: () => latest.current.frame,
@@ -131,8 +119,8 @@ export function EditorV6Timeline(props: Props) {
         case 'split': if (current.selectedId) split(current.selectedId); break
         case 'duplicate': if (current.selectedId) duplicate(current.selectedId); break
         case 'toggle-snap': setSnap((value) => !value); break
-        case 'zoom-in': fitActive.current = false; zoomTo(settings.current.pps * 1.25); break
-        case 'zoom-out': fitActive.current = false; zoomTo(settings.current.pps / 1.25); break
+        case 'zoom-in': zoomIn(); break
+        case 'zoom-out': zoomOut(); break
         case 'fit': fit(); break
         case 'seek': current.onSeek(command.frame); break
         case 'play': current.onPlay(); break
@@ -141,7 +129,7 @@ export function EditorV6Timeline(props: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cancel, duplicate, fit, remove, split, zoomTo])
+  }, [cancel, duplicate, fit, remove, split, zoomIn, zoomOut])
   useEffect(() => {
     if (!menu) return
     const close = (event: PointerEvent) => { if (!(event.target instanceof HTMLElement) || !event.target.closest('.v6-timeline-menu')) setMenu(null) }
@@ -157,7 +145,7 @@ export function EditorV6Timeline(props: Props) {
       <div className="editor-v6-timeline-actions">
         <button type="button" onClick={props.onPlay} title="Reproduzir / Pausar (Espaço)" aria-label={props.playing ? 'Pausar' : 'Reproduzir'}>{props.playing ? 'Ⅱ' : '▶'}</button>
         <button type="button" className={snap ? 'active' : ''} aria-pressed={snap} onClick={() => setSnap(!snap)} title="Magnetismo (S). Alt ignora temporariamente.">Snap</button>
-        <button type="button" onClick={() => { fitActive.current = false; zoomTo(pps / 1.25) }} title="Diminuir zoom (-)">−</button><button type="button" onClick={() => { fitActive.current = false; zoomTo(pps * 1.25) }} title="Aumentar zoom (+)">＋</button>
+        <button type="button" onClick={zoomOut} title="Diminuir zoom (-)">−</button><button type="button" onClick={zoomIn} title="Aumentar zoom (+)">＋</button>
         <button type="button" onClick={fit} title="Encaixar timeline / restaurar zoom (Shift+Z)">Fit</button>
         <button type="button" onClick={() => setCompact(!compact)} title="Compactar nomes das faixas">{compact ? '↔' : '⇤'}</button>
         <button type="button" disabled={!selected || selected.track.locked || playbackFrame <= selected.block.startFrame || playbackFrame >= selected.block.startFrame + selected.block.durationFrames} onClick={() => selected && split(selected.block.id)} title="Dividir bloco no cursor (Ctrl+K)">✂ Dividir</button>

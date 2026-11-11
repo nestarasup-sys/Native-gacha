@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { UIEvent } from 'react'
+import { useCallback, useEffect, useState } from 'react'
+import type { RefObject, UIEvent } from 'react'
 import { getEditorV6TimelineFollowScroll } from './editorV6TimelineViewport'
 
 export type EditorV6TimelineViewportMetrics = {
@@ -18,8 +18,7 @@ export type UseEditorV6TimelineViewportOptions = {
   heading: number
 }
 
-export function useEditorV6TimelineViewport({ playing, playbackFrame, pixelsPerSecond, heading }: UseEditorV6TimelineViewportOptions) {
-  const scrollRef = useRef<HTMLDivElement>(null)
+export function useEditorV6TimelineViewport(scrollRef: RefObject<HTMLDivElement | null>, { playing, playbackFrame, pixelsPerSecond, heading }: UseEditorV6TimelineViewportOptions) {
   const [viewport, setViewport] = useState<EditorV6TimelineViewportMetrics>({ left: 0, width: 800 })
   const measure = useCallback((node: HTMLDivElement) => setViewport(readEditorV6TimelineViewport(node)), [])
 
