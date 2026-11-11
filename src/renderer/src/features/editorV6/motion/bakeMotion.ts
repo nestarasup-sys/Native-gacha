@@ -1,9 +1,8 @@
 import type { CharacterRenderAssetProvider } from '../../../../../shared/characterRenderAssets'
-import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
+import type { EditorV6Element } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
-import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
-import { interpolateEditorV6Face, interpolateEditorV6Pose } from '../../../../../shared/editorV6MotionInterpolation'
-import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
+import { interpolateEditorV6Pose } from '../../../../../shared/editorV6MotionInterpolation'
+import type { GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
   unionMotionCrops as unionCrop,
@@ -14,10 +13,10 @@ import { resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
-import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
+import { prepareEditorV6MotionFacePair } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
-import { createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
+import { createTransparentMotionPatch } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
 import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
@@ -28,13 +27,12 @@ import { disposeEditorV6MotionLayerAtlases, type MotionLayerAtlases } from './mo
 import { prepareEditorV6MotionAtlasSources } from './motionAtlasSourcePreparation'
 import { bakeEditorV6MotionAtlasFrames } from './motionAtlasFrameBaking'
 import { finalizeEditorV6MotionBake } from './motionBakeResult'
+import { createEditorV6MotionFrameRenderer } from './motionFrameRenderer'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
 export type { EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 
-type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
-type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; mouthCanvas?: HTMLCanvasElement; mouthCrop?: Crop; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
@@ -66,29 +64,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   let bodyAtlas: HTMLCanvasElement | undefined
   let layerAtlases: MotionLayerAtlases | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
-  const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
-    const renderer = preparedRenderer ?? await prepare(progress), face = scaleEditorV6MotionMouth(interpolateEditorV6Face(from, to, progress), mouthScale)
-    try {
-      const mode = faceMode ?? face.mode
-      const renderMode = referenceMode ? mode : editorV6FaceModeDuringMotion(mode)
-      const isolateMouth = Boolean(request.mouthScaleSamples && (mode === 'talk' || mode === 'talk-blink') && renderer.canIsolateMouth(face.appearance))
-      // A hair-layer bake needs both the full body and split layers. Render
-      // expensive face assets once, not twice for every intermediate sample.
-      const mouthOptions = isolateMouth ? { mouthLayer: 'without-mouth' as const } : undefined
-      const layered = captureLayers
-        ? await renderer.renderToCanvasWithLayers(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
-        : undefined
-      const result = layered ?? await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
-      const layers = layered?.layers
-      const mouth = isolateMouth ? await renderer.renderMouthToCanvas(face.appearance, face.transforms, face.effects, renderMode) : undefined
-      return { ...result, crop: readMotionCanvasCrop(result.canvas, fingerprint), renderer, ...(layers ? { layers } : {}), ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: readMotionCanvasCrop(mouth.canvas, fingerprint, 0) } : {}), dispose: () => {
-        if (!samePose && !preparedRenderer && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
-      } }
-    } catch (error) {
-      if (!samePose && !preparedRenderer && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
-      throw error
-    }
-  }
+  const render = createEditorV6MotionFrameRenderer({ request, from, to, prepare, samePose, session })
   try {
     const staticMouthLoop = Boolean(!captureLayerAtlases && request.mouthScaleSamples && samePose
       && JSON.stringify(from) === JSON.stringify(to)

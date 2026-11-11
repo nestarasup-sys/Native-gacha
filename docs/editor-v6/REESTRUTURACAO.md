@@ -1112,3 +1112,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados agrupamento por assinatura, comparação de revisões de pose/modelo/roupa/cabelo/cabeça extra/olhos, inclusão de estados da cena e da timeline e identificação de personagens ausentes. A geração e aplicação dos snapshots, seus IDs/referências e o documento persistido não mudam. O teste integrado de mídia foi alinhado ao fluxo atual de biblioteca, que vincula imagem/áudio pelo picker antes de persistir.
 
 **Verificação:** 718 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo os cenários de refresh corporal e reexportação legada; 29 testes do fluxo de dados do Editor V6, os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (850 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 131 — renderização de amostras de movimento (implementado)
+
+**Objetivo:** extrair de `bakeMotion.ts` a renderização de cada amostra do personagem para `motionFrameRenderer.ts`. O orquestrador da transição continua decidindo o caminho (boca isolada, boca legada ou atlas corporal), enquanto o módulo novo concentra o modo facial, render completo/camadas, isolamento da boca e descarte dos renderers.
+
+**Compatibilidade:** preservados interpolação e escala da boca, olhos abertos durante transições, render combinado em uma passagem quando há captura de camadas, corte/fingerprint, uso de renderer preparado, reutilização da sessão e descarte somente de renderers transitórios. A estrutura do resultado de bake, assets, atlas, métricas e documento salvo não muda.
+
+**Verificação:** 721 testes Vitest passaram em 163 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para render completo/camadas, isolamento da boca, modos de transição e liberação segura do renderer. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (851 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
