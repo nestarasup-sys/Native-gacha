@@ -960,3 +960,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos filtragem de durações inválidas, ordem da primeira ocorrência de cada etapa, contagem/soma/máximo por etapa e notificação `onStage`. O tempo total da preparação permanece no módulo orquestrador.
 
 **Verificação:** 690 testes Vitest passaram em 154 arquivos (1 ignorado), incluindo 2 testes novos de agregação, filtragem, callback e isolamento por preparação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (829 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos existentes da timeline; não foi feita exportação real de vídeo.
+
+### Ciclo 112 — controlador do painel de exportação (implementado e verificado)
+
+**Objetivo:** mover o estado e os efeitos operacionais de `EditorV6ExportPanel` para `useEditorV6ExportPanelController.ts`, mantendo a página visual responsável por apresentar configurações, preset, áudio e progresso do job.
+
+**Compatibilidade:** preservados o job lembrado entre aberturas, polling/cancelamento, estado da pasta, edição/salvamento do preset, validações e perfil padrão, integração de áudio, callbacks de atividade e os botões para exportar com ou sem animação. Nenhuma exportação real foi iniciada.
+
+**Verificação:** 690 testes Vitest passaram em 154 arquivos (1 ignorado), incluindo o contrato dos botões de exportação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (830 arquivos), `npm run build` e `git diff --check` passaram. O harness Chromium do Editor V6 passou na comparação de superfície e no fluxo do painel com áudio vinculado e dois jobs simulados (com/sem cabelo). A busca do harness foi ajustada para encontrar elementos renderizados em portal; nenhum MP4 ou perfil grande foi criado.

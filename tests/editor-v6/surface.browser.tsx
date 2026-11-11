@@ -60,7 +60,8 @@ let closePanelTest: () => void
   document.body.append(mount)
   const root = createRoot(mount)
   const findButton = (text: string) => {
-    const button = Array.from(mount.querySelectorAll('button')).find((item) => item.textContent?.includes(text))
+    // Library pickers render through a portal under document.body, outside the React mount node.
+    const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent?.includes(text))
     assert(button, `Painel de exportação não mostrou o botão: ${text}. Conteúdo: ${mount.textContent?.slice(-900)}`)
     return button
   }
