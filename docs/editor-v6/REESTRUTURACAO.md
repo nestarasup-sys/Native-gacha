@@ -1136,3 +1136,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o cache continua reutilizando a mesma cena bruta nas duas capturas de camada do quadro; o caminho de cabelo segue recebendo a cena sem overlay de boca para física, e a composição de quadro mantém a cena com overlay para renderização e os mesmos assets/snapshots. Nenhum IPC, formato persistido, regra visual ou sequência de renderização foi alterado.
 
 **Verificação:** 725 testes Vitest passaram em 165 arquivos (1 arquivo e 1 teste ignorados), incluindo um novo teste sintético do runtime de cabelo e cache por quadro. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (853 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 134 — composição e entrega de quadros de exportação (implementado)
+
+**Objetivo:** extrair de `exportWorker.tsx` o ciclo de cada quadro para `exportFrameRenderer.ts`: resolução/cache de cena, decisão de reuso, composição facial e do cabelo, seleção e preparo de assets, commit da superfície, espera pelo decode das imagens e entrega do paint token. O worker mantém a criação do DOM/React root e conecta essa lógica aos mecanismos Chromium.
+
+**Compatibilidade:** mantidos os pontos de parada para quadro/camada reutilizados, a composição facial somente fora do fundo, a remoção de patches de boca para elementos com cabelo rigado, os assets temporários por quadro, o filtro de assets visíveis, a ordem `preparação → commit → decode → paint token → requestAnimationFrame` e o registro da chave só após o paint. Os contratos com Electron e a captura permanecem iguais.
+
+**Verificação:** 726 testes Vitest passaram em 166 arquivos (1 arquivo e 1 teste ignorados), incluindo um novo teste sintético de ordem do pipeline e reuso de quadro idêntico. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (854 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
