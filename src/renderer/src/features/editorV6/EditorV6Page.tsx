@@ -67,6 +67,7 @@ import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
 import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import { openEditorV6Project } from './editorV6ProjectNavigation'
+import { completeEditorV6ProjectImport } from './editorV6ProjectImportCompletion'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -791,7 +792,15 @@ export function EditorV6Page() {
     onOpenImport={() => setReactImportOpen(true)}
     onCloseImport={() => setReactImportOpen(false)}
     onSaveImportedProject={writeEditorV6Document}
-    onImportCompleted={(project) => { upsertEditorV6Summary(editorV6ProjectSummary(project)); openEditorV6Project(project.id, { selectProject: setSelectedId, activateProject: setActiveEditorV6Id }); setSaved(true); setReactImportOpen(false); setError(null) }}
+    onImportCompleted={(project) => completeEditorV6ProjectImport(project, {
+      projectSummary: editorV6ProjectSummary,
+      upsertSummary: upsertEditorV6Summary,
+      selectProject: setSelectedId,
+      activateProject: setActiveEditorV6Id,
+      setSaved,
+      closeImport: () => setReactImportOpen(false),
+      setError
+    })}
     onOpenProject={(projectId) => openEditorV6Project(projectId, { selectProject: setSelectedId, activateProject: setActiveEditorV6Id })}
     onDuplicateProject={(project) => { void duplicateStudio(project) }}
     onDeleteProject={(project) => { void deleteStudio(project) }}

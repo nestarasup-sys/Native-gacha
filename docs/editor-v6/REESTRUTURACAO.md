@@ -464,3 +464,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados a ordem de publicação, a limpeza do `localStorage` somente após sucesso, a mensagem de falha e a conclusão do estado loading. Respostas de um efeito cancelado não alteram estado nem removem dados legados.
 
 **Verificação:** 9 testes de bootstrap e lifecycle passaram em 4 arquivos; `npm run typecheck`, `npm run audit:architecture` (763 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 50 — conclusão da importação React JSON (implementado e verificado)
+
+**Objetivo:** retirar do JSX da página a publicação e ativação do projeto após a importação React JSON, centralizando a sequência em `editorV6ProjectImportCompletion.ts`.
+
+**Compatibilidade:** o diálogo continua aguardando a gravação (`onSave`) antes de chamar o callback de conclusão. A sequência permanece resumo no catálogo, seleção, ativação, estado salvo, fechamento do diálogo e limpeza do erro. Nenhum documento, formato JSON, persistência ou contrato IPC foi alterado.
+
+**Verificação:** teste novo cobre a ordem dos efeitos da conclusão; junto com a regressão da navegação, 2 testes passaram em 2 arquivos. `npm run typecheck`, `npm run audit:architecture` (764 arquivos), `npm run build` e `git diff --check` passaram.
