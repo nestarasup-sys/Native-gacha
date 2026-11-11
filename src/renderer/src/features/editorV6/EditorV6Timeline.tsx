@@ -6,6 +6,7 @@ import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
+import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 
 type Props = {
   document: EditorV6Document
@@ -118,22 +119,32 @@ export function EditorV6Timeline(props: Props) {
   }, [playbackFrame, props.playing, heading, pps])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (editableTarget(event.target) || event.defaultPrevented) return
-      const key = event.key.toLowerCase(), current = latest.current
-      if (key === 'escape') { cancel(); setMenu(null); return }
-      if (event.ctrlKey || event.metaKey) {
-        if (key === 'k' && current.selectedId) { event.preventDefault(); split(current.selectedId) }
-        else if (key === 'd' && current.selectedId) { event.preventDefault(); duplicate(current.selectedId) }
-        return
+      const current = latest.current
+      const command = resolveEditorV6TimelineKeyCommand({
+        key: event.key,
+        ctrlKey: event.ctrlKey,
+        metaKey: event.metaKey,
+        shiftKey: event.shiftKey,
+        editableTarget: editableTarget(event.target),
+        defaultPrevented: event.defaultPrevented,
+        selectedId: current.selectedId,
+        frame: current.frame,
+        durationFrames: current.document.timeline.durationFrames
+      })
+      if (!command) return
+      if (command.preventDefault) event.preventDefault()
+      switch (command.action) {
+        case 'cancel': cancel(); setMenu(null); break
+        case 'split': if (current.selectedId) split(current.selectedId); break
+        case 'duplicate': if (current.selectedId) duplicate(current.selectedId); break
+        case 'toggle-snap': setSnap((value) => !value); break
+        case 'zoom-in': fitActive.current = false; zoomTo(settings.current.pps * 1.25); break
+        case 'zoom-out': fitActive.current = false; zoomTo(settings.current.pps / 1.25); break
+        case 'fit': fit(); break
+        case 'seek': current.onSeek(command.frame); break
+        case 'play': current.onPlay(); break
+        case 'remove': remove(command.blockId); break
       }
-      if (key === 's') { event.preventDefault(); setSnap((value) => !value) }
-      else if (key === '+' || key === '=') { event.preventDefault(); fitActive.current = false; zoomTo(settings.current.pps * 1.25) }
-      else if (key === '-') { event.preventDefault(); fitActive.current = false; zoomTo(settings.current.pps / 1.25) }
-      else if (key === 'z' && event.shiftKey) { event.preventDefault(); fit() }
-      else if (key === 'arrowleft' || key === 'arrowright') { event.preventDefault(); current.onSeek(Math.max(0, Math.min(current.document.timeline.durationFrames, current.frame + (key === 'arrowright' ? 1 : -1) * (event.shiftKey ? 5 : 1)))) }
-      else if (key === 'home' || key === 'end') { event.preventDefault(); current.onSeek(key === 'home' ? 0 : current.document.timeline.durationFrames) }
-      else if (key === ' ') { event.preventDefault(); current.onPlay() }
-      else if ((key === 'delete' || key === 'backspace') && current.selectedId) { event.preventDefault(); remove(current.selectedId) }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

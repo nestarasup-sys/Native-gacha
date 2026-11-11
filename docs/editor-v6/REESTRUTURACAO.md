@@ -520,3 +520,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados cálculo de quadros pela escala atual, snapping/Alt, preview sem mutação da timeline persistida, commit somente ao soltar depois de movimento, cancelamento sem gravação, seek/seleção no pointer down e captura por ID de ponteiro. A renderização continua no componente e usa o mesmo estado transitório.
 
 **Verificação:** 4 testes novos cobrem captura/preview/commit, cancelamento, scrubbing e bloqueios de botão/faixa. Com regressões de timeline, seleção e edição do documento, 50 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (770 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 57 — resolução de atalhos da timeline (implementado e verificado)
+
+**Objetivo:** retirar do efeito de teclado em `EditorV6Timeline.tsx` o mapeamento de teclas para ações e quadros, mantendo a execução das ações conectada ao estado atual do componente.
+
+**Compatibilidade:** preservados Ctrl/Cmd+K e D apenas com bloco selecionado; prioridade de Ctrl/Cmd sobre outras teclas; Escape sem `preventDefault`; bloqueio em campos editáveis, diálogos e eventos já tratados; passos de 1/5 quadros limitados pela duração; e teclas de snap, zoom, fit, play e exclusão.
+
+**Verificação:** 4 testes novos cobrem mapeamentos, ausência de seleção, limites do playhead, Escape e bloqueios de evento. Com regressões dos atalhos globais, pointer, timeline e faixas, 47 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (771 arquivos), `npm run build` e `git diff --check` passaram.
