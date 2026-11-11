@@ -15,6 +15,7 @@ import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer
 import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
+import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -124,7 +125,7 @@ async function initialize() {
     drawHairPiece
   })
   const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
-  let previous = '', previousBackground = '', previousForeground = ''
+  const frameReuse = createEditorV6ExportFrameReuseState()
   ;(window as unknown as { renderEditorV6ExportFrame: (frame: number, layer: 'background' | 'foreground' | undefined, paintToken: number) => Promise<EditorV6RenderFrameResult> }).renderEditorV6ExportFrame = async (frame, layer, paintToken) => {
     const timings: EditorV6FrameTimings = {}
     const metrics: EditorV6FrameMetrics = {}
@@ -160,12 +161,9 @@ async function initialize() {
       ...baseLayerKeys, foreground: JSON.stringify([baseLayerKeys.foreground, signature])
     }
     timings.sceneResolutionMs = performance.now() - resolutionStarted
-    if (key === previous) return { reused: true, timings }
-    if (activeLayer === 'background' && layerKeys.background === previousBackground) return { reused: false, layerReused: true, timings }
-    if (activeLayer === 'foreground' && layerKeys.foreground === previousForeground) {
-      previous = key
-      return { reused: false, layerReused: true, timings }
-    }
+    const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
+    if (reuseDecision === 'frame') return { reused: true, timings }
+    if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
     const faceCompositionStarted = performance.now()
     const originalElements = new Map(scene.elements.map(element => [element.id, element]))
     const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => hasAnimatedHair(element) ? [element.id] : []) : [])
@@ -289,9 +287,7 @@ async function initialize() {
     // One refresh handoff avoids an unconditional second display interval on every exported frame.
     await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()))
     timings.rafWaitMs = performance.now() - rafStarted
-    if (activeLayer === 'background') previousBackground = layerKeys.background
-    else if (activeLayer === 'foreground') { previousForeground = layerKeys.foreground; previous = key }
-    else { previousBackground = layerKeys.background; previousForeground = layerKeys.foreground; previous = key }
+    frameReuse.recordRendered(key, layerKeys, activeLayer)
     return { reused: false, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
   }
   window.addEventListener('pagehide', () => {

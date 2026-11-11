@@ -736,3 +736,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o worker mantém a mesma seleção de assets antes do carregamento e o loader preserva a ordem, a deduplicação por ID, a remoção da entrada mais antiga e as mensagens distintas de erro para falha de carga ou decodificação.
 
 **Verificação:** 64 testes passaram em 12 arquivos, cobrindo reuso, limite de cache, falhas de carga/decodificação, seleção de assets, rig e composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (801 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 84 — decisões de reuso de quadro na exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportFrameReuse.ts` o estado que compara a chave do quadro completo com as chaves de fundo e primeiro plano em capturas separadas.
+
+**Compatibilidade:** preservadas a ordem das verificações, as decisões de camada reaproveitada e o momento em que cada chave avança após renderização ou reuso do primeiro plano. As chaves visuais e o formato de `EditorV6RenderFrameResult` não mudam.
+
+**Verificação:** 67 testes passaram em 13 arquivos, cobrindo reuso integral, commits independentes de cada camada, atualização da chave completa em captura foreground reaproveitada e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (802 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
