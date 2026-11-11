@@ -1000,3 +1000,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os mesmos canais, restrição ao frame principal, payload associado ao `webContents.id`, rejeição de erros de inicialização, aceitação segura de mensagens tardias após o fechamento e limite de 128 IDs aposentados. O descarte continua removendo os dois handlers IPC.
 
 **Verificação:** 685 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes do registro para autorização do frame principal, prontidão, erro reportado, mensagens tardias e descarte dos handlers. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (834 arquivos), `npm run build` e `git diff --check` passaram. Nenhum projeto real, MP4 ou benchmark de mídia foi executado.
+
+### Ciclo 117 — execução e montagem dos quadros do worker (implementado)
+
+**Objetivo:** mover do ciclo de vida da janela para `exportWorkerFrameRenderer.ts` o pedido de desenho, captura tokenizada, reutilização dos buffers e composição das camadas de fundo/frente.
+
+**Compatibilidade:** preservados o arredondamento do frame, incremento e fence do token, retries/cancelamento da captura, ordem das camadas, buffer combinado sem cópia intermediária, validação de dimensões, inspeção dos pixels e agregação de tempos/métricas. O fechamento do worker libera os buffers da montagem.
+
+**Verificação:** 686 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo teste de integração que confirma os pixels distintos do buffer combinado, ordem das chamadas de camada, inspeção individual e soma de métricas. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (835 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

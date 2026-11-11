@@ -5,8 +5,8 @@ import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
 import { editorV6WorkerChannels } from '../../src/shared/editorV6Export'
 
 const state = vi.hoisted(() => {
-  const imageFor = (width: number, height: number, token: number) => {
-    const bitmap = Buffer.alloc(width * height * 4, 127)
+  const imageFor = (width: number, height: number, token: number, fill = 127) => {
+    const bitmap = Buffer.alloc(width * height * 4, fill)
     for (let bit = 0; bit < 24; bit++) {
       const markerX = width - 24 + (bit % 6) * 4 + 2, markerY = Math.floor(bit / 6) * 4 + 2
       const offset = (markerY * width + markerX) * 4
@@ -60,11 +60,11 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event') {
+function fixture(captureMode?: 'capturePage' | 'paint-event', options: { layeredVideo?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode })
-  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: false } as unknown as EditorV6WorkerPayload
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture: options.inspectCapture })
+  const payload = { project: { media: [], assets: [] }, width: 320, height: 180, layeredVideo: options.layeredVideo ?? false } as unknown as EditorV6WorkerPayload
   const ready = () => {
     const window = state.windows.at(-1)!
     handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })
@@ -166,6 +166,45 @@ describe('export worker lifecycle', () => {
     expect(frame.timings?.capturePageMs).toBe(0)
     worker.close()
     expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1)
+    factory.dispose()
+  })
+
+  it('assembles layered frames into one reusable bitmap and aggregates both layer metrics', async () => {
+    const inspected: Buffer[] = []
+    const { factory, payload, ready } = fixture(undefined, { layeredVideo: true, inspectCapture: async ({ bitmap }) => { inspected.push(Buffer.from(bitmap)) } })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    let drawCount = 0
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = script.match(/,\s*(\d+)\)\s*$/)
+      if (token) window.paintToken = Number(token[1])
+      drawCount++
+      return { reused: false, timings: { sceneResolutionMs: drawCount }, metrics: { captureReadbacks: drawCount } }
+    })
+    let captureCount = 0
+    contents.capturePage.mockImplementation(async ({ width, height }: { width: number; height: number }) => {
+      captureCount++
+      return state.imageFor(width, height, window.paintToken, captureCount === 1 ? 31 : 73)
+    })
+
+    const result = await worker.frame(12)
+    const layerBytes = payload.width * payload.height * 4
+
+    expect(contents.executeJavaScript.mock.calls.map(([script]: [string]) => script)).toEqual([
+      expect.stringContaining("'background'"), expect.stringContaining("'foreground'")
+    ])
+    expect(result.bitmap).toHaveLength(layerBytes * 2)
+    expect(result.bitmap!.subarray(0, layerBytes).every((byte) => byte === 31)).toBe(true)
+    expect(result.bitmap!.subarray(layerBytes).every((byte) => byte === 73)).toBe(true)
+    expect(inspected).toHaveLength(2)
+    expect(inspected[0].every((byte) => byte === 31)).toBe(true)
+    expect(inspected[1].every((byte) => byte === 73)).toBe(true)
+    expect(result.timings?.sceneResolutionMs).toBe(3)
+    expect(result.metrics).toMatchObject({ captureReadbacks: 5, captureStaleReadbacks: 0 })
+    worker.close()
     factory.dispose()
   })
 
