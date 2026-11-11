@@ -952,3 +952,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados a ordem de alocação, o primeiro valor armazenado para uma chave repetida, o conjunto de camadas opcionais, as referências nulas quando não há olhos/overlay/atlas facial e a ordem dos dados de frame. O registro continua limitado a uma preparação de exportação; nenhum dado persistido é alterado.
 
 **Verificação:** 688 testes Vitest passaram em 153 arquivos (1 ignorado), incluindo 2 novos testes do registro, deduplicação e referências das transições. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (828 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.
+
+### Ciclo 111 — coleta das métricas de preparação de cabelo (implementado e verificado)
+
+**Objetivo:** mover o acumulador de métricas por etapa para `editorV6ExportStageProfiler.ts`, permitindo verificar tempos agregados e notificações de diagnóstico sem montar renderers ou canvases.
+
+**Compatibilidade:** mantidos filtragem de durações inválidas, ordem da primeira ocorrência de cada etapa, contagem/soma/máximo por etapa e notificação `onStage`. O tempo total da preparação permanece no módulo orquestrador.
+
+**Verificação:** 690 testes Vitest passaram em 154 arquivos (1 ignorado), incluindo 2 testes novos de agregação, filtragem, callback e isolamento por preparação. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (829 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos existentes da timeline; não foi feita exportação real de vídeo.
