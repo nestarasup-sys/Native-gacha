@@ -496,3 +496,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantém a leitura em memória quando o ID ativo corresponde e o fallback ao bridge do Electron; só altera o documento ativo quando fonte e sessão ainda correspondem. A gravação continua antes da publicação do resumo; falhas são propagadas, e respostas obsoletas não limpam estado salvo/erro de outra sessão. Nenhum formato persistido ou canal IPC mudou.
 
 **Verificação:** 5 testes novos cobrem fallback/cache, sequência de gravação, resposta obsoleta antes e durante a gravação e erro de persistência. Com regressões de histórico e conclusão de importação, 8 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (767 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 54 — mutações do documento de cena (implementado e verificado)
+
+**Objetivo:** extrair de `editorV6DocumentCommands.ts` as mutações de elementos, cor do nome, escala/posição dos balões, blocos de vídeo e fundo para `editorV6SceneDocumentCommands.ts`.
+
+**Compatibilidade:** edições registradas continuam usando `changeScene`; ajustes diretos seguem usando `patchDocument`; valores de fundo continuam aplicados no playhead e blocos de vídeo continuam normalizados. Ao remover personagem, só se elimina asset sem referência, preservando imagens ainda usadas por outro elemento. Sem mudança no formato persistido ou IPC.
+
+**Verificação:** 6 testes novos cobrem remoção e retenção de assets, histórico vs. patch, propriedades de balão/nome, normalização de vídeo e fundo no playhead. Com regressões de cena, timeline, seleção, arraste, histórico e importação, 79 testes passaram em 12 arquivos. `npm run typecheck`, `npm run audit:architecture` (768 arquivos), `npm run build` e `git diff --check` passaram.

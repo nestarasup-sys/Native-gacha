@@ -1,10 +1,10 @@
-import { syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import { syncEditorV6TimelineElements, type EditorV6Document, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
-import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6HistoryCommands } from './editorV6HistoryCommands'
 import { createEditorV6DocumentImportPersistence } from './editorV6DocumentImportPersistence'
+import { createEditorV6SceneDocumentCommands } from './editorV6SceneDocumentCommands'
 
 type ActiveProjectIdRef = { current: string | null }
 type ProjectUpdater = (update: (project: EditorV6Document) => EditorV6Document) => void
@@ -109,78 +109,14 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     setError: dependencies.setError
   })
 
-  const removeStageCharacter = (element: EditorV6Element) => {
-    changeScene((document) => {
-      const elements = document.elements.filter((item) => item.id !== element.id)
-      const stillUsed = new Set(elements.map((item) => item.assetId).filter(Boolean))
-      return {
-        ...document,
-        elements,
-        assets: document.assets.filter((asset) => asset.id !== element.assetId || stillUsed.has(asset.id)),
-        updatedAt: dependencies.now()
-      }
-    })
-    if (dependencies.selectedElementId === element.id) dependencies.setSelectedElementId(null)
-  }
-
-  const updateElement = (id: string, values: Partial<EditorV6Element>, record = true) => {
-    const update = (document: EditorV6Document) => ({
-      ...document,
-      elements: document.elements.map((element) => element.id === id ? { ...element, ...values } : element),
-      updatedAt: dependencies.now()
-    })
-    if (record) changeScene(update)
-    else patchDocument(update)
-  }
-
-  const updateCharacterNameColor = (characterId: string, color: string) => {
-    patchDocument((document) => ({
-      ...document,
-      characterNameColors: { ...document.characterNameColors, [characterId]: color },
-      updatedAt: dependencies.now()
-    }), false)
-  }
-
-  const updateBalloonScale = (scalePercent: number) => {
-    patchDocument((document) => ({ ...document, balloonScalePercent: scalePercent, updatedAt: dependencies.now() }), false)
-  }
-
-  const updateBalloonOffsetY = (offsetY: number) => {
-    patchDocument((document) => ({ ...document, balloonOffsetY: offsetY, updatedAt: dependencies.now() }), false)
-  }
-
-  const updateVideoBlock = (
-    blockId: string,
-    values: Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>,
-    record = true
-  ) => {
-    const update = (document: EditorV6Document) => ({
-      ...document,
-      timeline: normalizeEditorV6Timeline({
-        ...document.timeline,
-        tracks: document.timeline.tracks.map((track) => ({
-          ...track,
-          blocks: track.blocks.map((block) => block.id === blockId ? { ...block, ...values } : block)
-        }))
-      }),
-      updatedAt: dependencies.now()
-    })
-    if (record) changeScene(update)
-    else patchDocument(update)
-  }
-
-  const updateBackground = (
-    values: Partial<Pick<EditorV6Document, 'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>,
-    record = true
-  ) => {
-    const frame = dependencies.getFrame()
-    const update = (document: EditorV6Document) => ({
-      ...editEditorV6BackgroundAtFrame(document, frame, values),
-      updatedAt: dependencies.now()
-    })
-    if (record) changeScene(update)
-    else patchDocument(update)
-  }
+  const sceneCommands = createEditorV6SceneDocumentCommands({
+    selectedElementId: dependencies.selectedElementId,
+    setSelectedElementId: dependencies.setSelectedElementId,
+    now: dependencies.now,
+    getFrame: dependencies.getFrame,
+    patchDocument,
+    changeScene
+  })
 
   return {
     patchDocument,
@@ -189,13 +125,7 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     changeScene,
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
-    removeStageCharacter,
-    updateElement,
-    updateCharacterNameColor,
-    updateBalloonScale,
-    updateBalloonOffsetY,
-    updateVideoBlock,
-    updateBackground,
+    ...sceneCommands,
     undo,
     redo
   }
