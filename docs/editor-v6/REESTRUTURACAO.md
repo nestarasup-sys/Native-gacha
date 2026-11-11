@@ -784,3 +784,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o bake continua resolvendo as poses em paralelo com os rostos. A preparação preserva o fallback entre face do elemento e face padrão do personagem, não altera transforms de origem, mantém overrides explícitos e só acrescenta `sourceTransformOverride` ausente. A seleção/fallback do transform de boca e o fator aplicado permanecem iguais.
 
 **Verificação:** 607 testes passaram na suíte Vitest oficial (129 arquivos; 1 ignorado), incluindo defaults de catálogo/componente/expressão, calibração pareada, imutabilidade dos endpoints e escala de boca. `npm run typecheck`, `npm run audit:architecture` (807 arquivos), `npm run build` e `git diff --check` passaram. Uma execução inicial completa encontrou interferência transitória de mocks em `exportMediaProbe.test.ts`; os testes afetados juntos e a repetição completa passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 90 — preparação e cache de rigs de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionRigPreparation.ts` a detecção de poses idênticas, a chave exata dos rigs, a consulta/reordenação do cache da sessão, a construção e as métricas de preparação, e o descarte do renderer temporário.
+
+**Compatibilidade:** preservados os campos da assinatura da pose, a serialização exata do personagem/revisão/arte, a promoção LRU em acerto, a contagem de reconstruções após eviction, o reaproveitamento de pose idêntica, o repaint facial por quadro e o ownership de renderers retidos pela sessão. Nenhum formato de projeto ou contrato de exportação foi alterado. O isolamento da suíte Vitest foi ativado porque arquivos com mocks distintos do mesmo módulo interferiam entre si quando executados juntos.
+
+**Verificação:** a suíte Vitest oficial passou com 611 testes em 130 arquivos e 1 ignorado; os 4 novos testes cobrem reutilização por pose, hit e ordenação do cache, reconstrução após eviction, revisão da fonte e descarte temporário. `npm run typecheck`, `npm run audit:architecture` (808 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

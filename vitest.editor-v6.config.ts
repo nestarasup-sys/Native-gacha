@@ -5,6 +5,6 @@ export default defineConfig({
     include: ['tests/editor-v6/**/*.test.ts'],
     environment: 'node',
     clearMocks: true,
-    isolate: false
+    isolate: true
   }
 })

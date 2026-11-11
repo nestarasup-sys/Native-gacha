@@ -3,7 +3,7 @@ import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../sha
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
-import { prepareSavedCharacterRenderer, type GachaReusableMaterialCache, type PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
+import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
   changedMotionPixelBounds as changedBounds,
@@ -20,6 +20,7 @@ import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from '.
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
+import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -120,46 +121,21 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     Promise.all([pose(request.plan.from), pose(request.plan.to)]),
     prepareEditorV6MotionFacePair(request.plan.from, request.plan.to, request.character.customization, provider)
   ])
-  const poseSignature = (pose: typeof fromPose) => JSON.stringify([pose.width, pose.height, pose.parts, pose.joints, pose.layerOrder, pose.hiddenPartIds])
-  const samePose = poseSignature(fromPose) === poseSignature(toPose)
   const materials: GachaReusableMaterialCache = session?.materials ?? new Map()
-  const rigCharacterKey = session ? JSON.stringify([request.character, source.updatedAt]) : ''
-  let rigKeyLookups = 0, rigRebuilds = 0, rigBuildMilliseconds = 0
-  let preparedRigs = 0, reusedRigs = 0, reusable: Renderer | undefined, preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
+  const rigPreparer = createEditorV6MotionRigPreparer({
+    character: request.character,
+    source,
+    provider,
+    materials,
+    session,
+    fromPose,
+    toPose,
+    interpolateArtwork: progress => interpolateEditorV6Pose(fromPose, toPose, progress)
+  })
+  const { samePose, prepare } = rigPreparer
+  let preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
   let behindFaceAtlas: HTMLCanvasElement | undefined, faceLayerAtlas: HTMLCanvasElement | undefined, posteriorHairAtlas: HTMLCanvasElement | null | undefined, inFrontOfFaceAtlas: HTMLCanvasElement | null | undefined, eyesAboveRearHairAtlas: HTMLCanvasElement | null | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
-  const prepare = async (progress: number) => {
-    if (samePose && reusable) return reusable
-    const artwork = interpolateEditorV6Pose(fromPose, toPose, progress)
-    // No hash: exact character+model+interpolated pose identity. A one-byte
-    // change or minute pivot variation refuses reuse, preserving RGBA.
-    // Dynamic facial elements are still repainted on every requested frame.
-    // Serialize the full character once per bake, not for every canonical sample.
-    // Keep the exact artwork bytes (not a fuzzy hash) to preserve pixel identity.
-    const key = session ? JSON.stringify([rigCharacterKey, artwork]) : undefined
-    if (key) {
-      rigKeyLookups++
-      const cached = session!.endpointRenderers.get(key)
-      if (cached) {
-        session!.endpointRenderers.delete(key)
-        session!.endpointRenderers.set(key, cached)
-        reusedRigs++
-        if (samePose) reusable = cached
-        return cached
-      }
-    }
-    const beganRig = performance.now()
-    const renderer = await prepareSavedCharacterRenderer(request.character, { source, artwork, assetProvider: provider, materialCache: materials })
-    rigBuildMilliseconds += performance.now() - beganRig
-    preparedRigs++
-    if (key) {
-      if (session!.hasSeenPose(key)) rigRebuilds++
-      session!.rememberPose(key)
-      session!.endpointRenderers.set(key, renderer)
-    }
-    if (samePose) reusable = renderer
-    return renderer
-  }
   const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
     const renderer = preparedRenderer ?? await prepare(progress), face = scaleEditorV6MotionMouth(interpolateEditorV6Face(from, to, progress), mouthScale)
     try {
@@ -269,7 +245,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
             asset: { id: assetId, category: 'character', name: 'Atlas isolado da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true },
             assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
             motion: { version: 1, key: request.plan.key, assetId, frames },
-            metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, samples: count, atlasPixels }
+            metrics: { milliseconds: performance.now() - began, ...rigPreparer.metrics(), samples: count, atlasPixels }
           }
         } finally {
           isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
@@ -318,7 +294,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }
       const assetId = crypto.randomUUID(), dataUrl = atlas.toDataURL('image/png')
       atlas.width = atlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
     }
     // The export-hair preparator already rendered both endpoint faces while
     // building the static rigs. Reuse those exact measured canvas dimensions
@@ -515,7 +491,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null })
       atlas.width = atlas.height = 1
       faceAtlas.width = faceAtlas.height = 1
-      return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
+      return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
     }
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
     if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
@@ -524,7 +500,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
     }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null })
     atlas.width = atlas.height = 1
-    return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs, reusedRigs, samples: count, atlasPixels } }
+    return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
   } finally {
     preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedLayers(layers) })
     pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
@@ -533,7 +509,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (posteriorHairAtlas) posteriorHairAtlas.width = posteriorHairAtlas.height = 1
     if (inFrontOfFaceAtlas) inFrontOfFaceAtlas.width = inFrontOfFaceAtlas.height = 1
     if (eyesAboveRearHairAtlas) eyesAboveRearHairAtlas.width = eyesAboveRearHairAtlas.height = 1
-    if (reusable && !(session && [...session.endpointRenderers.values()].includes(reusable))) reusable.dispose()
+    rigPreparer.disposeTransientReusable()
     session?.trim()
     if (!session || materials.size > 4) materials.clear()
   }
