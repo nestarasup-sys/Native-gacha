@@ -872,3 +872,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** `bakeMotion.ts` reexporta o mesmo tipo para os consumidores antigos. A preparação de cabelo passou a importar diretamente o contrato, sem depender do módulo de implementação do bake. Mantidos o pareamento por offset, a inclusão condicional de `facePatch`, os nomes/referências dos canvases e a mensagem quando falta a geometria de um quadro.
 
 **Verificação:** 647 testes passaram na suíte Vitest oficial (140 arquivos; 1 ignorado), incluindo 2 novos testes de combinação e erro por quadro ausente. `npm run typecheck`, `npm run audit:architecture` (818 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 101 — gravação das camadas no atlas de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionLayerAtlasWriter.ts` a criação dos atlases obrigatórios, alocação tardia das camadas opcionais, desenho de cada pose e registro de sua geometria.
+
+**Compatibilidade:** preservados ordem e destino das camadas `behindFace`, `face`, `posteriorHair`, `inFrontOfFace` e `eyesAboveRearHair`, dimensões/posições de desenho, campos e crop dos quadros capturados e a mensagem de erro para camadas ausentes. A limpeza dos canvases de pose ocorre após a gravação; os atlases seguem vivos até a captura/serialização e são liberados pelo bake ao final.
+
+**Verificação:** 650 testes passaram na suíte Vitest oficial (141 arquivos; 1 ignorado), incluindo 3 novos testes de ordem, alocação tardia, geometria e descarte. `npm run typecheck`, `npm run audit:architecture` (819 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
