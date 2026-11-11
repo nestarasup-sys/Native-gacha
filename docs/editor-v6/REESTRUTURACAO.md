@@ -944,3 +944,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a pose do estado continua prevalecendo; a pose do Customizador é herdada somente quando o estado não define uma. Poses diferentes seguem em grupos separados, estados sem personagem catalogado ou sem cabelo são ignorados, e o objeto de personagem é copiado com o slot efetivo sem alterar o catálogo. O mapa de personagens é compartilhado com a etapa seguinte, sem cópia de estrutura persistente.
 
 **Verificação:** 686 testes Vitest passaram em 152 arquivos (1 ignorado), incluindo 2 novos testes de herança/override de pose, separação de grupos, filtragem e imutabilidade do catálogo. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (827 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.
+
+### Ciclo 110 — registro de assets do pacote de movimento de cabelo (implementado e verificado)
+
+**Objetivo:** extrair para `editorV6HairMotionBundleAssets.ts` o registro de superfícies/texturas da exportação, a geração determinística de IDs, a deduplicação por chave e a associação das superfícies às camadas de cada transição.
+
+**Compatibilidade:** preservados a ordem de alocação, o primeiro valor armazenado para uma chave repetida, o conjunto de camadas opcionais, as referências nulas quando não há olhos/overlay/atlas facial e a ordem dos dados de frame. O registro continua limitado a uma preparação de exportação; nenhum dado persistido é alterado.
+
+**Verificação:** 688 testes Vitest passaram em 153 arquivos (1 ignorado), incluindo 2 novos testes do registro, deduplicação e referências das transições. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (828 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.

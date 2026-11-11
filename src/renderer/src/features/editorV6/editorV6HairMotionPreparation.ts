@@ -2,10 +2,9 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult } from '../../../../shared/editorV6Motion'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
-import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import type { EditorV6MotionLayerAtlasCapture } from './motion/motionLayerAtlasCapture'
+import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
@@ -16,6 +15,7 @@ import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
 import { groupEditorV6HairMotionTargets } from './editorV6HairMotionGroups'
+import { createEditorV6HairMotionBundleAssets, type EditorV6SerializedMotionLayerAtlas } from './editorV6HairMotionBundleAssets'
 
 export { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from './editorV6HairMotionTargets'
 
@@ -59,44 +59,8 @@ export async function prepareEditorV6HairMotionBundle(
   const groups = groupEditorV6HairMotionTargets(targets, characterById)
   if (!groups.size) throw Error('Nenhum personagem usado neste projeto tem cabelo selecionado no Customizador.')
 
-  const surfaces: EditorV6HairMotionBundle['surfaces'] = []
-  const textures: EditorV6HairMotionBundle['textures'] = []
+  const { surfaces, textures, motionTransitions, addSurface, addTexture, captureTransitionLayers } = createEditorV6HairMotionBundleAssets()
   const rigs: EditorV6HairMotionRig[] = []
-  const motionTransitions: EditorV6HairMotionTransition[] = []
-  const surfaceIds = new Map<string, string>(), textureIds = new Map<string, string>()
-  const addSurface = (key: string, dataUrl: string) => {
-    const existing = surfaceIds.get(key)
-    if (existing) return existing
-    const id = `surface-${surfaces.length + 1}`
-    surfaceIds.set(key, id); surfaces.push({ id, dataUrl })
-    return id
-  }
-  const addTexture = (key: string, dataUrl: string) => {
-    const existing = textureIds.get(key)
-    if (existing) return existing
-    const id = `texture-${textures.length + 1}`
-    textureIds.set(key, id); textures.push({ id, dataUrl })
-    return id
-  }
-
-  type SerializedMotionLayerAtlas = Pick<EditorV6MotionLayerAtlasCapture, 'frames'> & {
-    behindFaceDataUrl: string
-    faceDataUrl: string
-    eyesAboveRearHairDataUrl: string | null
-    inFrontOfFaceDataUrl: string | null
-  }
-  const captureTransitionLayers = (plan: EditorV6MotionPlan, result: Pick<EditorV6MotionBakeResult, 'faceAsset'>, capture: SerializedMotionLayerAtlas) => {
-    const behindFaceSurfaceId = addSurface(`motion:${plan.key}:behind-face`, capture.behindFaceDataUrl)
-    const faceSurfaceId = addSurface(`motion:${plan.key}:face`, capture.faceDataUrl)
-    const eyesAboveRearHairSurfaceId = capture.eyesAboveRearHairDataUrl ? addSurface(`motion:${plan.key}:raised-eyes`, capture.eyesAboveRearHairDataUrl) : null
-    const overlaySurfaceId = capture.inFrontOfFaceDataUrl ? addSurface(`motion:${plan.key}:front-face`, capture.inFrontOfFaceDataUrl) : null
-    const faceAtlasSurfaceId = result.faceAsset ? addSurface(`motion:${plan.key}:face-atlas`, result.faceAsset.dataUrl) : null
-    motionTransitions.push({
-      elementId: plan.elementId, key: plan.key, startFrame: plan.startFrame, endFrame: plan.endFrame,
-      behindFaceSurfaceId, faceSurfaceId, eyesAboveRearHairSurfaceId, overlaySurfaceId, faceAtlasSurfaceId,
-      frames: capture.frames
-    })
-  }
 
   // One small material cache per current export preparation (bounded in the
   // renderer material loader). Share wardrobe/hair manifests across poses;
@@ -285,7 +249,7 @@ export async function prepareEditorV6HairMotionBundle(
     const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
     // Reuse renderer material/provider caches only within this export's transition batch.
     const transitionSession = createEditorV6BakeSession(window.desktop.fabricator)
-    const hairBakeBatch = createEditorV6HairBakeBatch<{ result: EditorV6MotionBakeResult; layerCapture: SerializedMotionLayerAtlas }>()
+    const hairBakeBatch = createEditorV6HairBakeBatch<{ result: EditorV6MotionBakeResult; layerCapture: EditorV6SerializedMotionLayerAtlas }>()
     const preparedTransitions = await mapConcurrentItems(relevantPlans, async (plan) => {
       if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
       const character = characterById.get(plan.characterId)
@@ -315,7 +279,7 @@ export async function prepareEditorV6HairMotionBundle(
         mouthScaleSamples: facialMotion
       })
       const prepared = await hairBakeBatch.run(bakeKey, async () => {
-        let layerCapture: SerializedMotionLayerAtlas | undefined
+        let layerCapture: EditorV6SerializedMotionLayerAtlas | undefined
         const bakeStarted = performance.now()
         const result = await bakeEditorV6Motion({
           id: crypto.randomUUID(), plan, character: hairlessCharacter,
