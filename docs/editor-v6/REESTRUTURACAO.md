@@ -840,3 +840,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os argumentos e renderer da captura facial, os IDs e nomes dos assets, as dimensões da região unificada, o fallback que reutiliza a base `talk` para `talk-blink` e a propagação de erros que não indicam asset de piscada ausente. O frame facial isolado continua retornando ao bake para ser reutilizado na montagem do atlas. Os canvases intermediários são liberados após leitura/serialização; frames são descartados conforme seu ownership.
 
 **Verificação:** 635 testes passaram na suíte Vitest oficial (136 arquivos; 1 ignorado), incluindo 3 novos testes de união/serialização, fallback de piscada e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (814 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 97 — composição do atlas isolado de boca (implementado e verificado)
+
+**Objetivo:** extrair para `motionIsolatedMouthAtlas.ts` o cálculo do layout, o empacotamento das amostras isoladas de boca, os metadados `facePatch` e a criação do asset do ciclo estático.
+
+**Compatibilidade:** mantidos o limite de 8192 pixels por dimensão e 8 milhões de pixels (ou o limite menor do pedido), gutter e posições das células, coordenadas normalizadas, offsets/rotação/flip dos frames, nome/MIME/snapshot do asset, sequência do ID e mensagens de erro. O bake ainda controla a preparação e liberação dos patches, além de liberar o atlas após serialização; formatos persistidos e contrato de exportação não mudam.
+
+**Verificação:** 639 testes passaram na suíte Vitest oficial (137 arquivos; 1 ignorado), incluindo 4 novos testes de layout/metadados, limite nativo, crop fora do corpo e amostra ausente. `npm run typecheck`, `npm run audit:architecture` (815 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

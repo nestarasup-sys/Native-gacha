@@ -26,6 +26,7 @@ import { createChangedMotionPixelPatch, createTransparentMotionPatch, readMotion
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
 import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
+import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -128,34 +129,22 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
             patch.canvas = normalized
             patch.crop = mouthUnion
           }
-          const count = request.plan.samples.length, gutter = 2
-          const cellWidth = Math.max(...isolatedPatches.map(patch => patch.canvas.width))
-          const cellHeight = Math.max(...isolatedPatches.map(patch => patch.canvas.height))
-          const layout = chooseMotionAtlasLayout(count, cellWidth, cellHeight, 8192, Math.min(8_000_000, request.maxAtlasPixels ?? 8_000_000))
-          if (layout.ratio < 1) throw Error(`A camada facial em resolução nativa precisa de ${layout.pixels.toLocaleString('pt-BR')} pixels e excede o limite seguro; reduza o número de personagens falando simultaneamente neste trecho.`)
-          const { columns, width: atlasWidth, height: atlasHeight, pixels: atlasPixels } = layout
-          mouthAtlas = document.createElement('canvas'); mouthAtlas.width = atlasWidth; mouthAtlas.height = atlasHeight
-          const context = mouthAtlas.getContext('2d')!
-          const frames: EditorV6MotionFrame[] = []
-          for (const [index, sample] of request.plan.samples.entries()) {
-            const patch = isolatedPatches[index]
-            if (!patch) throw Error('O ciclo de fala não contém uma amostra isolada da boca.')
-            const cellX = index % columns * cellWidth, cellY = Math.floor(index / columns) * cellHeight
-            const spriteX = cellX + gutter, spriteY = cellY + gutter
-            const mouthCrop = patch.crop
-            const x = (mouthCrop.left - sourceCrop.left) / sourceCrop.width, y = (mouthCrop.top - sourceCrop.top) / sourceCrop.height
-            const width = mouthCrop.width / sourceCrop.width, height = mouthCrop.height / sourceCrop.height
-            if (x < -0.000001 || y < -0.000001 || x + width > 1.000001 || y + height > 1.000001) throw Error('A boca isolada ficou fora do recorte corporal usado pelo personagem.')
-            context.drawImage(patch.canvas, cellX, cellY)
-            const sprite = { x: spriteX, y: spriteY, width: mouthCrop.width, height: mouthCrop.height, atlasWidth, atlasHeight }
-            frames.push({ offset: sample.offset, sprite, x: Math.max(0, x), y: Math.max(0, y), width, height, rotation: from.rotation, flipX: Boolean(from.flipX), facePatch: { sprite, x: Math.max(0, x), y: Math.max(0, y), width, height } })
-          }
-          const assetId = crypto.randomUUID(), dataUrl = mouthAtlas.toDataURL('image/png')
+          const packed = buildEditorV6IsolatedMouthAtlas({
+            patches: isolatedPatches,
+            sampleOffsets: request.plan.samples.map(sample => sample.offset),
+            sourceCrop,
+            key: request.plan.key,
+            rotation: from.rotation,
+            flipX: Boolean(from.flipX),
+            maxAtlasPixels: request.maxAtlasPixels
+          })
+          mouthAtlas = packed.atlas
+          const count = request.plan.samples.length
           return {
-            asset: { id: assetId, category: 'character', name: 'Atlas isolado da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true },
+            asset: packed.asset,
             assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
-            motion: { version: 1, key: request.plan.key, assetId, frames },
-            metrics: { milliseconds: performance.now() - began, ...rigPreparer.metrics(), samples: count, atlasPixels }
+            motion: packed.motion,
+            metrics: { milliseconds: performance.now() - began, ...rigPreparer.metrics(), samples: count, atlasPixels: packed.atlasPixels }
           }
         } finally {
           isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
