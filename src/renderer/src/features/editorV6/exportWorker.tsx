@@ -9,6 +9,7 @@ import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
+import { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
@@ -31,7 +32,9 @@ async function initialize() {
   const hairSurfaces = new Map<string, HTMLImageElement>()
   const hairSurfaceDataById = new Map((hairAnimation?.surfaces ?? []).map(surface => [surface.id, surface.dataUrl]))
   const hairTextures = new Map<string, HTMLImageElement>()
-  const { hairRigs, hairPoseRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds } = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
+  const hairMotionPlanIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
+  const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex, hairPoseReactionEnds } = hairMotionPlanIndex
+  const { hairRigAtFrame } = createEditorV6ExportHairRigAtFrame(hairMotionPlanIndex)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const hairMotionStates = new Map<string, HairMotionState>()
@@ -48,33 +51,6 @@ async function initialize() {
   // directly. These surfaces are reused across frames instead of PNG round trips.
   const motionHairFrameSurfaces = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
   const animatedElementIds = [...new Set((hairAnimation?.rigs ?? []).filter(rig => rig.layers.length > 0).map(rig => rig.elementId))]
-  type ResolvedHairRig = { rig: EditorV6HairMotionRig; crop?: EditorV6HairMotionRig['sourceCrop']; element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number] }
-  const hairRigAtFrame = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number): ResolvedHairRig | undefined => {
-    const elementId = element.id
-    if (element.motionSprite) {
-      const indexed = hairTransitionIndex.get(elementId, frame)
-      const transition = indexed?.transition
-      if (transition?.from && transition.to) {
-        const sample = indexed?.poseSample
-        const hairlessFrame = indexed?.atlasFrame
-        if (sample && hairlessFrame) {
-          return {
-            rig: interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(sample.progress)),
-            crop: hairlessFrame.crop,
-            element: { ...element, x: hairlessFrame.x, y: hairlessFrame.y, width: hairlessFrame.width, height: hairlessFrame.height, rotation: hairlessFrame.rotation, flipX: hairlessFrame.flipX }
-          }
-        }
-      }
-      const expressionPlan = expressionOnlyPlansByElement.get(elementId)?.find(plan => frame > plan.startFrame && frame < plan.endFrame)
-      if (expressionPlan) {
-        const rig = (expressionPlan.from.assetId ? hairRigs.get(`${elementId}:${expressionPlan.from.assetId}`) : undefined)
-          ?? hairPoseRigs.get(`${elementId}:${expressionPlan.from.poseSlot ?? 'base'}`)
-        if (rig) return { rig, element: expressionPlan.from }
-      }
-    }
-    const rig = element.assetId ? hairRigs.get(`${element.id}:${element.assetId}`) : undefined
-    return rig ? { rig, element } : undefined
-  }
   const loadHairImage = (dataUrl: string) => new Promise<HTMLImageElement>((resolve, reject) => {
     const image = new Image()
     image.onload = () => { void image.decode().then(() => resolve(image), () => reject(Error('Não foi possível decodificar uma camada da animação de cabelo.'))) }

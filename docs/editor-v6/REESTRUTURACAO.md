@@ -720,3 +720,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o renderizador WebGL permanece propriedade do worker e é injetado no warper. Preservados dimensões, offsets da textura estática, qualidade de suavização, reutilização separada dos dois canvases, contadores de tempo, recorte do buffer WebGL e mensagens de falha de contexto.
 
 **Verificação:** 58 testes passaram em 10 arquivos, cobrindo cache estático, recorte exato da saída WebGL, acumulação dos tempos, falha de contexto, simulação física, composição raster e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (799 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 82 — resolução do rig de cabelo no quadro de exportação (implementado e verificado)
+
+**Objetivo:** extrair para `exportHairRigAtFrame.ts` a escolha de geometria do cabelo por personagem/quadro, isolando rig direto, rig físico da pose facial em andamento e rig interpolado de transição.
+
+**Compatibilidade:** a função consome os mesmos índices criados pelo planejador de exportação. Mantidos os limites estritos dos planos de expressão, a prioridade da transição preparada, o fallback asset/pose para expressão e a combinação do rig interpolado com a geometria do atlas.
+
+**Verificação:** 61 testes passaram em 11 arquivos, cobrindo rig direto, expressão em andamento e limite do plano, transição com atlas, índices de movimento, física, deformação/composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (800 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
