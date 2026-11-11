@@ -4,10 +4,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6Motio
 import { interpolateEditorV6Pose } from '../../../../../shared/editorV6MotionInterpolation'
 import type { GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
-import {
-  unionMotionCrops as unionCrop,
-  type MotionPixelCrop as Crop
-} from './motionPixelAnalysis'
+import type { MotionPixelCrop as Crop } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
@@ -16,18 +13,14 @@ import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSessi
 import { prepareEditorV6MotionFacePair } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
-import { createTransparentMotionPatch } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
-import { prepareEditorV6MouthlessBaseAssets } from './motionMouthlessBaseAssets'
-import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
-import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
-import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
 import type { EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 import { disposeEditorV6MotionLayerAtlases, type MotionLayerAtlases } from './motionLayerAtlasWriter'
 import { prepareEditorV6MotionAtlasSources } from './motionAtlasSourcePreparation'
 import { bakeEditorV6MotionAtlasFrames } from './motionAtlasFrameBaking'
 import { finalizeEditorV6MotionBake } from './motionBakeResult'
 import { createEditorV6MotionFrameRenderer } from './motionFrameRenderer'
+import { bakeEditorV6StaticMouthLoop } from './motionStaticMouthBake'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -66,79 +59,21 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
   const render = createEditorV6MotionFrameRenderer({ request, from, to, prepare, samePose, session })
   try {
-    const staticMouthLoop = Boolean(!captureLayerAtlases && request.mouthScaleSamples && samePose
-      && JSON.stringify(from) === JSON.stringify(to)
-      && request.plan.samples.every((sample) => sample.faceMode === from.activeFaceMode))
-    if (staticMouthLoop) {
-      const scales = request.mouthScaleSamples!
-      const baseline = await render(0, from.activeFaceMode, 1, true)
-      if (baseline.mouthCanvas && baseline.mouthCrop) {
-        const { sourceCrop, isolatedBaseline, assets: mouthlessBaseAssets } = await prepareEditorV6MouthlessBaseAssets({ from, baseline, render })
-
-        const isolatedPatches: Array<{ canvas: HTMLCanvasElement; crop: Crop }> = []
-        let mouthAtlas: HTMLCanvasElement | undefined
-        try {
-          const baselineMouthCrop = isolatedBaseline.mouthCrop!
-          isolatedPatches.push({ canvas: createTransparentMotionPatch(isolatedBaseline.mouthCanvas!, baselineMouthCrop), crop: baselineMouthCrop })
-          for (let index = 1; index < scales.length; index++) {
-            const comparison = await render(0, from.activeFaceMode, scales[index], index === scales.length - 1, baseline.renderer)
-            try {
-              if (!comparison.mouthCanvas || !comparison.mouthCrop) throw Error('Não foi possível isolar a peça da boca para o ciclo de fala.')
-              if (index === scales.length - 1 && comparison.mouthCrop.fingerprint === baselineMouthCrop.fingerprint) throw Error('A boca aberta não respondeu à ampliação; confira se o personagem tem uma variante de boca aberta editável no catálogo facial.')
-              isolatedPatches.push({ canvas: createTransparentMotionPatch(comparison.mouthCanvas, comparison.mouthCrop), crop: comparison.mouthCrop })
-            } finally { comparison.dispose() }
-          }
-          const mouthUnion = isolatedPatches.reduce((bounds, patch) => unionCrop(bounds, patch.crop), isolatedPatches[0].crop)
-          for (const patch of isolatedPatches) {
-            const normalized = document.createElement('canvas')
-            normalized.width = mouthUnion.width + 4; normalized.height = mouthUnion.height + 4
-            const normalizedContext = normalized.getContext('2d')!
-            normalizedContext.drawImage(patch.canvas, 2, 2, patch.crop.width, patch.crop.height,
-              2 + patch.crop.left - mouthUnion.left, 2 + patch.crop.top - mouthUnion.top, patch.crop.width, patch.crop.height)
-            patch.canvas.width = patch.canvas.height = 1
-            patch.canvas = normalized
-            patch.crop = mouthUnion
-          }
-          const packed = buildEditorV6IsolatedMouthAtlas({
-            patches: isolatedPatches,
-            sampleOffsets: request.plan.samples.map(sample => sample.offset),
-            sourceCrop,
-            key: request.plan.key,
-            rotation: from.rotation,
-            flipX: Boolean(from.flipX),
-            maxAtlasPixels: request.maxAtlasPixels
-          })
-          mouthAtlas = packed.atlas
-          const count = request.plan.samples.length
-          return {
-            asset: packed.asset,
-            assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
-            motion: packed.motion,
-            metrics: { milliseconds: performance.now() - began, ...rigPreparer.metrics(), samples: count, atlasPixels: packed.atlasPixels }
-          }
-        } finally {
-          isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
-          if (mouthAtlas) mouthAtlas.width = mouthAtlas.height = 1
-          baseline.dispose(); isolatedBaseline.dispose()
-        }
-      }
-      const { sourceCrop, changedBounds } = await detectEditorV6LegacyMouthBounds({ baseline, scales, faceMode: from.activeFaceMode, render })
-      const packed = await buildEditorV6LegacyMouthAtlas({
-        sourceCrop,
-        changedBounds,
-        samples: request.plan.samples,
-        scales,
-        from,
-        key: request.plan.key,
-        maxAtlasPixels: request.maxAtlasPixels,
-        render: (faceMode, mouthScale) => render(0, faceMode, mouthScale)
-      })
-      return { asset: packed.asset, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: packed.motion, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: request.plan.samples.length, atlasPixels: packed.atlasPixels } }
-    }
+    const staticMouthBake = await bakeEditorV6StaticMouthLoop({
+      request,
+      from,
+      to,
+      samePose,
+      captureLayerAtlases: Boolean(captureLayerAtlases),
+      render,
+      elapsedMilliseconds: () => performance.now() - began,
+      rigMetrics: rigPreparer.metrics
+    })
+    if (staticMouthBake) return staticMouthBake
     const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = await resolveMotionBakeEndpointGeometry({
       captureLayerAtlases: Boolean(captureLayerAtlases),
       endpointCrops,
-      staticMouthLoop,
+      staticMouthLoop: false,
       hasMouthScaleSamples: Boolean(request.mouthScaleSamples),
       firstFaceMode: from.activeFaceMode,
       render

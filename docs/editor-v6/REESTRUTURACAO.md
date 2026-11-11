@@ -1120,3 +1120,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados interpolação e escala da boca, olhos abertos durante transições, render combinado em uma passagem quando há captura de camadas, corte/fingerprint, uso de renderer preparado, reutilização da sessão e descarte somente de renderers transitórios. A estrutura do resultado de bake, assets, atlas, métricas e documento salvo não muda.
 
 **Verificação:** 721 testes Vitest passaram em 163 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para render completo/camadas, isolamento da boca, modos de transição e liberação segura do renderer. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (851 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 132 — ciclo de fala em pose estática (implementado)
+
+**Objetivo:** retirar de `bakeMotion.ts` a seleção e a orquestração do ciclo de fala sem movimento, incluindo os caminhos de atlas isolado e fallback legacy, para `motionStaticMouthBake.ts`. O orquestrador principal chama esse caso de uso e segue para o atlas corporal quando a transição não se encaixa nele.
+
+**Compatibilidade:** preservados os critérios do caso estático, a ordem e os offsets das amostras, uso das escalas de boca, comparação por fingerprint, normalização/unidade dos patches, assets mouthless, mensagens de erro, modalidade facial, métricas e limites de pixels. Não alterei protocolo de exportação nem conteúdo persistido.
+
+**Verificação:** 724 testes Vitest passaram em 164 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos para guarda do caso estático, caminho isolado e fallback legacy. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (852 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

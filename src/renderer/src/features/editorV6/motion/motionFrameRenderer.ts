@@ -22,6 +22,8 @@ export type EditorV6MotionRenderedFrame = {
   dispose: () => void
 }
 
+export type EditorV6MotionFrameRenderer = ReturnType<typeof createEditorV6MotionFrameRenderer>
+
 type EditorV6MotionFrameRendererOptions = {
   request: EditorV6MotionBakeRequest
   from: EditorV6Element
