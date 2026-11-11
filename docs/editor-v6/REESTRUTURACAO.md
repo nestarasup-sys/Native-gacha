@@ -824,3 +824,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os modos elegíveis (`talk` e `talk-blink`), o threshold de escala, o renderer base reutilizado, a preferência pela peça de boca isolada, o fallback RGBA com padding 3 limitado ao crop do frame, a mensagem quando não há mudança e a liberação do frame em sucesso ou erro. A montagem/ordenação do atlas e o formato dos patches não mudam.
 
 **Verificação:** 629 testes passaram na suíte Vitest oficial (134 arquivos; 1 ignorado), incluindo 4 novos testes de elegibilidade, boca isolada, fallback de pixels e erro sem alteração com descarte. `npm run typecheck`, `npm run audit:architecture` (812 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 95 — composição do atlas facial da transição (implementado e verificado)
+
+**Objetivo:** extrair para `motionFaceAtlas.ts` a validação do orçamento de pixels, o empacotamento lado a lado dos patches, a escrita de metadados `facePatch` e a criação do asset facial.
+
+**Compatibilidade:** mantidos gutter 2, ordem de empacotamento, offsets e sprites, coordenadas normalizadas, `replaceBounds`, sequência dos IDs, nome/MIME/tipo do asset e limite combinado do atlas facial com o corporal. O callback de captura de camadas e a resposta final de movimento continuam no bake. O novo módulo libera o canvas facial se a composição/serialização falhar; o caminho de sucesso mantém a liberação após captura.
+
+**Verificação:** 632 testes passaram na suíte Vitest oficial (135 arquivos; 1 ignorado), incluindo 3 novos testes de posicionamento/metadados, orçamento nativo e descarte em erro. `npm run typecheck`, `npm run audit:architecture` (813 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

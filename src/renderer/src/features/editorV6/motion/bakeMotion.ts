@@ -24,6 +24,7 @@ import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
 import { createChangedMotionPixelPatch, cropMotionCanvas, createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
+import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -69,6 +70,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   })
   const { samePose, prepare } = rigPreparer
   let preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
+  let facePatchAtlas: HTMLCanvasElement | undefined
   let behindFaceAtlas: HTMLCanvasElement | undefined, faceLayerAtlas: HTMLCanvasElement | undefined, posteriorHairAtlas: HTMLCanvasElement | null | undefined, inFrontOfFaceAtlas: HTMLCanvasElement | null | undefined, eyesAboveRearHairAtlas: HTMLCanvasElement | null | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
   const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
@@ -341,34 +343,20 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     }
     let faceAsset: EditorV6MotionBakeResult['faceAsset']
     if (facePatches.length) {
-      const gutter = 2, faceWidth = facePatches.reduce((total, patch) => total + patch.canvas.width, 0), faceHeight = Math.max(...facePatches.map((patch) => patch.canvas.height))
-      const facePixels = faceWidth * faceHeight, bodyPixels = atlas.width * atlas.height
-      if (faceWidth > 8192 || faceHeight > 8192 || facePixels + bodyPixels > maxAtlasPixels) throw Error('As camadas faciais desta transição excedem o limite seguro em resolução nativa. A exportação foi interrompida para não reduzir a nitidez do personagem.')
-      const faceAtlas = document.createElement('canvas'); faceAtlas.width = faceWidth; faceAtlas.height = faceHeight
-      const faceContext = faceAtlas.getContext('2d')!
-      let offsetX = 0
-      for (const patch of facePatches) {
-        faceContext.drawImage(patch.canvas, offsetX, 0)
-        const frame = frames[patch.index]
-        frame.facePatch = {
-          sprite: { x: offsetX + gutter, y: gutter, width: patch.width, height: patch.height, atlasWidth: faceWidth, atlasHeight: faceHeight },
-          x: (patch.left - patch.crop.left) / patch.crop.width, y: (patch.top - patch.crop.top) / patch.crop.height,
-          width: patch.width / patch.crop.width, height: patch.height / patch.crop.height,
-          ...(patch.replace ? { replace: true, replaceBounds: normalizedReplacementBounds(patch.changed!, { left: patch.left, top: patch.top, right: patch.left + patch.width - 1, bottom: patch.top + patch.height - 1 }) } : {})
-        }
-        offsetX += patch.canvas.width
-        patch.canvas.width = patch.canvas.height = 1
-      }
-      const faceAssetId = crypto.randomUUID(), assetId = crypto.randomUUID()
-      const faceDataUrl = faceAtlas.toDataURL('image/png'), bodyDataUrl = atlas.toDataURL('image/png')
-      faceAsset = { id: faceAssetId, category: 'character', name: 'Camadas faciais da transição', mimeType: 'image/png', dataUrl: faceDataUrl, timelineSnapshot: true }
+      const bodyPixels = atlas.width * atlas.height
+      const faceAtlas = buildEditorV6MotionFaceAtlas({ patches: facePatches, frames, bodyPixels, maxAtlasPixels })
+      facePatchAtlas = faceAtlas.faceAtlas
+      faceAsset = faceAtlas.faceAsset
+      const { faceAssetId, assetId, facePixels } = faceAtlas
+      const bodyDataUrl = atlas.toDataURL('image/png')
       if (captureLayerAtlases) captureLayerAtlases({ frames: frames.map(frame => {
         const captured = layerFrames.find(item => item.offset === frame.offset)
         if (!captured) throw Error('A preparação perdeu um quadro da pose sem cabelo.')
         return { ...captured, ...(frame.facePatch ? { facePatch: frame.facePatch } : {}) }
       }), behindFace: behindFaceAtlas!, face: faceLayerAtlas!, posteriorHair: posteriorHairAtlas ?? null, inFrontOfFace: inFrontOfFaceAtlas!, eyesAboveRearHair: eyesAboveRearHairAtlas ?? null })
       atlas.width = atlas.height = 1
-      faceAtlas.width = faceAtlas.height = 1
+      facePatchAtlas.width = facePatchAtlas.height = 1
+      facePatchAtlas = undefined
       return { asset: { id: assetId, category: 'character', name: 'Transição de personagem', mimeType: 'image/png', dataUrl: bodyDataUrl, timelineSnapshot: true }, faceAsset, motion: { version: 1, key: request.plan.key, assetId, faceAssetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels: bodyPixels + facePixels } }
     }
     const assetId = crypto.randomUUID(), atlasPixels = atlas.width * atlas.height, dataUrl = atlas.toDataURL('image/png')
@@ -387,6 +375,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     if (posteriorHairAtlas) posteriorHairAtlas.width = posteriorHairAtlas.height = 1
     if (inFrontOfFaceAtlas) inFrontOfFaceAtlas.width = inFrontOfFaceAtlas.height = 1
     if (eyesAboveRearHairAtlas) eyesAboveRearHairAtlas.width = eyesAboveRearHairAtlas.height = 1
+    if (facePatchAtlas) facePatchAtlas.width = facePatchAtlas.height = 1
     rigPreparer.disposeTransientReusable()
     session?.trim()
     if (!session || materials.size > 4) materials.clear()
