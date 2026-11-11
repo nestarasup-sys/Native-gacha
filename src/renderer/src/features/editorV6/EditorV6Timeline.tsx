@@ -7,6 +7,7 @@ import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
+import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineFollowScroll, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
 
 type Props = {
   document: EditorV6Document
@@ -78,16 +79,19 @@ export function EditorV6Timeline(props: Props) {
   const zoomTo = useCallback((next: number) => {
     const node = scroll.current
     const old = settings.current.pps
-    const center = node ? (node.scrollLeft + Math.max(0, node.clientWidth - settings.current.heading) / 2) / old : 0
-    const value = Math.min(960, Math.max(.25, next))
+    const viewport = node ? { scrollLeft: node.scrollLeft, clientWidth: node.clientWidth, heading: settings.current.heading } : null
+    const center = viewport ? getEditorV6TimelineCenterSeconds(viewport, old) : 0
+    const value = clampEditorV6TimelineZoom(next)
     setPps(value)
-    requestAnimationFrame(() => { if (node) node.scrollLeft = Math.max(0, center * value - (node.clientWidth - settings.current.heading) / 2) })
+    requestAnimationFrame(() => {
+      if (node && viewport) node.scrollLeft = getEditorV6TimelineScrollForZoom({ ...viewport, clientWidth: node.clientWidth, heading: settings.current.heading }, center, value)
+    })
   }, [])
   const fit = useCallback(() => {
     if (fitActive.current) { zoomTo(previousZoom.current); fitActive.current = false; return }
     previousZoom.current = settings.current.pps
     fitActive.current = true
-    zoomTo(Math.max(1, (scroll.current?.clientWidth ?? 800) - settings.current.heading - 12) / (latest.current.document.timeline.durationFrames / 30))
+    zoomTo(getEditorV6TimelineFitZoom(scroll.current?.clientWidth ?? 800, settings.current.heading, latest.current.document.timeline.durationFrames))
     requestAnimationFrame(() => { if (scroll.current) scroll.current.scrollLeft = 0 })
   }, [zoomTo])
 
@@ -114,8 +118,9 @@ export function EditorV6Timeline(props: Props) {
   }, [])
   useEffect(() => {
     if (!props.playing || !scroll.current) return
-    const node = scroll.current, x = heading + playbackFrame / 30 * pps
-    if (x > node.scrollLeft + node.clientWidth * .8 || x < node.scrollLeft + heading) node.scrollLeft = Math.max(0, x - node.clientWidth * .5)
+    const node = scroll.current
+    const nextScroll = getEditorV6TimelineFollowScroll({ scrollLeft: node.scrollLeft, clientWidth: node.clientWidth, heading }, pps, playbackFrame)
+    if (nextScroll !== null) node.scrollLeft = nextScroll
   }, [playbackFrame, props.playing, heading, pps])
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {

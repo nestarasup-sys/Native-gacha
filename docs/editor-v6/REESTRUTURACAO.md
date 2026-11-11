@@ -528,3 +528,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados Ctrl/Cmd+K e D apenas com bloco selecionado; prioridade de Ctrl/Cmd sobre outras teclas; Escape sem `preventDefault`; bloqueio em campos editáveis, diálogos e eventos já tratados; passos de 1/5 quadros limitados pela duração; e teclas de snap, zoom, fit, play e exclusão.
 
 **Verificação:** 4 testes novos cobrem mapeamentos, ausência de seleção, limites do playhead, Escape e bloqueios de evento. Com regressões dos atalhos globais, pointer, timeline e faixas, 47 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (771 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 58 — cálculos de viewport da timeline (implementado e verificado)
+
+**Objetivo:** extrair para `editorV6TimelineViewport.ts` os cálculos puros de limite de zoom, preservação do centro ao mudar escala, zoom de encaixe e acompanhamento do playhead. O componente continua dono dos refs, estado React, agendamento do frame e escrita de `scrollLeft`.
+
+**Compatibilidade:** mantidos os limites de escala (0,25–960 px/s), centralização durante zoom, fórmula de fit, limiares de 80%/início visível para autoscroll e retorno para a esquerda ao restaurar o encaixe. Nenhuma preferência, documento, persistência ou contrato IPC foi alterado.
+
+**Verificação:** 3 testes novos cobrem zoom/centralização, fit e autoscroll; com regressões de teclado e ponteiro, 11 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (772 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
