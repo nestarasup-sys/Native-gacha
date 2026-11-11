@@ -2,7 +2,7 @@ import type { CharacterRenderAssetProvider } from '../../../../../shared/charact
 import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
-import { interpolateEditorV6Face, interpolateEditorV6Pose, motionEase } from '../../../../../shared/editorV6MotionInterpolation'
+import { interpolateEditorV6Face, interpolateEditorV6Pose } from '../../../../../shared/editorV6MotionInterpolation'
 import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
@@ -16,7 +16,7 @@ import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
-import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
+import { disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
 import { createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
@@ -25,9 +25,9 @@ import { buildEditorV6IsolatedMouthAtlas } from './motionIsolatedMouthAtlas'
 import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
 import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
 import { createEditorV6MotionLayerAtlasCapture, type EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
-import { createEditorV6MotionLayerAtlases, disposeEditorV6MotionLayerAtlases, writeEditorV6MotionLayerAtlasFrame, type MotionLayerAtlases } from './motionLayerAtlasWriter'
-import { interpolateEditorV6MotionFrameGeometry, resolveEditorV6MotionElementScales } from './motionFrameGeometry'
+import { disposeEditorV6MotionLayerAtlases, type MotionLayerAtlases } from './motionLayerAtlasWriter'
 import { prepareEditorV6MotionAtlasSources } from './motionAtlasSourcePreparation'
+import { bakeEditorV6MotionAtlasFrames } from './motionAtlasFrameBaking'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -63,7 +63,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
   })
   const { samePose, prepare } = rigPreparer
   let preparedAtlasFrames: BakedBodySample[] | undefined, pendingFacePatches: BakedFacePatch[] | undefined
-  let facePatchAtlas: HTMLCanvasElement | undefined
+  let bodyAtlas: HTMLCanvasElement | undefined, facePatchAtlas: HTMLCanvasElement | undefined
   let layerAtlases: MotionLayerAtlases | undefined
   const layerFrames: EditorV6MotionLayerAtlasCapture['frames'] = []
   const render = async (progress: number, faceMode?: EditorV6FaceRenderMode, mouthScale = 1, fingerprint = false, preparedRenderer?: Renderer, referenceMode = false, captureLayers = false): Promise<MotionFrameRender> => {
@@ -194,40 +194,28 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       ratio = layout.ratio
     }
     if (ratio < 1) throw Error(`A transição deste personagem precisa de ${layout.width}×${layout.height} pixels em resolução nativa e excede o limite seguro. A exportação foi interrompida para não reduzir a nitidez do personagem.`)
-    const { columns, rows } = layout
-    const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
-    const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
-    const context = atlas.getContext('2d')!
-    if (captureLayerAtlases) layerAtlases = createEditorV6MotionLayerAtlases(atlas.width, atlas.height)
-    // Saved rectangles encode the stage aspect ratio and scale; legacy actors
-    // without a source-canvas width retain their historical source scale.
-    const endpointScales = resolveEditorV6MotionElementScales(request.plan.from, request.plan.to, fromCrop, toCrop)
-    for (const [index, sample] of request.plan.samples.entries()) {
-      const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
-      const baked = preparedAtlasFrames?.[index]
-      const frame = baked ? undefined : await render(t, sample.faceMode, 1, false, undefined, false, Boolean(captureLayerAtlases))
-      const crop = baked?.crop ?? frame!.crop
-      try {
-        const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
-        const sourceCanvas = baked?.canvas ?? frame!.canvas
-        context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)
-        const geometry = interpolateEditorV6MotionFrameGeometry({ from, to, fromCrop, toCrop, endpointScales, crop, progress: t })
-        const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, ...geometry }
-        frames.push(motionFrame)
-        if (captureLayerAtlases) {
-          const layers = baked?.layers ?? (frame?.layers ? cropPreparedMotionLayers(frame.layers, crop) : undefined)
-          if (!layerAtlases) throw Error('A preparação do cabelo não capturou as camadas da pose intermediária.')
-          layerFrames.push(writeEditorV6MotionLayerAtlasFrame({ atlases: layerAtlases, layers, motionFrame, offset: sample.offset, crop, destination: { x, y, width, height } }))
-        }
-        if (frame) {
-          const facePatch = await prepareEditorV6MotionFacePatch({ index, faceMode: sample.faceMode, progress: t, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
-          if (facePatch) facePatches.push(facePatch)
-        }
-      } finally {
-        frame?.dispose()
-        if (baked) baked.canvas.width = baked.canvas.height = 1
-      }
-    }
+    const bakedAtlas = await bakeEditorV6MotionAtlasFrames({
+      samples: request.plan.samples,
+      from,
+      to,
+      fromCrop,
+      toCrop,
+      maximumWidth,
+      maximumHeight,
+      columns: layout.columns,
+      rows: layout.rows,
+      ratio,
+      preparedFrames: preparedAtlasFrames,
+      mouthScaleSamples: request.mouthScaleSamples,
+      captureLayers: Boolean(captureLayerAtlases),
+      render: (progress, faceMode, mouthScale, captureLayers) => render(progress, faceMode, mouthScale, false, undefined, false, captureLayers),
+      prepareFacePatch: ({ index, faceMode, progress, mouthScale, frame }) => prepareEditorV6MotionFacePatch({ index, faceMode, progress, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
+    })
+    const atlas = bodyAtlas = bakedAtlas.atlas
+    frames.push(...bakedAtlas.frames)
+    facePatches.push(...bakedAtlas.facePatches)
+    layerFrames.push(...bakedAtlas.layerFrames)
+    layerAtlases = bakedAtlas.layerAtlases
     let faceAsset: EditorV6MotionBakeResult['faceAsset']
     if (facePatches.length) {
       const bodyPixels = atlas.width * atlas.height
@@ -250,6 +238,7 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     preparedAtlasFrames?.forEach(({ canvas, layers }) => { canvas.width = canvas.height = 1; disposeCroppedMotionLayers(layers) })
     pendingFacePatches?.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
     disposeEditorV6MotionLayerAtlases(layerAtlases)
+    if (bodyAtlas) bodyAtlas.width = bodyAtlas.height = 1
     if (facePatchAtlas) facePatchAtlas.width = facePatchAtlas.height = 1
     rigPreparer.disposeTransientReusable()
     session?.trim()

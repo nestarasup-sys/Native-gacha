@@ -896,3 +896,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o easing, os modos e escalas faciais por amostra, o crop e a ordem das amostras, as dimensões máximas derivadas dos endpoints e quadros, e a criação de camadas somente quando solicitada. A função assume propriedade dos buffers durante a preparação, devolve-os ao bake em sucesso e libera os buffers/patches parciais se uma etapa falhar.
 
 **Verificação:** 657 testes passaram na suíte Vitest oficial (143 arquivos; 1 ignorado), incluindo 4 novos testes de recorte/easing, camadas capturadas, preparação facial e limpeza em erros. `npm run typecheck`, `npm run audit:architecture` (821 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 104 — bake do atlas corporal e dos frames (implementado e verificado)
+
+**Objetivo:** extrair para `motionAtlasFrameBaking.ts` a alocação do atlas corporal, o desenho das amostras recortadas, a interpolação geométrica por frame e a integração opcional das camadas e patches faciais.
+
+**Compatibilidade:** preservados layout/ratio fornecidos pelo cálculo anterior, células e sprites, origem do desenho para frames renderizados ou já recortados, metadados de movimento, ordem de escrita das camadas e preparação de patches. O novo módulo assume o descarte do atlas e patches parciais em erro; o bake continua dono da serialização final e do descarte após o retorno bem-sucedido.
+
+**Verificação:** 660 testes passaram na suíte Vitest oficial (144 arquivos; 1 ignorado), incluindo 3 novos testes de empacotamento/frames, captura de camadas e descarte quando um render falha. `npm run typecheck`, `npm run audit:architecture` (822 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
