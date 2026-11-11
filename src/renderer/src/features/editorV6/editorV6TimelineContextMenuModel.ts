@@ -14,11 +14,15 @@ export function getEditorV6TimelineContextMenuPosition(x: number, y: number, vie
   }
 }
 
+export function canSplitEditorV6TimelineBlock(track: Track, block: Block, frame: number) {
+  return !track.locked && frame > block.startFrame && frame < block.startFrame + block.durationFrames
+}
+
 export function getEditorV6TimelineContextMenuActions(menu: EditorV6TimelineContextMenuState, frame: number) {
   const locked = menu.track.locked
   return {
     duplicateDisabled: locked,
     removeDisabled: locked,
-    splitDisabled: locked || frame <= menu.block.startFrame || frame >= menu.block.startFrame + menu.block.durationFrames
+    splitDisabled: !canSplitEditorV6TimelineBlock(menu.track, menu.block, frame)
   }
 }

@@ -624,3 +624,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos classes, estilos, limites e rótulos dos blocos; eventos continuam encaminhados aos mesmos comandos de ponteiro, seleção, menu e scrubbing. A cor do personagem, visibilidade por range e fade de transição usam o mesmo modelo e dados.
 
 **Verificação:** com regressões do modelo de linhas, planos de movimento, comandos de faixa/bloco e ponteiro, 23 testes passaram em 5 arquivos. `npm run typecheck`, `npm run audit:architecture` (783 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 70 — toolbar e régua da timeline (implementado e verificado)
+
+**Objetivo:** extrair o cabeçalho com controles para `EditorV6TimelineToolbar.tsx` e a régua/ticks para `EditorV6TimelineRuler.tsx`, reduzindo a composição visual em `EditorV6Timeline.tsx`.
+
+**Compatibilidade:** preservados títulos, classes, ARIA, ordem e callbacks dos controles; a régua usa os mesmos intervalos e offsets. A disponibilidade da divisão foi centralizada em `canSplitEditorV6TimelineBlock` e compartilhada entre o botão da toolbar e o menu contextual, mantendo limites estritos no início/fim e bloqueio de faixa.
+
+**Verificação:** regressões de menu/divisão, linhas, faixa, ponteiro e teclado passaram: 27 testes em 7 arquivos. `npm run typecheck`, `npm run audit:architecture` (785 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.

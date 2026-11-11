@@ -12,8 +12,11 @@ import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointer
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { executeEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboardActions'
 import { createEditorV6TimelineZoomCommands } from './editorV6TimelineZoomCommands'
-import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
+import { getEditorV6TimelineContentWidth, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
 import { useEditorV6TimelineViewport } from './useEditorV6TimelineViewport'
+import { EditorV6TimelineToolbar } from './EditorV6TimelineToolbar'
+import { EditorV6TimelineRuler } from './EditorV6TimelineRuler'
+import { canSplitEditorV6TimelineBlock } from './editorV6TimelineContextMenuModel'
 
 type Props = {
   document: EditorV6Document
@@ -144,26 +147,25 @@ export function EditorV6Timeline(props: Props) {
     return () => window.removeEventListener('pointerdown', close)
   }, [menu])
 
-  const tickSeconds = getEditorV6TimelineTickSeconds(pps)
-  const ticks = useMemo(() => getEditorV6TimelineRulerTicks(range, timeline.durationFrames, tickSeconds), [range, timeline.durationFrames, tickSeconds])
   return <section ref={root} className="editor-v6-timeline v6-timeline-pro" aria-label="Timeline do Editor V6" onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancel}>
-    <header className="editor-v6-timeline-toolbar">
-      <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(timeline.durationFrames)}</span><small>30 FPS</small></div>
-      <div className="editor-v6-timeline-actions">
-        <button type="button" onClick={props.onPlay} title="Reproduzir / Pausar (Espaço)" aria-label={props.playing ? 'Pausar' : 'Reproduzir'}>{props.playing ? 'Ⅱ' : '▶'}</button>
-        <button type="button" className={snap ? 'active' : ''} aria-pressed={snap} onClick={() => setSnap(!snap)} title="Magnetismo (S). Alt ignora temporariamente.">Snap</button>
-        <button type="button" onClick={zoomOut} title="Diminuir zoom (-)">−</button><button type="button" onClick={zoomIn} title="Aumentar zoom (+)">＋</button>
-        <button type="button" onClick={fit} title="Encaixar timeline / restaurar zoom (Shift+Z)">Fit</button>
-        <button type="button" onClick={() => setCompact(!compact)} title="Compactar nomes das faixas">{compact ? '↔' : '⇤'}</button>
-        <button type="button" disabled={!selected || selected.track.locked || playbackFrame <= selected.block.startFrame || playbackFrame >= selected.block.startFrame + selected.block.durationFrames} onClick={() => selected && split(selected.block.id)} title="Dividir bloco no cursor (Ctrl+K)">✂ Dividir</button>
-      </div>
-    </header>
+    <EditorV6TimelineToolbar
+      playbackFrame={playbackFrame}
+      durationFrames={timeline.durationFrames}
+      playing={props.playing}
+      snap={snap}
+      compact={compact}
+      canSplit={Boolean(selected && canSplitEditorV6TimelineBlock(selected.track, selected.block, playbackFrame))}
+      onPlay={props.onPlay}
+      onToggleSnap={() => setSnap(!snap)}
+      onZoomOut={zoomOut}
+      onZoomIn={zoomIn}
+      onFit={fit}
+      onToggleCompact={() => setCompact(!compact)}
+      onSplit={() => selected && split(selected.block.id)}
+    />
     <div className="editor-v6-timeline-scroll" ref={scroll} onScroll={onScroll}>
       <div className="editor-v6-timeline-content" style={{ width: heading + width }}>
-        <div className="editor-v6-timeline-ruler-row" style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
-          <div className="editor-v6-timeline-track-heading">FAIXAS <span>{timeline.tracks.length + 1}</span></div>
-          <div className="editor-v6-timeline-ruler" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>{ticks.map((second) => <span key={second} style={{ left: second * pps }}>{second}s</span>)}</div>
-        </div>
+        <EditorV6TimelineRuler timeline={timeline} pixelsPerSecond={pps} width={width} heading={heading} range={range} onScrub={onScrub} />
         <EditorV6TimelineRows timeline={timeline} characterNameColors={props.document.characterNameColors} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
         <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${playbackFrame / 30 * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / 30 * pps }} />}</div>
       </div>
