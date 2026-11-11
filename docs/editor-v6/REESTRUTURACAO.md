@@ -1048,3 +1048,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados cálculo do tempo-alvo, volume, limites distintos de seek para pausa/início/reprodução, seek após `loadedmetadata`, tratamento de autoplay rejeitado, posição/rotação, seleção, ponteiros de interação e dependências do efeito.
 
 **Verificação:** 699 testes Vitest passaram em 157 arquivos (1 arquivo e 1 teste ignorados), incluindo 5 testes novos para tempo-alvo, sincronização pausada/em movimento, limites de seek e falhas recuperáveis. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (841 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 123 — comparação de propriedades da camada SVG (implementado)
+
+**Objetivo:** retirar `sceneLayerPropsEqual` e a comparação estrutural de sprites/patches de boca para `sceneLayerMemo.ts`, separando a política de invalidação do desenho SVG. `SceneSurface.tsx` continua exportando o comparador como alias para compatibilidade.
+
+**Compatibilidade:** mantidos o escape global de diagnóstico, as referências de assets/canvas/callbacks, a comparação dos campos visuais imutáveis, os seis campos que descrevem o recorte de motion sprite e as dimensões/flags do patch facial. A extração não modifica a frequência de atualização nem o estado salvo.
+
+**Verificação:** 700 testes Vitest passaram em 157 arquivos (1 arquivo e 1 teste ignorados), incluindo teste da reexportação e os casos existentes de assets, posição, seleção, recorte e estado facial. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (842 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

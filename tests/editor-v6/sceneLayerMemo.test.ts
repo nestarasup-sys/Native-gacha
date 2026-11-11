@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EditorV6Element } from '../../src/shared/editorV6'
-import { sceneLayerPropsEqual } from '../../src/renderer/src/features/editorV6/SceneSurface'
+import { sceneLayerPropsEqual } from '../../src/renderer/src/features/editorV6/sceneLayerMemo'
+import { sceneLayerPropsEqual as sceneLayerPropsEqualFromScene } from '../../src/renderer/src/features/editorV6/SceneSurface'
 
 const element = (overrides: Partial<EditorV6Element> = {}): EditorV6Element => ({
   id: 'actor', kind: 'character', text: 'STRESS_Aurora', x: 0, y: 0, width: 25, height: 50, rotation: 0, zIndex: 1,
@@ -9,6 +10,10 @@ const element = (overrides: Partial<EditorV6Element> = {}): EditorV6Element => (
 })
 
 describe('SceneLayer memoização por aparência', () => {
+  it('preserves the SceneSurface comparator export as an alias', () => {
+    expect(sceneLayerPropsEqualFromScene).toBe(sceneLayerPropsEqual)
+  })
+
   it('ignora objetos de estado recém-criados quando os valores visuais são iguais', () => {
     const previous = { element: element(), asset: undefined, selected: false, interaction: undefined }
     const next = { ...previous, element: element() }
