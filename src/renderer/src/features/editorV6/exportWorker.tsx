@@ -2,7 +2,7 @@ import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { hairMotionNeedsWarp, hairMotionPoseReactionIsActive, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
@@ -12,6 +12,7 @@ import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
 import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
+import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -101,10 +102,6 @@ async function initialize() {
     },
     hairRigAtFrame
   })
-  const motionSettings = (side: EditorV6HairMotionLayer['side']): HairMotionSettings => ({
-    ...hairAnimation!.preset.physics,
-    enabled: hairAnimation!.preset.enabled[side]
-  })
   const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number, timings: EditorV6FrameTimings): HTMLCanvasElement => {
     const clearCanvas = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
       const started = performance.now()
@@ -160,45 +157,17 @@ async function initialize() {
     const motionStateStarted = performance.now()
     const texture = hairTextures.get(piece.textureId)
     if (!texture) throw Error('A exportação perdeu uma imagem do cabelo preparado.')
-    const settings = motionSettings(piece.side)
-    if (hairAnimation?.posteriorOnly && !piece.id.startsWith('rearHair:')) settings.enabled = false
-    const stateKey = `${element.id}:${piece.id}`
-    let state = hairMotionStates.get(stateKey)
-    if (!state) { state = createHairMotionState(); hairMotionStates.set(stateKey, state) }
-    const phase = (hairMotionInstancePhases.get(element.id) ?? editorV6HairMotionInstancePhase(element.id)) + piece.phase
     const headAtFrame = (sample: number) => editorV6HairMotionLayerHeadPosition(headXAtFrame(element.id, sample), pieceFlipXAtFrame(element.id, piece.id, sample, piece.flipX))
-    if (hairAnimation?.poseReactionOnly) {
-      // Explicit part ID, not a side alias: rearHair is POSTERIOR; backHair is TRASEIRO.
-      const transitionEnd = hairMotionLatestPoseEnd(hairPoseReactionEnds.get(element.id) ?? [], frame)
-      const moving = piece.id.startsWith('rearHair:')
-        ? sampleHairMotionPoseReaction(state.offsets, settings, frame, transitionEnd, phase)
-        : (state.offsets.fill(0), false)
-      state.time = moving ? 1 : 0 // Exact original pixels when the piece is at rest.
-      state.frame = frame
-    } else if (hairAnimation?.loopFrames) {
-      let loop = hairMotionLoops.get(stateKey)
-      if (!loop) {
-        const prewarmStarted = performance.now()
-        loop = buildHairMotionLoop(settings, phase, hairAnimation.loopFrames)
-        hairMotionLoops.set(stateKey, loop)
-        timings.hairMotionPrewarmMs = (timings.hairMotionPrewarmMs ?? 0) + performance.now() - prewarmStarted
-      }
-      state.offsets.set(hairMotionLoopOffsets(loop, frame))
-      // Authored head motion stays independent of the periodic breeze.
-      const headDelta = frame > 0 ? headAtFrame(frame) - headAtFrame(frame - 1) : 0
-      applyHairMotionLoopHeadImpulse(state.offsets, headDelta, settings)
-      state.time = 1 // Keep mesh warping active; offsets are sampled by absolute frame.
-      state.frame = frame
-    } else {
-      if (state.frame < 0 || frame < state.frame) {
-        const prewarmStarted = performance.now()
-        prewarmHairMotionState(state, settings, headAtFrame(0), phase)
-        timings.hairMotionPrewarmMs = (timings.hairMotionPrewarmMs ?? 0) + performance.now() - prewarmStarted
-      }
-      advanceHairMotionToFrame(state, settings, frame, headAtFrame, phase)
-    }
-    timings.hairMotionStateMs = (timings.hairMotionStateMs ?? 0) + performance.now() - motionStateStarted
-    const intensity = hairAnimation!.preset.intensity[piece.side]
+    const { state, settings, phase, intensity } = prepareEditorV6ExportHairPieceMotion({
+      animation: hairAnimation!, elementId: element.id, piece, frame,
+      poseReactionEnds: hairPoseReactionEnds.get(element.id) ?? [],
+      motionStateStarted,
+      states: hairMotionStates,
+      loops: hairMotionLoops,
+      instancePhases: hairMotionInstancePhases,
+      headAtFrame,
+      timings
+    })
     const warped = warpHairTexture(piece.textureId, texture, state, settings, intensity, phase, timings)
     const layerDrawStarted = performance.now()
     context.save()

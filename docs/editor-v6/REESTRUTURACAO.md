@@ -704,3 +704,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos a ordem posterior/base/rosto/cabelo posterior/olhos sobre cabelo posterior/franja/overlay, a composição e geometria dos atlas, as chaves e o reaproveitamento dos canvases, os erros de superfície ausente e as métricas de quadros/pixels. Nenhum dado de projeto, contrato de exportação ou persistência foi alterado.
 
 **Verificação:** 51 testes passaram em 8 arquivos, incluindo os novos casos de ordem das camadas, reutilização/redimensionamento dos canvases, métricas e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (797 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 80 — avanço do estado físico por fio de cabelo (implementado e verificado)
+
+**Objetivo:** extrair para `exportHairPieceMotionState.ts` a simulação determinística de cada fio: reação pontual após pose, amostragem de ciclo e avanço quadro a quadro, incluindo configurações por lado, identidade da camada posterior, impulso de movimento da cabeça e contadores de tempo.
+
+**Compatibilidade:** o worker mantém a propriedade dos mapas de estado por exportação e injeta presets, fase, caminho da cabeça e relógio. A deformação gráfica e composição de pixels continuam separadas. `hairMotionStateMs` mantém o mesmo intervalo medido, desde a consulta da textura até o fim da simulação.
+
+**Verificação:** 55 testes passaram em 9 arquivos, cobrindo avanço e busca para trás, cache de ciclo, reação apenas em `rearHair:`, regra posterior-only, deformação/composição de cabelo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (798 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
