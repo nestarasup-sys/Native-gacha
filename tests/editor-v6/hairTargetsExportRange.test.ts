@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EditorV6Document, EditorV6Element } from '../../src/shared/editorV6'
-import { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from '../../src/renderer/src/features/editorV6/editorV6HairMotionPreparation'
+import { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from '../../src/renderer/src/features/editorV6/editorV6HairMotionTargets'
+import { collectEditorV6HairMotionTargets as collectFromPreparation, selectEditorV6HairTargetStates as selectFromPreparation } from '../../src/renderer/src/features/editorV6/editorV6HairMotionPreparation'
 
 const makeState = (assetId: string, poseSlot: number): EditorV6Element => ({
   id: 'actor', kind: 'character', characterId: 'hero', assetId,
@@ -55,5 +56,20 @@ describe('R26: bounded hair targets for first export', () => {
     expect(b.map(x => x.assetId)).toEqual(['base', 'middle', 'short'])
     expect(selectEditorV6HairTargetStates(project(), { startFrame: 240, endFrame: 245 }).map(x => x.assetId))
       .toEqual(['base', 'later'])
+  })
+  it('keeps the previous preparation exports as aliases and maps valid face assets to their modes', () => {
+    expect(collectFromPreparation).toBe(collectEditorV6HairMotionTargets)
+    expect(selectFromPreparation).toBe(selectEditorV6HairTargetStates)
+    const faceState = { ...makeState('base', 0), activeFaceMode: 'talk', faceModeAssetIds: { idle: 'face-idle', blink: 'face-blink', talk: 'face-talk', 'talk-blink': 'face-talk-blink', invalid: 'ignored' } }
+    const source = project()
+    const onlyFaceState = { ...source, elements: [faceState], timeline: { ...source.timeline, tracks: [] } } as unknown as EditorV6Document
+    expect(collectEditorV6HairMotionTargets(onlyFaceState).map(({ assetId, faceMode }) => [assetId, faceMode]))
+      .toEqual([['base', 'talk'], ['face-idle', 'idle'], ['face-blink', 'blink'], ['face-talk', 'talk'], ['face-talk-blink', 'talk-blink']])
+  })
+  it('rejects one saved portrait ID being attributed to multiple characters', () => {
+    const source = project()
+    const duplicate = { ...makeState('shared-portrait', 0), characterId: 'villain' }
+    const collision = { ...source, elements: [makeState('shared-portrait', 0), duplicate], timeline: { ...source.timeline, tracks: [] } } as unknown as EditorV6Document
+    expect(() => collectEditorV6HairMotionTargets(collision)).toThrow('Um retrato do Editor V6 está associado a mais de um personagem.')
   })
 })

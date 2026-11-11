@@ -1,5 +1,5 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { EditorV6Document, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
+import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
@@ -14,74 +14,9 @@ import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6
 import { createEditorV6HairPreparationReuse, editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
 import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
+import { collectEditorV6HairMotionTargets, type EditorV6HairMotionTarget } from './editorV6HairMotionTargets'
 
-type MotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
-
-function faceMode(value: EditorV6Element['activeFaceMode']): EditorV6FaceRenderMode {
-  return value === 'blink' || value === 'talk' ? value : 'idle'
-}
-
-function targetsForState(elementId: string, state: EditorV6Element): MotionTarget[] {
-  if (state.kind !== 'character' || !state.characterId || !state.assetId) return []
-  const targets: MotionTarget[] = [{ elementId, state, assetId: state.assetId, faceMode: faceMode(state.activeFaceMode) }]
-  for (const [mode, assetId] of Object.entries(state.faceModeAssetIds ?? {})) {
-    if (!assetId || !['idle', 'blink', 'talk', 'talk-blink'].includes(mode)) continue
-    targets.push({ elementId, state, assetId, faceMode: mode as EditorV6FaceRenderMode })
-  }
-  return targets
-}
-
-/**
- * Keep the historical full-document behavior for calls without an export range.
- * For an MP4 range, the initial scene is always retained (legacy fallback),
- * while only timeline states whose *effective* interval touches the export
- * are prepared. Character states hold until the next character state, even
- * if an older file has a short stored durationFrames. Consequently an
- * in-progress transition still has BOTH its endpoint portraits.
- *
- * No written timeline or snapshot is ever changed by this selection.
- */
-export function selectEditorV6HairTargetStates(
-  project: EditorV6Document,
-  range?: Readonly<{ startFrame: number; endFrame: number }>
-): EditorV6Element[] {
-  const states: EditorV6Element[] = [...project.elements]
-  for (const track of project.timeline.tracks) {
-    if (!range) {
-      for (const block of track.blocks) if (block.state) states.push(block.state)
-      continue
-    }
-    const blocks = track.kind === 'character'
-      ? [...track.blocks].sort((a, b) => a.startFrame - b.startFrame || a.id.localeCompare(b.id))
-      : track.blocks
-    for (let index = 0; index < blocks.length; index += 1) {
-      const block = blocks[index]
-      if (!block.state || block.startFrame >= range.endFrame) continue
-      const end = track.kind === 'character'
-        ? blocks[index + 1]?.startFrame ?? project.timeline.durationFrames
-        : block.startFrame + block.durationFrames
-      if (end > range.startFrame) states.push(block.state)
-    }
-  }
-  return states
-}
-
-export function collectEditorV6HairMotionTargets(
-  project: EditorV6Document,
-  range?: Readonly<{ startFrame: number; endFrame: number }>
-): MotionTarget[] {
-  const targets = new Map<string, MotionTarget>()
-  const states = selectEditorV6HairTargetStates(project, range)
-  for (const state of states) {
-    for (const target of targetsForState(state.id, state)) {
-      const key = `${target.elementId}:${target.assetId}`
-      const existing = targets.get(key)
-      if (existing && existing.state.characterId !== target.state.characterId) throw Error('Um retrato do Editor V6 está associado a mais de um personagem.')
-      if (!existing) targets.set(key, target)
-    }
-  }
-  return [...targets.values()]
-}
+export { collectEditorV6HairMotionTargets, selectEditorV6HairTargetStates } from './editorV6HairMotionTargets'
 
 function canvasDataUrl(canvas: HTMLCanvasElement): string {
   if (!canvas.width || !canvas.height) throw Error('Uma camada do personagem ficou vazia ao preparar a animação de cabelo.')
@@ -120,7 +55,7 @@ export async function prepareEditorV6HairMotionBundle(
   reportStage('loadCustomizerCharacters', stageStarted)
   if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
   const characterById = new Map(characters.map(character => [character.id, character]))
-  const groups = new Map<string, { character: CustomizerCharacter; targets: MotionTarget[] }>()
+  const groups = new Map<string, { character: CustomizerCharacter; targets: EditorV6HairMotionTarget[] }>()
   for (const target of targets) {
     const character = characterById.get(target.state.characterId!)
     if (!character || !character.customization.hairAppearance) continue

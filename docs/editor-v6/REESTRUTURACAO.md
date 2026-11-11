@@ -928,3 +928,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o critério de rig ativo para cabelo normal, reação de pose e transições; a escolha entre rig expression-only e atlas de transição; a ordem e a geometria das camadas; os patches faciais normalizados em relação ao crop; o cache de assets faciais entre frames; mensagens de erro e métricas. O worker conserva a preparação dos mapas e do conjunto de personagens rigged no mesmo trecho temporal, mantendo o custo na mesma métrica de resolução/composição facial.
 
 **Verificação:** 682 testes Vitest passaram em 151 arquivos (1 ignorado), incluindo 3 novos testes de frames sem cabelo ativo, cabelo normal e transição com reuso do atlas facial. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (825 arquivos), `npm run build` e `git diff --check` passaram. Foram executados benchmarks sintéticos da timeline já presentes na suíte; não foi feita exportação real de vídeo.
+
+### Ciclo 108 — seleção dos alvos de cabelo para exportação (implementado e verificado)
+
+**Objetivo:** mover a seleção dos estados da timeline e a coleta/deduplicação de retratos para `editorV6HairMotionTargets.ts`, separando regras puras de domínio da preparação que acessa catálogos, renderers e canvases.
+
+**Compatibilidade:** mantidos o caminho legado sem intervalo, a inclusão do estado inicial, as janelas semiabertas, o hold de poses de personagem até o estado seguinte, os endpoints de transição, a ordem dos alvos, os modos faciais válidos e a validação de um retrato associado a personagens diferentes. Os exports anteriores de `editorV6HairMotionPreparation.ts` permanecem aliases para os consumidores existentes; nenhum documento ou snapshot é alterado.
+
+**Verificação:** 684 testes Vitest passaram em 151 arquivos (1 ignorado), incluindo 2 novos testes de compatibilidade de exports, modos faciais e colisão de IDs. Os 29 testes Node, `npm run typecheck`, `npm run audit:architecture` (826 arquivos), `npm run build` e `git diff --check` passaram. A suíte executou benchmarks sintéticos da timeline; não foi feita exportação real de vídeo.
