@@ -512,3 +512,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantém a prioridade do bloco selecionado e o fallback ao clip no playhead, a edição global quando não há seleção aplicável, a normalização/reparo/limpeza de snapshots após o patch e o registro de histórico antes da sincronização de cena. A prévia facial continua protegida pelo ID ativo e não grava snapshot de outro projeto. Nenhum contrato salvo ou IPC mudou.
 
 **Verificação:** 6 testes novos cobrem edição do bloco selecionado, fallback do playhead, edição base sem seleção, descarte de prévia stale, sincronização de faixas e ausência de projeto ativo. Com regressões de documento, timeline, motions e arraste, 103 testes passaram em 9 arquivos. `npm run typecheck`, `npm run audit:architecture` (769 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 56 — ciclo de ponteiro da timeline (implementado e verificado)
+
+**Objetivo:** retirar de `EditorV6Timeline.tsx` a captura de ponteiro, o scrubbing da régua, o preview transitório de arraste, a confirmação e o cancelamento para `editorV6TimelinePointerCommands.ts`.
+
+**Compatibilidade:** preservados cálculo de quadros pela escala atual, snapping/Alt, preview sem mutação da timeline persistida, commit somente ao soltar depois de movimento, cancelamento sem gravação, seek/seleção no pointer down e captura por ID de ponteiro. A renderização continua no componente e usa o mesmo estado transitório.
+
+**Verificação:** 4 testes novos cobrem captura/preview/commit, cancelamento, scrubbing e bloqueios de botão/faixa. Com regressões de timeline, seleção e edição do documento, 50 testes passaram em 6 arquivos. `npm run typecheck`, `npm run audit:architecture` (770 arquivos), `npm run build` e `git diff --check` passaram.

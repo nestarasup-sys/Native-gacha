@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { frameTimecode, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { duplicateEditorV6Block, pruneEditorV6TimelineSnapshots, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
-import { createEditorV6TimelineDragSnapshot, previewEditorV6TimelineDrag, type EditorV6TimelineDragSnapshot } from './editorV6TimelineDrag'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
+import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 
 type Props = {
   document: EditorV6Document
@@ -16,7 +16,6 @@ type Props = {
   onSelect: (block: Block) => void
   onChange: (update: (document: EditorV6Document) => EditorV6Document) => void
 }
-type Drag = EditorV6TimelineDragSnapshot & { pointerId: number; x: number }
 const editableTarget = (target: EventTarget | null) => target instanceof HTMLElement && Boolean(target.closest('input,textarea,select,[contenteditable=true],[role=dialog]'))
 
 export function EditorV6Timeline(props: Props) {
@@ -34,9 +33,6 @@ export function EditorV6Timeline(props: Props) {
   const [notice, setNotice] = useState('')
   const scroll = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLElement>(null)
-  const drag = useRef<Drag | null>(null)
-  const scrub = useRef<number | null>(null)
-  const draftRef = useRef<Timeline | null>(null)
   const didDrag = useRef(false)
   const previousZoom = useRef(72)
   const fitActive = useRef(false)
@@ -51,6 +47,20 @@ export function EditorV6Timeline(props: Props) {
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {
     latest.current.onChange((document) => pruneEditorV6TimelineSnapshots({ ...document, timeline: normalizeEditorV6Timeline(update(document.timeline)), updatedAt: new Date().toISOString() }))
   }, [])
+  const pointerCommands = useMemo(() => createEditorV6TimelinePointerCommands({
+    scrollNode: () => scroll.current,
+    document: () => latest.current.document,
+    frame: () => latest.current.frame,
+    settings: () => settings.current,
+    didDrag,
+    seek: (frame) => latest.current.onSeek(frame),
+    select: (block) => { latest.current.onSeek(block.startFrame); latest.current.onSelect(block) },
+    changeTimeline,
+    closeMenu: () => setMenu(null),
+    setDraft,
+    setGuide,
+    setReadout
+  }), [changeTimeline])
   const select = useCallback((block: Block) => {
     if (didDrag.current) { didDrag.current = false; return }
     latest.current.onSeek(block.startFrame)
@@ -91,43 +101,7 @@ export function EditorV6Timeline(props: Props) {
     createId: () => crypto.randomUUID()
   }), [changeTimeline, select])
 
-  const onPointer = useCallback<EditorV6TimelineRowsProps['onPointer']>((event, track, block, mode) => {
-    event.stopPropagation()
-    if (event.button !== 0 || track.locked) return
-    latest.current.onSeek(block.startFrame)
-    latest.current.onSelect(block)
-    setMenu(null)
-    didDrag.current = false
-    const snapshot = createEditorV6TimelineDragSnapshot({ initial: latest.current.document.timeline, track, block, mode })
-    drag.current = { ...snapshot, pointerId: event.pointerId, x: event.clientX }
-    event.currentTarget.setPointerCapture(event.pointerId)
-  }, [])
-  const onScrub = useCallback((event: ReactPointerEvent<HTMLElement>) => {
-    if (event.type === 'pointerdown' && event.button !== 0) return
-    scrub.current = event.pointerId
-    if (event.type === 'pointerdown') event.currentTarget.setPointerCapture(event.pointerId)
-    const node = scroll.current
-    if (!node) return
-    latest.current.onSeek(Math.min(latest.current.document.timeline.durationFrames, Math.max(0, Math.round((event.clientX - node.getBoundingClientRect().left + node.scrollLeft - settings.current.heading) / settings.current.pps * 30))))
-  }, [])
-  const cancel = useCallback(() => { drag.current = null; scrub.current = null; draftRef.current = null; setDraft(null); setGuide(undefined); setReadout(null) }, [])
-  const movePointer = (event: ReactPointerEvent<HTMLElement>) => {
-    if (scrub.current === event.pointerId) { onScrub(event); return }
-    const operation = drag.current
-    if (!operation || operation.pointerId !== event.pointerId) return
-    const delta = Math.round((event.clientX - operation.x) / pps * 30)
-    if (!delta && !didDrag.current) return
-    didDrag.current = true
-    const preview = previewEditorV6TimelineDrag({ snapshot: operation, deltaFrames: delta, playheadFrame: latest.current.frame, pixelsPerSecond: pps, snap, altKey: event.altKey, media: latest.current.document.media })
-    draftRef.current = preview.timeline
-    setDraft(preview.timeline)
-    setGuide(preview.guide)
-    setReadout(preview.block)
-  }
-  const endPointer = (event: ReactPointerEvent<HTMLElement>) => {
-    if (drag.current?.pointerId === event.pointerId && draftRef.current) { const value = draftRef.current; changeTimeline(() => value) }
-    cancel()
-  }
+  const { onPointer, onScrub, cancel, movePointer, endPointer } = pointerCommands
   const onMenu = useCallback<EditorV6TimelineRowsProps['onMenu']>((x, y, track, block) => { if (latest.current.selectedId !== block.id) select(block); setMenu({ x: Math.min(x, window.innerWidth - 195), y: Math.max(8, Math.min(y, window.innerHeight - 225)), track, block }) }, [select])
 
   useEffect(() => {
