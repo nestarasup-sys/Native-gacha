@@ -808,3 +808,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os limites alfa e o fingerprint delegado à análise de pixels, o limiar padrão 8, a ordem RGBA, o gutter de 2 pixels com extensão dos texels da borda para patches alterados, o gutter transparente para patches faciais, as coordenadas de origem/destino e as mensagens de erro por contexto ausente. A fábrica de canvas é injetável em testes; em produção usa o mesmo canvas DOM. Sem mudança de pixels, persistência ou contrato de exportação.
 
 **Verificação:** 620 testes passaram na suíte Vitest oficial (132 arquivos; 1 ignorado), incluindo 5 testes de gutter/bordas que verificam os quatro canais RGBA, leitura alfa, coordenadas de recorte e falhas de contexto. `npm run typecheck`, `npm run audit:architecture` (810 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 93 — resolução geométrica dos endpoints de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionBakeEndpointGeometry.ts` a escolha entre dimensões/crops já medidos pelo preparo de cabelo e o caminho de renderização que une os crops dos quatro modos faciais nos endpoints.
+
+**Compatibilidade:** o caminho acelerado continua restrito às capturas de camadas com dimensões pré-medidas válidas. No caminho geral permanecem a renderização inicial e final, a união dos limites por modo, a exceção para assets de piscada ausentes somente em `blink`/`talk-blink`, o reaproveitamento de crops fornecidos mesmo sem dimensões válidas e a liberação dos renderers em sucesso ou erro. A ordem dos crops e os tamanhos máximos do atlas não mudam.
+
+**Verificação:** 625 testes passaram na suíte Vitest oficial (133 arquivos; 1 ignorado), incluindo 5 novos testes de fast path, união de crops, ciclo de boca estático, piscadas indisponíveis, uso de crops fornecidos e descarte diante de erro. `npm run typecheck`, `npm run audit:architecture` (811 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

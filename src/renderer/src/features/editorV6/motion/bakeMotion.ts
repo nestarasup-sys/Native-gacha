@@ -15,7 +15,8 @@ import {
 } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
-import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
+import { resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
+import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
 import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motionFacePreparation'
@@ -230,51 +231,14 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       atlas.width = atlas.height = 1
       return { asset: { id: assetId, category: 'character', name: 'Camada facial da boca', mimeType: 'image/png', dataUrl, timelineSnapshot: true }, assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: performance.now() - began, preparedRigs: rigPreparer.metrics().preparedRigs, reusedRigs: rigPreparer.metrics().reusedRigs, samples: count, atlasPixels } }
     }
-    // The export-hair preparator already rendered both endpoint faces while
-    // building the static rigs. Reuse those exact measured canvas dimensions
-    // and union crops, avoiding two extra face/body renders per transition.
-    // Ordinary motion bakes retain their original path unchanged.
-    const endpointDimensions = captureLayerAtlases ? resolvedHairBakeEndpointDimensions(endpointCrops) : null
-    let fullWidth: number, fullHeight: number
-    let fromCrop: Crop, toCrop: Crop
-    let maximumCanvasWidth: number, maximumCanvasHeight: number
-    if (endpointDimensions && endpointCrops) {
-      fullWidth = endpointDimensions.firstWidth
-      fullHeight = endpointDimensions.firstHeight
-      fromCrop = endpointCrops.from
-      toCrop = endpointCrops.to
-      maximumCanvasWidth = Math.max(fullWidth, endpointDimensions.lastWidth)
-      maximumCanvasHeight = Math.max(fullHeight, endpointDimensions.lastHeight)
-    } else {
-      const first = await render(0, staticMouthLoop ? from.activeFaceMode : undefined, 1, Boolean(request.mouthScaleSamples))
-      fullWidth = first.width
-      fullHeight = first.height
-      // Static character assets use the union of all face-mode bounds. Motion
-      // endpoints must use those same bounds when interpreting element centers.
-      const endpointCrop = async (progress: number, initial: Crop, renderer: Renderer): Promise<Crop> => {
-        let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
-        for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
-          try {
-            const frame = await render(progress, mode, 1, false, renderer, true)
-            try {
-              left = Math.min(left, frame.crop.left); top = Math.min(top, frame.crop.top)
-              right = Math.max(right, frame.crop.left + frame.crop.width); bottom = Math.max(bottom, frame.crop.top + frame.crop.height)
-            } finally { frame.dispose() }
-          } catch (error) {
-            const missingBlink = error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
-            if (!missingBlink || (mode !== 'blink' && mode !== 'talk-blink')) throw error
-          }
-        }
-        return { left, top, width: right - left, height: bottom - top }
-      }
-      try { fromCrop = endpointCrops?.from ?? await endpointCrop(0, first.crop, first.renderer) }
-      finally { first.dispose() }
-      const last = staticMouthLoop ? null : await render(1)
-      try { toCrop = endpointCrops?.to ?? (last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop) }
-      finally { last?.dispose() }
-      maximumCanvasWidth = Math.max(fullWidth, last?.width ?? fullWidth)
-      maximumCanvasHeight = Math.max(fullHeight, last?.height ?? fullHeight)
-    }
+    const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = await resolveMotionBakeEndpointGeometry({
+      captureLayerAtlases: Boolean(captureLayerAtlases),
+      endpointCrops,
+      staticMouthLoop,
+      hasMouthScaleSamples: Boolean(request.mouthScaleSamples),
+      firstFaceMode: from.activeFaceMode,
+      render
+    })
     const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(MAX_MOTION_ATLAS_PIXELS, request.maxAtlasPixels ?? MAX_MOTION_ATLAS_PIXELS)
     let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
