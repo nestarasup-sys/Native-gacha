@@ -904,3 +904,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados layout/ratio fornecidos pelo cálculo anterior, células e sprites, origem do desenho para frames renderizados ou já recortados, metadados de movimento, ordem de escrita das camadas e preparação de patches. O novo módulo assume o descarte do atlas e patches parciais em erro; o bake continua dono da serialização final e do descarte após o retorno bem-sucedido.
 
 **Verificação:** 660 testes passaram na suíte Vitest oficial (144 arquivos; 1 ignorado), incluindo 3 novos testes de empacotamento/frames, captura de camadas e descarte quando um render falha. `npm run typecheck`, `npm run audit:architecture` (822 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 105 — finalização e contrato do bake de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionBakeResult.ts` a montagem do resultado final nos caminhos com e sem patches faciais, serialização do atlas corporal, captura de camadas e consolidação das métricas.
+
+**Compatibilidade:** mantidos nome/categoria/MIME e snapshot do asset, sequência dos IDs (face antes do corpo no caminho facial), campos do atlas de movimento, vínculo `faceAssetId`, pixels somados no orçamento facial, métricas e callback de captura. O finalizador agora libera atlas corporal/facial também se serialização ou captura falhar; a propriedade dos canvases de camadas permanece no bake.
+
+**Verificação:** 663 testes passaram na suíte Vitest oficial (145 arquivos; 1 ignorado), incluindo 3 novos testes dos caminhos com/sem rosto, sequência dos IDs, métricas e limpeza após falha no callback. `npm run typecheck`, `npm run audit:architecture` (823 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
