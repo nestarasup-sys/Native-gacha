@@ -424,3 +424,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** no cancelamento, restaura apenas se o mesmo projeto continua ativo, repõe a seleção de bloco correta por alvo e não cria histórico. Na conclusão, preserva a última posição transitória, registra o snapshot anterior antes da atualização de `updatedAt` e marca como não salvo. Cliques sem movimento continuam sem escrita nem histórico. Nenhum schema, canal IPC ou arquivo de projeto foi alterado.
 
 **Verificação:** 47 testes de arraste, timeline, seleção e lifecycle passaram em 5 arquivos; `npm run typecheck`, `npm run audit:architecture` (758 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou medição de velocidade foi executada.
+
+### Ciclo 45 — atalhos globais da página (implementado e verificado)
+
+**Objetivo:** mover a política de Escape, desfazer e refazer para `editorV6KeyboardShortcuts.ts`, deixando a página fornecer o estado do editor e os comandos atuais.
+
+**Compatibilidade:** preservada a prioridade do cancelamento de arraste, o bloqueio em campos/modal, fechamento do seletor e da visualização, e os atalhos Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z e Ctrl/Cmd+Y.
+
+**Verificação:** 4 testes sintéticos de atalhos passaram; `npm run typecheck`, `npm run audit:architecture` (759 arquivos), `npm run build` e `git diff --check` passaram.

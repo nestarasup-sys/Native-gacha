@@ -64,6 +64,7 @@ import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6Characte
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
 import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
+import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -588,18 +589,19 @@ export function EditorV6Page() {
     setError
   })
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (dragRef.current && (event.key === 'Escape' || ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z'))) { event.preventDefault(); cancelSceneDrag(); return }
-      if (event.key === 'Escape' && castPickerOpen && !savingCast) setCastPickerOpen(false)
-      else if (event.key === 'Escape' && fullView) setFullView(false)
-      if (event.target instanceof HTMLElement && event.target.closest('input,textarea,select,[contenteditable=true],[role=dialog]')) return
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo() }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'y') { event.preventDefault(); redo() }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [castPickerOpen, savingCast, fullView, activeEditorV6, historyVersion])
+  useEditorV6KeyboardShortcuts({
+    castPickerOpen,
+    savingCast,
+    fullView,
+    project: activeEditorV6,
+    historyVersion,
+    dragActive: () => dragRef.current !== null,
+    cancelDrag: cancelSceneDrag,
+    closeCastPicker: () => setCastPickerOpen(false),
+    exitFullView: () => setFullView(false),
+    undo,
+    redo
+  })
 
   const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
     <NumericRangeField key={label} label={label} value={value} onChange={onChange} onStart={() => recordHistory()} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
