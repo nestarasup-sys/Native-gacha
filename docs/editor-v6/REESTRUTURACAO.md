@@ -536,3 +536,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os limites de escala (0,25–960 px/s), centralização durante zoom, fórmula de fit, limiares de 80%/início visível para autoscroll e retorno para a esquerda ao restaurar o encaixe. Nenhuma preferência, documento, persistência ou contrato IPC foi alterado.
 
 **Verificação:** 3 testes novos cobrem zoom/centralização, fit e autoscroll; com regressões de teclado e ponteiro, 11 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (772 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 59 — modelo de apresentação da timeline (implementado e verificado)
+
+**Objetivo:** mover para `editorV6TimelineViewModel.ts` a derivação da largura do conteúdo, faixa de quadros visível, intervalo dos ticks e lista de marcas da régua. A timeline segue responsável por compor esses dados com os componentes visuais.
+
+**Compatibilidade:** preservados o espaço extra de 160 px para renderização nas bordas, a faixa inferior em zero, as regras atuais de densidade dos ticks e o corte na duração do documento. Nenhum dado persistido ou contrato entre áreas mudou.
+
+**Verificação:** 3 testes novos cobrem conteúdo menor/maior que o viewport, faixa visível, limites de densidade e ticks dentro da duração. Com regressões de viewport, teclado e ponteiro, 14 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (773 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

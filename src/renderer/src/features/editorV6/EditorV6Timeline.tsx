@@ -8,6 +8,7 @@ import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackComm
 import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointerCommands'
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineFollowScroll, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
+import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
 
 type Props = {
   document: EditorV6Document
@@ -42,9 +43,9 @@ export function EditorV6Timeline(props: Props) {
   settings.current = { pps, snap, heading: compact ? 116 : 210 }
   const heading = settings.current.heading
   const timeline = draft ?? props.document.timeline
-  const width = Math.max(viewport.width - heading, timeline.durationFrames / 30 * pps)
+  const width = getEditorV6TimelineContentWidth({ viewportWidth: viewport.width, heading, durationFrames: timeline.durationFrames, pixelsPerSecond: pps })
   const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
-  const range = useMemo<[number, number]>(() => [Math.max(0, (viewport.left - heading - 160) / pps * 30), (viewport.left + viewport.width + 160) / pps * 30], [viewport, heading, pps])
+  const range = useMemo<[number, number]>(() => getEditorV6TimelineVisibleFrameRange({ scrollLeft: viewport.left, viewportWidth: viewport.width, heading, pixelsPerSecond: pps, durationFrames: timeline.durationFrames }), [viewport, heading, pps, timeline.durationFrames])
 
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {
     latest.current.onChange((document) => pruneEditorV6TimelineSnapshots({ ...document, timeline: normalizeEditorV6Timeline(update(document.timeline)), updatedAt: new Date().toISOString() }))
@@ -161,9 +162,8 @@ export function EditorV6Timeline(props: Props) {
     return () => window.removeEventListener('pointerdown', close)
   }, [menu])
 
-  const tickSeconds = pps >= 120 ? .5 : pps >= 35 ? 1 : pps >= 8 ? 5 : pps >= 2 ? 30 : 120
-  const ticks = []
-  for (let second = Math.max(0, Math.floor(range[0] / 30 / tickSeconds) * tickSeconds); second <= Math.min(timeline.durationFrames / 30, range[1] / 30); second += tickSeconds) ticks.push(second)
+  const tickSeconds = getEditorV6TimelineTickSeconds(pps)
+  const ticks = useMemo(() => getEditorV6TimelineRulerTicks(range, timeline.durationFrames, tickSeconds), [range, timeline.durationFrames, tickSeconds])
   return <section ref={root} className="editor-v6-timeline v6-timeline-pro" aria-label="Timeline do Editor V6" onPointerMove={movePointer} onPointerUp={endPointer} onPointerCancel={cancel}>
     <header className="editor-v6-timeline-toolbar">
       <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(timeline.durationFrames)}</span><small>30 FPS</small></div>
