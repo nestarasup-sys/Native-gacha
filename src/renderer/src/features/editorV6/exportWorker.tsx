@@ -1,8 +1,8 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
-import { editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
-import { hairMotionPoseReactionIsActive, type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
+import { type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
+import { type HairMotionLoop, type HairMotionState } from '../../../../shared/hairMotionEngine'
 import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
@@ -16,6 +16,7 @@ import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionSta
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
+import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
 import { createEditorV6ExportMouthLoopResolver } from './exportMouthLoop'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
@@ -137,29 +138,15 @@ async function initialize() {
       resolvedFrame = frame
     }
     const scene = applyMouthLoop(resolvedRawScene, frame)
-    const activeLayer = layeredVideo ? layer ?? 'background' : undefined
     const hasAnimatedHair = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]) => element.kind === 'character' && Boolean(
       element.motionSprite
         ? !hairAnimation?.poseReactionOnly && Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
         : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
     )
-    const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
-    // Keep the exact existing hair composition on the first rest frame.
-    // Subsequent identical frames need no new raster or capture. Never swap
-    // to the saved static snapshot: its pixels can differ from composed hair.
-    const reacting = Boolean(hairAnimation?.poseReactionOnly && activeHair && scene.elements.some(element =>
-      hasAnimatedHair(element) && hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
-    ))
-    const hairNeedsFrame = activeHair && (!hairAnimation?.poseReactionOnly || reacting)
-    const baseKey = editorV6VisualKey({ ...scene, mediaVideo: undefined, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
-    const baseLayerKeys = editorV6LayerVisualKeys({ ...scene, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
-    // Original visual keys omit some expression and effect properties.
-    // Require the whole resolved scene element identity to match at rest.
-    const signature = hairAnimation?.poseReactionOnly ? JSON.stringify(scene.elements) : null
-    const key = signature === null ? baseKey : JSON.stringify([baseKey, signature])
-    const layerKeys = signature === null ? baseLayerKeys : {
-      ...baseLayerKeys, foreground: JSON.stringify([baseLayerKeys.foreground, signature])
-    }
+    const framePlan = resolveEditorV6ExportFramePlan({
+      scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds, hasAnimatedHair
+    })
+    const { activeLayer, activeHair, key, layerKeys } = framePlan
     timings.sceneResolutionMs = performance.now() - resolutionStarted
     const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
     if (reuseDecision === 'frame') return { reused: true, timings }

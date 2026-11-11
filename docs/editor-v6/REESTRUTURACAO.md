@@ -744,3 +744,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservadas a ordem das verificações, as decisões de camada reaproveitada e o momento em que cada chave avança após renderização ou reuso do primeiro plano. As chaves visuais e o formato de `EditorV6RenderFrameResult` não mudam.
 
 **Verificação:** 67 testes passaram em 13 arquivos, cobrindo reuso integral, commits independentes de cada camada, atualização da chave completa em captura foreground reaproveitada e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (802 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 85 — plano de atividade e identidade visual do quadro (implementado e verificado)
+
+**Objetivo:** extrair para `exportFramePlan.ts` a seleção da camada, a detecção de cabelo animado, a janela de reação após pose e a montagem de chaves de reuso por quadro.
+
+**Compatibilidade:** o worker continua resolvendo a cena e o loop de boca como antes. A regra preserva a exclusão do vídeo de fundo da chave do cenário, a assinatura integral dos elementos quando a reação está em repouso e a inclusão do quadro nas chaves durante animação ativa.
+
+**Verificação:** 70 testes passaram em 14 arquivos, cobrindo capturas em camadas, cabelo ativo/inativo, reação após pose, chaves com/sem vídeo e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (803 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
