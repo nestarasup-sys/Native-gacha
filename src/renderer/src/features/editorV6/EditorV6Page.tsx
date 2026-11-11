@@ -9,8 +9,8 @@ import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
 import { EditorV6ToolRail } from './EditorV6ToolRail'
 import { EditorV6Inspector } from './EditorV6Inspector'
+import { EditorV6StageSurface } from './EditorV6StageSurface'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
-import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
@@ -62,6 +62,7 @@ import { useEditorV6CharacterSnapshotRefresh } from './useEditorV6CharacterSnaps
 import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
+import { getEditorV6InspectorSide } from './editorV6InspectorPlacement'
 import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
@@ -705,9 +706,7 @@ export function EditorV6Page() {
       : selectedElementId === 'background'
         ? { left: 50 + previewBackground.backgroundX - previewBackground.backgroundWidth / 2, right: 50 + previewBackground.backgroundX + previewBackground.backgroundWidth / 2 }
         : null
-    const inspectorSide = selectedBounds?.right !== undefined && selectedBounds.right > 100 - inspectorWidth
-      ? 'left'
-      : selectedBounds?.left !== undefined && selectedBounds.left < inspectorWidth ? 'right' : 'right'
+    const inspectorSide = getEditorV6InspectorSide(selectedBounds, inspectorWidth)
     return (
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
         <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
@@ -734,12 +733,19 @@ export function EditorV6Page() {
           onOpenPrints={() => { void openPrints(activeEditorV6.id) }}
           onEnterFullView={() => setFullView(true)}
         />
-        <section className="studio-scene-area v6-scene-area" aria-label="Prévia da cena">
-          <div className="studio-scene-canvas v6-scene-canvas" ref={sceneRef} style={{ backgroundColor: previewBackground.backgroundColor }} onPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}>
-            <Profiler id="/editor-v6/scene" onRender={recordUiCommit}><EditorV6PlaybackScene project={activeEditorV6} selectedId={selectedElementId ?? selectedTimelineBlockId} interaction={fullView ? undefined : sceneInteraction} playing={isPlaying} fullView={fullView} /></Profiler>
-            {fullView && <button className="studio-exit-view" onClick={() => setFullView(false)} type="button">Sair da visualização <kbd>Esc</kbd></button>}
-            {!fullView && <span className="studio-scene-title">{activeEditorV6.title}</span>}
-            {!fullView && inspectorOpen && <EditorV6Inspector
+        <Profiler id="/editor-v6/scene" onRender={recordUiCommit}>
+          <EditorV6StageSurface
+            project={activeEditorV6}
+            sceneRef={sceneRef}
+            backgroundColor={previewBackground.backgroundColor}
+            selectedId={selectedElementId ?? selectedTimelineBlockId}
+            interaction={sceneInteraction}
+            playing={isPlaying}
+            fullView={fullView}
+            inspectorOpen={inspectorOpen}
+            onCanvasPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}
+            onExitFullView={() => setFullView(false)}
+            inspector={<EditorV6Inspector
               side={inspectorSide}
               tab={inspectorTab}
               customView={inspectorCustomView}
@@ -763,8 +769,8 @@ export function EditorV6Page() {
               onSelectPresets={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }}
               onClose={() => setInspectorOpen(false)}
             />}
-          </div>
-        </section>
+          />
+        </Profiler>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><SceneCastPanel
           elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
           allPositionsLocked={allStageCharactersLocked} onAddCharacter={stageSelection.openCastPicker}

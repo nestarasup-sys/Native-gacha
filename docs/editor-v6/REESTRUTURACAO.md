@@ -632,3 +632,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados títulos, classes, ARIA, ordem e callbacks dos controles; a régua usa os mesmos intervalos e offsets. A disponibilidade da divisão foi centralizada em `canSplitEditorV6TimelineBlock` e compartilhada entre o botão da toolbar e o menu contextual, mantendo limites estritos no início/fim e bloqueio de faixa.
 
 **Verificação:** regressões de menu/divisão, linhas, faixa, ponteiro e teclado passaram: 27 testes em 7 arquivos. `npm run typecheck`, `npm run audit:architecture` (785 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 71 — composição da prévia e posição do inspetor (implementado e verificado)
+
+**Objetivo:** mover a composição do canvas, cena, título, modo de tela cheia e inspetor flutuante para `EditorV6StageSurface.tsx`. A regra que escolhe o lado do inspetor foi isolada em `editorV6InspectorPlacement.ts`.
+
+**Compatibilidade:** mantidos a limpeza das seleções ao clicar no canvas, o bloqueio da interação da cena em tela cheia, a posição padrão à direita e o deslocamento à esquerda quando a seleção encosta no limite direito. O estado de edição e os callbacks continuam pertencendo a `EditorV6Page`; nenhum contrato, persistência ou dado de projeto mudou.
+
+**Verificação:** 4 testes cobrem o posicionamento do inspetor; com regressões do menu contextual e modelo de faixas, 11 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (787 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
