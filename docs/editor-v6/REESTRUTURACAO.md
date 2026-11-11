@@ -1088,3 +1088,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados disponibilidade do item, distinção entre publicados e rascunhos, busca por nome/ID/número/descrição em pt-BR, filtros de linha do tempo, ordenações, prioridade de data recente em rascunhos e mensagens de vazio/busca sem resultado. Nenhum vínculo, importação ou dado da biblioteca foi alterado.
 
 **Verificação:** 712 testes Vitest passaram em 161 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 testes novos do modelo para filtros, ordenações e estados vazios. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (846 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 128 — leitura e persistência da duração do vídeo (implementado)
+
+**Objetivo:** extrair do modal para `editorV6VideoDuration.ts` o reconhecimento de duração via metadados, limites aceitos, conversão para quadros e atualização da biblioteca, deixando `EditorV6VideoPickerModal` adaptar DOM e IPC.
+
+**Compatibilidade:** itens com duração já salva retornam sem abrir mídia; para itens pendentes, são mantidos protocolo `gacha-video://library`, timeout de 30 segundos, mensagens de erro, validação de 24 horas, arredondamento para cima em 30 fps, IPC `finishImport` e liberação do elemento em `finally`.
+
+**Verificação:** 716 testes Vitest passaram em 162 arquivos (1 arquivo e 1 teste ignorados), incluindo 4 testes novos para item já medido, metadados/IPC, falha/valor inválido, timeout e limpeza. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (847 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

@@ -5,27 +5,16 @@ import './editorV6VideoPicker.css'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { BaseVideoDetails } from '../../../../shared/baseVideos'
 import { editorV6VideoPickerEmptyState, filterAndSortEditorV6Videos, type EditorV6VideoPickerSort, type EditorV6VideoPickerTimeline, type EditorV6VideoPickerView } from './editorV6VideoPickerModel'
+import { recognizeEditorV6VideoDuration } from './editorV6VideoDuration'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
 
-async function recognizeDuration(item: VideoLibraryItem): Promise<VideoLibraryItem> {
-  if (item.durationFrames !== null) return item
-  const video = document.createElement('video')
-  video.preload = 'metadata'
-  video.muted = true
-  try {
-    const seconds = await new Promise<number>((resolve, reject) => {
-      const timer = window.setTimeout(() => { cleanup(); reject(new Error(`Não foi possível reconhecer a duração de “${item.name}”.`)) }, 30000)
-      const cleanup = () => { window.clearTimeout(timer); video.onloadedmetadata = null; video.onerror = null }
-      video.onloadedmetadata = () => { cleanup(); resolve(video.duration) }
-      video.onerror = () => { cleanup(); reject(new Error(`Não foi possível ler “${item.name}”.`)) }
-      video.src = `gacha-video://library/${item.id}`
-      video.load()
-    })
-    if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error(`A duração de “${item.name}” não é válida.`)
-    return await window.desktop.mediaLibrary.finishImport(item.id, Math.max(1, Math.ceil(seconds * 30)))
-  } finally { video.pause(); video.removeAttribute('src'); video.load() }
-}
+const recognizeDuration = (item: VideoLibraryItem) => recognizeEditorV6VideoDuration(item, {
+  createVideo: () => document.createElement('video'),
+  finishImport: (videoId, durationFrames) => window.desktop.mediaLibrary.finishImport(videoId, durationFrames),
+  setTimeout: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
+  clearTimeout: (timer) => window.clearTimeout(timer)
+})
 
 export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () => void; onSelect: (item: VideoLibraryItem) => Promise<void> }) {
   const [items, setItems] = useState<VideoLibraryItem[]>([])
