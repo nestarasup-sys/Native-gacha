@@ -480,3 +480,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os IDs de personagem usados para iniciar o seletor, o bloqueio aplicado a todos os elementos de personagem, a seleção do bloco do playhead, a pausa antes da seleção no palco e o tratamento distinto de personagem/fundo na timeline. A edição da trava continua passando por `changeScene`, mantendo histórico e autosave; nenhum documento ou contrato IPC foi alterado.
 
 **Verificação:** 5 testes novos cobrem abertura do elenco, trava, seleção de personagem e fundo, e ausência de projeto/personagens. Com as regressões próximas de elenco, seleção, timeline e arraste, 68 testes passaram em 9 arquivos. `npm run typecheck`, `npm run audit:architecture` (765 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 52 — undo e redo do documento (implementado e verificado)
+
+**Objetivo:** separar os comandos de undo e redo de `editorV6DocumentCommands.ts` para `editorV6HistoryCommands.ts`; o comando de documento fornece o patch e os setters da interface.
+
+**Compatibilidade:** mantidos o projeto ativo como contexto do histórico, a leitura do histórico após cada operação, os flags de disponibilidade, a atualização da versão e o patch com `editSelection: false`, que evita reescrever snapshots selecionados da timeline. O histórico continua no mesmo store e não muda a persistência do projeto.
+
+**Verificação:** 2 testes novos cobrem undo/redo, estado sem histórico e ausência de projeto ativo. Com regressões de atalhos, sessão e lifecycle do palco, 13 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (766 arquivos), `npm run build` e `git diff --check` passaram.

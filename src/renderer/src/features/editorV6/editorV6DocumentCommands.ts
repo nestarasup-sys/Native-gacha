@@ -3,6 +3,7 @@ import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '.
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6Store } from './editorV6Store'
+import { createEditorV6HistoryCommands } from './editorV6HistoryCommands'
 
 type ActiveProjectIdRef = { current: string | null }
 type ProjectUpdater = (update: (project: EditorV6Document) => EditorV6Document) => void
@@ -59,6 +60,14 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     })
     dependencies.markUnsaved()
   }
+
+  const { undo, redo } = createEditorV6HistoryCommands({
+    project: dependencies.activeProject,
+    patchDocument,
+    setCanUndo: dependencies.setCanUndo,
+    setCanRedo: dependencies.setCanRedo,
+    bumpHistoryVersion: dependencies.bumpHistoryVersion
+  })
 
   const patchEditorV6FacePreview = (
     projectId: string,
@@ -187,30 +196,6 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     })
     if (record) changeScene(update)
     else patchDocument(update)
-  }
-
-  const undo = () => {
-    const project = dependencies.activeProject
-    if (!project) return
-    const document = useEditorV6Store.getState().undo(project.id, project)
-    if (!document) return
-    const history = useEditorV6Store.getState().histories[project.id]
-    patchDocument(() => document, false)
-    dependencies.setCanUndo(Boolean(history?.undo.length))
-    dependencies.setCanRedo(true)
-    dependencies.bumpHistoryVersion()
-  }
-
-  const redo = () => {
-    const project = dependencies.activeProject
-    if (!project) return
-    const document = useEditorV6Store.getState().redo(project.id, project)
-    if (!document) return
-    const history = useEditorV6Store.getState().histories[project.id]
-    patchDocument(() => document, false)
-    dependencies.setCanUndo(Boolean(history?.undo.length))
-    dependencies.setCanRedo(Boolean(history?.redo.length))
-    dependencies.bumpHistoryVersion()
   }
 
   return {
