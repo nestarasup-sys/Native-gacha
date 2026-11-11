@@ -20,6 +20,10 @@ import { createMotionPoseResolver } from './motionPoseResolver'
 import { motionEndpointScale } from './motionEndpointScale'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
+import { createEditorV6BakeSession, type EditorV6BakeSession } from './bakeSession'
+
+export { createEditorV6BakeSession }
+export type { EditorV6BakeSession }
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type CroppedMotionLayers = { behindFace: HTMLCanvasElement; face: HTMLCanvasElement; posteriorHair: HTMLCanvasElement | null; inFrontOfFace: HTMLCanvasElement | null; eyesAboveRearHair: HTMLCanvasElement | null }
@@ -153,57 +157,6 @@ function calibratePair(from: EditorV6Element, to: EditorV6Element) {
 }
 
 /** Bake canonical rig samples into one bounded PNG atlas, off the UI thread. */
-/**
- * Hidden Electron baker executes one request at a time per lane. Renderer rigs
- * for byte-identical poses (including intermediate samples) survive across
- * requests in THAT lane. All canonical frames are still painted and encoded;
- * only redundant rig construction is avoided.
- */
-export type EditorV6BakeSession = {
-  provider: CharacterRenderAssetProvider
-  materials: GachaReusableMaterialCache
-  endpointRenderers: Map<string, Renderer>
-  /** Bounded history distinguishes a genuinely new rig from a rig evicted earlier. */
-  hasSeenPose(key: string): boolean
-  rememberPose(key: string): void
-  trim(): void
-  dispose(): void
-}
-export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
-  const endpointRenderers = new Map<string, Renderer>()
-  const poseHistory = new Set<string>()
-  const materials: GachaReusableMaterialCache = new Map()
-  return {
-    provider: cacheEditorV6MotionAssetProvider(provider, true),
-    materials,
-    endpointRenderers,
-    hasSeenPose(key) { return poseHistory.has(key) },
-    rememberPose(key) {
-      if (poseHistory.has(key)) poseHistory.delete(key)
-      poseHistory.add(key)
-      while (poseHistory.size > 48) poseHistory.delete(poseHistory.values().next().value!)
-    },
-    trim() {
-      // Bounded worker-local pool, based on a conservative estimate of seven
-      // Canvas RGBA surfaces per rig. Two independent workers can run in Turbo.
-      const estimatedBytes = () => [...endpointRenderers.values()].reduce(
-        (total, renderer) => total + renderer.width * renderer.height * 4 * 7, 0
-      )
-      while (endpointRenderers.size > 12 || (endpointRenderers.size > 1 && estimatedBytes() > 96 * 1024 * 1024)) {
-        const oldest = endpointRenderers.keys().next().value!
-        const renderer = endpointRenderers.get(oldest)!
-        endpointRenderers.delete(oldest)
-        renderer.dispose()
-      }
-    },
-    dispose() {
-      for (const renderer of endpointRenderers.values()) renderer.dispose()
-      endpointRenderers.clear()
-      poseHistory.clear()
-      materials.clear()
-    }
-  }
-}
 export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, rawProvider: CharacterRenderAssetProvider, session?: EditorV6BakeSession, captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void, endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }): Promise<EditorV6MotionBakeResult> {
   const began = performance.now(), provider = cacheEditorV6MotionAssetProvider(session?.provider ?? rawProvider), slot = request.character.customization.modelSlot ?? 1
   const source = await provider.loadFabricatorSlot(slot)

@@ -768,3 +768,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o escopo de métodos compartilháveis, a chave por método e argumentos, o compartilhamento de Promises pendentes, a remoção imediata de falhas e o limite FIFO de 32 entradas. O wrapper continua no processo do worker e não altera canais IPC nem dados persistidos.
 
 **Verificação:** 599 testes passaram na suíte Vitest oficial (127 arquivos; 1 ignorado), incluindo testes de concorrência, rejeição/repetição, limite de cache e bypass de método não compartilhado. `npm run typecheck`, `npm run audit:architecture` (805 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 88 — sessão de bake de movimento e limites de memória (implementado e verificado)
+
+**Objetivo:** mover `EditorV6BakeSession` e sua fábrica para `motion/bakeSession.ts`, separando o pool por lane, o histórico de poses e o descarte do algoritmo que prepara atlas.
+
+**Compatibilidade:** `bakeMotion.ts` reexporta a mesma função e o mesmo tipo, mantendo os consumidores existentes. Permanecem os limites de 48 poses, 12 renderizadores e 96 MiB estimados, a ordem FIFO de remoção e a limpeza dos renderizadores, histórico e materiais.
+
+**Verificação:** 603 testes passaram na suíte Vitest oficial (128 arquivos; 1 ignorado), incluindo limites de histórico/memória, ordem de descarte e limpeza da sessão. `npm run typecheck`, `npm run audit:architecture` (806 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
