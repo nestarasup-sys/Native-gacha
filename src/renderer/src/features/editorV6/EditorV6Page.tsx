@@ -39,8 +39,7 @@ import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
 import { useEditorV6CharacterAppearance } from './useEditorV6CharacterAppearance'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
-import { SceneFaceCatalogPanel } from '../../characters/SceneFaceCatalogPanel'
-import { createDefaultSceneFaceTransform, resolveSceneFaceTransform } from '../../characters/sceneFaceSelection'
+import { createDefaultSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { createEditorV6SceneViewModel } from './editorV6SceneViewModel'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
@@ -66,6 +65,7 @@ import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import { openEditorV6Project } from './editorV6ProjectNavigation'
 import { completeEditorV6ProjectImport } from './editorV6ProjectImportCompletion'
 import { createEditorV6StageSelectionCommands } from './editorV6StageSelection'
+import { EditorV6FaceInspectorPanel } from './EditorV6FaceInspectorPanel'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -600,32 +600,18 @@ export function EditorV6Page() {
     if (!selectedEditorV6Character || selectedElement?.kind !== 'character' || selectedEditorV6CharacterModelSlot === null) {
       return <div className="studio-custom-empty"><strong>Personalizar personagem</strong><span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span></div>
     }
-    const sheetKind = selectedEditorV6FaceSheetKind
-    const selectedItemId = selectedEditorV6FaceCatalogItemId
-    const activeItem = selectedItemId ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedItemId}`] : null
-    const { transformKey: studioTransformKey, transform: selectedEditorV6FaceTransform } = resolveSceneFaceTransform(
-      editorV6FaceCategory, sheetKind, selectedItemId, selectedEditorV6FaceAppearance, selectedElement.faceTransforms
-    )
-    const catalogItems = editorV6FaceItems.filter((item) => item.modelSlot === selectedEditorV6CharacterModelSlot && item.category === sheetKind)
-    return <SceneFaceCatalogPanel
-      category={editorV6FaceCategory} sheetKind={sheetKind} selectedItemId={selectedItemId}
-      catalogItems={catalogItems} activeItem={activeItem} appearance={selectedEditorV6FaceAppearance}
+    return <EditorV6FaceInspectorPanel
+      modelSlot={selectedEditorV6CharacterModelSlot} category={editorV6FaceCategory}
+      sheetKind={selectedEditorV6FaceSheetKind} selectedItemId={selectedEditorV6FaceCatalogItemId}
+      items={editorV6FaceItems} details={editorV6FaceDetails} appearance={selectedEditorV6FaceAppearance}
       faceMode={selectedEditorV6FaceMode} faceBusy={editorV6FaceBusy} expressionBusy={editorV6ExpressionBusy}
       catalogLoading={editorV6FaceLoading} detailsLoading={editorV6FaceDetailsLoading}
-      talkAvailable={selectedEditorV6TalkAvailable}
-      emptyEyesMessage={selectedItemId ? 'A folha de olhos selecionada ainda não está disponível.' : 'Escolha uma folha de olhos para ver as três variantes.'}
+      talkAvailable={selectedEditorV6TalkAvailable} element={selectedElement}
       onCategoryChange={setEditorV6FaceCategory} onFaceModeChange={(mode) => { void applyEditorV6FaceMode(mode) }}
       onSheetSelect={(summary) => { void chooseEditorV6FaceSheet(summary) }} onAppearanceChange={updateEditorV6FaceVariant}
-    >
-      <div className="studio-controls-grid studio-custom-eye-controls">
-        {control('X', selectedEditorV6FaceTransform.x, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { x: value }, record, selectedEditorV6FaceTransform), -100, 100, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
-        {control('Y', selectedEditorV6FaceTransform.y, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { y: value }, record, selectedEditorV6FaceTransform), -100, 100, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
-        {control('Largura', selectedEditorV6FaceTransform.width, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { width: value }, record, selectedEditorV6FaceTransform), 1, 300, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
-        {control('Altura', selectedEditorV6FaceTransform.height, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { height: value }, record, selectedEditorV6FaceTransform), 1, 300, '%', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
-        {control('Rotação', selectedEditorV6FaceTransform.rotation, (value, record) => updateEditorV6FaceTransform(studioTransformKey, { rotation: value }, record, selectedEditorV6FaceTransform), -180, 180, '°', () => finishEditorV6FaceTransform(studioTransformKey), editorV6FaceBusy)}
-      </div>
-      {editorV6FaceBusy && <p className="studio-custom-hint" role="status">Atualizando personagem…</p>}
-    </SceneFaceCatalogPanel>
+      onUpdateTransform={updateEditorV6FaceTransform} onFinishTransform={finishEditorV6FaceTransform}
+      onRecordHistory={() => recordHistory()}
+    />
   }
 
   const toggleTimelinePlayback = () => {

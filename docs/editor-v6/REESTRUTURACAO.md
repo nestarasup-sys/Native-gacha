@@ -1016,3 +1016,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o tamanho com faixa do token, transparência para vídeo em camadas, partição única por janela, preload/sandbox, 60 FPS, política de recursos e registro condicional da scheme de mídia conforme o snapshot/resolvers disponíveis.
 
 **Verificação:** 687 testes Vitest passaram em 153 arquivos (1 arquivo e 1 teste ignorados), incluindo integração que confere as preferências isoladas da janela, o bloqueio de recursos externos e a permissão da mídia somente para o snapshot que a referencia. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (836 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 119 — painel facial do inspector do Editor V6 (implementado)
+
+**Objetivo:** retirar de `EditorV6Page.tsx` a composição do catálogo facial e os controles de posicionamento, transferindo-os para `EditorV6FaceInspectorPanel.tsx`; a página continua coordenando hooks, seleção e comandos.
+
+**Compatibilidade:** preservados filtro por modelo/categoria, cache de detalhes por slot e asset, estados de carregamento, variantes faciais, modos de boca, transform por folha com fallback legado, registro de histórico e finalização do preview.
+
+**Verificação:** 689 testes Vitest passaram em 154 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 novos testes visuais do painel para folha/variantes, transforms do ator e estados de carregamento/atualização. Os testes focados do inspector e comandos faciais também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (837 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
