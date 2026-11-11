@@ -1072,3 +1072,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os caminhos de balão de fala/pensamento, escala já calculada pelo elemento, recorte dos textos, tamanho de fonte, truncamento do nome do personagem, cor e posição das linhas. O componente renderiza dentro da mesma árvore SVG utilizada pela prévia e captura.
 
 **Verificação:** 705 testes Vitest passaram em 159 arquivos (1 arquivo e 1 teste ignorados), incluindo 2 testes novos de markup para fala, pensamento e narrador; os testes de exportação visível também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (844 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 126 — conteúdo visual de imagens e personagens (implementado)
+
+**Objetivo:** extrair de `SceneLayer` para `SceneImageContent.tsx` o desenho de imagem/personagem, montagem de canvas raster, recorte de atlas de movimento e camada facial substituída. A camada externa continua controlando posição, seleção e interação.
+
+**Compatibilidade:** mantidos flip, `preserveAspectRatio` distinto para personagem e objeto, dimensões e `viewBox` do atlas, bounds locais da máscara de boca, overlay facial, notificações de carregamento e montagem do canvas de exportação.
+
+**Verificação:** 709 testes Vitest passaram em 160 arquivos (1 arquivo e 1 teste ignorados), incluindo 4 testes novos para imagem/flip, atlas animado, máscara/overlay facial e canvas raster. Os testes de assets visíveis da exportação também passaram. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (845 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
