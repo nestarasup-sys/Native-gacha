@@ -1056,3 +1056,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o escape global de diagnóstico, as referências de assets/canvas/callbacks, a comparação dos campos visuais imutáveis, os seis campos que descrevem o recorte de motion sprite e as dimensões/flags do patch facial. A extração não modifica a frequência de atualização nem o estado salvo.
 
 **Verificação:** 700 testes Vitest passaram em 157 arquivos (1 arquivo e 1 teste ignorados), incluindo teste da reexportação e os casos existentes de assets, posição, seleção, recorte e estado facial. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (842 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 124 — layout e quebra de texto da cena (implementado)
+
+**Objetivo:** extrair a medição em canvas e a quebra/reticências do texto dos balões para `sceneTextLayout.ts`, deixando `SceneSurface.tsx` concentrado na montagem SVG. `wrapSceneText` continua exportado pelo caminho anterior como alias.
+
+**Compatibilidade:** mantidos fonte/peso medidos, fallback proporcional quando canvas não está disponível, normalização de CR, limites de linha, quebra de palavras/código Unicode e reticências dentro da última linha. Preview e captura seguem usando a mesma função.
+
+**Verificação:** 703 testes Vitest passaram em 158 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 novos testes para parágrafos, palavras longas, Unicode, overflow e reexportação. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (843 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
