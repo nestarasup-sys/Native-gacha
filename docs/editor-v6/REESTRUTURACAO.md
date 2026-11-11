@@ -680,3 +680,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o primeiro rig por pose, a preferência pela pose com fallback para asset direto, a seleção de transições com atlas preparado, a separação de planos só faciais e o uso dos planos de timeline para reações sem atlas. O worker continua consumindo os mesmos mapas e chaves; nenhum dado persistido ou formato de exportação mudou.
 
 **Verificação:** 31 testes passaram em 4 arquivos, incluindo modelo de movimento, índice de transição e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (794 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo foi exportado.
+
+### Ciclo 77 — histórico do caminho da cabeça no movimento de cabelo (implementado e verificado)
+
+**Objetivo:** extrair para `exportHairHeadPathTimeline.ts` os buffers incrementais por quadro, a acumulação do deslocamento da cabeça e o índice binário das mudanças de espelhamento por camada.
+
+**Compatibilidade:** o worker injeta os mesmos resolvedores de cena, rig e amostra de transição. Mantidos o reaproveitamento da cena bruta do quadro exportado, o fallback para transformações do personagem sem rig, a continuidade do último deslocamento quando o personagem some e o uso da geometria física durante transições, sem derivar movimento do recorte visual do atlas.
+
+**Verificação:** 35 testes passaram em 5 arquivos, incluindo os novos casos de acumulação de caminho, personagem ausente, interpolação de geometria física, busca de mudanças de espelhamento e paridade de exportação. `npm run typecheck`, `npm run audit:architecture` (795 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

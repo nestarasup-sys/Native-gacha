@@ -5,13 +5,14 @@ import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Timeline
 import { editorV6FaceModeAtFrame } from '../../../../shared/editorV6FaceSchedule'
 import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, editorV6LayerVisualKeys, editorV6VisualKey, type EditorV6ExportMouthLoops, type EditorV6FrameMetrics, type EditorV6FrameTimings, type EditorV6RenderFrameResult, type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { advanceHairMotionToFrame, applyHairMotionLoopHeadImpulse, buildHairMotionLoop, createHairMotionState, hairMotionLatestPoseEnd, hairMotionNeedsWarp, hairMotionLoopOffsets, hairMotionPoseReactionIsActive, prewarmHairMotionState, sampleHairMotionPoseReaction, type HairMotionLoop, type HairMotionSettings, type HairMotionState } from '../../../../shared/hairMotionEngine'
-import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
+import { editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, interpolateEditorV6HairMotionRig, type EditorV6HairMotionRig, type EditorV6HairMotionLayer, type EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import { HAIR_MOTION_MESH_HEIGHT, HAIR_MOTION_MESH_WIDTH } from '../../characters/hairMotionMeshGeometry'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
+import { createEditorV6HairHeadPathTimeline } from './exportHairHeadPathTimeline'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
 
@@ -45,10 +46,6 @@ async function initialize() {
   // directly. These surfaces are reused across frames instead of PNG round trips.
   const motionHairFrameSurfaces = new Map<string, { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }>()
   const animatedElementIds = [...new Set((hairAnimation?.rigs ?? []).filter(rig => rig.layers.length > 0).map(rig => rig.elementId))]
-  let headPathCapacity = 0, headPathFrame = -1
-  const headPaths = new Map(animatedElementIds.map(id => [id, new Float32Array(0)]))
-  const headPathPrevious = new Map<string, EditorV6HairMotionHeadPathPoint>()
-  const headLayerFlipChanges = new Map<string, Array<{ frame: number; flipX: boolean }>>()
   type ResolvedHairRig = { rig: EditorV6HairMotionRig; crop?: EditorV6HairMotionRig['sourceCrop']; element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number] }
   const hairRigAtFrame = (element: ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number], frame: number): ResolvedHairRig | undefined => {
     const elementId = element.id
@@ -90,77 +87,20 @@ async function initialize() {
     for (const [id, image] of surfaceImages) hairSurfaces.set(id, image)
     for (const [id, image] of textureImages) hairTextures.set(id, image)
   }
-  const ensureHeadPaths = (targetFrame: number) => {
-    if (!hairAnimation || targetFrame <= headPathFrame) return
-    if (targetFrame + 1 > headPathCapacity) {
-      const capacity = Math.max(1024, 2 ** Math.ceil(Math.log2(targetFrame + 1)))
-      for (const [id, previous] of headPaths) {
-        const next = new Float32Array(capacity)
-        next.set(previous)
-        headPaths.set(id, next)
-      }
-      headPathCapacity = capacity
-    }
-    for (let frame = headPathFrame + 1; frame <= targetFrame; frame += 1) {
+  const { headXAtFrame, pieceFlipXAtFrame } = createEditorV6HairHeadPathTimeline({
+    animatedElementIds,
+    hasHairAnimation: Boolean(hairAnimation),
+    resolveScene: frame => frame === resolvedFrame && resolvedRawScene
       // Reuse the raw scene already resolved for this exported frame; mouth
       // overlays must not change the physical rig used by head-path inertia.
-      const resolved = frame === resolvedFrame && resolvedRawScene
-        ? resolvedRawScene : resolveEditorV6SceneAtFrame(project, frame)
-      const elements = new Map(resolved.elements.filter(element => element.kind === 'character').map(element => [element.id, element]))
-      for (const elementId of animatedElementIds) {
-        const path = headPaths.get(elementId)!
-        const element = elements.get(elementId)
-        if (!element) {
-          path[frame] = frame > 0 ? path[frame - 1] : 0
-          continue
-        }
-        const previous = headPathPrevious.get(elementId)
-        const indexed = hairTransitionIndex.get(elementId, frame)
-        const transition = indexed?.transition
-        const transitionSample = indexed?.poseSample
-        const resolvedRig = hairRigAtFrame(element, frame)
-        const pathPoint = transition && transitionSample && transition.physicsFrom && transition.physicsTo
-          ? interpolateEditorV6HairMotionHeadPathPoint(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo, motionEase(transitionSample.progress))
-          : (() => {
-              return resolvedRig
-                ? editorV6HairMotionHeadPathPoint(resolvedRig.element, resolvedRig.rig)
-                : { centerX: (50 + element.x) / 100, centerY: (50 + element.y) / 100, localX: 0, rotation: element.rotation, flipX: Boolean(element.flipX) }
-            })()
-        if (!previous || frame === 0) {
-          path[frame] = 0
-        } else {
-          // Physics follows authored actor transforms and pose head geometry.
-          // Transition atlas crops remain visual-only and cannot inject false
-          // head velocity when a face expression changes its raster bounds.
-          path[frame] = path[frame - 1] + editorV6HairMotionHeadPathDelta(previous, pathPoint)
-        }
-        headPathPrevious.set(elementId, pathPoint)
-        for (const layer of resolvedRig?.rig.layers ?? []) {
-          const key = `${elementId}:${layer.id}`
-          const changes = headLayerFlipChanges.get(key) ?? []
-          if (changes.length === 0 || changes[changes.length - 1].flipX !== layer.flipX) changes.push({ frame, flipX: layer.flipX })
-          if (changes.length) headLayerFlipChanges.set(key, changes)
-        }
-      }
-    }
-    headPathFrame = targetFrame
-  }
-  const headXAtFrame = (elementId: string, frame: number) => {
-    ensureHeadPaths(frame)
-    return headPaths.get(elementId)?.[frame] ?? 0
-  }
-  const pieceFlipXAtFrame = (elementId: string, pieceId: string, frame: number, fallback: boolean) => {
-    const changes = headLayerFlipChanges.get(`${elementId}:${pieceId}`)
-    if (!changes?.length) return fallback
-    if (frame < changes[0].frame) return fallback
-    let low = 0, high = changes.length - 1
-    while (low < high) {
-      const middle = Math.ceil((low + high) / 2)
-      if (changes[middle].frame <= frame) low = middle
-      else high = middle - 1
-    }
-    return changes[low].flipX
-  }
+      ? resolvedRawScene
+      : resolveEditorV6SceneAtFrame(project, frame),
+    getTransitionSample: (elementId, frame) => {
+      const indexed = hairTransitionIndex.get(elementId, frame)
+      return indexed ? { transition: indexed.transition, poseSample: indexed.poseSample } : undefined
+    },
+    hairRigAtFrame
+  })
   const motionSettings = (side: EditorV6HairMotionLayer['side']): HairMotionSettings => ({
     ...hairAnimation!.preset.physics,
     enabled: hairAnimation!.preset.enabled[side]
