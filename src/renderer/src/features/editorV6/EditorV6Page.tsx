@@ -68,6 +68,7 @@ import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
 import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import { openEditorV6Project } from './editorV6ProjectNavigation'
 import { completeEditorV6ProjectImport } from './editorV6ProjectImportCompletion'
+import { createEditorV6StageSelectionCommands } from './editorV6StageSelection'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -223,15 +224,6 @@ export function EditorV6Page() {
   const stageCharacters = sceneCharacterProjection.characters
 
   const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
-  const toggleStageCharacterPositionLock = () => {
-    if (!activeEditorV6 || !stageCharacters.length) return
-    const nextLocked = !allStageCharactersLocked
-    changeScene((studio) => ({
-      ...studio,
-      elements: studio.elements.map((element) => element.kind === 'character' ? { ...element, positionLocked: nextLocked } : element),
-      updatedAt: new Date().toISOString()
-    }))
-  }
   const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
     if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
   }
@@ -430,10 +422,23 @@ export function EditorV6Page() {
     setInspectorTab
   })
 
-  const openCastPicker = () => {
-    setCastSelection(stageCharacters.map((element) => element.characterId).filter((id): id is string => Boolean(id)))
-    setCastPickerOpen(true)
-  }
+  const stageSelection = createEditorV6StageSelectionCommands({
+    project: activeEditorV6,
+    stageCharacters,
+    allPositionsLocked: allStageCharactersLocked,
+    currentFrame: getEditorV6PlaybackFrame,
+    pausePlayback,
+    changeScene,
+    now: () => new Date().toISOString(),
+    setCastSelection,
+    setCastPickerOpen,
+    setSelectedElementId,
+    setSelectedTimelineBlockId,
+    setActiveTool,
+    setInspectorOpen,
+    setInspectorTab,
+    restoreCharacterInspectorView
+  })
 
   const { saveCastSelection } = createEditorV6CastCommands({
     activeProject: activeEditorV6,
@@ -762,14 +767,14 @@ export function EditorV6Page() {
         </section>
         {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><SceneCastPanel
           elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
-          allPositionsLocked={allStageCharactersLocked} onAddCharacter={openCastPicker}
-          onTogglePositionsLocked={toggleStageCharacterPositionLock}
-          onSelectCharacter={(element) => { pausePlayback(); setSelectedElementId(element.id); setSelectedTimelineBlockId(editorV6ClipAtFrame(activeEditorV6.timeline, element.id, getEditorV6PlaybackFrame())?.block.id ?? null); setActiveTool(null); setInspectorOpen(true); restoreCharacterInspectorView() }}
+          allPositionsLocked={allStageCharactersLocked} onAddCharacter={stageSelection.openCastPicker}
+          onTogglePositionsLocked={stageSelection.toggleCharacterPositionLock}
+          onSelectCharacter={stageSelection.selectStageCharacter}
           onRemoveCharacter={removeStageCharacter}
         /></aside>}
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
-          onSelect={(block) => { setSelectedTimelineBlockId(block.id); setSelectedElementId(block.background ? 'background' : block.elementId ?? null); setActiveTool(block.background ? 'background' : null); setInspectorOpen(true); if (block.state?.kind === 'character') restoreCharacterInspectorView(); else setInspectorTab('editor') }} /></Profiler> }
+          onSelect={stageSelection.selectTimelineBlock} /></Profiler> }
         <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />}

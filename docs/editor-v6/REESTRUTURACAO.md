@@ -472,3 +472,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o diálogo continua aguardando a gravação (`onSave`) antes de chamar o callback de conclusão. A sequência permanece resumo no catálogo, seleção, ativação, estado salvo, fechamento do diálogo e limpeza do erro. Nenhum documento, formato JSON, persistência ou contrato IPC foi alterado.
 
 **Verificação:** teste novo cobre a ordem dos efeitos da conclusão; junto com a regressão da navegação, 2 testes passaram em 2 arquivos. `npm run typecheck`, `npm run audit:architecture` (764 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 51 — comandos de seleção do palco e timeline (implementado e verificado)
+
+**Objetivo:** mover a coordenação de abrir o seletor de elenco, travar posições, selecionar personagem no palco e selecionar bloco na timeline para `editorV6StageSelection.ts`. A página segue fornecendo estado, callbacks e componentes.
+
+**Compatibilidade:** preservados os IDs de personagem usados para iniciar o seletor, o bloqueio aplicado a todos os elementos de personagem, a seleção do bloco do playhead, a pausa antes da seleção no palco e o tratamento distinto de personagem/fundo na timeline. A edição da trava continua passando por `changeScene`, mantendo histórico e autosave; nenhum documento ou contrato IPC foi alterado.
+
+**Verificação:** 5 testes novos cobrem abertura do elenco, trava, seleção de personagem e fundo, e ausência de projeto/personagens. Com as regressões próximas de elenco, seleção, timeline e arraste, 68 testes passaram em 9 arquivos. `npm run typecheck`, `npm run audit:architecture` (765 arquivos), `npm run build` e `git diff --check` passaram.
