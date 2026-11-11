@@ -1,9 +1,10 @@
-import { editorV6ProjectSummary, syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
+import { syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element, type EditorV6ProjectSummary, type EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6HistoryCommands } from './editorV6HistoryCommands'
+import { createEditorV6DocumentImportPersistence } from './editorV6DocumentImportPersistence'
 
 type ActiveProjectIdRef = { current: string | null }
 type ProjectUpdater = (update: (project: EditorV6Document) => EditorV6Document) => void
@@ -95,35 +96,18 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     })
   }
 
-  const loadLatestEditorV6Project = async (projectId: string) => {
-    const current = useEditorV6Store.getState().activeProject
-    return current?.id === projectId
-      ? current
-      : window.desktop.editorV6.loadEditorV6Project(projectId)
-  }
-
-  const persistImportedEditorV6Document = async (source: EditorV6Document, next: EditorV6Document) => {
-    const isActive = dependencies.activeProjectIdRef.current === source.id
-      && useEditorV6Store.getState().activeProject?.id === source.id
-    if (isActive) {
-      recordHistory(source)
-      dependencies.setActiveProject(next)
-      dependencies.markUnsaved()
-    }
-
-    await dependencies.writeDocumentInOrder(next)
-    const current = useEditorV6Store.getState().activeProject
-    dependencies.upsertSummary(editorV6ProjectSummary(current?.id === next.id ? current : next))
-    const isStillCurrent = isActive
-      && dependencies.activeProjectIdRef.current === next.id
-      && current?.id === next.id
-      && current.updatedAt === next.updatedAt
-    if (isStillCurrent) {
-      dependencies.setSaved(true)
-      dependencies.setError(null)
-    }
-    return isStillCurrent
-  }
+  const { loadLatestProject: loadLatestEditorV6Project, persistImportedDocument: persistImportedEditorV6Document } = createEditorV6DocumentImportPersistence({
+    activeProjectIdRef: dependencies.activeProjectIdRef,
+    getActiveProject: () => useEditorV6Store.getState().activeProject,
+    loadProject: (projectId) => window.desktop.editorV6.loadEditorV6Project(projectId),
+    recordHistory,
+    setActiveProject: dependencies.setActiveProject,
+    markUnsaved: dependencies.markUnsaved,
+    writeDocumentInOrder: dependencies.writeDocumentInOrder,
+    upsertSummary: dependencies.upsertSummary,
+    setSaved: dependencies.setSaved,
+    setError: dependencies.setError
+  })
 
   const removeStageCharacter = (element: EditorV6Element) => {
     changeScene((document) => {

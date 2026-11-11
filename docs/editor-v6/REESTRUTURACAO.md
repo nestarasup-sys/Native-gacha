@@ -488,3 +488,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o projeto ativo como contexto do histórico, a leitura do histórico após cada operação, os flags de disponibilidade, a atualização da versão e o patch com `editSelection: false`, que evita reescrever snapshots selecionados da timeline. O histórico continua no mesmo store e não muda a persistência do projeto.
 
 **Verificação:** 2 testes novos cobrem undo/redo, estado sem histórico e ausência de projeto ativo. Com regressões de atalhos, sessão e lifecycle do palco, 13 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (766 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 53 — persistência de importações de cena (implementado e verificado)
+
+**Objetivo:** extrair de `editorV6DocumentCommands.ts` a leitura do documento mais recente e a persistência ordenada de alterações importadas para `editorV6DocumentImportPersistence.ts`.
+
+**Compatibilidade:** mantém a leitura em memória quando o ID ativo corresponde e o fallback ao bridge do Electron; só altera o documento ativo quando fonte e sessão ainda correspondem. A gravação continua antes da publicação do resumo; falhas são propagadas, e respostas obsoletas não limpam estado salvo/erro de outra sessão. Nenhum formato persistido ou canal IPC mudou.
+
+**Verificação:** 5 testes novos cobrem fallback/cache, sequência de gravação, resposta obsoleta antes e durante a gravação e erro de persistência. Com regressões de histórico e conclusão de importação, 8 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (767 arquivos), `npm run build` e `git diff --check` passaram.
