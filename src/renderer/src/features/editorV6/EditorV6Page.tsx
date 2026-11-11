@@ -17,7 +17,7 @@ import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
-import { createEditorV6ProjectCreationCommands } from './editorV6ProjectCreation'
+import { useEditorV6ProjectCreation } from './useEditorV6ProjectCreation'
 import { createEditorV6ProjectDeletionCommand } from './editorV6ProjectDeletion'
 import { createEditorV6PrintCommands } from './editorV6PrintCommands'
 import { createEditorV6ProjectExitCommand } from './editorV6ProjectExit'
@@ -85,8 +85,6 @@ export function EditorV6Page() {
   const upsertEditorV6Summary = useEditorV6Store((state) => state.upsertSummary)
   const removeEditorV6Summary = useEditorV6Store((state) => state.removeSummary)
   const [loading, setLoading] = useState(true)
-  const [creatingProject, setCreatingProject] = useState(false)
-  const creatingProjectRef = useRef(false)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
@@ -270,7 +268,7 @@ export function EditorV6Page() {
     reportError: setError
   })
 
-  const projectCreation = createEditorV6ProjectCreationCommands({
+  const { creatingProject, createStudio, duplicateStudio: duplicateEditorV6Project } = useEditorV6ProjectCreation({
     projects: () => editorV6Projects,
     nextNumber: nextStudioNumber,
     activeProject: () => activeEditorV6,
@@ -290,18 +288,7 @@ export function EditorV6Page() {
     setError,
     trackOperation: trackEditorV6Operation
   })
-  const createStudio = async () => {
-    if (creatingProjectRef.current) return
-    creatingProjectRef.current = true
-    setCreatingProject(true)
-    try {
-      await projectCreation.createStudio()
-    } finally {
-      creatingProjectRef.current = false
-      setCreatingProject(false)
-    }
-  }
-  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => projectCreation.duplicateStudio(sourceSummary)
+  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => duplicateEditorV6Project(sourceSummary)
 
   useEffect(() => {
     if (!activeEditorV6) {

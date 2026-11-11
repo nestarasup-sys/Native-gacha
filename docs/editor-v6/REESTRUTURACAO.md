@@ -640,3 +640,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos a limpeza das seleções ao clicar no canvas, o bloqueio da interação da cena em tela cheia, a posição padrão à direita e o deslocamento à esquerda quando a seleção encosta no limite direito. O estado de edição e os callbacks continuam pertencendo a `EditorV6Page`; nenhum contrato, persistência ou dado de projeto mudou.
 
 **Verificação:** 4 testes cobrem o posicionamento do inspetor; com regressões do menu contextual e modelo de faixas, 11 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (787 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 72 — coordenação da criação de projetos (implementado e verificado)
+
+**Objetivo:** retirar de `EditorV6Page.tsx` o estado de criação e a proteção contra cliques simultâneos, reunindo-os em `useEditorV6ProjectCreation.ts`. O hook conecta o ciclo de vida da interface aos comandos existentes de criação e duplicação; a guarda testável fica em `editorV6ProjectCreationGuard.ts`.
+
+**Compatibilidade:** mantidos o mesmo fluxo de criação/duplicação, mensagens e gravação dos documentos; chamadas repetidas enquanto uma criação está pendente continuam ignoradas e a guarda é liberada também em caso de erro. IDs, formato do projeto, persistência e IPC não mudaram. O teste estrutural de persistência agora verifica exclusão e impressão nos módulos de comando que já são donos desses fluxos.
+
+**Verificação:** 2 testes da guarda passaram; 16 regressões de persistência passaram. `npm run typecheck`, `npm run audit:architecture` (789 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
