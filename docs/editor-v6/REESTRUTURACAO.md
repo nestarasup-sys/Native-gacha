@@ -880,3 +880,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados ordem e destino das camadas `behindFace`, `face`, `posteriorHair`, `inFrontOfFace` e `eyesAboveRearHair`, dimensões/posições de desenho, campos e crop dos quadros capturados e a mensagem de erro para camadas ausentes. A limpeza dos canvases de pose ocorre após a gravação; os atlases seguem vivos até a captura/serialização e são liberados pelo bake ao final.
 
 **Verificação:** 650 testes passaram na suíte Vitest oficial (141 arquivos; 1 ignorado), incluindo 3 novos testes de ordem, alocação tardia, geometria e descarte. `npm run typecheck`, `npm run audit:architecture` (819 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 102 — geometria interpolada dos frames de movimento (implementado e verificado)
+
+**Objetivo:** extrair para `motionFrameGeometry.ts` o cálculo das escalas dos endpoints, o fallback de escala para personagens legados e o mapeamento do crop renderizado para a posição/rotação/flip de cada frame.
+
+**Compatibilidade:** preservadas as mesmas condições de fallback quando `characterCanvasWidth` não existe, as escalas obtidas de `editorV6ElementSize`, interpolação de posição e escala, origem pela união dos crops, rotação angular e troca de flip no ponto médio. Os divisores de conversão 19.2/10.8 e a forma do objeto de movimento permanecem iguais.
+
+**Verificação:** 653 testes passaram na suíte Vitest oficial (142 arquivos; 1 ignorado), incluindo 3 novos testes de fallback legado, escala no endpoint alterado e geometria/rotação/flip interpolados. `npm run typecheck`, `npm run audit:architecture` (820 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.

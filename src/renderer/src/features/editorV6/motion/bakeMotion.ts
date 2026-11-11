@@ -2,7 +2,7 @@ import type { CharacterRenderAssetProvider } from '../../../../../shared/charact
 import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
-import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle, motionEase, motionLerp } from '../../../../../shared/editorV6MotionInterpolation'
+import { interpolateEditorV6Face, interpolateEditorV6Pose, motionEase } from '../../../../../shared/editorV6MotionInterpolation'
 import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import {
@@ -10,7 +10,6 @@ import {
   type MotionPixelCrop as Crop
 } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
-import { motionEndpointScale } from './motionEndpointScale'
 import { resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
@@ -27,6 +26,7 @@ import { buildEditorV6LegacyMouthAtlas } from './motionLegacyMouthAtlas'
 import { detectEditorV6LegacyMouthBounds } from './motionLegacyMouthBounds'
 import { createEditorV6MotionLayerAtlasCapture, type EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 import { createEditorV6MotionLayerAtlases, disposeEditorV6MotionLayerAtlases, writeEditorV6MotionLayerAtlasFrame, type MotionLayerAtlases } from './motionLayerAtlasWriter'
+import { interpolateEditorV6MotionFrameGeometry, resolveEditorV6MotionElementScales } from './motionFrameGeometry'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -201,19 +201,9 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     const atlas = document.createElement('canvas'); atlas.width = cellWidth * columns; atlas.height = cellHeight * rows
     const context = atlas.getContext('2d')!
     if (captureLayerAtlases) layerAtlases = createEditorV6MotionLayerAtlases(atlas.width, atlas.height)
-    const sharedCharacterCanvasWidth = request.plan.from.characterCanvasWidth ?? request.plan.to.characterCanvasWidth
-    // The saved rectangles already encode the actual stage aspect ratio and
-    // character scale; map those rectangles to the same crops as static assets.
-    const fromScale = motionEndpointScale(request.plan.from, fromCrop)
-    let toScale = motionEndpointScale(request.plan.to, toCrop)
-    // Older projects have no untrimmed-canvas width. If their actor box and
-    // explicit scale are unchanged, retain the source scale through the bake.
-    const sameLegacyElementSize = !sharedCharacterCanvasWidth
-      && request.plan.from.width === request.plan.to.width && request.plan.from.height === request.plan.to.height
-      && (request.plan.from.characterScale ?? 100) === (request.plan.to.characterScale ?? 100)
-      && (request.plan.from.characterWidthScale ?? 100) === (request.plan.to.characterWidthScale ?? 100)
-      && (request.plan.from.characterHeightScale ?? 100) === (request.plan.to.characterHeightScale ?? 100)
-    if (sameLegacyElementSize) toScale = fromScale
+    // Saved rectangles encode the stage aspect ratio and scale; legacy actors
+    // without a source-canvas width retain their historical source scale.
+    const endpointScales = resolveEditorV6MotionElementScales(request.plan.from, request.plan.to, fromCrop, toCrop)
     for (const [index, sample] of request.plan.samples.entries()) {
       const t = motionEase(sample.progress), mouthScale = request.mouthScaleSamples?.[index] ?? 1
       const baked = preparedAtlasFrames?.[index]
@@ -223,12 +213,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight, width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
         const sourceCanvas = baked?.canvas ?? frame!.canvas
         context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)
-        const sx = motionLerp(fromScale.x, toScale.x, t), sy = motionLerp(fromScale.y, toScale.y, t)
-        const originX = motionLerp(-(fromCrop.left + fromCrop.width / 2) * fromScale.x, -(toCrop.left + toCrop.width / 2) * toScale.x, t)
-        const originY = motionLerp(-(fromCrop.top + fromCrop.height / 2) * fromScale.y, -(toCrop.top + toCrop.height / 2) * toScale.y, t)
-        const rotation = motionAngle(from.rotation, to.rotation, t), flipX = Boolean(t < .5 ? from.flipX : to.flipX)
-        const dx = (originX + (crop.left + crop.width / 2) * sx) * (flipX ? -1 : 1), dy = originY + (crop.top + crop.height / 2) * sy, radians = rotation * Math.PI / 180
-        const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, x: motionLerp(from.x, to.x, t) + (dx * Math.cos(radians) - dy * Math.sin(radians)) / 19.2, y: motionLerp(from.y, to.y, t) + (dx * Math.sin(radians) + dy * Math.cos(radians)) / 10.8, width: crop.width * sx / 19.2, height: crop.height * sy / 10.8, rotation, flipX }
+        const geometry = interpolateEditorV6MotionFrameGeometry({ from, to, fromCrop, toCrop, endpointScales, crop, progress: t })
+        const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, ...geometry }
         frames.push(motionFrame)
         if (captureLayerAtlases) {
           const layers = baked?.layers ?? (frame?.layers ? cropPreparedMotionLayers(frame.layers, crop) : undefined)
