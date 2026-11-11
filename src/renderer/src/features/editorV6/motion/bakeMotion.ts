@@ -23,6 +23,7 @@ import { prepareEditorV6MotionFacePair, scaleEditorV6MotionMouth } from './motio
 import { createEditorV6MotionRigPreparer } from './motionRigPreparation'
 import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
 import { createChangedMotionPixelPatch, cropMotionCanvas, createTransparentMotionPatch, readMotionCanvasCrop } from './motionCanvasRegions'
+import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 
 export { createEditorV6BakeSession }
 export type { EditorV6BakeSession }
@@ -30,7 +31,6 @@ export type { EditorV6BakeSession }
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 type MotionFrameRender = { canvas: HTMLCanvasElement; width: number; height: number; crop: Crop; renderer: Renderer; layers?: PreparedGachaLayerFrame; mouthCanvas?: HTMLCanvasElement; mouthCrop?: Crop; dispose: () => void }
 type BakedBodySample = { canvas: HTMLCanvasElement; crop: Crop; layers?: CroppedMotionLayers }
-type BakedFacePatch = { index: number; canvas: HTMLCanvasElement; left: number; top: number; width: number; height: number; crop: Crop; changed?: PixelBounds; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
 export type EditorV6MotionLayerAtlasCapture = {
   frames: Array<Pick<EditorV6MotionFrame, 'offset' | 'sprite' | 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX'> & { crop: Omit<Crop, 'fingerprint'>; facePatch?: EditorV6MotionFrame['facePatch'] }>
   behindFace: HTMLCanvasElement
@@ -246,30 +246,6 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
     let ratio = layout.ratio
     const frames: EditorV6MotionFrame[] = []
     const facePatches: BakedFacePatch[] = pendingFacePatches = []
-    const prepareFacePatch = async (index: number, sample: { faceMode?: EditorV6FaceRenderMode }, t: number, mouthScale: number, frame: MotionFrameRender) => {
-      if (!request.mouthScaleSamples || (sample.faceMode !== 'talk' && sample.faceMode !== 'talk-blink')) return
-      if (mouthScale <= 1.000001 && !frame.mouthCanvas) return
-      const scaled = await render(t, sample.faceMode, mouthScale, false, frame.renderer)
-      if (scaled.mouthCanvas && scaled.mouthCrop) {
-        try {
-          const patch = createTransparentMotionPatch(scaled.mouthCanvas, scaled.mouthCrop)
-          facePatches.push({ index, canvas: patch, left: scaled.mouthCrop.left, top: scaled.mouthCrop.top, width: scaled.mouthCrop.width, height: scaled.mouthCrop.height, crop: frame.crop })
-        } finally { scaled.dispose() }
-        return
-      }
-      const baselinePixels = new Uint8ClampedArray(frame.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, frame.width, frame.height).data)
-      try {
-        const pixels = scaled.canvas.getContext('2d', { willReadFrequently: true })!.getImageData(0, 0, scaled.width, scaled.height).data
-        const changed = changedBounds(baselinePixels, pixels, scaled.width, scaled.height)
-        if (!changed) throw Error('A boca aberta não alterou pixels durante a transição; confira a variante de boca aberta no catálogo facial.')
-        const padding = 3
-        const left = Math.max(frame.crop.left, changed.left - padding), top = Math.max(frame.crop.top, changed.top - padding)
-        const right = Math.min(frame.crop.left + frame.crop.width - 1, changed.right + padding), bottom = Math.min(frame.crop.top + frame.crop.height - 1, changed.bottom + padding)
-        const patchWidth = right - left + 1, patchHeight = bottom - top + 1
-        const patchCanvas = createChangedMotionPixelPatch(scaled.canvas, { left, top, right, bottom })
-        facePatches.push({ index, canvas: patchCanvas, left, top, width: patchWidth, height: patchHeight, crop: frame.crop, changed, replace: true })
-      } finally { scaled.dispose() }
-    }
     if (ratio < 1) {
       // The canvas can contain large transparent margins. Keep native cropped samples so
       // the atlas uses visible bounds without rendering the same transition twice.
@@ -285,7 +261,8 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
           const cropped = document.createElement('canvas'); cropped.width = frame.crop.width; cropped.height = frame.crop.height
           cropped.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
           preparedAtlasFrames.push({ canvas: cropped, crop: frame.crop, ...(frame.layers ? { layers: cropPreparedMotionLayers(frame.layers, frame.crop) } : {}) })
-          await prepareFacePatch(index, sample, t, mouthScale, frame)
+          const facePatch = await prepareEditorV6MotionFacePatch({ index, faceMode: sample.faceMode, progress: t, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
+          if (facePatch) facePatches.push(facePatch)
         } finally { frame.dispose() }
       }
       layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
@@ -353,7 +330,10 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
           if (baked?.layers) disposeCroppedMotionLayers(baked.layers)
           else if (layers !== baked?.layers) disposeCroppedMotionLayers(layers)
         }
-        if (frame) await prepareFacePatch(index, sample, t, mouthScale, frame)
+        if (frame) {
+          const facePatch = await prepareEditorV6MotionFacePatch({ index, faceMode: sample.faceMode, progress: t, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
+          if (facePatch) facePatches.push(facePatch)
+        }
       } finally {
         frame?.dispose()
         if (baked) baked.canvas.width = baked.canvas.height = 1

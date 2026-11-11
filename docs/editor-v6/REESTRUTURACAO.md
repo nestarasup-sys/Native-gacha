@@ -816,3 +816,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o caminho acelerado continua restrito às capturas de camadas com dimensões pré-medidas válidas. No caminho geral permanecem a renderização inicial e final, a união dos limites por modo, a exceção para assets de piscada ausentes somente em `blink`/`talk-blink`, o reaproveitamento de crops fornecidos mesmo sem dimensões válidas e a liberação dos renderers em sucesso ou erro. A ordem dos crops e os tamanhos máximos do atlas não mudam.
 
 **Verificação:** 625 testes passaram na suíte Vitest oficial (133 arquivos; 1 ignorado), incluindo 5 novos testes de fast path, união de crops, ciclo de boca estático, piscadas indisponíveis, uso de crops fornecidos e descarte diante de erro. `npm run typecheck`, `npm run audit:architecture` (811 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
+
+### Ciclo 94 — preparação dos patches faciais por amostra (implementado e verificado)
+
+**Objetivo:** extrair para `motionFacePatchPreparation.ts` a decisão de gerar patch de boca, a leitura do caminho legado por diferença de pixels e o descarte seguro do frame comparativo.
+
+**Compatibilidade:** mantidos os modos elegíveis (`talk` e `talk-blink`), o threshold de escala, o renderer base reutilizado, a preferência pela peça de boca isolada, o fallback RGBA com padding 3 limitado ao crop do frame, a mensagem quando não há mudança e a liberação do frame em sucesso ou erro. A montagem/ordenação do atlas e o formato dos patches não mudam.
+
+**Verificação:** 629 testes passaram na suíte Vitest oficial (134 arquivos; 1 ignorado), incluindo 4 novos testes de elegibilidade, boca isolada, fallback de pixels e erro sem alteração com descarte. `npm run typecheck`, `npm run audit:architecture` (812 arquivos), `npm run build` e `git diff --check` passaram. Nenhum vídeo ou benchmark de mídia foi executado.
