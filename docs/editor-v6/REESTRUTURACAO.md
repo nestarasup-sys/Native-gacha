@@ -608,3 +608,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados a ordenação oficial das faixas, a linha de fundo sintética quando não há faixa de vídeo, a exclusão de estados de fundo da linha normal, os limites inclusivos de visibilidade, a largura mínima de 3 px e grupos/faixas fixas usados nos botões de reordenação. O cálculo de transições continua usando `editorV6VisibleMotionPlans` e o mesmo range do viewport.
 
 **Verificação:** 4 testes novos cobrem linhas e faixa de fundo, política de movimento, visibilidade/ordenação e geometria; junto com regressões de planos de movimento (incluindo benchmark unitário), 10 testes passaram em 3 arquivos. `npm run typecheck`, `npm run audit:architecture` (781 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.
+
+### Ciclo 68 — cabeçalho das faixas da timeline (implementado e verificado)
+
+**Objetivo:** extrair para `EditorV6TimelineTrackHeader.tsx` a interface por faixa: nome/renomeação, recolher, adicionar bloco, visibilidade, trava, animação e controles para reordenar.
+
+**Compatibilidade:** preservados os textos, títulos, estados/ARIA, condição de faixa de fundo, bloqueios de edição e política de movimentação por grupo/faixas fixas. O estado de renomeação segue único na lista e a gravação continua pelo comando `onTrack`.
+
+**Verificação:** com regressões do modelo de linhas, comandos de faixa, blocos e ponteiro, 18 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (782 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação de vídeo foi executada.

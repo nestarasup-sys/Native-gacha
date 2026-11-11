@@ -2,9 +2,9 @@ import { memo, useMemo, useState, type PointerEvent as ReactPointerEvent } from 
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import { videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
-import { editorV6TimelineTrackFixedToBottom, type TrackAction } from './editorV6TimelineTrackCommands'
+import type { TrackAction } from './editorV6TimelineTrackCommands'
+import { EditorV6TimelineTrackHeader } from './EditorV6TimelineTrackHeader'
 import {
-  canMoveEditorV6TimelineTrack,
   createEditorV6TimelineDisplayRows,
   createEditorV6TimelineSortedBlocks,
   createEditorV6TimelineTransitionMap,
@@ -13,8 +13,6 @@ import {
   getEditorV6TimelineVisibleBlocks,
   type EditorV6TimelineDisplayRow
 } from './editorV6TimelineRowsModel'
-
-const LABELS = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', audio: 'Áudio' }
 
 export type EditorV6TimelineRowsProps = {
   timeline: Timeline
@@ -38,20 +36,10 @@ export const EditorV6TimelineRows = memo(function EditorV6TimelineRows({ timelin
   const transitions = useMemo(() => createEditorV6TimelineTransitionMap(displayRows, sortedTracks, range), [displayRows, sortedTracks, range])
   const [renameId, setRenameId] = useState<string | null>(null)
 
-  return <>{displayRows.map(({ key, track, backgroundLane, index }) => <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${!backgroundLane && track.collapsed ? ' collapsed' : ''}`} key={key} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
-    <div className="editor-v6-timeline-track-heading">
-      {!backgroundLane && <button type="button" className="v6-track-collapse" onClick={() => onTrack(track, 'collapsed')} title={track.collapsed ? 'Expandir faixa' : 'Recolher faixa'}>{track.collapsed ? '▸' : '▾'}</button>}
-      {backgroundLane ? <strong title="Estados do fundo">Fundo</strong> : renameId === track.id ? <input className="v6-track-name" autoFocus defaultValue={track.name} maxLength={80} onBlur={(event) => { const name = event.currentTarget.value.trim(); if (name && name !== track.name) onTrack(track, 'rename', name); setRenameId(null) }} onKeyDown={(event) => { if (event.key === 'Enter') event.currentTarget.blur(); if (event.key === 'Escape') setRenameId(null) }} /> : <strong title={`${track.name} · ${LABELS[track.kind]} · Duplo clique para renomear`} onDoubleClick={() => setRenameId(track.id)}>{track.name}</strong>}
-      {!backgroundLane && <div className="editor-v6-track-actions">
-        {track.kind === 'character' && <button type="button" aria-pressed={track.motionEnabled !== false} disabled={track.locked} onClick={() => onTrack(track, 'motion')} title="Animar trocas de pose e expressão nesta faixa (250 ms)">{track.motionEnabled === false ? '◇' : '◆'}</button>}<button type="button" onClick={() => onTrack(track, 'add')} disabled={track.locked} title="Adicionar bloco no cursor">＋</button>
-        <button type="button" onClick={() => onTrack(track, 'hidden')} title={track.hidden || track.muted ? 'Mostrar faixa' : 'Ocultar faixa'}>{track.hidden || track.muted ? '◌' : '◉'}</button>
-        <button type="button" onClick={() => onTrack(track, 'locked')} title={track.locked ? 'Desbloquear faixa' : 'Bloquear faixa'}>{track.locked ? '▣' : '▢'}</button>
-        {!editorV6TimelineTrackFixedToBottom(track) && <>
-          <button type="button" onClick={() => onTrack(track, 'up')} disabled={!canMoveEditorV6TimelineTrack(displayRows, index, -1) || track.locked} title="Mover faixa para cima">↑</button>
-          <button type="button" onClick={() => onTrack(track, 'down')} disabled={!canMoveEditorV6TimelineTrack(displayRows, index, 1) || track.locked} title="Mover faixa para baixo">↓</button>
-        </>}
-      </div>}
-    </div>
+  return <>{displayRows.map((row) => {
+    const { key, track, backgroundLane } = row
+    return <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${!backgroundLane && track.collapsed ? ' collapsed' : ''}`} key={key} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
+    <EditorV6TimelineTrackHeader row={row} rows={displayRows} renameId={renameId} setRenameId={setRenameId} onTrack={onTrack} />
     <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pps}px 100%` }} onPointerDown={onScrub}>
       {transitions.get(key)!.map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={getEditorV6TimelineMotionPixels(plan, pps)} />)}
       {getEditorV6TimelineVisibleBlocks(sortedTracks.get(key)!, range).map((block) => {
@@ -72,5 +60,5 @@ export const EditorV6TimelineRows = memo(function EditorV6TimelineRows({ timelin
       </div>
       })}
     </div>
-  </div>)}</>
+  </div>})}</>
 })
