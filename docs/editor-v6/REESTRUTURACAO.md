@@ -544,3 +544,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados o espaço extra de 160 px para renderização nas bordas, a faixa inferior em zero, as regras atuais de densidade dos ticks e o corte na duração do documento. Nenhum dado persistido ou contrato entre áreas mudou.
 
 **Verificação:** 3 testes novos cobrem conteúdo menor/maior que o viewport, faixa visível, limites de densidade e ticks dentro da duração. Com regressões de viewport, teclado e ponteiro, 14 testes passaram em 4 arquivos. `npm run typecheck`, `npm run audit:architecture` (773 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.
+
+### Ciclo 60 — medição do viewport da timeline (implementado e verificado)
+
+**Objetivo:** encapsular em `useEditorV6TimelineViewport.ts` o estado de scroll/largura visível, o listener de scroll e a observação de redimensionamento; a tela mantém o ref do elemento porque outras interações da timeline precisam rolar e medir o mesmo nó.
+
+**Compatibilidade:** preservados o viewport inicial de 800 px, o `ResizeObserver` ligado ao elemento de scroll, atualização de `scrollLeft`/`clientWidth` em scroll e resize e a limpeza do observer ao desmontar. Sem mudanças de persistência, documento ou IPC.
+
+**Verificação:** teste unitário valida o mapeamento das métricas DOM para o estado consumido pelo modelo visual. Com regressões de view model, zoom, teclado e ponteiro, 15 testes passaram em 5 arquivos. `npm run typecheck`, `npm run audit:architecture` (774 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação ou benchmark de mídia foi executado.

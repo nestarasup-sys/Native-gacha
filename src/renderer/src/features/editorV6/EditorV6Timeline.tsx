@@ -9,6 +9,7 @@ import { createEditorV6TimelinePointerCommands } from './editorV6TimelinePointer
 import { resolveEditorV6TimelineKeyCommand } from './editorV6TimelineKeyboard'
 import { clampEditorV6TimelineZoom, getEditorV6TimelineCenterSeconds, getEditorV6TimelineFitZoom, getEditorV6TimelineFollowScroll, getEditorV6TimelineScrollForZoom } from './editorV6TimelineViewport'
 import { getEditorV6TimelineContentWidth, getEditorV6TimelineRulerTicks, getEditorV6TimelineTickSeconds, getEditorV6TimelineVisibleFrameRange } from './editorV6TimelineViewModel'
+import { useEditorV6TimelineViewport } from './useEditorV6TimelineViewport'
 
 type Props = {
   document: EditorV6Document
@@ -28,13 +29,13 @@ export function EditorV6Timeline(props: Props) {
   const [pps, setPps] = useState(72)
   const [snap, setSnap] = useState(true)
   const [compact, setCompact] = useState(false)
-  const [viewport, setViewport] = useState({ left: 0, width: 800 })
   const [draft, setDraft] = useState<Timeline | null>(null)
   const [guide, setGuide] = useState<number | undefined>()
   const [readout, setReadout] = useState<Block | null>(null)
   const [menu, setMenu] = useState<{ x: number; y: number; track: Track; block: Block } | null>(null)
   const [notice, setNotice] = useState('')
   const scroll = useRef<HTMLDivElement>(null)
+  const { viewport, onScroll } = useEditorV6TimelineViewport(scroll)
   const root = useRef<HTMLElement>(null)
   const didDrag = useRef(false)
   const previousZoom = useRef(72)
@@ -111,13 +112,6 @@ export function EditorV6Timeline(props: Props) {
   const onMenu = useCallback<EditorV6TimelineRowsProps['onMenu']>((x, y, track, block) => { if (latest.current.selectedId !== block.id) select(block); setMenu({ x: Math.min(x, window.innerWidth - 195), y: Math.max(8, Math.min(y, window.innerHeight - 225)), track, block }) }, [select])
 
   useEffect(() => {
-    const node = scroll.current
-    if (!node) return
-    const observer = new ResizeObserver(() => setViewport({ left: node.scrollLeft, width: node.clientWidth }))
-    observer.observe(node)
-    return () => observer.disconnect()
-  }, [])
-  useEffect(() => {
     if (!props.playing || !scroll.current) return
     const node = scroll.current
     const nextScroll = getEditorV6TimelineFollowScroll({ scrollLeft: node.scrollLeft, clientWidth: node.clientWidth, heading }, pps, playbackFrame)
@@ -176,7 +170,7 @@ export function EditorV6Timeline(props: Props) {
         <button type="button" disabled={!selected || selected.track.locked || playbackFrame <= selected.block.startFrame || playbackFrame >= selected.block.startFrame + selected.block.durationFrames} onClick={() => selected && split(selected.block.id)} title="Dividir bloco no cursor (Ctrl+K)">✂ Dividir</button>
       </div>
     </header>
-    <div className="editor-v6-timeline-scroll" ref={scroll} onScroll={(event) => setViewport({ left: event.currentTarget.scrollLeft, width: event.currentTarget.clientWidth })}>
+    <div className="editor-v6-timeline-scroll" ref={scroll} onScroll={onScroll}>
       <div className="editor-v6-timeline-content" style={{ width: heading + width }}>
         <div className="editor-v6-timeline-ruler-row" style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
           <div className="editor-v6-timeline-track-heading">FAIXAS <span>{timeline.tracks.length + 1}</span></div>
