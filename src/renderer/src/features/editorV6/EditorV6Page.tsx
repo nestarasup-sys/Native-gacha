@@ -65,6 +65,7 @@ import { editorV6CharacterStageReference } from './editorV6CharacterStageReferen
 import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
+import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
@@ -253,14 +254,14 @@ export function EditorV6Page() {
   })
 
   useEffect(() => {
-    if (!activeEditorV6Id) return
-    useEditorV6Store.getState().clear(activeEditorV6Id)
-    resetPlayback()
-    setSelectedTimelineBlockId(null)
-    setCanUndo(false)
-    setCanRedo(false)
-    setHistoryVersion((value) => value + 1)
-    setSelectedElementId(null)
+    resetEditorV6ProjectSession(activeEditorV6Id, {
+      clearHistory: (projectId) => useEditorV6Store.getState().clear(projectId),
+      resetPlayback,
+      clearTimelineSelection: () => setSelectedTimelineBlockId(null),
+      clearHistoryAvailability: () => { setCanUndo(false); setCanRedo(false) },
+      bumpHistoryVersion: () => setHistoryVersion((value) => value + 1),
+      clearElementSelection: () => setSelectedElementId(null)
+    })
   }, [activeEditorV6Id, resetPlayback])
 
   useEditorV6CharacterSnapshotRefresh({

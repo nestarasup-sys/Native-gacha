@@ -432,3 +432,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservada a prioridade do cancelamento de arraste, o bloqueio em campos/modal, fechamento do seletor e da visualização, e os atalhos Ctrl/Cmd+Z, Shift+Ctrl/Cmd+Z e Ctrl/Cmd+Y.
 
 **Verificação:** 4 testes sintéticos de atalhos passaram; `npm run typecheck`, `npm run audit:architecture` (759 arquivos), `npm run build` e `git diff --check` passaram.
+
+### Ciclo 46 — reset da sessão de projeto (implementado e verificado)
+
+**Objetivo:** separar a limpeza de histórico, playhead e seleções ao ativar projeto para `editorV6ProjectSession.ts`, mantendo a página como ponto de coordenação do efeito de ciclo de vida.
+
+**Compatibilidade:** mantém a mesma sequência e só executa para um ID de projeto ativo; sem alteração de persistência, histórico salvo, documento, IPC ou biblioteca.
+
+**Verificação:** 2 testes sintéticos passaram; `npm run typecheck`, `npm run audit:architecture` (760 arquivos), `npm run build` e `git diff --check` passaram.
