@@ -44,8 +44,8 @@ export function EditorV6Timeline(props: Props) {
   const scroll = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLElement>(null)
   const didDrag = useRef(false)
-  const settings = useRef({ pps, snap, heading: compact ? 116 : 210 })
-  settings.current = { pps, snap, heading: compact ? 116 : 210 }
+  const settings = useRef({ pps, snap, heading: compact ? 116 : 156 })
+  settings.current = { pps, snap, heading: compact ? 116 : 156 }
   const heading = settings.current.heading
   const { viewport, onScroll } = useEditorV6TimelineViewport(scroll, { playing: props.playing, playbackFrame, pixelsPerSecond: pps, heading })
   const timeline = draft ?? props.document.timeline
