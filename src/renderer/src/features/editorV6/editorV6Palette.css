@@ -56,9 +56,9 @@
 
 .v6-colored-workspace .editor-v6-timeline { border-color:var(--v6-border); }
 .v6-colored-workspace .editor-v6-timeline-toolbar {
-  background:var(--v6-ink);border-color:var(--v6-ink);
+  background:var(--v6-paper);border-color:var(--v6-border);
 }
-.v6-colored-workspace .editor-v6-timeline-title > :is(strong,span,small) { color:#fff4fc; }
+.v6-colored-workspace .editor-v6-timeline-title > :is(strong,span,small) { color:var(--v6-ink); }
 .v6-colored-workspace .editor-v6-timeline-actions > button {
   background:#f5eaf7;border-color:#c8aace;color:var(--v6-ink);
 }
