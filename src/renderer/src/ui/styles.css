@@ -86,7 +86,7 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .studio-empty-state small { font-size:10px; }
 .studio-editor { min-width:0;min-height:0;flex:1;display:grid;grid-template-columns:136px minmax(0,1fr) 136px;grid-template-rows:minmax(0,1fr) 238px;gap:8px 10px;overflow:hidden;padding:10px;background:#f5f3f4; }
 .studio-editor.full-view { position:fixed;z-index:1000;inset:0;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr);width:100vw;height:100vh;padding:0; }
-.studio-editor-left,.studio-editor-right { grid-row:1 / 3; }
+.studio-editor-left,.studio-editor-right { grid-row:1; }
 .studio-editor-left { grid-column:1; }
 .studio-editor-right { grid-column:3; }
 .studio-editor-rail { min-width:0;min-height:0;display:flex;flex-direction:column;gap:9px;overflow:auto;padding:12px 9px;border:1px solid #eee7ed;border-radius:12px;background:#f9f4f8; }
@@ -487,7 +487,7 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .studio-custom-empty span,.studio-custom-hint { margin:0;color:#998d9b;font-size:9px;line-height:1.4; }
 .studio-editor.full-view .studio-scene-canvas { width:min(100%,calc(100vh * 16 / 9));height:auto;max-height:100%;aspect-ratio:16/9;border:0;border-radius:0;box-shadow:none; }
 .studio-scene-title { position:absolute;top:10px;left:12px;color:#342e36b0;font-size:10px;font-weight:700; }
-.editor-v6-timeline { min-width:0;min-height:0;grid-column:2;grid-row:2;display:grid;grid-template-rows:39px minmax(0,1fr);overflow:hidden;border:1px solid #e9e1e8;border-radius:10px;background:#fff;box-shadow:0 3px 12px #35233108; }
+.editor-v6-timeline { min-width:0;min-height:0;grid-column:1 / -1;grid-row:2;display:grid;grid-template-rows:39px minmax(0,1fr);overflow:hidden;border:1px solid #e9e1e8;border-radius:10px;background:#fff;box-shadow:0 3px 12px #35233108; }
 .editor-v6-timeline-toolbar { min-width:0;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 10px;border-bottom:1px solid #eee8ed;background:linear-gradient(180deg,#fff,#fcfafc); }
 .editor-v6-timeline-title,.editor-v6-timeline-actions { min-width:0;display:flex;align-items:center;gap:9px; }
 .editor-v6-timeline-title>strong { color:#493f4a;font-size:12px; }
