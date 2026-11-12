@@ -1168,3 +1168,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos a ordem de criação dos IDs, a progressão de pose/expressão/olhar entre beats, o cache e a geração dos snapshots, os metadados de revisão da pose e do personagem, a expressão-base, o estado inicial da cena, os intervalos dos blocos, a ordem das faixas e as mensagens de validação. Não houve mudança nos formatos de importação/documento, IPC, persistência ou sequência de renderização.
 
 **Verificação:** a suíte completa do Editor V6 passou com 731 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (859 arquivos), `npm run build` e `git diff --check` passaram. Dois testes novos cobrem os intervalos/continuidade dos estados e as validações de personagem sem estado inicial ou bloco visível. Nenhuma importação real, exportação ou benchmark foi executado.
+
+### Ciclo 138 — Inspector específico de vídeo (implementado)
+
+**Objetivo:** retirar de `EditorV6PropertyPanel.tsx` os controles do vídeo selecionado e colocá-los em `EditorV6VideoPropertyPanel.tsx`. Os tipos de controle numérico, atualizações do fundo/vídeo e props compartilhadas do Inspector passam a ficar em `editorV6PropertyPanelTypes.ts`; o painel geral mantém a seleção/prioridade das seções e reexporta o tipo público `EditorV6NumericControl` pelo caminho antigo.
+
+**Compatibilidade:** mantidos o layout padrão proporcional, os limites e valores de X/Y/largura/altura/rotação, o início da mídia arredondado para quadros, o ganho e checkbox de áudio condicionais à mídia, o registro de histórico antes de alternar áudio e a ação de remover o vídeo. Props de projeto e callbacks de edição continuam no contrato existente da página; nenhum dado ou persistência foi alterado.
+
+**Verificação:** a suíte completa do Editor V6 passou com 732 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (861 arquivos), `npm run build` e `git diff --check` passaram. O teste do Inspector verifica vídeo com e sem áudio e os valores de layout/início/volume já salvos. Nenhuma importação ou exportação real foi executada.

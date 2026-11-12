@@ -1,54 +1,9 @@
-import type { ReactNode } from 'react'
-import type { EditorV6Asset, EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6LibraryMediaItem, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6'
-import { editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { Icon } from '../../ui/components/Icon'
 import { SceneElementControls } from '../../ui/components/SceneElementControls'
-import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
+import { EditorV6VideoPropertyPanel } from './EditorV6VideoPropertyPanel'
+import type { EditorV6NumericControl, EditorV6PropertyPanelProps } from './editorV6PropertyPanelTypes'
 
-type EditorV6BackgroundValues = Partial<Pick<EditorV6Document,
-  'backgroundColor' | 'backgroundX' | 'backgroundY' | 'backgroundWidth' | 'backgroundHeight' | 'backgroundRotation'>>
-type EditorV6VideoValues = Partial<Pick<EditorV6TimelineBlock, 'mediaLayout' | 'audioEnabled' | 'gain' | 'mediaInFrame'>>
-
-export type EditorV6NumericControl = (
-  label: string,
-  value: number,
-  onChange: (value: number, record?: boolean) => void,
-  min: number,
-  max: number,
-  suffix?: string,
-  onFinish?: () => void,
-  disabled?: boolean
-) => ReactNode
-
-type EditorV6PropertyPanelProps = {
-  project: EditorV6Document | null
-  activeTool: 'background' | 'objects' | null
-  background: EditorV6BackgroundState
-  selectedElementId: string | null
-  selectedElement: EditorV6Element | null
-  characterNameColor: string | null
-  balloonScalePercent: number
-  balloonOffsetY: number
-  selectedBackgroundAsset: EditorV6Asset | null
-  sharedBackgrounds: VideoBackgroundLibraryItem[]
-  sharedObjects: EditorV6LibraryMediaItem[]
-  selectedVideoBlock: EditorV6TimelineBlock | null
-  selectedVideo: EditorV6MediaAsset | null
-  control: EditorV6NumericControl
-  onBackgroundChange: (values: EditorV6BackgroundValues, record?: boolean) => void
-  onImportImage: (category: 'background' | 'object') => void
-  onSelectBackground: (asset: EditorV6Asset) => void
-  onLinkSharedBackground: (item: VideoBackgroundLibraryItem) => void
-  onLinkSharedObject: (item: EditorV6LibraryMediaItem) => void
-  onAddObject: (asset: EditorV6Asset) => void
-  onUpdateElement: (id: string, values: Partial<EditorV6Element>, record?: boolean) => void
-  onUpdateCharacterNameColor: (characterId: string, color: string) => void
-  onUpdateBalloonScale: (scalePercent: number) => void
-  onUpdateBalloonOffsetY: (offsetY: number) => void
-  onUpdateVideoBlock: (id: string, values: EditorV6VideoValues, record?: boolean) => void
-  onRecordHistory: () => void
-  onDeleteSelected: () => void
-}
+export type { EditorV6NumericControl } from './editorV6PropertyPanelTypes'
 
 /** Scene inspector panels; document mutations remain owned by EditorV6Page. */
 export function EditorV6PropertyPanel({
@@ -102,26 +57,14 @@ export function EditorV6PropertyPanel({
     {selectedElementId && selectedElement && <SceneElementControls element={selectedElement} update={(values, record) => onUpdateElement(selectedElement.id, values, record)} remove={onDeleteSelected} control={control} positionNote="A posição X e Y é compartilhada por todos os blocos deste personagem." />}
   </div>
 
-  if (selectedVideoBlock && selectedVideo && project) {
-    const block = selectedVideoBlock
-    const layout = block.mediaLayout ?? editorV6DefaultVideoLayout(selectedVideo.width, selectedVideo.height)
-    const setLayout = (values: Partial<typeof layout>, record: boolean) => onUpdateVideoBlock(block.id, { mediaLayout: { ...layout, ...values } }, record)
-    return <div className="studio-side-content">
-      <h2>Vídeo selecionado</h2><p>{selectedVideo.name}</p>
-      <div className="studio-controls-grid">
-        {control('X', layout.x, (value, record) => setLayout({ x: value }, record ?? true), -200, 200)}
-        {control('Y', layout.y, (value, record) => setLayout({ y: value }, record ?? true), -200, 200)}
-        {control('Largura', layout.width, (value, record) => setLayout({ width: value }, record ?? true), 1, 200)}
-        {control('Altura', layout.height, (value, record) => setLayout({ height: value }, record ?? true), 1, 200)}
-        {control('Rotação', layout.rotation, (value, record) => setLayout({ rotation: value }, record ?? true), -180, 180, '°')}
-        {control('Início da mídia', block.mediaInFrame ?? 0, (value, record) => onUpdateVideoBlock(block.id, { mediaInFrame: Math.round(value) }, record), 0, Math.max(0, selectedVideo.sourceFrames - 1), ' quadros')}
-        {selectedVideo.hasAudio && control('Volume', Math.min(1, block.gain ?? 1), (value, record) => onUpdateVideoBlock(block.id, { gain: value }, record ?? true), 0, 1, '×')}
-      </div>
-      {selectedVideo.hasAudio && <label className="studio-color-control">Áudio do vídeo<input type="checkbox" checked={block.audioEnabled !== false} onChange={(event) => { onRecordHistory(); onUpdateVideoBlock(block.id, { audioEnabled: event.target.checked }, false) }} /></label>}
-      <small>Duração na timeline: {(block.durationFrames / 30).toFixed(2)} s · o quadro é renderizado centralizado proporcionalmente.</small>
-      <button className="studio-side-danger" type="button" onClick={onDeleteSelected}><Icon name="trash" />Remover vídeo da timeline</button>
-    </div>
-  }
+  if (selectedVideoBlock && selectedVideo) return <EditorV6VideoPropertyPanel
+    selectedVideoBlock={selectedVideoBlock}
+    selectedVideo={selectedVideo}
+    control={control}
+    onUpdateVideoBlock={onUpdateVideoBlock}
+    onRecordHistory={onRecordHistory}
+    onDeleteSelected={onDeleteSelected}
+  />
 
   if (selectedElement) return <div className="studio-side-content">
     <h2>{selectedElement.kind === 'character' ? selectedElement.text : selectedElement.kind === 'image' ? 'Objeto selecionado' : selectedElement.kind === 'narrator' ? 'Narrador' : selectedElement.kind === 'speech' ? 'Balão de fala' : 'Balão de pensamento'}</h2>

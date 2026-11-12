@@ -89,6 +89,24 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).not.toContain('Áudio do vídeo')
   })
 
+  it('mantém os controles de áudio e os valores salvos quando o vídeo tem som', () => {
+    const html = renderPanel({
+      ...baseProps,
+      activeTool: null,
+      selectedVideoBlock: {
+        id: 'video-block', mediaId: 'video-1', label: 'Clipe', startFrame: 0, durationFrames: 90,
+        mediaLayout: { x: 12, y: -6, width: 48, height: 32, rotation: 15 },
+        mediaInFrame: 24, gain: 0.6, audioEnabled: true
+      },
+      selectedVideo: { id: 'video-1', name: 'Clipe', fileName: 'clip.mp4', kind: 'video', mimeType: 'video/mp4', sourceFrames: 90, hasAudio: true, sizeBytes: 1 }
+    })
+    expect(html).toContain('data-control="X" data-value="12"')
+    expect(html).toContain('data-control="Início da mídia" data-value="24"')
+    expect(html).toContain('data-control="Volume" data-value="0.6"')
+    expect(html).toContain('Áudio do vídeo')
+    expect(html).toContain('type="checkbox" checked=""')
+  })
+
   it('mantém o seletor livre de cor do nome do personagem', () => {
     const html = renderPanel({
       ...baseProps,
