@@ -1184,3 +1184,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidas a precedência `ferramenta de fundo → ferramenta de objetos → vídeo → elemento → fundo selecionado → cena`, a filtragem de assets publicados/vinculados, os protocolos e URLs das bibliotecas, os controles e limites de transformação, o tratamento de histórico do nome do personagem e as ações de texto/remoção. O contrato público do Inspector e os callbacks de documento continuam os mesmos.
 
 **Verificação:** a suíte completa do Editor V6 passou com 732 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (864 arquivos), `npm run build` e `git diff --check` passaram. Os testes existentes do Inspector cobrem galerias de fundos/objetos, fundo selecionado, balões e personagem; nenhum perfil/app-data foi usado.
+
+### Ciclo 140 — compartilhamento e cancelamento de bakes concorrentes (implementado)
+
+**Objetivo:** mover de `motionIpc.ts` para `motionBakeSingleFlight.ts` o gerenciamento de requisições simultâneas para a mesma chave: criação do trabalho compartilhado, acompanhamento independente de assinantes e cancelamento quando o último assinante sai. O serviço IPC continua calculando a chave, validando o limite de atlas por chamada e decidindo como o bake entra nas lanes.
+
+**Compatibilidade:** mantidos o cache e a fila por lane, a inclusão do orçamento de pixels na chave, o reuso apenas entre requisições equivalentes, os erros de cancelamento, a validação de cada resultado para cada assinante e a liberação do voo após resolução/rejeição. Canais IPC, payloads, workers, esquema e persistência permanecem inalterados.
+
+**Verificação:** a suíte completa do Editor V6 passou com 735 testes em 169 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (865 arquivos), `npm run build` e `git diff --check` passaram. Três testes novos cobrem bake compartilhado, cancelamento de um ou do último assinante e nova tentativa após falha. Nenhum projeto real ou exportação foi usado.

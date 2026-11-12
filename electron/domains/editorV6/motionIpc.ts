@@ -9,6 +9,7 @@ import { motionCacheKey, type EditorV6MotionCacheStats } from './motionCache'
 import { restrictRendererNavigation } from '../../windowNavigation'
 import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
+import { createEditorV6MotionBakeSingleFlight } from './motionBakeSingleFlight'
 
 type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
 type Lane = { partition: string; window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
@@ -26,7 +27,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   const jobs = new Map<string, { owner: number; controller: AbortController; cancelled: boolean }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
   const scopedCacheKeys = new Map<string, Set<string>>()
-  const inFlight = new Map<string, { controller: AbortController; subscribers: Set<symbol>; promise: Promise<EditorV6MotionBakeResult>; settled: boolean }>()
+  const bakeFlights = createEditorV6MotionBakeSingleFlight()
   const cacheStats: EditorV6MotionCacheStats = { memoryHits: 0, diskHits: 0, misses: 0, rasterized: 0, diskMissing: 0, diskRejected: 0, diskReadErrors: 0, diskWrites: 0, diskWriteSkipped: 0, diskWriteErrors: 0, diskBytesRead: 0, diskBytesWritten: 0 }
   // A lane reuses one in-memory session, keeping worker storage isolated and bounded by concurrency.
   const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
@@ -136,56 +137,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     return promise
   }
   const enqueueBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal): Promise<EditorV6MotionBakeResult> => {
-    if (signal.aborted) return Promise.reject(signal.reason ?? Error('Preparação de animação cancelada.'))
-    // Disk entries can be reused across budgets after validation. In-memory and
-    // in-flight requests stay separated so a restrictive cap cannot poison a
-    // concurrent render that has more room.
     const key = editorV6MotionMemoryCacheKey(request)
-    let flight = inFlight.get(key)
-    if (!flight || flight.controller.signal.aborted) {
-      const controller = new AbortController()
-      const created = {
-        controller,
-        subscribers: new Set<symbol>(),
-        settled: false,
-        promise: Promise.resolve().then(() => runBake(request, controller.signal)).finally(() => {
-          created.settled = true
-          if (inFlight.get(key) === created) inFlight.delete(key)
-        })
-      }
-      // A flight can be cancelled before any consumer attaches; keep its rejection handled.
-      void created.promise.catch(() => {})
-      inFlight.set(key, created)
-      flight = created
-    }
-
-    const shared = flight
-    return new Promise((resolve, reject) => {
-      const subscriber = Symbol(key)
-      shared.subscribers.add(subscriber)
-      let released = false
-      const release = (cancelWhenUnobserved = false) => {
-        if (released) return
-        released = true
-        signal.removeEventListener('abort', onAbort)
-        shared.subscribers.delete(subscriber)
-        if (cancelWhenUnobserved && shared.subscribers.size === 0 && !shared.settled) {
-          shared.controller.abort(Error('Nenhuma solicitação ainda aguarda esta animação.'))
-        }
-      }
-      const onAbort = () => {
-        release(true)
-        reject(signal.reason ?? Error('Preparação de animação cancelada.'))
-      }
-      signal.addEventListener('abort', onAbort, { once: true })
-      if (signal.aborted) { onAbort(); return }
-      shared.promise.then((result) => {
-        if (!released) {
-          try { assertAtlasBudget(request, result); release(); resolve(result) }
-          catch (error) { release(); reject(error instanceof Error ? error : Error(String(error))) }
-        }
-      }, (error) => { if (!released) { release(); reject(error) } })
-    })
+    // Distinct atlas budgets stay on separate flights so a restrictive request
+    // cannot cancel or constrain a concurrent bake with a larger budget.
+    return bakeFlights.run(key, signal, (sharedSignal) => runBake(request, sharedSignal), (result) => assertAtlasBudget(request, result))
   }
   const bakeForExport = (rawRequest: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     const request = parseEditorV6MotionRequest(rawRequest)
