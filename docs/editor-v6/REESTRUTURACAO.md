@@ -1224,3 +1224,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados a busca da fonte via batch local da exportação, o filtro por `modelSlot`, IDs de estilo sem leituras duplicadas, mensagens de erro, argumentos de renderização e compartilhamento do cache de materiais/pintura de roupas por par de renderers. Se um renderer falhar, o outro é descartado e o par de roupas é limpo. A importação runtime do renderer continua dinâmica; nenhuma chamada, opção, formato de bundle ou dado persistido mudou.
 
 **Verificação:** a suíte completa do Editor V6 passou com 742 testes em 172 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (869 arquivos), `npm run build` e `git diff --check` passaram. Três testes novos cobrem resolução/deduplicação, rejeição de estilos de outro modelo e limpeza parcial quando o segundo renderer falha. Nenhuma exportação real ou benchmark foi executado.
+
+### Ciclo 145 — contrato de tempo dos estágios de preparação (implementado)
+
+**Mudança:** alinhar `prepareEditorV6HairMotionCharacterGroup` ao contrato do profiler: o helper passa o timestamp inicial do estágio, e o profiler calcula a duração uma única vez. Um relógio injetável permite verificar essa fronteira deterministicamente.
+
+**Motivo:** na extração do ciclo 144, o helper passava a duração já calculada para `report`, que espera um timestamp inicial. Isso fazia os registros incluírem quase todo o tempo de vida do processo em vez da duração real. O pipeline de renderização, bundle e exportação não foi alterado.
+
+**Verificação:** a suíte completa do Editor V6 passou com 742 testes em 172 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (869 arquivos), `npm run build` e `git diff --check` passaram. O teste determinístico confirma que os três estágios registram 1 ms quando o relógio avança exatamente 1 ms. Nenhuma exportação real ou benchmark foi executado.

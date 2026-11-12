@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { HairStyle } from '../../src/shared/fabricator'
+import { createEditorV6ExportStageProfiler } from '../../src/renderer/src/features/editorV6/editorV6ExportStageProfiler'
 import type { EditorV6HairMotionCharacterGroupDependencies } from '../../src/renderer/src/features/editorV6/editorV6HairMotionCharacterGroup'
 import { prepareEditorV6HairMotionCharacterGroup } from '../../src/renderer/src/features/editorV6/editorV6HairMotionCharacterGroup'
 
@@ -33,7 +34,12 @@ function dependencies(overrides: Partial<EditorV6HairMotionCharacterGroupDepende
 
 describe('preparação de grupo de personagem para movimento de cabelo', () => {
   it('resolve estilos sem duplicar leituras e prepara renderers normal e sem cabelo com recursos compartilhados', async () => {
-    const deps = dependencies()
+    let clock = 100
+    const profiler = createEditorV6ExportStageProfiler(undefined, () => clock++)
+    const deps = dependencies({
+      now: () => clock++,
+      reportStage: vi.fn((stage, startedAt) => profiler.report(stage, startedAt))
+    })
 
     const prepared = await prepareEditorV6HairMotionCharacterGroup('character-a:2', group, deps.values)
 
@@ -50,9 +56,11 @@ describe('preparação de grupo de personagem para movimento de cabelo', () => {
       source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: deps.values.assetProvider,
       materialCache: deps.values.materialCache, wardrobePair: deps.wardrobePair
     })
-    expect(deps.values.reportStage).toHaveBeenCalledWith('resolveSavedCharacterSource', expect.any(Number))
-    expect(deps.values.reportStage).toHaveBeenCalledWith('loadHairStyles', expect.any(Number))
-    expect(deps.values.reportStage).toHaveBeenCalledWith('prepareCharacterRenderers', expect.any(Number))
+    expect(profiler.snapshot()).toEqual([
+      { name: 'resolveSavedCharacterSource', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },
+      { name: 'loadHairStyles', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },
+      { name: 'prepareCharacterRenderers', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 }
+    ])
   })
 
   it('não prepara renderers quando o cabelo não pertence ao modelo resolvido', async () => {

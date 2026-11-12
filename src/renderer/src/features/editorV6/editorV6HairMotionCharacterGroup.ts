@@ -35,8 +35,9 @@ export type EditorV6HairMotionCharacterGroupDependencies = {
   createWardrobePair: CharacterRendererModule['createPreparedGachaWardrobePair']
   assetProvider: CharacterRenderAssetProvider
   materialCache: GachaReusableMaterialCache
-  reportStage: (stage: string, milliseconds: number) => void
+  reportStage: (stage: string, startedAt: number) => void
   isCancelled: () => boolean
+  now?: () => number
 }
 
 /** Resolve one character/pose group and prepare its paired normal and hairless renderers. */
@@ -46,19 +47,20 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   dependencies: EditorV6HairMotionCharacterGroupDependencies
 ): Promise<PreparedEditorV6HairMotionCharacterGroup | null> {
   if (dependencies.isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
+  const now = dependencies.now ?? (() => performance.now())
   const character = group.character
-  let stageStarted = performance.now()
+  let stageStarted = now()
   const resolved = await dependencies.resolveSource(character)
-  dependencies.reportStage('resolveSavedCharacterSource', performance.now() - stageStarted)
+  dependencies.reportStage('resolveSavedCharacterSource', stageStarted)
   const appearance = character.customization.hairAppearance
   const references = appearance?.modelSlot === resolved.modelSlot ? hairAppearanceStyleIds(appearance) : []
   if (!appearance || !references.length) return null
   const styleIds = [...new Set(references.map((reference) => reference.id))]
-  stageStarted = performance.now()
+  stageStarted = now()
   const loadedStyles = await Promise.all(styleIds.map(async (id) => [
     id, await dependencies.loadHairStyle(resolved.modelSlot, id)
   ] as const))
-  dependencies.reportStage('loadHairStyles', performance.now() - stageStarted)
+  dependencies.reportStage('loadHairStyles', stageStarted)
   const styles = new Map(loadedStyles)
   const sourceHeadPart = resolved.source.parts.find((part) => /cabe[çc]a|head/i.test(part.name))
   const targetHeadPart = resolved.artwork.parts.find((part) => part.id === sourceHeadPart?.id)
@@ -71,7 +73,7 @@ export async function prepareEditorV6HairMotionCharacterGroup(
     source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: dependencies.assetProvider,
     materialCache: dependencies.materialCache, wardrobePair
   }
-  stageStarted = performance.now()
+  stageStarted = now()
   const rendererResults = await Promise.allSettled([
     dependencies.prepareRenderer(character, renderSource),
     dependencies.prepareRenderer(hairless, renderSource)
@@ -85,7 +87,7 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   const [originalRenderer, hairlessRenderer] = rendererResults.map((result) =>
     (result as PromiseFulfilledResult<PreparedRenderer>).value
   )
-  dependencies.reportStage('prepareCharacterRenderers', performance.now() - stageStarted)
+  dependencies.reportStage('prepareCharacterRenderers', stageStarted)
   return {
     groupKey, character, resolved, appearance, references, styles, sourceHeadPart, targetHeadPart,
     originalRenderer, hairlessRenderer, wardrobePair
