@@ -29,7 +29,6 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
   const onPointer: EditorV6TimelineRowsProps['onPointer'] = (event, track, block, mode) => {
     event.stopPropagation()
     if (event.button !== 0 || track.locked) return
-    dependencies.seek(block.startFrame)
     dependencies.select(block)
     dependencies.closeMenu()
     dependencies.didDrag.current = false

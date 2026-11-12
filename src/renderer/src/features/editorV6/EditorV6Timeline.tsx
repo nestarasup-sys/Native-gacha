@@ -71,7 +71,7 @@ export function EditorV6Timeline(props: Props) {
     settings: () => settings.current,
     didDrag,
     seek: (frame) => latest.current.onSeek(frame),
-    select: (block) => { latest.current.onSeek(block.startFrame); latest.current.onSelect(block) },
+    select: (block) => latest.current.onSelect(block),
     changeTimeline,
     closeMenu: () => setMenu(null),
     setDraft,
@@ -80,7 +80,6 @@ export function EditorV6Timeline(props: Props) {
   }), [changeTimeline])
   const select = useCallback((block: Block) => {
     if (didDrag.current) { didDrag.current = false; return }
-    latest.current.onSeek(block.startFrame)
     latest.current.onSelect(block)
   }, [])
   const { remove, split, duplicate } = useMemo(() => createEditorV6TimelineBlockCommands({
