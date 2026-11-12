@@ -6,17 +6,17 @@
 | Raiz | `C:\TRABALHO 2\OUTROS\GACHA EM C++` |
 | Branch/commit no início desta revisão | `Dev-V2` / `8128ba7d` |
 
-Este inventário cobre o Native Gacha e as ferramentas usadas para desenvolver, empacotar e exportar o app. Não varre nem cataloga programas pessoais instalados no Windows. Nenhuma versão foi atualizada durante o levantamento.
+Este inventário cobre o Native Gacha e as ferramentas usadas para desenvolver, empacotar e exportar o app. Não varre nem cataloga programas pessoais instalados no Windows. A seção “Execução das atualizações” registra as mudanças feitas depois do levantamento inicial.
 
 ## Resumo
 
 | Área | Situação | Prioridade sugerida |
 |---|---|---|
-| Node.js local | `24.18.0`; a linha LTS 24 já chegou a `24.22.3`, uma atualização de segurança publicada em 11/11 | Alta |
-| FFmpeg local | `n8.1.3-18` de 20/10; o manifesto do app fixa `n8.1.3-27` de 31/10 | Alta |
-| Dependências npm diretas | 7 pacotes de topo têm atualização dentro do range declarado | Média |
+| Node.js global | Continua em `24.18.0`; a linha LTS 24 já chegou a `24.22.3`, atualização de segurança de 11/11 | Alta |
+| FFmpeg local | Continua em `n8.1.3-18`; update pelo manifesto `n8.1.3-27` foi interrompido com download de 0 bytes e rollback verificado | Alta; repetir quando GitHub responder |
+| Dependências npm diretas | 7 pacotes de topo atualizados dentro dos ranges declarados; typecheck, build e testes direcionados passaram | Feito nesta etapa |
 | Dependências npm transitivas | 285 nomes detectados; 167 instalados e 118 opcionais/plataforma/peer ausentes | Média; revisar via pacotes-pai |
-| Auditoria npm | 6 entradas moderadas, agregadas em uma advisory transitiva de `minimatch`; produção tem 0 vulnerabilidades | Média |
+| Auditoria npm | 6 entradas moderadas na cadeia de empacotamento; produção continua com 0 vulnerabilidades | Média; investigar sem downgrade automático |
 | npm global | `11.16.0`; o registry indica `12.2.2` como latest, uma mudança de major | Baixa / avaliar compatibilidade |
 | GitHub (`origin/Dev-V2`) | Local tem 149 commits a mais e nenhum commit atrás | Sincronização pendente; não é código local desatualizado |
 
@@ -31,7 +31,7 @@ Este inventário cobre o Native Gacha e as ferramentas usadas para desenvolver, 
 
 ### Electron e Chromium embarcado
 
-- **Electron instalado pelo projeto:** `45.1.0`; `npm outdated` reportou `45.3.1` como versão desejada/latest disponível dentro de `^45.1.0`.
+- **Electron no levantamento inicial:** `45.1.0`; `npm outdated` reportou `45.3.1` como versão desejada/latest disponível dentro de `^45.1.0`.
 - **Runtime medido no executável local (`process.versions`):** Chromium `156.0.8078.49`, V8 `15.6.75.19-electron.0` e Node embutido `24.22.1`. O Node do Electron é independente do Node global do terminal (`24.18.0`).
 - **Referência upstream no levantamento:** Electron `45.3.1`, publicado em 11/11, já embute Chromium `156.0.8078.96` e Node `24.22.2`. Portanto, mesmo antes de mudar de major, a instalação local está atrás em patches do Electron/Chromium. [Releases oficiais do Electron](https://releases.electronjs.org/).
 - O Chrome estável já está na linha `157` (publicação em 03/11); isso não significa que se possa trocar o Chromium interno isoladamente: o runtime é fornecido e testado como parte do Electron. A decisão compatível é atualizar o Electron para seu patch correspondente e validar o app. [Chrome Stable para Desktop](https://chromereleases.googleblog.com/2026/11/stable-channel-update-for-desktop.html).
@@ -77,7 +77,7 @@ O runtime Electron mediu SQLite `3.53.4`; o acesso do app é feito via `better-s
 - Portanto, o binário local está atrás do manifesto. Confirmei que ele ainda contém `libopenh264`, `h264_amf` e AAC; o encoder que você perguntou está instalado, mas o conjunto local não corresponde à versão fixada.
 - `resources/video-tools/` é ignorado pelo Git. Atualizar só o manifesto ou trocar de branch não substitui o binário local. A preparação deve seguir o manifesto e conferir hash, licença, FFprobe e encoders antes de aceitar o pacote.
 
-## Dependências npm com versões novas
+## Dependências npm com versões novas — baseline do levantamento
 
 `npm outdated --json` comparou dependências diretas de `package.json` em 12/11/2026. As sete abaixo têm versão `wanted` igual a `latest`, sem exigir mudança do range declarado.
 
@@ -91,7 +91,9 @@ O runtime Electron mediu SQLite `3.53.4`; o acesso do app é feito via `better-s
 | `vite` | 8.3.5 | 8.3.8 | Build |
 | `vitest` | 5.0.5 | 5.1.0 | Testes |
 
-`npm outdated --omit=dev` retornou especificamente os três pacotes de produção acima. Os outros quatro são dependências de desenvolvimento/build. Não houve tentativa de atualizar lockfile ou `node_modules`.
+`npm outdated --omit=dev` retornou especificamente os três pacotes de produção acima. Os outros quatro são dependências de desenvolvimento/build. No momento daquele levantamento ainda não havia atualização do lockfile ou de `node_modules`.
+
+Esta tabela preserva as versões encontradas no começo do levantamento; o estado depois da atualização está registrado em “Execução das atualizações”.
 
 ### Árvore transitiva completa
 
@@ -285,7 +287,7 @@ A tabela registra cada nome instalado que `npm outdated --all` marcou como desat
 
 ## Sincronização Git
 
-- `Dev-V2` no início desta revisão estava **149 commits à frente** de `origin/Dev-V2` e **0 commits atrás** (`git rev-list --left-right --count origin/Dev-V2...Dev-V2` retornou `0 149`). Este trabalho permanece apenas local; nenhum commit foi enviado.
+- `Dev-V2` na abertura desta etapa estava **149 commits à frente** de `origin/Dev-V2` e **0 commits atrás** (`git rev-list --left-right --count origin/Dev-V2...Dev-V2` retornou `0 149`). As atualizações ficam locais; nenhum commit foi enviado.
 - O diff local comparado ao tracking remoto cobre 319 arquivos. Isso indica que o GitHub está atrasado em relação a esta pasta local; não indica que a branch principal local esteja atrasada.
 - O levantamento não publicou nem alterou histórico remoto. Push deve ser tratado separadamente, depois de revisar o conteúdo desses commits.
 
@@ -306,3 +308,40 @@ A tabela registra cada nome instalado que `npm outdated --all` marcou como desat
 - `node --version`, `npm --version`
 - `ELECTRON_RUN_AS_NODE=1 electron.exe -p "JSON.stringify(process.versions)"` (Electron/Chromium/V8/Node embutidos)
 - `resources/video-tools/BUILD_INFO.json`, `resources/video-tools.manifest.json`, `ffmpeg.exe -version`, `ffmpeg.exe -encoders`
+
+## Execução das atualizações — 12/11/2026
+
+Foi aplicado `npm update better-sqlite3 immer zustand electron @vitejs/plugin-react vite vitest`. O comando atualizou **13 pacotes** no `package-lock.json`; as sete dependências diretas avançaram dentro dos ranges já declarados, sem editar `package.json`:
+
+| Pacote | Antes | Depois |
+|---|---:|---:|
+| `better-sqlite3` | 13.0.3 | 13.1.1 |
+| `immer` | 11.2.9 | 11.2.10 |
+| `zustand` | 5.0.16 | 5.1.0 |
+| `electron` | 45.1.0 | 45.3.1 |
+| `@vitejs/plugin-react` | 6.1.2 | 6.3.0 |
+| `vite` | 8.3.5 | 8.3.8 |
+| `vitest` | 5.0.5 | 5.1.0 |
+
+O Electron foi instalado pelo script do projeto e `better-sqlite3` recompilado para o ABI dele. O runtime atualizado confirmou Chromium `156.0.8078.96`, Node embutido `24.22.2`, V8 `15.6.75.50-electron.0` e SQLite `3.54.1` pelo módulo nativo.
+
+### Verificações executadas
+
+- `npm run typecheck` — passou.
+- `npm run build` — passou (main, preload e renderer).
+- `npm run test:editor-v6:quick` — passou; 13 arquivos Vitest/62 testes, além das verificações do gate.
+- `npm run test:application:window` — 9 testes passaram.
+- `npm run test:application:persistence-shutdown` — 11 testes passaram.
+- `npm run test:customizer:hair-palette` — 6 testes passaram.
+- `npm run test:fabricator:palette-normalizer` — 12 testes passaram.
+- `npm run test:customizer:face-appearance` — 4 testes passaram.
+- `npm run test:customizer:character-save` — 6 testes passaram.
+- Smoke isolado do `better-sqlite3` carregado no Node do Electron — passou; consulta retornou SQLite `3.54.1`.
+- `npm audit --omit=dev` — 0 vulnerabilidades de produção. `npm audit` completo ainda informa 6 entradas moderadas na cadeia de empacotamento Electron Builder/`minimatch`; nenhuma correção automática com downgrade de major foi aplicada.
+- `npm ls --all` — sem dependências ausentes ou inválidas após a atualização.
+
+### FFmpeg: atualização interrompida e rollback
+
+A preparação pelo script oficial do projeto ficou em `Invoke-WebRequest` com o ZIP ainda em 0 bytes. A pasta anterior, de 267.987.954 bytes, foi guardada temporariamente e **restaurada integralmente** em `resources/video-tools`; os dois executáveis foram verificados presentes e o `BUILD_INFO.json` voltou a mostrar `n8.1.3-18`. A tentativa incompleta foi interrompida antes de extrair ou instalar qualquer binário, então o FFmpeg em uso permanece exatamente como antes. Deve-se repetir essa etapa quando o download de GitHub estiver respondendo.
+
+O Node global (`24.18.0`), npm global (`11.16.0`), pin de Node da CI e manifesto do FFmpeg não foram alterados nesta etapa. Nenhum projeto do usuário, `app-data`, exportação ou perfil local foi usado nos testes.
