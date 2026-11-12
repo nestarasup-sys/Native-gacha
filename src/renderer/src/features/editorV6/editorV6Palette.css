@@ -71,14 +71,19 @@
   background:#d8f0e6;border-color:#75a995;color:#205849;
 }
 
-/* Match the reading scale used in Roteiros while keeping time labels compact. */
-:is(.v6-colored-workspace,.v6-project-browser) {
+.v6-project-browser {
   --v6-font-body: 14px;
   --v6-font-caption: 12px;
-  --v6-font-heading: 15px;
+}
+
+.v6-colored-workspace {
+  --v6-font-body: 17px;
+  --v6-font-caption: 14px;
+  --v6-font-heading: 19px;
 }
 
 .v6-colored-workspace :is(.v6-tool-rail,.studio-inspector) :is(button,span,p,label,input,select,textarea),
+.v6-colored-workspace .v6-tool-rail .studio-tool-button > span,
 .v6-project-browser :is(.studio-action,.studio-card-open,.studio-empty-state strong) {
   font-size: var(--v6-font-body);
 }
@@ -91,6 +96,14 @@
 .v6-colored-workspace :is(.v6-tool-group,.v6-inspector-heading,.studio-side-content) > h2,
 .v6-colored-workspace .editor-v6-timeline-title > strong {
   font-size: var(--v6-font-heading);
+}
+
+.v6-colored-workspace .v6-tool-rail .studio-tool-button {
+  min-height: 46px;
+}
+
+.v6-colored-workspace .studio-inspector :is(.studio-expression-option,.studio-preset-button,.studio-expression-mode,.v6-inspector-views button) {
+  min-height: 36px;
 }
 
 .v6-colored-workspace .v6-timeline-pro :is(
@@ -110,10 +123,10 @@
   .editor-v6-timeline-block > small,
   .collapsed .editor-v6-timeline-block > span
 ) {
-  font-size: 11px;
+  font-size: 12px;
 }
 
-@media (max-width: 650px) {
+@media (max-width: 760px) {
   .v6-colored-workspace .editor-v6-timeline-actions {
     position: static;
     transform: none;
