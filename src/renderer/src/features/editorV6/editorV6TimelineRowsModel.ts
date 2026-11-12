@@ -41,7 +41,7 @@ export function createEditorV6TimelineTransitionMap(
 }
 
 export function getEditorV6TimelineVisibleBlocks(blocks: readonly Block[], [startFrame, endFrame]: [number, number]) {
-  return blocks.filter((block) => block.startFrame <= endFrame && block.startFrame + block.durationFrames >= startFrame)
+  return blocks.filter((block) => !block.emptyGap && block.startFrame <= endFrame && block.startFrame + block.durationFrames >= startFrame)
 }
 
 export function getEditorV6TimelineBlockPixels(block: Block, pixelsPerSecond: number): EditorV6TimelineBlockPixels {

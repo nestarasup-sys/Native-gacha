@@ -179,6 +179,8 @@ export type EditorV6TimelineBlock = {
   background?: EditorV6BackgroundState
   characterId?: string
   parentBlockId?: string
+  /** Internal invisible character keyframe that preserves a deleted time gap. */
+  emptyGap?: boolean
   relativeStartFrame?: number
   motionEnabled?: boolean
   incomingMotion?: EditorV6MotionAtlas

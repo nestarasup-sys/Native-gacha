@@ -182,6 +182,7 @@ const editorV6TimelineTrackSchema = z.object({
     background: editorV6BackgroundSchema.optional(),
     characterId: z.string().min(1).max(120).optional(),
     parentBlockId: uuid.optional(),
+    emptyGap: z.boolean().optional(),
     relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
     motionEnabled: z.boolean().optional(), incomingMotion: editorV6MotionAtlasSchema.optional(),
     mediaId: uuid.optional(), mediaLayout: z.object({ x: finite.min(-200).max(200), y: finite.min(-200).max(200), width: finite.min(1).max(200), height: finite.min(1).max(200), rotation: finite.min(-180).max(180) }).optional(), mediaInFrame: z.number().int().min(0).max(1_000_000).optional(), audioEnabled: z.boolean().optional(), gain: finite.min(0).max(2).optional()
