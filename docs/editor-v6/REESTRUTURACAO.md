@@ -1232,3 +1232,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Motivo:** na extração do ciclo 144, o helper passava a duração já calculada para `report`, que espera um timestamp inicial. Isso fazia os registros incluírem quase todo o tempo de vida do processo em vez da duração real. O pipeline de renderização, bundle e exportação não foi alterado.
 
 **Verificação:** a suíte completa do Editor V6 passou com 742 testes em 172 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (869 arquivos), `npm run build` e `git diff --check` passaram. O teste determinístico confirma que os três estágios registram 1 ms quando o relógio avança exatamente 1 ms. Nenhuma exportação real ou benchmark foi executado.
+
+### Ciclo 146 — montagem de superfícies dos grupos de cabelo (implementado)
+
+**Objetivo:** extrair de `editorV6HairMotionPreparation.ts` o loop que renderiza e reaproveita as superfícies base, rosto, olhos acima do cabelo posterior e overlay em `editorV6HairMotionGroupSurfaces.ts`. O módulo coordenador continua responsável por preparar grupos, camadas, transições, bundle e limpeza dos renderers.
+
+**Compatibilidade:** mantidos o escopo dos caches por grupo/pose/rosto, o uso de `Map.has` para distinguir superfície ausente de superfície ainda não calculada, o crop compartilhado entre modos faciais, a opção de boca sem camada no loop falado, as chaves/IDs e ordem das superfícies, as verificações de cancelamento, as mensagens de erro e os argumentos do profiler como timestamp inicial. Nenhum contrato de bundle, documento, IPC ou dado persistido mudou.
+
+**Verificação:** a suíte completa do Editor V6 passou com 744 testes em 173 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (870 arquivos), `npm run build` e `git diff --check` passaram. Dois testes novos cobrem reuso por rosto/pose, crop entre modos, isolamento da boca falada e cancelamento. Nenhuma exportação real ou benchmark foi executado.
