@@ -2,15 +2,12 @@ import { useEffect, useRef, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
-import { trimTransparentImage } from '../../characters/transparentImageTrim'
-import type { TrimmedImage } from '../../characters/transparentImageTrim'
-import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
 import {
   applyEditorV6CharacterAssetCrops,
-  editorV6LegacyCharacterCropAssetIds,
   applyEditorV6CharacterRefreshResult
 } from './editorV6CharacterRefreshModel'
+import { prepareEditorV6LegacyCharacterCrops } from './editorV6LegacyCharacterCropNormalization'
 import { planEditorV6CharacterRefresh } from './editorV6CharacterRefreshPlan'
 import { renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 
@@ -43,25 +40,16 @@ export function useEditorV6CharacterSnapshotRefresh({
     if (!project || normalizedProjectIdsRef.current.has(project.id)) return
     let cancelled = false
     const projectId = project.id
-    const referencedCharacterAssetIds = editorV6LegacyCharacterCropAssetIds(project)
-    const characterAssets = project.assets.filter((asset) =>
-      asset.category === 'character' && referencedCharacterAssetIds.has(asset.id)
-    )
-
     void (async () => {
-      const crops = await mapConcurrentItems(characterAssets, async (asset) => {
-        const crop = await trimTransparentImage(asset.dataUrl)
-        return crop ? { assetId: asset.id, crop } : null
-      }, () => cancelled)
-      if (cancelled) return
+      const crops = await prepareEditorV6LegacyCharacterCrops(project, () => cancelled)
+      if (cancelled || !crops) return
 
       normalizedProjectIdsRef.current.add(projectId)
       setNormalizedSourceVersion((version) => version + 1)
-      const availableCrops = crops.filter((entry): entry is { assetId: string; crop: TrimmedImage } => entry !== null)
-      if (!availableCrops.length) return
+      if (!crops.length) return
 
       updateProject((current) => current.id === projectId
-        ? applyEditorV6CharacterAssetCrops(current, availableCrops)
+        ? applyEditorV6CharacterAssetCrops(current, crops)
         : current)
       markUnsaved()
     })()
