@@ -9,6 +9,7 @@ type SceneCastPanelProps<Element extends SceneCastElement> = {
   characters: readonly CustomizerCharacter[]
   selectedElementId: string | null
   allPositionsLocked: boolean
+  showHeader?: boolean
   onAddCharacter: () => void
   onTogglePositionsLocked: () => void
   onSelectCharacter: (element: Element) => void
@@ -21,6 +22,7 @@ export function SceneCastPanel<Element extends SceneCastElement>({
   characters,
   selectedElementId,
   allPositionsLocked,
+  showHeader = true,
   onAddCharacter,
   onTogglePositionsLocked,
   onSelectCharacter,
@@ -32,7 +34,7 @@ export function SceneCastPanel<Element extends SceneCastElement>({
   )
 
   return <div className="studio-cast-content">
-    <header><span><h2>Elenco</h2><small>{elements.length} na cena</small></span><button className="studio-cast-add-button" onClick={onAddCharacter} type="button"><Icon name="plus" />Adicionar</button></header>
+    {showHeader && <header><span><h2>Elenco</h2><small>{elements.length} na cena</small></span><button className="studio-cast-add-button" onClick={onAddCharacter} type="button"><Icon name="plus" />Adicionar</button></header>}
     <section className="studio-cast-section" aria-label="Personagens na cena">
       <header><h3>Na cena</h3><button className={`studio-cast-lock${allPositionsLocked ? ' active' : ''}`} onClick={onTogglePositionsLocked} disabled={!elements.length} aria-label={allPositionsLocked ? 'Desbloquear posição dos personagens' : 'Bloquear posição dos personagens'} title={allPositionsLocked ? 'Desbloquear posições' : 'Bloquear posições'} type="button"><Icon name={allPositionsLocked ? 'lock' : 'unlock'} /></button></header>
       {castItems.length ? castItems.map(({ element, character, firstName }) => <article className={`studio-cast-item${selectedElementId === element.id ? ' selected' : ''}`} key={element.id}>

@@ -1,4 +1,3 @@
-import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
@@ -12,8 +11,8 @@ import { EditorV6Inspector } from './EditorV6Inspector'
 import { EditorV6StageSurface } from './EditorV6StageSurface'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
-import { SceneCastPanel } from '../../ui/components/SceneCastPanel'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
+import { SceneCastManagerModal } from './SceneCastManagerModal'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
@@ -57,7 +56,6 @@ import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { useEditorV6ProjectionAutosave } from './useEditorV6ProjectionAutosave'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { getEditorV6InspectorSide } from './editorV6InspectorPlacement'
 import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
@@ -84,6 +82,7 @@ export function EditorV6Page() {
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
   const [castPickerOpen, setCastPickerOpen] = useState(false)
+  const [castManagerOpen, setCastManagerOpen] = useState(false)
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
   const {
@@ -534,14 +533,14 @@ export function EditorV6Page() {
   })
 
   useEditorV6KeyboardShortcuts({
-    castPickerOpen,
+    castPickerOpen: castPickerOpen || castManagerOpen,
     savingCast,
     fullView,
     project: activeEditorV6,
     historyVersion,
     dragActive: () => dragRef.current !== null,
     cancelDrag: cancelSceneDrag,
-    closeCastPicker: () => setCastPickerOpen(false),
+    closeCastPicker: () => { setCastPickerOpen(false); setCastManagerOpen(false) },
     exitFullView: () => setFullView(false),
     undo,
     redo
@@ -621,13 +620,6 @@ export function EditorV6Page() {
   }
 
   if (activeEditorV6) {
-    const inspectorWidth = sceneRef.current ? Math.min(38, 276 / sceneRef.current.clientWidth * 100) : 28
-    const selectedBounds = selectedElement
-      ? { left: 50 + selectedElement.x - editorV6ElementSize(selectedElement).width / 2, right: 50 + selectedElement.x + editorV6ElementSize(selectedElement).width / 2 }
-      : selectedElementId === 'background'
-        ? { left: 50 + previewBackground.backgroundX - previewBackground.backgroundWidth / 2, right: 50 + previewBackground.backgroundX + previewBackground.backgroundWidth / 2 }
-        : null
-    const inspectorSide = getEditorV6InspectorSide(selectedBounds, inspectorWidth)
     return (
       <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
         <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
@@ -649,6 +641,7 @@ export function EditorV6Page() {
           onSelectTool={(tool) => { setActiveTool(tool); setInspectorOpen(true); setInspectorTab('editor') }}
           onAddText={addTextElement}
           onImportTimelineMedia={(kind) => { void importTimelineMedia(kind) }}
+          onOpenCastManager={() => setCastManagerOpen(true)}
           onExport={() => { pausePlayback(); setExportOpen(true) }}
           onPrint={() => { void exportPrint(activeEditorV6) }}
           onOpenPrints={() => { void openPrints(activeEditorV6.id) }}
@@ -663,11 +656,13 @@ export function EditorV6Page() {
             interaction={sceneInteraction}
             playing={isPlaying}
             fullView={fullView}
-            inspectorOpen={inspectorOpen}
             onCanvasPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}
             onExitFullView={() => setFullView(false)}
-            inspector={<EditorV6Inspector
-              side={inspectorSide}
+          />
+        </Profiler>
+        {!fullView && <aside className="studio-editor-inspector-column" aria-label="Inspector do Editor V6">
+          {inspectorOpen && <EditorV6Inspector
+              side="right"
               tab={inspectorTab}
               customView={inspectorCustomView}
               editorPanel={inspectorTab === 'editor' ? propertyPanel() : null}
@@ -690,15 +685,15 @@ export function EditorV6Page() {
               onSelectPresets={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }}
               onClose={() => setInspectorOpen(false)}
             />}
-          />
-        </Profiler>
-        {!fullView && <aside className="studio-editor-rail studio-editor-right" aria-label="Elenco do Editor V6"><SceneCastPanel
+        </aside>}
+        {!fullView && castManagerOpen && <SceneCastManagerModal
           elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
-          allPositionsLocked={allStageCharactersLocked} onAddCharacter={stageSelection.openCastPicker}
+          allPositionsLocked={allStageCharactersLocked} onAddCharacter={() => { setCastManagerOpen(false); stageSelection.openCastPicker() }}
           onTogglePositionsLocked={stageSelection.toggleCharacterPositionLock}
-          onSelectCharacter={stageSelection.selectStageCharacter}
+          onSelectCharacter={(element) => { stageSelection.selectStageCharacter(element); setCastManagerOpen(false) }}
           onRemoveCharacter={removeStageCharacter}
-        /></aside>}
+          onClose={() => setCastManagerOpen(false)}
+        />}
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={stageSelection.selectTimelineBlock} /></Profiler> }

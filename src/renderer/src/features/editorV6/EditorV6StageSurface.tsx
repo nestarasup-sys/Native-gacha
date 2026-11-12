@@ -1,4 +1,4 @@
-import type { ReactNode, RefObject } from 'react'
+import type { RefObject } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { EditorV6PlaybackScene } from './EditorV6PlaybackScene'
 import type { SceneSurfaceInteraction } from './SceneSurface'
@@ -11,8 +11,6 @@ type Props = {
   interaction?: SceneSurfaceInteraction
   playing: boolean
   fullView: boolean
-  inspectorOpen: boolean
-  inspector: ReactNode
   onCanvasPointerDown: () => void
   onExitFullView: () => void
 }
@@ -26,8 +24,6 @@ export function EditorV6StageSurface({
   interaction,
   playing,
   fullView,
-  inspectorOpen,
-  inspector,
   onCanvasPointerDown,
   onExitFullView
 }: Props) {
@@ -36,7 +32,6 @@ export function EditorV6StageSurface({
       <EditorV6PlaybackScene project={project} selectedId={selectedId} interaction={fullView ? undefined : interaction} playing={playing} fullView={fullView} />
       {fullView && <button className="studio-exit-view" onClick={onExitFullView} type="button">Sair da visualização <kbd>Esc</kbd></button>}
       {!fullView && <span className="studio-scene-title">{project.title}</span>}
-      {!fullView && inspectorOpen && inspector}
     </div>
   </section>
 }

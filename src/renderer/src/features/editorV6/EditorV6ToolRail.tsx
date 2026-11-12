@@ -21,6 +21,7 @@ type Props = {
   onSelectTool: (tool: ToolId) => void
   onAddText: (kind: SceneTextElementKind) => void
   onImportTimelineMedia: (kind: 'video' | 'audio') => void
+  onOpenCastManager: () => void
   onExport: () => void
   onPrint: () => void
   onOpenPrints: () => void
@@ -46,6 +47,7 @@ export function EditorV6ToolRail({
   onSelectTool,
   onAddText,
   onImportTimelineMedia,
+  onOpenCastManager,
   onExport,
   onPrint,
   onOpenPrints,
@@ -64,6 +66,7 @@ export function EditorV6ToolRail({
         <button className="studio-round-action" disabled={!canRedo} onClick={onRedo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
       </div>
       <nav className="studio-tool-list" aria-label="Ferramentas da cena">
+        <button className="studio-tool-button" onClick={onOpenCastManager} type="button"><Icon name="user" /><span>Elenco</span></button>
         {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
         <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
         <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
