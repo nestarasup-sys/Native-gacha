@@ -1,0 +1,91 @@
+.editor-v6-workspace {
+  --v6-surface: #fff;
+  --v6-canvas: #f3eff5;
+  --v6-line: #e6dce9;
+  --v6-ink: #35283c;
+  --v6-muted: #6e6177;
+  --v6-accent: #86375f;
+  --v6-accent-soft: #f8e5ef;
+  --v6-media: #275878;
+  --v6-media-soft: #e6f1f8;
+  --v6-output: #286253;
+  --v6-output-soft: #e8f4ee;
+  background: var(--v6-canvas);
+}
+
+.editor-v6-workspace :is(.studio-editor-rail, .studio-inspector, .editor-v6-timeline) {
+  border-color: var(--v6-line);
+  background: var(--v6-surface);
+}
+
+.editor-v6-workspace .studio-tool-button {
+  --tool-ink: var(--v6-accent);
+  --tool-fill: var(--v6-accent-soft);
+  min-height: 64px;
+  border-color: var(--v6-line);
+  border-radius: 10px;
+  background: var(--tool-fill);
+  color: var(--tool-ink);
+}
+
+.editor-v6-workspace .studio-tool-button[data-group="media"] {
+  --tool-ink: var(--v6-media);
+  --tool-fill: var(--v6-media-soft);
+}
+
+.editor-v6-workspace .studio-tool-button[data-group="output"] {
+  --tool-ink: var(--v6-output);
+  --tool-fill: var(--v6-output-soft);
+}
+
+.editor-v6-workspace .studio-tool-button > span {
+  color: inherit;
+  text-align: center;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.editor-v6-workspace .studio-tool-button:is(:hover:not(:disabled), .active) {
+  border-color: var(--tool-ink);
+}
+
+.editor-v6-workspace .studio-inspector-tabs > button:not(.studio-inspector-close) {
+  background: var(--v6-canvas);
+  color: var(--v6-ink);
+}
+
+.editor-v6-workspace .studio-inspector-tabs > button.active {
+  background: var(--v6-accent);
+  color: white;
+}
+
+.editor-v6-workspace .editor-v6-timeline-toolbar {
+  background: var(--v6-surface);
+  border-color: var(--v6-line);
+}
+
+.editor-v6-workspace .editor-v6-timeline-title > strong {
+  color: var(--v6-ink);
+}
+
+.editor-v6-workspace .editor-v6-timeline-title > small {
+  color: var(--v6-muted);
+}
+
+.editor-v6-workspace .editor-v6-timeline-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--v6-ink);
+}
+
+.editor-v6-workspace .editor-v6-timeline-actions svg {
+  width: 14px;
+  height: 14px;
+}
+
+.editor-v6-workspace .editor-v6-timeline-actions > button.active {
+  color: var(--v6-accent);
+  background: var(--v6-accent-soft);
+}
