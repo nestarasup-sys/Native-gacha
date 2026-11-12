@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
+import { editorV6ExportContentEndFrame } from '../../../../shared/editorV6Export'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
@@ -23,6 +24,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     exportStartedAt, busy, audioPickerOpen, setAudioPickerOpen, error, setError, active, updateAudio, linkAudio,
     chooseExportFolder, clearExportFolder, selectedHairPreset, beginEditingHairPreset, saveHairPreset, start, cancel
   } = useEditorV6ExportPanelController({ project, open, characterSourceRefreshRequired, onChange, onActivity, trackOperation, prepareHair })
+  const contentEndFrame = editorV6ExportContentEndFrame(project)
   if (!open) return null
   return <div className="v6-export-backdrop" onPointerDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}>
     <section ref={dialog} tabIndex={-1} className="v6-export-panel" role="dialog" aria-modal="true" aria-labelledby="v6-export-title">
@@ -31,8 +33,8 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {characterSourceRefreshRequired && <p className="v6-export-warning" role="status">Atualizando os personagens do Customizador. A exportação ficará disponível quando os snapshots estiverem sincronizados.</p>}
       <div className="v6-export-settings-grid">
         <fieldset className="v6-export-video-settings" disabled={busy || active}><legend>Exportação padrão</legend><div className="v6-export-grid">
-          <label>Do início (s)<input type="number" min={0} step={1 / 30} value={editorV6ExportFramesToSeconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: editorV6ExportSecondsToFrames(event.target.value, project.timeline.durationFrames) })} /></label>
-          <label>Até (s)<input type="number" min={1 / 30} step={1 / 30} value={editorV6ExportFramesToSeconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: editorV6ExportSecondsToFrames(event.target.value, project.timeline.durationFrames) })} /></label>
+          <label>Do início (s)<input type="number" min={0} max={editorV6ExportFramesToSeconds(contentEndFrame)} step={1 / 30} value={editorV6ExportFramesToSeconds(options.startFrame)} onChange={(event) => setOptions({ ...options, startFrame: editorV6ExportSecondsToFrames(event.target.value, contentEndFrame) })} /></label>
+          <label>Até (s)<input type="number" min={1 / 30} max={editorV6ExportFramesToSeconds(contentEndFrame)} step={1 / 30} value={editorV6ExportFramesToSeconds(options.endFrame)} onChange={(event) => setOptions({ ...options, endFrame: editorV6ExportSecondsToFrames(event.target.value, contentEndFrame) })} /></label>
         </div><small>{frameTimecode(options.startFrame)} → {frameTimecode(options.endFrame)} · {Math.max(0, options.endFrame - options.startFrame)} quadros · 30 FPS</small>
           <p><strong>Destino do MP4</strong><br /><small>{exportFolder ?? 'Perguntar onde salvar a cada exportação'}</small></p>
           <button type="button" onClick={() => void chooseExportFolder()}>{exportFolder ? 'Mudar pasta fixa' : 'Escolher pasta fixa'}</button>

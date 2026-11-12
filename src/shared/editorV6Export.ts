@@ -1,4 +1,4 @@
-import type { EditorV6Document } from './editorV6'
+import { EDITOR_V6_DEFAULT_DURATION_FRAMES, type EditorV6Document } from './editorV6'
 import type { EditorV6MotionFrame } from './editorV6Motion'
 import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
 import { isEditorV6ExportTestMode, type EditorV6ExportTestMode } from './editorV6ExportTestModes'
@@ -28,6 +28,19 @@ export type EditorV6ExportStatus = {
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
 export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; sourceAssetId?: string; baseAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; facePatchSourceCrop?: { left: number; top: number; width: number; height: number }; frames: EditorV6MotionFrame[] }
 export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number; states: EditorV6ExportMouthLoopState[] }
+
+/** Resolve the useful export end when removed content left a longer stored timeline behind. */
+export function editorV6ExportContentEndFrame(project: Pick<EditorV6Document, 'timeline' | 'exportAudio'>): number {
+  const contentEnds = project.timeline.tracks
+    .filter((track) => track.kind !== 'character')
+    .flatMap((track) => track.blocks)
+    .filter((block) => !block.background && !block.emptyGap)
+    .map((block) => block.startFrame + block.durationFrames)
+  for (const clip of project.exportAudio ?? []) if (!clip.muted && clip.gain > 0) contentEnds.push(clip.startFrame + clip.durationFrames)
+  if (!contentEnds.length) return project.timeline.durationFrames
+  return Math.max(Math.min(project.timeline.durationFrames, EDITOR_V6_DEFAULT_DURATION_FRAMES), ...contentEnds)
+}
+
 export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.05, 1.05 * 1.05] as const
 export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number, cycleFrames: number): number {
   const phase = ((frame - startFrame) % cycleFrames + cycleFrames) % cycleFrames / cycleFrames

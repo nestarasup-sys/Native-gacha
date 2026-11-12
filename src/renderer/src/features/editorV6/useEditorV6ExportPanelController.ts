@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
-import { EDITOR_V6_DEFAULT_EXPORT_PROFILE, EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { EDITOR_V6_DEFAULT_EXPORT_PROFILE, EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT, editorV6ExportContentEndFrame, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, hairMotionPosteriorOnlyPreset, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { saveEditorV6HairPresetSlot } from './editorV6HairPresetStorage'
@@ -24,7 +24,9 @@ export type EditorV6ExportPanelControllerOptions = {
 export function useEditorV6ExportPanelController({ project, open, characterSourceRefreshRequired, onChange, onActivity, trackOperation, prepareHair = prepareEditorV6HairMotionBundle }: EditorV6ExportPanelControllerOptions) {
   const [job, setJob] = useState(rememberedJob)
   const [exportFolder, setExportFolder] = useState<string | null>(null)
-  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: project.timeline.durationFrames, ...DEFAULT_EXPORT_SETTINGS })
+  const defaultEndFrame = editorV6ExportContentEndFrame(project)
+  const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: defaultEndFrame, ...DEFAULT_EXPORT_SETTINGS })
+  const previousProjectRange = useRef({ projectId: project.id, endFrame: defaultEndFrame })
   const [hairPresetSlot, setHairPresetSlot] = useState(EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
@@ -37,6 +39,18 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
   const [audioPickerOpen, setAudioPickerOpen] = useState(false)
   const [error, setError] = useState('')
   const active = Boolean(job && !isEditorV6ExportFinished(job))
+
+  useEffect(() => {
+    if (!open) return
+    const previous = previousProjectRange.current
+    setOptions((current) => {
+      if (previous.projectId !== project.id || current.startFrame === 0 && current.endFrame === previous.endFrame) {
+        return { ...current, startFrame: 0, endFrame: defaultEndFrame }
+      }
+      return current
+    })
+    previousProjectRange.current = { projectId: project.id, endFrame: defaultEndFrame }
+  }, [open, project.id, defaultEndFrame])
 
   useEffect(() => {
     if (!open) return

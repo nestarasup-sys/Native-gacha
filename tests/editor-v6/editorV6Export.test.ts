@@ -1,9 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { EDITOR_V6_ENCODER_CHOICES, editorV6BenchmarkAudioMatchesExport, planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from '../../src/shared/editorV6Export'
+import { EDITOR_V6_ENCODER_CHOICES, editorV6BenchmarkAudioMatchesExport, editorV6ExportContentEndFrame, planEditorV6Audio, planEditorV6Export, splitEditorV6ExportParts } from '../../src/shared/editorV6Export'
 import { editorV6ExportAudioSchema } from '../../src/shared/editorV6Schema'
 import { EDITOR_V6_EXPORT_TEST_MODES, editorV6ExportTestSettings, editorV6ExportModeFileSuffix } from '../../src/shared/editorV6ExportTestModes'
 const options = { startFrame: 5, endFrame: 86, width: 1920, height: 1080, turbo: true, encoder: 'cpu' as const }
 describe('planejamento de exportação do Editor V6', () => {
+  it('calcula o fim do conteúdo sem usar duração velha, personagens persistentes ou fundos', () => {
+    const project = {
+      timeline: { durationFrames: 930, tracks: [
+        { kind: 'character', blocks: [{ startFrame: 0, durationFrames: 930 }] },
+        { kind: 'video', blocks: [{ startFrame: 0, durationFrames: 402 }] },
+        { kind: 'video', blocks: [{ startFrame: 402, durationFrames: 528, background: { backgroundColor: '#fff' } }] },
+        { kind: 'object', blocks: [{ startFrame: 500, durationFrames: 430, emptyGap: true }] }
+      ] }, exportAudio: []
+    } as never
+    expect(editorV6ExportContentEndFrame(project)).toBe(402)
+    expect(editorV6ExportContentEndFrame({ ...project, timeline: { ...project.timeline, tracks: [project.timeline.tracks[0]] } })).toBe(930)
+  })
+
   it('expõe apenas codificadores aceitos pelo contrato de exportação', () => {
     expect(EDITOR_V6_ENCODER_CHOICES.map((choice) => choice.value)).toEqual(['auto', 'cpu'])
     for (const choice of EDITOR_V6_ENCODER_CHOICES) {
