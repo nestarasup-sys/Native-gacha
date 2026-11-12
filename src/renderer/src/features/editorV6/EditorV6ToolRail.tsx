@@ -66,20 +66,20 @@ export function EditorV6ToolRail({
         <button className="studio-round-action" disabled={!canRedo} onClick={onRedo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
       </div>
       <nav className="v6-tool-groups" aria-label="Ferramentas da cena">
-        <ToolGroup title="Cena">
+        <ToolGroup tone="scene" title="Cena">
           <button className="studio-tool-button" onClick={onOpenCastManager} type="button"><Icon name="user" /><span>Elenco</span></button>
           {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span></button>)}
         </ToolGroup>
-        <ToolGroup title="Texto">
+        <ToolGroup tone="text" title="Texto">
           <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span></button>
           <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span></button>
           <button className="studio-tool-button" onClick={() => onAddText('thought')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar pensamento a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span></button>
         </ToolGroup>
-        <ToolGroup title="Mídia">
+        <ToolGroup tone="media" title="Mídia">
           <button className="studio-tool-button" onClick={() => onImportTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
           <button className="studio-tool-button" onClick={() => onImportTimelineMedia('audio')} type="button"><b>♪</b><span>Selecionar áudio</span></button>
         </ToolGroup>
-        <ToolGroup title="Exportação e visualização">
+        <ToolGroup tone="output" title="Exportação e visualização">
           <button className="studio-tool-button" onClick={onExport} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
           <button className="studio-tool-button" onClick={onPrint} type="button"><Icon name="download" /><span>Capturar cena</span></button>
           <button className="studio-tool-button" onClick={onOpenPrints} type="button"><Icon name="folder" /><span>Abrir capturas</span></button>
@@ -94,8 +94,8 @@ export function EditorV6ToolRail({
   )
 }
 
-function ToolGroup({ title, children }: { title: string; children: ReactNode }) {
-  return <section className="v6-tool-group" aria-label={title}>
+function ToolGroup({ title, tone, children }: { title: string; tone: string; children: ReactNode }) {
+  return <section className="v6-tool-group" data-tone={tone} aria-label={title}>
     <h2>{title}</h2>
     <div className="studio-tool-list">{children}</div>
   </section>
