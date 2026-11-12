@@ -23,10 +23,12 @@ import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV
 import { createEditorV6MediaCommands } from '../src/renderer/src/features/editorV6/editorV6MediaCommands.ts'
 import {
   applyEditorV6CharacterAssetCrops,
-  editorV6LegacyCharacterCropAssetIds,
+  editorV6LegacyCharacterCropAssetIds
+} from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
+import {
   applyEditorV6CharacterRefreshResult,
   editorV6CharacterRefreshStateSignature
-} from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel.ts'
+} from '../src/renderer/src/features/editorV6/editorV6CharacterRefreshPublication.ts'
 
 test('reabrir documento preserva o recorte comum das variantes faciais, inclusive referências compartilhadas na timeline', () => {
   const project = { elements: [

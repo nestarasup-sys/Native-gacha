@@ -2,7 +2,7 @@ import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode } from '../
 import { faceRenderGeometry } from '../../characters/characterGeometry.ts'
 import type { TrimmedImage } from '../../characters/transparentImageTrim.ts'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets.ts'
-import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshModel.ts'
+import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshPublication'
 import { prepareEditorV6CharacterRefreshJob } from './editorV6CharacterRefreshJob'
 import type { EditorV6CharacterRefreshGroup, EditorV6CharacterRefreshRenderJob, EditorV6CharacterRefreshResult } from './editorV6CharacterRefreshTypes'
 export { planEditorV6CharacterRefresh } from './editorV6CharacterRefreshPlan'

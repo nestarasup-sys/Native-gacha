@@ -4,9 +4,9 @@ import type { EditorV6Document } from '../../../../shared/editorV6'
 import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
 import {
-  applyEditorV6CharacterAssetCrops,
-  applyEditorV6CharacterRefreshResult
+  applyEditorV6CharacterAssetCrops
 } from './editorV6CharacterRefreshModel'
+import { applyEditorV6CharacterRefreshResult } from './editorV6CharacterRefreshPublication'
 import { prepareEditorV6LegacyCharacterCrops } from './editorV6LegacyCharacterCropNormalization'
 import { planEditorV6CharacterRefresh } from './editorV6CharacterRefreshPlan'
 import { renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
