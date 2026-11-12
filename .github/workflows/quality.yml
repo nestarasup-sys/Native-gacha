@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-node@v4
         if: steps.source.outputs.present == 'true'
         with:
-          node-version: '22.22.0'
+          node-version: '22.23.5'
           cache: npm
       - name: Install dependencies without Electron download hooks
         if: steps.source.outputs.present == 'true'

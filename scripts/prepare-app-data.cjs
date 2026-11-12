@@ -188,7 +188,6 @@ function migrateProfile({ sourceProfile, dataRoot, now = new Date() }) {
     const runId = `${now.toISOString().replace(/[:.]/g, '-')}-${process.pid}`
     const staging = path.join(root, `.migration-staging-${runId}`)
     if (fs.existsSync(staging)) throw new Error('Já existe staging de migração. Ele foi preservado para inspeção.')
-    fs.mkdirSync(staging, { recursive: false })
     fs.cpSync(source, staging, { recursive: true, force: false, errorOnExist: true, preserveTimestamps: true, verbatimSymlinks: true })
     const copiedInventory = scanTree(staging)
     if (!sameInventory(sourceInventory, copiedInventory)) throw new Error('A cópia não passou na verificação SHA-256. Origem e staging foram preservados.')
