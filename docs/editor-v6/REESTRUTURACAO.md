@@ -1176,3 +1176,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o layout padrão proporcional, os limites e valores de X/Y/largura/altura/rotação, o início da mídia arredondado para quadros, o ganho e checkbox de áudio condicionais à mídia, o registro de histórico antes de alternar áudio e a ação de remover o vídeo. Props de projeto e callbacks de edição continuam no contrato existente da página; nenhum dado ou persistência foi alterado.
 
 **Verificação:** a suíte completa do Editor V6 passou com 732 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (861 arquivos), `npm run build` e `git diff --check` passaram. O teste do Inspector verifica vídeo com e sem áudio e os valores de layout/início/volume já salvos. Nenhuma importação ou exportação real foi executada.
+
+### Ciclo 139 — painéis de fundo, objetos e elemento selecionado (implementado)
+
+**Objetivo:** deixar `EditorV6PropertyPanel.tsx` como coordenador de seleção e mover a galeria/transformação de fundo para `EditorV6BackgroundPropertyPanel.tsx`, a galeria de objetos para `EditorV6ObjectsPropertyPanel.tsx` e os controles do elemento selecionado para `EditorV6SelectedElementPropertyPanel.tsx`. A tela de fundo usa uma união discriminada para separar as dependências da galeria das propriedades do asset selecionado.
+
+**Compatibilidade:** mantidas a precedência `ferramenta de fundo → ferramenta de objetos → vídeo → elemento → fundo selecionado → cena`, a filtragem de assets publicados/vinculados, os protocolos e URLs das bibliotecas, os controles e limites de transformação, o tratamento de histórico do nome do personagem e as ações de texto/remoção. O contrato público do Inspector e os callbacks de documento continuam os mesmos.
+
+**Verificação:** a suíte completa do Editor V6 passou com 732 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (864 arquivos), `npm run build` e `git diff --check` passaram. Os testes existentes do Inspector cobrem galerias de fundos/objetos, fundo selecionado, balões e personagem; nenhum perfil/app-data foi usado.
