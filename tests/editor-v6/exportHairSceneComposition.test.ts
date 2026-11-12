@@ -83,6 +83,15 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     expect(timings.hairCompositionOtherMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('uses the mouth atlas crop instead of the broader hair crop for speaking frames', () => {
+    const factory = makeComposer({ facePatchSourceCrop: () => ({ left: 30, top: 5, width: 20, height: 10 }) })
+    const original = element({ mouthPatch: { ...element().mouthPatch!, assetId: 'mouth-atlas' } })
+    const current = scene([original])
+    const result = factory.compose({ composedScene: current, originalElements: new Map([['actor', original]]), frame: 12, activeHair: true, riggedElementIds: new Set(['actor']), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings: {}, metrics: {} })
+
+    expect(result.renderScene.elements[0].mouthPatch).toMatchObject({ x: 0.34, y: 0.09375, width: 0.02, height: 0.01875 })
+  })
+
   it('reuses a face atlas across transition frames and preserves expanded transition geometry', () => {
     const factory = makeComposer()
     const original = element({ assetId: 'transition-body', motionSprite: { sprite: { x: 0, y: 0, width: 10, height: 10, atlasWidth: 10, atlasHeight: 10 }, x: 0, y: 0, width: 1, height: 1, rotation: 0, flipX: false } })

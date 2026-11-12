@@ -56,9 +56,9 @@ export function createEditorV6ExportWorkerHairRuntime(
   const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
     hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece
   })
-  const { applyMouthLoop, hairSourceAssetId } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
+  const { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
   const hairScene = createEditorV6ExportHairSceneComposer({
-    animation: hairAnimation, planIndex, hairRigAtFrame, hairSourceAssetId, composeHairFrame, composeMotionHairFrame
+    animation: hairAnimation, planIndex, hairRigAtFrame, hairSourceAssetId, facePatchSourceCrop, composeHairFrame, composeMotionHairFrame
   })
 
   return {

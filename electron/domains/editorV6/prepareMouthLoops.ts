@@ -166,7 +166,7 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
     if (atlasBytes > MAX_ATLAS_BYTES || atlasPixels > MAX_ATLAS_PIXELS) throw Error('As camadas faciais excedem o limite seguro de memória; reduza o número de personagens simultâneos neste trecho.')
     appendedAssets.push(result.asset, ...additionalAssets.map((entry) => entry.asset))
     const baseAssetIds = additionalAssets.length ? Object.fromEntries(additionalAssets.map((entry) => [entry.faceMode, entry.asset.id])) as NonNullable<EditorV6ExportMouthLoopState['baseAssetIds']> : undefined
-    states.push({ elementId: candidate.state.id, characterId: candidate.character.id, blockIds: candidate.blockIds, assetId: result.asset.id, sourceAssetId: candidate.state.assetId, ...(baseAssetIds ? { baseAssetIds } : {}), frames: result.motion.frames })
+    states.push({ elementId: candidate.state.id, characterId: candidate.character.id, blockIds: candidate.blockIds, assetId: result.asset.id, sourceAssetId: candidate.state.assetId, ...(baseAssetIds ? { baseAssetIds } : {}), ...(result.facePatchSourceCrop ? { facePatchSourceCrop: result.facePatchSourceCrop } : {}), frames: result.motion.frames })
   }
   deps.progress(candidates.length, candidates.length, 'Animação da boca pronta')
   return {

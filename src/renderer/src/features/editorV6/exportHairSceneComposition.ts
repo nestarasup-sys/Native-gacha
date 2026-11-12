@@ -20,6 +20,7 @@ type Options = {
   planIndex: HairPlanIndex
   hairRigAtFrame: HairRigAtFrame
   hairSourceAssetId: (element: Pick<SceneElement, 'assetId'>) => string | undefined
+  facePatchSourceCrop?: (assetId: string) => { left: number; top: number; width: number; height: number } | undefined
   composeHairFrame: HairFrameComposer['composeHairFrame']
   composeMotionHairFrame: HairFrameComposer['composeMotionHairFrame']
 }
@@ -42,6 +43,7 @@ const HAIR_DETAIL_KEYS = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceCo
 /** Resolves which characters need raster hair and composes their export-frame surfaces. */
 export function createEditorV6ExportHairSceneComposer(options: Options) {
   const { animation, planIndex, hairRigAtFrame, hairSourceAssetId } = options
+  const patchSourceCrop = options.facePatchSourceCrop ?? (() => undefined)
   const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
 
   const hasAnimatedHair = (element: SceneElement, frame: number): boolean => element.kind === 'character' && Boolean(
@@ -76,12 +78,13 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
           rasterCanvases.set(element.id, options.composeHairFrame(rig, resolvedHairRig.element, frame, timings, metrics))
           const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
           const patch = original.mouthPatch
+          const patchCrop = patch ? patchSourceCrop(patch.assetId) ?? rig.sourceCrop : rig.sourceCrop
           const mouthPatch = patch ? {
             ...patch,
-            x: (rig.sourceCrop.left + patch.x * rig.sourceCrop.width) / rig.outputWidth,
-            y: (rig.sourceCrop.top + patch.y * rig.sourceCrop.height) / rig.outputHeight,
-            width: patch.width * rig.sourceCrop.width / rig.outputWidth,
-            height: patch.height * rig.sourceCrop.height / rig.outputHeight
+            x: (patchCrop.left + patch.x * patchCrop.width) / rig.outputWidth,
+            y: (patchCrop.top + patch.y * patchCrop.height) / rig.outputHeight,
+            width: patch.width * patchCrop.width / rig.outputWidth,
+            height: patch.height * patchCrop.height / rig.outputHeight
           } : undefined
           animatedElements.push({ ...element, assetId: undefined, motionSprite: undefined, ...geometry, mouthPatch })
           continue
@@ -120,12 +123,13 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
       rasterCanvases.set(element.id, options.composeHairFrame(rig, original, frame, timings, metrics))
       const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
       const patch = original.mouthPatch
+      const patchCrop = patch ? patchSourceCrop(patch.assetId) ?? rig.sourceCrop : rig.sourceCrop
       const mouthPatch = patch ? {
         ...patch,
-        x: (rig.sourceCrop.left + patch.x * rig.sourceCrop.width) / rig.outputWidth,
-        y: (rig.sourceCrop.top + patch.y * rig.sourceCrop.height) / rig.outputHeight,
-        width: patch.width * rig.sourceCrop.width / rig.outputWidth,
-        height: patch.height * rig.sourceCrop.height / rig.outputHeight
+        x: (patchCrop.left + patch.x * patchCrop.width) / rig.outputWidth,
+        y: (patchCrop.top + patch.y * patchCrop.height) / rig.outputHeight,
+        width: patch.width * patchCrop.width / rig.outputWidth,
+        height: patch.height * patchCrop.height / rig.outputHeight
       } : undefined
       animatedElements.push({ ...element, ...geometry, assetId: undefined, mouthPatch })
     }

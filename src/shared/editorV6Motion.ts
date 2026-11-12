@@ -20,6 +20,8 @@ export type EditorV6MotionBakeResult = {
   faceAsset?: EditorV6Asset
   /** Export-only base variants keep the canonical face intact except for the separately drawn mouth. */
   mouthlessBaseAssets?: Array<{ faceMode: 'talk' | 'talk-blink'; asset: EditorV6Asset }>
+  /** Pixel crop that defines the coordinate space of isolated mouth patches. */
+  facePatchSourceCrop?: { left: number; top: number; width: number; height: number }
   /** The primary asset itself is a localized face-patch atlas, used only for static mouth loops. */
   assetRole?: 'face-atlas'
   /** Records whether the export loop contains only the catalog mouth or uses the compatible legacy patch. */

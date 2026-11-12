@@ -89,7 +89,7 @@ export async function bakeEditorV6StaticMouthLoop({
       mouthAtlas = packed.atlas
       const count = request.plan.samples.length
       return {
-        asset: packed.asset,
+        asset: packed.asset, facePatchSourceCrop: sourceCrop,
         assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
         motion: packed.motion,
         metrics: { milliseconds: elapsedMilliseconds(), ...rigMetrics(), samples: count, atlasPixels: packed.atlasPixels }
@@ -114,7 +114,7 @@ export async function bakeEditorV6StaticMouthLoop({
     render: (faceMode, mouthScale) => render(0, faceMode, mouthScale)
   })
   return {
-    asset: packed.asset,
+    asset: packed.asset, facePatchSourceCrop: sourceCrop,
     assetRole: 'face-atlas', mouthIsolationMode: 'legacy-patch', motion: packed.motion,
     metrics: { milliseconds: elapsedMilliseconds(), preparedRigs: rigMetrics().preparedRigs, reusedRigs: rigMetrics().reusedRigs, samples: request.plan.samples.length, atlasPixels: packed.atlasPixels }
   }

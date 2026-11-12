@@ -10,8 +10,10 @@ type Scene = ReturnType<typeof resolveEditorV6SceneAtFrame>
 export function createEditorV6ExportMouthLoopResolver(project: Pick<EditorV6Document, 'id' | 'timeline'>, mouthLoops?: EditorV6ExportMouthLoops) {
   const mouthLoopByBlock = new Map<string, EditorV6ExportMouthLoops['states'][number]>()
   const mouthlessSourceAssetById = new Map<string, string>()
+  const patchSourceCropByAssetId = new Map<string, NonNullable<EditorV6ExportMouthLoops['states'][number]['facePatchSourceCrop']>>()
   for (const state of mouthLoops?.states ?? []) {
     for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
+    if (state.facePatchSourceCrop) patchSourceCropByAssetId.set(state.assetId, state.facePatchSourceCrop)
     if (state.sourceAssetId) for (const baseAssetId of Object.values(state.baseAssetIds ?? {})) mouthlessSourceAssetById.set(baseAssetId, state.sourceAssetId)
   }
 
@@ -38,5 +40,5 @@ export function createEditorV6ExportMouthLoopResolver(project: Pick<EditorV6Docu
     }) }
   }
 
-  return { applyMouthLoop, hairSourceAssetId }
+  return { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop: (assetId: string) => patchSourceCropByAssetId.get(assetId) }
 }

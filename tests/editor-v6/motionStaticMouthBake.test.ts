@@ -66,7 +66,7 @@ describe('pipeline de boca em pose estática', () => {
       createCanvas
     } as never)
 
-    expect(result).toMatchObject({ asset, assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets: baseAssets, motion: packed.motion,
+    expect(result).toMatchObject({ asset, assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', facePatchSourceCrop: sourceCrop, mouthlessBaseAssets: baseAssets, motion: packed.motion,
       metrics: { milliseconds: 25, ...rigMetrics, samples: 3, atlasPixels: 96 } })
     expect(prepareMouthlessBaseAssets).toHaveBeenCalledWith({ from: pose, baseline, render })
     expect(render).toHaveBeenCalledTimes(3)

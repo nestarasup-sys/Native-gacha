@@ -125,6 +125,7 @@ export const editorV6MotionResultSchema = z.object({
   asset: editorV6AssetSchema,
   faceAsset: editorV6AssetSchema.optional(),
   mouthlessBaseAssets: z.array(z.object({ faceMode: z.enum(['talk', 'talk-blink']), asset: editorV6AssetSchema })).max(2).optional(),
+  facePatchSourceCrop: z.object({ left: finite.min(0), top: finite.min(0), width: finite.positive(), height: finite.positive() }).optional(),
   assetRole: z.literal('face-atlas').optional(),
   mouthIsolationMode: z.enum(['isolated-piece', 'legacy-patch']).optional(),
   motion: editorV6MotionAtlasSchema,
