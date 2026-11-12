@@ -19,7 +19,7 @@ export type EditorV6TimelineRowsProps = {
   range: [number, number]
   selectedId: string | null
   onPointer: (event: ReactPointerEvent<HTMLElement>, track: Track, block: Block, mode: 'move' | 'resize') => void
-  onSelect: (block: Block) => void
+  onSelect: (block: Block, seekToStart?: boolean) => void
   onMenu: (x: number, y: number, track: Track, block: Block) => void
   onTrack: (track: Track, action: TrackAction, name?: string) => void
   onScrub: (event: ReactPointerEvent<HTMLElement>) => void

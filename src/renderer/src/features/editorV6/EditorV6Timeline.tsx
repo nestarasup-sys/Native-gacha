@@ -78,8 +78,9 @@ export function EditorV6Timeline(props: Props) {
     setGuide,
     setReadout
   }), [changeTimeline])
-  const select = useCallback((block: Block) => {
+  const select = useCallback((block: Block, seekToStart = false) => {
     if (didDrag.current) { didDrag.current = false; return }
+    if (seekToStart) latest.current.onSeek(block.startFrame)
     latest.current.onSelect(block)
   }, [])
   const { remove, split, duplicate } = useMemo(() => createEditorV6TimelineBlockCommands({
