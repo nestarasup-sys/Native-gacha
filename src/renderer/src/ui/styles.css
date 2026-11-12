@@ -210,7 +210,7 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .studio-save-indicator i { width:6px;height:6px;border-radius:50%;background:#67b98e; }
 .studio-save-indicator.unsaved i { background:#e1a851; }
 .studio-save-notice { color:#498969;font-size:8px;line-height:1.35;overflow-wrap:anywhere; }
-.studio-scene-area { width:92%;min-width:0;min-height:0;grid-column:2;grid-row:1;justify-self:center;display:grid;place-items:center;overflow:hidden;border:1px solid #eee7ed;border-radius:12px;background:#fff; }
+.studio-scene-area { width:92%;min-width:0;min-height:0;grid-column:2;grid-row:1;justify-self:center;display:grid;place-items:center;overflow:hidden;border:0;border-radius:0;background:transparent; }
 .studio-editor.full-view .studio-scene-area { border:0;border-radius:0; }
 .studio-scene-canvas { width:min(100%,calc((100vh - 100px) * 16 / 9));max-height:100%;position:relative;aspect-ratio:16/9;overflow:hidden;border:1px solid #e7dce4;border-radius:5px;box-shadow:0 8px 28px #35233112; }
 .v6-scene-area { container-type:size; }
