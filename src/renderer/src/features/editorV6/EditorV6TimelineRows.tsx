@@ -35,7 +35,7 @@ export const EditorV6TimelineRows = memo(function EditorV6TimelineRows({ timelin
   return <>{displayRows.map((row) => {
     const { key, track, backgroundLane } = row
     return <div className={`editor-v6-timeline-track${track.hidden || track.muted ? ' muted' : ''}${!backgroundLane && track.collapsed ? ' collapsed' : ''}`} key={key} style={{ gridTemplateColumns: `${heading}px ${width}px` }}>
-    <EditorV6TimelineTrackHeader row={row} rows={displayRows} renameId={renameId} setRenameId={setRenameId} onTrack={onTrack} />
+    <EditorV6TimelineTrackHeader row={row} renameId={renameId} setRenameId={setRenameId} onTrack={onTrack} />
     <EditorV6TimelineLane
       track={track}
       backgroundLane={backgroundLane}

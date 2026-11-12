@@ -505,10 +505,6 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .editor-v6-timeline-ruler-row>.editor-v6-timeline-track-heading { min-height:27px;color:#a59aa5;font-size:8px;font-weight:800;letter-spacing:.7px; }
 .editor-v6-timeline-track-heading>strong { max-width:66px;overflow:hidden;color:#665b68;font-size:9px;text-overflow:ellipsis;white-space:nowrap; }
 .editor-v6-timeline-track-heading>small { overflow:hidden;color:#b2a6b1;font-size:8px;text-overflow:ellipsis;white-space:nowrap; }
-.editor-v6-track-actions { display:flex;align-items:center;gap:1px;margin-left:auto; }
-.editor-v6-track-actions>button { width:18px;height:20px;display:grid;place-items:center;padding:0;border:0;border-radius:4px;background:transparent;color:#998b98;font-size:12px;line-height:1;cursor:pointer; }
-.editor-v6-track-actions>button:hover:not(:disabled) { background:#f8edf2;color:#a7466b; }
-.editor-v6-track-actions>button:disabled { opacity:.35;cursor:default; }
 .editor-v6-timeline-ruler,.editor-v6-timeline-lane { position:relative;min-width:0;overflow:hidden;background-image:repeating-linear-gradient(90deg,transparent 0,transparent 71px,#eee9ee 71px,#eee9ee 72px);touch-action:pan-x; }
 .editor-v6-timeline-ruler { height:27px;overflow:visible;border-bottom:1px solid #eee8ed;background-color:#fbfafc;cursor:crosshair; }
 .editor-v6-timeline-ruler>span { position:absolute;top:4px;color:#a79ba6;font-size:8px;font-variant-numeric:tabular-nums;transform:translateX(4px);pointer-events:none; }
@@ -539,8 +535,6 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .v6-timeline-pro .editor-v6-timeline-track-heading { position:sticky;left:0;z-index:5;padding:2px 5px;background:#fcf9fc; }
 .v6-timeline-pro .editor-v6-timeline-track-heading>strong { flex:1;max-width:none;font-size:10px; }
 .v6-timeline-pro .editor-v6-timeline-track-heading>span { margin-left:auto; }
-.v6-timeline-pro .editor-v6-track-actions { margin-left:auto;gap:1px; }
-.v6-timeline-pro .editor-v6-track-actions>button { width:16px;height:23px; }
 .v6-track-collapse { flex:0 0 12px;padding:0;border:0;background:none;color:#9e8198;cursor:pointer; }
 .v6-track-name { min-width:0;width:55px;flex:1;border:1px solid #c89bb9;border-radius:3px;font-size:10px; }
 .v6-timeline-pro .editor-v6-timeline-lane { min-height:37px;touch-action:none;background-image:linear-gradient(90deg,transparent calc(100% - 1px),#eee9ee calc(100% - 1px)); }
@@ -567,7 +561,7 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .editor-v6-timeline-playhead { width:1px;position:absolute;top:0;bottom:0;z-index:4;border-left:2px solid #e34f83;pointer-events:none; }
 .editor-v6-timeline-ruler .editor-v6-timeline-playhead::before { content:"";width:7px;height:7px;position:absolute;top:0;left:-4px;border-radius:1px 1px 4px 4px;background:#e34f83; }
 .studio-editor.full-view .studio-scene-area { grid-column:1;grid-row:1; }
-@media (max-width:800px) { .studio-editor { grid-template-columns:90px minmax(0,1fr) 90px;grid-template-rows:minmax(0,1fr) 220px;gap:6px;padding:6px; }.studio-editor.full-view { grid-template-columns:1fr;grid-template-rows:1fr; }.editor-v6-timeline { grid-template-rows:36px minmax(0,1fr); }.editor-v6-timeline-ruler-row,.editor-v6-timeline-track { grid-template-columns:145px max-content; }.editor-v6-timeline-track-heading { padding-left:5px; }.editor-v6-track-actions>button { width:16px; } }
+@media (max-width:800px) { .studio-editor { grid-template-columns:90px minmax(0,1fr) 90px;grid-template-rows:minmax(0,1fr) 220px;gap:6px;padding:6px; }.studio-editor.full-view { grid-template-columns:1fr;grid-template-rows:1fr; }.editor-v6-timeline { grid-template-rows:36px minmax(0,1fr); }.editor-v6-timeline-ruler-row,.editor-v6-timeline-track { grid-template-columns:145px max-content; }.editor-v6-timeline-track-heading { padding-left:5px; } }
 .studio-tool-hint { position:absolute;bottom:9px;left:10px;padding:4px 7px;border-radius:5px;background:#ffffffa8;color:#514651;font-size:9px; }
 .studio-exit-view { position:absolute;z-index:1;top:16px;right:16px;display:flex;align-items:center;gap:9px;padding:7px 10px;border:1px solid #ffffff80;border-radius:8px;background:#ffffffd9;color:#514651;font-size:11px;cursor:pointer; }
 .studio-exit-view kbd { color:#736878; }
