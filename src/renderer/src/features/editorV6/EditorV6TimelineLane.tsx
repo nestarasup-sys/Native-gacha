@@ -20,7 +20,7 @@ type Props = {
   range: [number, number]
   selectedId: string | null
   onPointer: (event: ReactPointerEvent<HTMLElement>, track: Track, block: Block, mode: 'move' | 'resize') => void
-  onSelect: (block: Block, seekToStart?: boolean) => void
+  onSelect: (block: Block, seekToFrame?: number) => void
   onMenu: (x: number, y: number, track: Track, block: Block) => void
   onScrub: (event: ReactPointerEvent<HTMLElement>) => void
 }
@@ -38,7 +38,13 @@ export const EditorV6TimelineLane = memo(function EditorV6TimelineLane({ track, 
         tabIndex={0} role="button" aria-label={`${block.label}, ${frameTimecode(block.startFrame)}, duração ${frameTimecode(block.durationFrames)}`}
         title={`${block.label}\nInício ${frameTimecode(block.startFrame)} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${frameTimecode(block.durationFrames)}`}
         onPointerDown={(event) => { if (event.button === 0) onPointer(event, track, block, 'move'); else event.stopPropagation() }}
-        onClick={(event) => { event.stopPropagation(); onSelect(block, event.detail > 1) }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
+        onClick={(event) => {
+          event.stopPropagation()
+          const seekToFrame = event.detail > 1
+            ? block.startFrame + Math.round((event.clientX - event.currentTarget.getBoundingClientRect().left) / pixelsPerSecond * 30)
+            : undefined
+          onSelect(block, seekToFrame === undefined ? undefined : Math.min(block.startFrame + block.durationFrames, seekToFrame))
+        }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY, track, block) }}>
         <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
         {(backgroundLane || !track.collapsed) && <small>{frameTimecode(block.durationFrames)}</small>}
