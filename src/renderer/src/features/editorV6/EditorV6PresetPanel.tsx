@@ -43,10 +43,6 @@ type Props = {
 const presetCategories = [
   { id: 'pose', label: 'Pose', icon: 'frame' },
   { id: 'expression', label: 'Expressão', icon: 'face' },
-  { id: 'reserved-1', label: 'Em breve', icon: 'sparkles' },
-  { id: 'reserved-2', label: 'Em breve', icon: 'sparkles' },
-  { id: 'reserved-3', label: 'Em breve', icon: 'sparkles' },
-  { id: 'reserved-4', label: 'Em breve', icon: 'sparkles' }
 ] as const
 
 const expressionModes = [
@@ -88,12 +84,11 @@ export function EditorV6PresetPanel({
 
   return <div className="studio-presets-panel">
     <div className="studio-preset-buttons" aria-label="Categorias de presets">
-      {presetCategories.map((option) => {
-        const reserved = option.id.startsWith('reserved')
-        return <button key={option.id} className={`studio-preset-button${option.id === category ? ' active' : ''}${reserved ? ' reserved' : ''}`} disabled={reserved} onClick={() => {
-          if (option.id === 'pose' || option.id === 'expression') onCategoryChange(option.id)
-        }} type="button"><Icon name={option.icon} /><span>{option.label}</span></button>
-      })}
+      {presetCategories.map((option) => (
+        <button key={option.id} className={`studio-preset-button${option.id === category ? ' active' : ''}`} aria-pressed={option.id === category} onClick={() => onCategoryChange(option.id)} type="button">
+          <Icon name={option.icon} /><span>{option.label}</span>
+        </button>
+      ))}
     </div>
     {category === 'pose' && <section className="studio-preset-catalog" aria-label="Catálogo de poses">
       <h3>Poses do modelo</h3>
@@ -127,10 +122,10 @@ export function EditorV6PresetPanel({
           <div className="studio-expression-list">
             <button className={`studio-expression-option${!element.activeExpressionPresetId ? ' selected' : ''}`} type="button" onClick={onApplyBaseExpression} disabled={expressionBusy || faceBusy} aria-pressed={!element.activeExpressionPresetId}><b>•</b><span>Base</span></button>
             {expressions.map((preset) => <div className="studio-expression-row" key={preset.id}>
-              <button className={`studio-expression-option${element.activeExpressionPresetId === preset.id && element.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" aria-pressed={element.activeExpressionPresetId === preset.id} onClick={() => onApplyExpressionPreset(preset)} disabled={expressionBusy || faceBusy}>
+              <button className={`studio-expression-option${element.activeExpressionPresetId === preset.id && element.activeExpressionGaze !== 'left' ? ' selected' : ''}`} type="button" aria-pressed={element.activeExpressionPresetId === preset.id && element.activeExpressionGaze !== 'left'} onClick={() => onApplyExpressionPreset(preset)} disabled={expressionBusy || faceBusy}>
                 <b>{String((preset.expressionIndex ?? 0) + 1).padStart(2, '0')}</b><span>{preset.name}</span>
               </button>
-              <button className="studio-expression-look-left" type="button" aria-pressed={element.activeExpressionPresetId === preset.id && element.activeExpressionGaze === 'left'} title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => onApplyExpressionPreset(preset, 'left')} disabled={expressionBusy || faceBusy}>pt</button>
+              <button className="studio-expression-look-left" type="button" aria-pressed={element.activeExpressionPresetId === preset.id && element.activeExpressionGaze === 'left'} title={`Aplicar ${preset.name} com as pupilas voltadas à esquerda`} aria-label={`Pupilas à esquerda: ${preset.name}`} onClick={() => onApplyExpressionPreset(preset, 'left')} disabled={expressionBusy || faceBusy}><Icon name="eye" /><span aria-hidden="true">←</span></button>
             </div>)}
             {!expressions.length && <p className="studio-custom-hint">Nenhuma expressão salva neste conjunto. Salve expressões no Expressão Dev para listá-las aqui.</p>}
           </div>

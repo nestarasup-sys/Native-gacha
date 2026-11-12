@@ -57,24 +57,23 @@ export function EditorV6ToolRail({
   if (!visible) return null
 
   return (
-    <aside className="studio-editor-rail studio-editor-left" aria-label="Ferramentas do Editor V6">
+    <aside className="studio-editor-rail studio-editor-left v6-tool-rail" aria-label="Ferramentas do Editor V6">
       <div className="studio-editor-quick-actions">
         <button className="studio-round-action" onClick={onBack} title="Salvar automaticamente e voltar" aria-label="Voltar para Editor V6" type="button"><span>←</span></button>
         <button className="studio-round-action" onClick={onSave} title="Salvar agora no computador" aria-label="Salvar Editor V6" type="button"><Icon name="save" /></button>
-      </div>
-      <div className="studio-editor-quick-actions studio-history-actions">
+
         <button className="studio-round-action" disabled={!canUndo} onClick={onUndo} title="Desfazer (Ctrl+Z)" aria-label="Desfazer" type="button"><Icon name="undo" /></button>
         <button className="studio-round-action" disabled={!canRedo} onClick={onRedo} title="Refazer (Ctrl+Y)" aria-label="Refazer" type="button"><Icon name="redo" /></button>
       </div>
       <nav className="v6-tool-groups" aria-label="Ferramentas da cena">
         <ToolGroup title="Cena">
           <button className="studio-tool-button" onClick={onOpenCastManager} type="button"><Icon name="user" /><span>Elenco</span></button>
-          {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+          {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span></button>)}
         </ToolGroup>
         <ToolGroup title="Texto">
-          <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
-          <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
-          <button className="studio-tool-button" onClick={() => onAddText('thought')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar pensamento a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
+          <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span></button>
+          <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span></button>
+          <button className="studio-tool-button" onClick={() => onAddText('thought')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar pensamento a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span></button>
         </ToolGroup>
         <ToolGroup title="Mídia">
           <button className="studio-tool-button" onClick={() => onImportTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
@@ -82,8 +81,8 @@ export function EditorV6ToolRail({
         </ToolGroup>
         <ToolGroup title="Exportação e visualização">
           <button className="studio-tool-button" onClick={onExport} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
-          <button className="studio-tool-button" onClick={onPrint} type="button"><Icon name="download" /><span>Capturar cena</span><i aria-hidden="true">✦</i></button>
-          <button className="studio-tool-button" onClick={onOpenPrints} type="button"><Icon name="folder" /><span>Abrir capturas</span><i aria-hidden="true">✦</i></button>
+          <button className="studio-tool-button" onClick={onPrint} type="button"><Icon name="download" /><span>Capturar cena</span></button>
+          <button className="studio-tool-button" onClick={onOpenPrints} type="button"><Icon name="folder" /><span>Abrir capturas</span></button>
           <button className="studio-tool-button studio-view-button" onClick={onEnterFullView} type="button"><Icon name="expand" /><span>Tela cheia</span></button>
         </ToolGroup>
       </nav>

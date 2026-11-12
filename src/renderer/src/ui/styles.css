@@ -3124,3 +3124,36 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .v6-inspector-views { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0 10px 8px;border-bottom:1px solid #eee4eb; }
 .v6-inspector-views button { min-height:30px;padding:3px;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#654c60;font-weight:700;cursor:pointer; }
 .v6-inspector-views button[aria-pressed="true"] { border-color:#d291ad;background:#fff0f6;color:#8e325b; }
+
+.v6-tool-rail { background:#f9f7fa; }
+.v6-tool-rail .studio-editor-quick-actions { grid-template-columns:repeat(auto-fit,minmax(32px,1fr));gap:4px; }
+.v6-tool-rail .studio-round-action { width:32px;height:32px;border-radius:8px;border-color:#e6dce8; }
+.v6-tool-rail .studio-tool-button { flex-direction:row;justify-content:flex-start;min-height:38px;gap:7px;padding:5px 8px;border-color:#e6dce8;background:#fff; }
+.v6-tool-rail .studio-tool-button:hover:not(:disabled),
+.v6-tool-rail .studio-tool-button.active { border-color:#ce8eac;background:#fff0f6; }
+.v6-tool-rail .studio-tool-button > span { text-align:left;color:#513c50; }
+.v6-tool-rail .studio-tool-button > :is(svg,b) { flex:none; }
+@media (max-width:800px) {
+  .v6-tool-rail .studio-tool-button { flex-direction:column;justify-content:center; }
+  .v6-tool-rail .studio-tool-button > span { text-align:center; }
+}
+
+.studio-editor-inspector-column .studio-preset-buttons { grid-template-rows:auto; }
+.studio-editor-inspector-column .studio-expression-mode {
+  border-color:#e6dce8;background:#fff;box-shadow:none;color:#584458;
+}
+.studio-editor-inspector-column .studio-expression-mode:hover:not(:disabled),
+.studio-editor-inspector-column .studio-expression-mode.active {
+  border-color:#ce8eac;background:#fff0f6;box-shadow:none;color:#86375f;
+}
+.studio-editor-inspector-column :is(.studio-expression-list,.studio-preset-list) { max-height:none; }
+.studio-editor-inspector-column .studio-expression-look-left {
+  display:inline-flex;align-items:center;justify-content:center;gap:2px;
+  width:auto;min-width:34px;padding:0 4px;border:1px solid #e6dce8;
+  background:#fff;color:#71546a;
+}
+.studio-editor-inspector-column .studio-expression-look-left[aria-pressed="true"] {
+  border-color:#ce8eac;background:#fff0f6;color:#86375f;
+}
+.studio-editor-inspector-column .studio-expression-look-left svg { width:13px;height:13px; }
+.studio-editor-inspector-column .studio-expression-row { grid-template-columns:minmax(0,1fr) auto; }
