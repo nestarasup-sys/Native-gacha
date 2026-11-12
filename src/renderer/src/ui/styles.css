@@ -3108,3 +3108,19 @@ kbd { white-space: nowrap; padding: 2px 4px; border: 1px solid #eae5e9; border-r
 .head-extras-workspace .face-components-controls>.fabricator-color-mode { margin:0 0 5px; }
 @media(max-width:850px) { .editor-v7-page { padding:12px; }.editor-v7-workspace { grid-template-columns:minmax(0,1fr) 190px; }.editor-v7-inspector { padding:10px; } }
 @media(max-width:620px) { .editor-v7-header { align-items:flex-start;flex-direction:column; }.editor-v7-workspace { grid-template-columns:1fr; }.editor-v7-inspector { order:2; }.editor-v7-preview-frame { width:calc(100% - 20px); }.editor-v7-timeline-panel { grid-template-columns:1fr; }.editor-v7-timeline-layers { grid-column:1; } }
+
+/* Editor V6 panel groups and inspector navigation. */
+.v6-tool-groups { display:grid;gap:12px; }
+.v6-tool-group { display:grid;gap:6px;min-width:0; }
+.v6-tool-group + .v6-tool-group { padding-top:10px;border-top:1px solid #eadfe7; }
+.v6-tool-group h2 { margin:0;color:#6e5365;font-size:11px;line-height:1.3;overflow-wrap:anywhere; }
+.v6-tool-group .studio-tool-button { min-height:54px;min-width:0;gap:3px;border-radius:10px;padding:6px 4px; }
+.v6-tool-group .studio-tool-button > svg { width:18px;height:18px; }
+.v6-tool-group .studio-tool-button > span { text-align:center;text-transform:none;letter-spacing:0;overflow-wrap:anywhere; }
+.v6-inspector-heading { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 10px; }
+.v6-inspector-heading h2 { margin:0;color:#514651;font-size:14px; }
+.v6-inspector-heading button { width:26px;height:26px;display:grid;place-items:center;padding:0;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#785163;cursor:pointer; }
+.v6-inspector-heading svg { width:14px;height:14px; }
+.v6-inspector-views { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px;padding:0 10px 8px;border-bottom:1px solid #eee4eb; }
+.v6-inspector-views button { min-height:30px;padding:3px;border:1px solid #eadce5;border-radius:6px;background:#fff;color:#654c60;font-weight:700;cursor:pointer; }
+.v6-inspector-views button[aria-pressed="true"] { border-color:#d291ad;background:#fff0f6;color:#8e325b; }

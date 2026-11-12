@@ -34,12 +34,15 @@ export function EditorV6Inspector({
 
   return (
     <aside className={`studio-inspector studio-inspector-${side}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
-      <header className="studio-inspector-tabs">
-        <button className={tab === 'editor' ? 'active' : ''} onClick={onSelectEditor} type="button">Editor</button>
-        <button className={tab === 'custom' && customView === 'face' ? 'active' : ''} onClick={onSelectCustom} type="button">Custom</button>
-        <button className="studio-inspector-close" onClick={onClose} aria-label="Fechar inspector" title="Fechar" type="button">×</button>
+      <header className="v6-inspector-heading">
+        <h2>Inspetor</h2>
+        <button onClick={onClose} aria-label="Fechar inspetor" title="Fechar" type="button"><Icon name="close" /></button>
       </header>
-      <button className={`studio-inspector-presets${presetsActive ? ' active' : ''}`} onClick={onSelectPresets} type="button"><Icon name="sparkles" />Presets</button>
+      <div className="v6-inspector-views" role="group" aria-label="Seções do inspetor">
+        <button aria-pressed={tab === 'editor'} onClick={onSelectEditor} type="button">Editor</button>
+        <button aria-pressed={tab === 'custom' && customView === 'face'} onClick={onSelectCustom} type="button">Rosto</button>
+        <button aria-pressed={presetsActive} onClick={onSelectPresets} type="button">Presets</button>
+      </div>
       <div className="studio-inspector-content">
         {tab === 'editor' ? editorPanel : presetsActive ? presetsPanel : facePanel}
       </div>
