@@ -1192,3 +1192,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos o cache e a fila por lane, a inclusão do orçamento de pixels na chave, o reuso apenas entre requisições equivalentes, os erros de cancelamento, a validação de cada resultado para cada assinante e a liberação do voo após resolução/rejeição. Canais IPC, payloads, workers, esquema e persistência permanecem inalterados.
 
 **Verificação:** a suíte completa do Editor V6 passou com 735 testes em 169 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (865 arquivos), `npm run build` e `git diff --check` passaram. Três testes novos cobrem bake compartilhado, cancelamento de um ou do último assinante e nova tentativa após falha. Nenhum projeto real ou exportação foi usado.
+
+### Ciclo 141 — preparação dos jobs de atualização de personagem (implementado)
+
+**Objetivo:** extrair de `characterSnapshotRefresh.ts` a resolução do estado facial e a montagem da identidade do renderer para `editorV6CharacterRefreshJob.ts`. O renderizador de snapshots permanece responsável por agrupar jobs, coordenar caches, renderizar e publicar os assets; ele injeta loaders para presets, componentes e catálogo, preservando os caches compartilhados do ciclo.
+
+**Compatibilidade:** mantidas as prioridades entre aparência do personagem, estado do elemento e expressão-base; a remoção das transforms de expressão antigas; a aplicação do preset e do olhar; os efeitos, modo facial, pose e revisões; e as chaves de origem/renderer, inclusive a aparência completa de conjuntos faciais legados. Nenhum contrato IPC, documento, snapshot persistido ou dado do usuário foi alterado.
+
+**Verificação:** a suíte completa do Editor V6 passou com 737 testes em 170 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (866 arquivos), `npm run build` e `git diff --check` passaram. Dois testes novos cobrem transformações de cena sem preset e transferência de transform de um preset para o componente equipado. Nenhum projeto real, exportação ou benchmark foi executado.
