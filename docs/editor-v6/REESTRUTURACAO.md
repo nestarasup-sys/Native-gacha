@@ -1216,3 +1216,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os guards de elementos e blocos alterados durante o bake, a publicação apenas dos estados ainda correspondentes, a atualização de rótulos, a retenção e marcação dos assets referenciados, a ordem de anexação dos novos assets, `updatedAt` e a chamada ao coletor de snapshots. O hook continua coordenando a atualização do projeto atual; formatos, persistência e contratos IPC não mudaram.
 
 **Verificação:** 31 testes do fluxo de dados passaram, incluindo publicação, coleta de órfãos e proteção contra edições concorrentes; a suíte completa do Editor V6 passou com 739 testes em 171 arquivos (1 arquivo e 1 teste ignorados), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (868 arquivos), `npm run build` e `git diff --check` passaram. Nenhum projeto real, exportação ou benchmark foi executado.
+
+### Ciclo 144 — preparação isolada de grupos de cabelo (implementado)
+
+**Objetivo:** retirar de `editorV6HairMotionPreparation.ts` a resolução por personagem/pose, carga deduplicada dos estilos, validação da cabeça e criação dos renderers normal e sem cabelo para `editorV6HairMotionCharacterGroup.ts`. O módulo de bundle continua coordenando camadas, superfícies, rigs, transições, limites de memória e perfil de preparação.
+
+**Compatibilidade:** preservados a busca da fonte via batch local da exportação, o filtro por `modelSlot`, IDs de estilo sem leituras duplicadas, mensagens de erro, argumentos de renderização e compartilhamento do cache de materiais/pintura de roupas por par de renderers. Se um renderer falhar, o outro é descartado e o par de roupas é limpo. A importação runtime do renderer continua dinâmica; nenhuma chamada, opção, formato de bundle ou dado persistido mudou.
+
+**Verificação:** a suíte completa do Editor V6 passou com 742 testes em 172 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (869 arquivos), `npm run build` e `git diff --check` passaram. Três testes novos cobrem resolução/deduplicação, rejeição de estilos de outro modelo e limpeza parcial quando o segundo renderer falha. Nenhuma exportação real ou benchmark foi executado.

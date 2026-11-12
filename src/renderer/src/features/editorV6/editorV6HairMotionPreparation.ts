@@ -1,8 +1,6 @@
-import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
-import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
@@ -13,6 +11,7 @@ import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
 import { groupEditorV6HairMotionTargets } from './editorV6HairMotionGroups'
+import { prepareEditorV6HairMotionCharacterGroup } from './editorV6HairMotionCharacterGroup'
 import { createEditorV6HairMotionBundleAssets } from './editorV6HairMotionBundleAssets'
 import { createEditorV6ExportStageProfiler } from './editorV6ExportStageProfiler'
 import { editorV6HairMotionCanvasDataUrl as canvasDataUrl } from './editorV6HairMotionCanvas'
@@ -65,41 +64,19 @@ export async function prepareEditorV6HairMotionBundle(
   // pose groups at once to overlap renderer construction without an unbounded
   // canvas/texture memory spike.
   await mapConcurrentItems([...groups.entries()], async ([groupKey, group]) => {
-    if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
-    const character = group.character
-    let groupStageStarted = performance.now()
-    const resolved = await resolveSavedCharacterSource(character, await rawSources.sourceFor(character))
-    reportStage('resolveSavedCharacterSource', groupStageStarted)
-    const appearance = character.customization.hairAppearance
-    const references = appearance?.modelSlot === resolved.modelSlot ? hairAppearanceStyleIds(appearance) : []
-    if (!references.length) return
-    const styleIds = [...new Set(references.map(reference => reference.id))]
-    groupStageStarted = performance.now()
-    const loadedStyles = await Promise.all(styleIds.map(async id => [id, await currentExportReuse.loadStyle(resolved.modelSlot, id, () => window.desktop.fabricator.loadHairStyle(resolved.modelSlot, id))] as const))
-    reportStage('loadHairStyles', groupStageStarted)
-    const styles = new Map(loadedStyles)
-    const sourceHeadPart = resolved.source.parts.find(part => /cabe[çc]a|head/i.test(part.name))
-    const targetHeadPart = resolved.artwork.parts.find(part => part.id === sourceHeadPart?.id)
-    if (!sourceHeadPart || !targetHeadPart) throw Error(`O modelo de ${character.name} não tem uma cabeça disponível para animar o cabelo.`)
-
-    const hairless: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
-    // Paint the wardrobe only once for the normal and hairless renderers
-    // of THIS pose. Both compose their own character body buffers.
-    const wardrobePair = createPreparedGachaWardrobePair()
-    const renderSource = { source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache, wardrobePair }
-    groupStageStarted = performance.now()
-    const rendererResults = await Promise.allSettled([
-      prepareSavedCharacterRenderer(character, renderSource),
-      prepareSavedCharacterRenderer(hairless, renderSource)
-    ])
-    const rendererFailure = rendererResults.find((result): result is PromiseRejectedResult => result.status === 'rejected')
-    if (rendererFailure) {
-      for (const result of rendererResults) if (result.status === 'fulfilled') result.value.dispose()
-      wardrobePair.clear()
-      throw rendererFailure.reason
-    }
-    const [originalRenderer, hairlessRenderer] = rendererResults.map((result) => (result as PromiseFulfilledResult<Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>>).value)
-    reportStage('prepareCharacterRenderers', groupStageStarted)
+    const prepared = await prepareEditorV6HairMotionCharacterGroup(groupKey, group, {
+      resolveSource: async (character) => resolveSavedCharacterSource(character, await rawSources.sourceFor(character)),
+      loadHairStyle: (modelSlot, id) => currentExportReuse.loadStyle(modelSlot, id, () => window.desktop.fabricator.loadHairStyle(modelSlot, id)),
+      prepareRenderer: prepareSavedCharacterRenderer,
+      createWardrobePair: createPreparedGachaWardrobePair,
+      assetProvider: window.desktop.fabricator,
+      materialCache,
+      reportStage,
+      isCancelled
+    })
+    if (!prepared) return
+    const { character, appearance, references, styles, sourceHeadPart, targetHeadPart, originalRenderer, hairlessRenderer, wardrobePair } = prepared
+    let groupStageStarted: number
     try {
       groupStageStarted = performance.now()
       const descriptors = await prepareEditorV6HairMotionLayers({
