@@ -77,9 +77,9 @@
 }
 
 .v6-colored-workspace {
-  --v6-font-body: 17px;
-  --v6-font-caption: 14px;
-  --v6-font-heading: 19px;
+  --v6-font-body: 19px;
+  --v6-font-caption: 15px;
+  --v6-font-heading: 21px;
 }
 
 .v6-colored-workspace :is(.v6-tool-rail,.studio-inspector) :is(button,span,p,label,input,select,textarea),
@@ -98,12 +98,52 @@
   font-size: var(--v6-font-heading);
 }
 
-.v6-colored-workspace .v6-tool-rail .studio-tool-button {
-  min-height: 46px;
+.v6-colored-workspace .v6-tool-rail .v6-tool-group .studio-tool-button {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  align-items: center;
+  min-height: 60px;
+  gap: 6px;
+  padding: 6px;
+}
+
+.v6-colored-workspace .v6-tool-rail .v6-tool-group .studio-tool-button > span {
+  min-width: 0;
+  font-size: var(--v6-font-body);
+  line-height: 1.12;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.v6-colored-workspace .v6-tool-rail .studio-round-action {
+  width: 40px;
+  height: 40px;
+}
+
+.v6-colored-workspace .v6-tool-rail .studio-editor-quick-actions {
+  grid-template-columns: repeat(auto-fit, minmax(40px, 1fr));
 }
 
 .v6-colored-workspace .studio-inspector :is(.studio-expression-option,.studio-preset-button,.studio-expression-mode,.v6-inspector-views button) {
-  min-height: 36px;
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.v6-colored-workspace .studio-inspector .studio-expression-option > span {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.v6-colored-workspace .studio-inspector .v6-inspector-views button {
+  font-size: 18px;
+}
+
+@media (max-width: 800px) {
+  .v6-colored-workspace .v6-tool-rail .v6-tool-group .studio-tool-button {
+    grid-template-columns: minmax(0, 1fr);
+    justify-items: center;
+  }
 }
 
 .v6-colored-workspace .v6-timeline-pro :is(
