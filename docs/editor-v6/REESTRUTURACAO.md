@@ -1152,3 +1152,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidos os dois pontos de verificação de cancelamento, o estado `publishing` persistido antes do rename, a medição da fase, o caminho alternativo para destino ocupado, a amostragem final de memória, a limpeza do sampler e o aviso não fatal quando a última gravação do relatório falha. O candidato continua sendo publicado somente depois da validação completa.
 
 **Verificação:** 729 testes Vitest passaram em 167 arquivos (1 arquivo e 1 teste ignorados), incluindo 3 novos testes sintéticos para a ordem do publish, cancelamento após salvar o estado e falha na gravação final do relatório. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (855 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 136 — comandos de mídia da tela (implementado)
+
+**Objetivo:** dividir `editorV6MediaCommands.ts`, que misturava importação de imagem, vínculos de vídeo/áudio na timeline e vínculos de bibliotecas de fundos/objetos. Os fluxos de timeline e seleção de assets compartilhados agora ficam em `editorV6TimelineMediaCommands.ts` e `editorV6SharedAssetCommands.ts`; os ports usados por esses comandos estão em `editorV6MediaCommandTypes.ts`. O módulo original mantém `createEditorV6MediaCommands` e a mesma API retornada para `EditorV6Page`.
+
+**Compatibilidade:** mantidas a ordem de importação e gravação, leitura da versão atual do documento, validação de faixas bloqueadas, seleção do playhead/bloco, abertura e fechamento dos pickers, prevenção de vínculo duplicado e seleção de fundos no quadro atual. Não foram alterados IPC, contratos de mídia, biblioteca, documentos ou snapshots persistidos.
+
+**Verificação:** 729 testes Vitest passaram em 167 arquivos (1 arquivo e 1 teste ignorados); 31 testes do arquivo de integração de fontes passaram, incluindo 2 casos novos para fundo e objeto compartilhados. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (858 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.

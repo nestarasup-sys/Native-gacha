@@ -101,7 +101,8 @@ function createMediaCommandHarness(overrides = {}) {
       importEditorV6Media: async (projectId, kind) => { calls.push(['import-media', projectId, kind]); return { id: 'audio-media', kind, name: 'Áudio', fileName: 'audio.wav', sourceFrames: 90, mimeType: 'audio/wav' } },
       linkEditorV6LibraryVideo: async (projectId, libraryId) => { calls.push(['link-video', projectId, libraryId]); return { id: 'linked-video', kind: 'video', name: 'Vídeo da Base', fileName: 'video.mp4', sourceFrames: 90, mimeType: 'video/mp4', libraryVideoId: libraryId } },
       linkEditorV6LibraryAudio: async (projectId, libraryId) => { calls.push(['link-audio', projectId, libraryId]); return { id: 'linked-audio', kind: 'audio', name: 'Áudio da Base', fileName: 'audio.wav', sourceFrames: 90, mimeType: 'audio/wav', libraryAudioId: libraryId } },
-      linkEditorV6LibraryAsset: async (projectId, category, libraryId) => { calls.push(['link-object', projectId, category, libraryId]); return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x' } }
+      linkEditorV6LibraryBackground: async (projectId, libraryId) => { calls.push(['link-background', projectId, libraryId]); return { id: 'background-asset', category: 'background', name: 'Fundo', mimeType: 'image/png', dataUrl: 'data:image/png;base64,bg', libraryBackgroundId: libraryId } },
+      linkEditorV6LibraryAsset: async (projectId, category, libraryId) => { calls.push(['link-object', projectId, category, libraryId]); return { id: 'image-asset', category, name: 'Imagem', mimeType: 'image/png', dataUrl: 'data:image/png;base64,x', libraryAssetId: libraryId } }
     },
     pausePlayback: () => calls.push('pause'),
     publishPlayheadFrame: (frame) => calls.push(['playhead', frame]),
@@ -804,6 +805,38 @@ test('selecionar imagem de fundo continua sincronizado com o frame atual do proj
   assert.equal(selections.scene.backgroundWidth, 100)
   assert.equal(selections.elementId, 'background')
   assert.equal(selections.blockId, null)
+  assert.equal(selections.inspectorTab, 'editor')
+})
+
+test('vincula fundo compartilhado ao documento e seleciona o fundo publicado', async () => {
+  const { commands, calls, selections, source } = createMediaCommandHarness()
+  await commands.linkSharedBackground({ id: 'library-background', name: 'Cenário compartilhado' })
+
+  assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
+    'track', ['image-use-case', 'background', 42], ['link-background', 'project', 'library-background'], ['load-latest', 'project']
+  ])
+  const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.equal(persisted[1], source)
+  assert.equal(persisted[2].assets[0].libraryBackgroundId, 'library-background')
+  assert.equal(selections.elementId, 'image-element')
+  assert.equal(selections.blockId, null)
+  assert.equal(selections.tool, 'background')
+  assert.equal(selections.inspectorTab, 'editor')
+})
+
+test('vincula objeto compartilhado com persistência antes de atualizar a seleção', async () => {
+  const { commands, calls, selections, source } = createMediaCommandHarness()
+  await commands.linkSharedObject({ id: 'library-object', name: 'Objeto compartilhado' })
+
+  assert.deepEqual(calls.filter((call) => typeof call === 'string' || Array.isArray(call) && call[0] !== 'persist'), [
+    'track', ['link-object', 'project', 'object', 'library-object'], ['image-use-case', 'object', 42], ['load-latest', 'project']
+  ])
+  const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.equal(persisted[1], source)
+  assert.equal(persisted[2].assets[0].libraryAssetId, 'library-object')
+  assert.equal(selections.elementId, 'image-element')
+  assert.equal(selections.blockId, 'image-block')
+  assert.equal(selections.tool, 'objects')
   assert.equal(selections.inspectorTab, 'editor')
 })
 
