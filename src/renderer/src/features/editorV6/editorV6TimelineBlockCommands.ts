@@ -14,18 +14,15 @@ export function createEditorV6TimelineBlockCommands(dependencies: Dependencies) 
   const remove = (id: string) => {
     const found = timelineClips(dependencies.getTimeline()).find(({ block }) => block.id === id)
     if (!found || found.track.locked) return
+    const removedEndFrame = found.block.startFrame + found.block.durationFrames
+    const removedDurationFrames = found.block.durationFrames
     dependencies.changeTimeline((current) => ({ ...current, tracks: current.tracks.map((track) => ({
       ...track,
-      blocks: track.blocks.flatMap((block) => {
-        if (block.id !== id) return block.parentBlockId === id ? [] : [block]
-        if (track.kind !== 'character' || !block.state) return []
-        return [{
-          ...block,
-          id: crypto.randomUUID(),
-          label: 'Vazio',
-          state: { ...block.state, visible: false }
-        }]
-      })
+      blocks: track.blocks
+        .filter((block) => block.id !== id && block.parentBlockId !== id)
+        .map((block) => track.id === found.track.id && block.startFrame >= removedEndFrame
+          ? { ...block, startFrame: Math.max(found.block.startFrame, block.startFrame - removedDurationFrames) }
+          : block)
     })) }))
     dependencies.closeMenu()
   }
