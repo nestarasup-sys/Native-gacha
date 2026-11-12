@@ -1,7 +1,7 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../../shared/editorV6CharacterSource.ts'
-import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceModel.ts'
+import { editorV6CharacterEyeSourceRevision, editorV6CharacterHairSourceRevision, editorV6CharacterHeadExtraSourceRevision, editorV6CharacterWardrobeSourceRevision } from './editorV6CharacterSourceRevisions.ts'
 import { EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets.ts'
 import type { EditorV6CharacterRefreshGroup, EditorV6CharacterRefreshPlan, EditorV6CharacterRefreshTarget } from './editorV6CharacterRefreshTypes'
 

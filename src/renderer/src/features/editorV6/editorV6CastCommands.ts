@@ -1,6 +1,6 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
+import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions'
 import { planEditorV6CastSelection, retainEditorV6CastAssets } from './editorV6CastSelection'
 import type { PreparedEditorV6CastSnapshots, prepareEditorV6CastSnapshots } from './editorV6CastSnapshots'
 

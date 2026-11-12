@@ -2,6 +2,8 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadEditorV6ProjectCatalog } from '../src/renderer/src/features/editorV6/editorV6ProjectCatalog.ts'
+import { sameCustomizerCharacterCatalog } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
+import { createEditorV6HairRevisionSnapshot as createLegacyEditorV6HairRevisionSnapshot } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import {
   createEditorV6PoseRevisionSnapshot,
   createEditorV6ModelRevisionSnapshot,
@@ -13,10 +15,9 @@ import {
   editorV6CharacterHeadExtraSourceRevision,
   editorV6CharacterEyeSourceRevision,
   editorV6CharacterWardrobeSourceRevision,
-  sameCustomizerCharacterCatalog,
   samePoseRevisionSnapshot,
   sameSourceRevisionSnapshot
-} from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
+} from '../src/renderer/src/features/editorV6/editorV6CharacterSourceRevisions.ts'
 import { resolveEditorV6CharacterSourceRefresh } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import { planEditorV6CharacterRefresh } from '../src/renderer/src/features/editorV6/characterSnapshotRefresh.ts'
 import { loadEditorV6PoseThumbnails } from '../src/renderer/src/features/editorV6/editorV6PoseCatalog.ts'
@@ -211,6 +212,7 @@ test('compara revisões e catálogos sem trocar referências se os dados não mu
   const modelRevisions = createEditorV6ModelRevisionSnapshot([null, { slot: 2, updatedAt: 'model-v3' }])
   const wardrobeRevisions = createEditorV6WardrobeRevisionSnapshot([{ modelSlot: 2, sets: [{ id: 'pants', updatedAt: 'wardrobe-v3' }] }])
   const hairRevisions = createEditorV6HairRevisionSnapshot([{ modelSlot: 2, styles: [{ id: 'hair', updatedAt: 'hair-v3' }] }])
+  assert.deepEqual(createLegacyEditorV6HairRevisionSnapshot([{ modelSlot: 2, styles: [{ id: 'hair', updatedAt: 'hair-v3' }] }]), hairRevisions)
   const headExtraRevisions = createEditorV6HeadExtraRevisionSnapshot([{ modelSlot: 2, assets: [{ id: 'glasses', updatedAt: 'extra-v3' }] }])
   const eyeRevisions = createEditorV6EyeRevisionSnapshot([
     { modelSlot: 2, kind: 'eye', assets: [{ id: 'eyes', updatedAt: 'eyes-v3' }] },
@@ -910,11 +912,12 @@ test('catálogo de poses cancelado não inicia leituras', async () => {
 })
 
 test('página delega biblioteca, fontes e ciclo de atualização do personagem a módulos da feature', async () => {
-  const [page, projectHook, characterHook, sourceModel, snapshotHook, headExtrasWorkspace, faceComponentsWorkspace, faceImportCommands] = await Promise.all([
+  const [page, projectHook, characterHook, sourceModel, sourceRevisions, snapshotHook, headExtrasWorkspace, faceComponentsWorkspace, faceImportCommands] = await Promise.all([
     readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6ProjectLibrary.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/editorV6CharacterSourceRevisions.ts', 'utf8'),
     readFile('src/renderer/src/features/editorV6/useEditorV6CharacterSnapshotRefresh.ts', 'utf8'),
     readFile('src/renderer/src/features/fabricator/face/HeadExtrasWorkspace.tsx', 'utf8'),
     readFile('src/renderer/src/features/fabricator/face/FaceComponentsWorkspace.tsx', 'utf8'),
@@ -940,8 +943,9 @@ test('página delega biblioteca, fontes e ciclo de atualização do personagem a
   assert.match(faceComponentsWorkspace, /removed\.length > 0\) \{[\s\S]*fabricator:assets-updated/)
   assert.match(faceImportCommands, /dependencies\.notifyAssetsUpdated\(\)/)
   assert.match(characterHook, /addEventListener\('visibilitychange'/)
-  assert.match(sourceModel, /collectCustomizerHairStyleReferences/)
-  assert.match(sourceModel, /headExtras/)
+  assert.match(sourceModel, /editorV6CharacterSourceRevisions/)
+  assert.match(sourceRevisions, /collectCustomizerHairStyleReferences/)
+  assert.match(sourceRevisions, /headExtras/)
   assert.doesNotMatch(sourceModel, /window\.desktop|useEffect|useMemo/)
   assert.match(snapshotHook, /applyEditorV6CharacterAssetCrops/)
   assert.match(snapshotHook, /applyEditorV6CharacterRefreshResult/)

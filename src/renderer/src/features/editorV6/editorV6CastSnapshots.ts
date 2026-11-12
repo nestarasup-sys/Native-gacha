@@ -8,7 +8,7 @@ import {
   editorV6CharacterWardrobeSourceRevision,
   editorV6PoseRevisionKey,
   type PoseRevisionSnapshot
-} from './editorV6CharacterSourceModel'
+} from './editorV6CharacterSourceRevisions'
 import { EDITOR_V6_FACE_RENDER_VERSION, type bakeFaceModeAssets, type PreparedEditorV6FaceRenderer } from './faceModeAssets'
 import type { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
 

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
-import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
+import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions'
 import {
   applyEditorV6CharacterAssetCrops
 } from './editorV6CharacterRefreshModel'

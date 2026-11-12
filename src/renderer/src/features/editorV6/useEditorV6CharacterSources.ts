@@ -9,10 +9,10 @@ import {
   createEditorV6HeadExtraRevisionSnapshot,
   createEditorV6EyeRevisionSnapshot,
   editorV6EyeAssetKinds,
-  sameCustomizerCharacterCatalog,
   sameSourceRevisionSnapshot
-} from './editorV6CharacterSourceModel.ts'
-import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel.ts'
+} from './editorV6CharacterSourceRevisions.ts'
+import { sameCustomizerCharacterCatalog } from './editorV6CharacterSourceModel.ts'
+import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions.ts'
 
 export {
   createEditorV6PoseRevisionSnapshot,
