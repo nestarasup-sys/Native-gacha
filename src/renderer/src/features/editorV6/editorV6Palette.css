@@ -70,3 +70,53 @@
 .v6-colored-workspace .editor-v6-timeline-block.kind-background {
   background:#d8f0e6;border-color:#75a995;color:#205849;
 }
+
+/* Match the reading scale used in Roteiros while keeping time labels compact. */
+:is(.v6-colored-workspace,.v6-project-browser) {
+  --v6-font-body: 14px;
+  --v6-font-caption: 12px;
+  --v6-font-heading: 15px;
+}
+
+.v6-colored-workspace :is(.v6-tool-rail,.studio-inspector) :is(button,span,p,label,input,select,textarea),
+.v6-project-browser :is(.studio-action,.studio-card-open,.studio-empty-state strong) {
+  font-size: var(--v6-font-body);
+}
+
+.v6-colored-workspace :is(.v6-tool-rail,.studio-inspector) :is(small,kbd),
+.v6-project-browser :is(.studio-page-header small,.studio-empty-state small) {
+  font-size: var(--v6-font-caption);
+}
+
+.v6-colored-workspace :is(.v6-tool-group,.v6-inspector-heading,.studio-side-content) > h2,
+.v6-colored-workspace .editor-v6-timeline-title > strong {
+  font-size: var(--v6-font-heading);
+}
+
+.v6-colored-workspace .v6-timeline-pro :is(
+  .editor-v6-timeline-title > span,
+  .editor-v6-timeline-actions > button,
+  .editor-v6-timeline-track-heading > strong,
+  .v6-track-name,
+  .editor-v6-timeline-block > span
+) {
+  font-size: var(--v6-font-caption);
+}
+
+.v6-colored-workspace .v6-timeline-pro :is(
+  .editor-v6-timeline-title > small,
+  .editor-v6-timeline-ruler-row > .editor-v6-timeline-track-heading,
+  .editor-v6-timeline-ruler > span,
+  .editor-v6-timeline-block > small,
+  .collapsed .editor-v6-timeline-block > span
+) {
+  font-size: 11px;
+}
+
+@media (max-width: 650px) {
+  .v6-colored-workspace .editor-v6-timeline-actions {
+    position: static;
+    transform: none;
+    margin-inline: auto;
+  }
+}

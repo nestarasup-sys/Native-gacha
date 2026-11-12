@@ -44,7 +44,7 @@ export function EditorV6ProjectBrowser({
   onDeleteProject
 }: Props) {
   return (
-    <main className="studio-page" aria-label="Editor V6">
+    <main className="studio-page v6-project-browser" aria-label="Editor V6">
       <header className="studio-page-header"><h1>EDITOR V6</h1>{folder && <small>Dados locais: {folder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações do Editor V6">
         <button className="studio-action studio-action-primary" onClick={() => void onCreateProject()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
