@@ -1,4 +1,3 @@
-import './editorV6Workspace.css'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
@@ -622,7 +621,7 @@ export function EditorV6Page() {
 
   if (activeEditorV6) {
     return (
-      <main className={`studio-editor editor-v6-workspace${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
+      <main className={`studio-editor${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
         <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
         <EditorV6ToolRail
           visible={!fullView}

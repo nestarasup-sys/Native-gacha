@@ -67,17 +67,17 @@ export function EditorV6ToolRail({
       </div>
       <nav className="studio-tool-list" aria-label="Ferramentas da cena">
         <button className="studio-tool-button" onClick={onOpenCastManager} type="button"><Icon name="user" /><span>Elenco</span></button>
-        {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span></button>)}
-        <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span></button>
-        <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span></button>
-        <button className="studio-tool-button" onClick={() => onAddText('thought')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar pensamento a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span></button>
-        <button className="studio-tool-button" data-group="media" onClick={() => onImportTimelineMedia('video')} type="button"><Icon name="video" /><span>Selecionar vídeo</span></button>
-        <button className="studio-tool-button" data-group="media" onClick={() => onImportTimelineMedia('audio')} type="button"><Icon name="audio" /><span>Selecionar áudio</span></button>
+        {sceneEditorTools.map((tool) => <button className={`studio-tool-button${activeTool === tool.id ? ' active' : ''}`} key={tool.id} onClick={() => onSelectTool(tool.id)} type="button"><Icon name={tool.icon} /><span>{tool.label}</span><i aria-hidden="true">✦</i></button>)}
+        <button className="studio-tool-button" onClick={() => onAddText('narrator')} type="button"><Icon name="message" /><span>Narrador</span><i aria-hidden="true">✦</i></button>
+        <button className="studio-tool-button" onClick={() => onAddText('speech')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar fala a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar fala ao personagem selecionado" type="button"><Icon name="message" /><span>Fala</span><i aria-hidden="true">✦</i></button>
+        <button className="studio-tool-button" onClick={() => onAddText('thought')} disabled={selectedCharacterLabel === null} title={selectedCharacterLabel !== null ? `Adicionar pensamento a ${selectedCharacterLabel}` : 'Selecione um personagem na cena'} aria-label="Adicionar pensamento ao personagem selecionado" type="button"><Icon name="face" /><span>Pensamento</span><i aria-hidden="true">✦</i></button>
+        <button className="studio-tool-button" onClick={() => onImportTimelineMedia('video')} type="button"><b>▣</b><span>Selecionar vídeo</span></button>
+        <button className="studio-tool-button" onClick={() => onImportTimelineMedia('audio')} type="button"><b>♪</b><span>Selecionar áudio</span></button>
         <span className="studio-tool-separator" />
-        <button className="studio-tool-button" data-group="output" onClick={onExport} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
-        <button className="studio-tool-button" data-group="output" onClick={onPrint} type="button"><Icon name="download" /><span>Print</span></button>
-        <button className="studio-tool-button" data-group="output" onClick={onOpenPrints} type="button"><Icon name="folder" /><span>Pasta</span></button>
-        <button className="studio-tool-button studio-view-button" onClick={onEnterFullView} type="button"><Icon name="expand" /><span>Tela cheia</span></button>
+        <button className="studio-tool-button" onClick={onExport} disabled={characterSourceRefreshRequired} title={characterSourceRefreshRequired ? 'Sincronizando o Customizador com os snapshots do projeto' : undefined} type="button"><Icon name="download" /><span>{characterSourceRefreshRequired ? 'Atualizando personagem…' : 'Exportar MP4'}</span></button>
+        <button className="studio-tool-button" onClick={onPrint} type="button"><Icon name="download" /><span>Print</span><i aria-hidden="true">✦</i></button>
+        <button className="studio-tool-button" onClick={onOpenPrints} type="button"><Icon name="folder" /><span>Pasta</span><i aria-hidden="true">✦</i></button>
+        <button className="studio-tool-button studio-view-button" onClick={onEnterFullView} type="button"><Icon name="expand" /><span>View</span></button>
       </nav>
       <small className={`studio-save-indicator${saved ? '' : ' unsaved'}`}><i />{saved ? 'Salvo automaticamente' : 'Salvando alterações…'}</small>
       {faceAssetRefreshRequired && <small className="studio-save-notice" role="status">Atualizando as aparências salvas para a prévia e a exportação usarem as fontes mais recentes.</small>}

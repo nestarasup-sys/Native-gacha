@@ -1,17 +1,10 @@
 export type IconName =
-  | 'play' | 'pause' | 'compact' | 'split' | 'video' | 'audio'
   | 'plus' | 'search' | 'check' | 'close' | 'expand' | 'frame' | 'zoomIn' | 'zoomOut'
   | 'chevronDown' | 'sliders' | 'chevronRight' | 'sparkles'
   | 'body' | 'face' | 'shirt' | 'flower' | 'message' | 'paw' | 'box' | 'user'
   | 'bow' | 'camera' | 'settings' | 'download' | 'save' | 'folder' | 'star' | 'edit' | 'bell' | 'link' | 'eye' | 'eyeOff' | 'lock' | 'unlock' | 'trash' | 'brush' | 'reset' | 'undo' | 'redo' | 'eraser' | 'move' | 'warning' | 'flipHorizontal'
 
 const paths: Record<IconName, string> = {
-  play: 'm8 5 12 7-12 7Z',
-  pause: 'M9 5v14m6-14v14',
-  compact: 'M5 4v16m14-8H8m4-4-4 4 4 4',
-  split: 'M14 14 6 6m8 4 6-6M6 18l6-6m2 2 6 6M7 5a2 2 0 1 1-4 0 2 2 0 0 1 4 0Zm0 14a2 2 0 1 1-4 0 2 2 0 0 1 4 0Z',
-  video: 'M3 6h13v12H3zM16 10l5-3v10l-5-3',
-  audio: 'M9 18V5l11-2v13M9 18c0 2-5 3-5 0s5-3 5 0Zm11-2c0 2-5 3-5 0s5-3 5 0Z',
   plus: 'M12 5v14M5 12h14',
   search: 'm20 20-4.2-4.2M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4Z',
   check: 'm5 12 4 4L19 6',
