@@ -1,13 +1,14 @@
 /** Compile a portable react plan into genuine Editor V6 images, clips and character tracks. */
 import type { CustomizerCharacter } from '../../../../shared/customizer'
-import type { EditorV6Document, EditorV6Element, EditorV6Asset, EditorV6TimelineTrack } from '../../../../shared/editorV6'
+import type { EditorV6Document, EditorV6Element, EditorV6Asset } from '../../../../shared/editorV6'
 import { createEditorV6Timeline, editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { parseEditorV6Document } from '../../../../shared/editorV6Schema'
-import { EDITOR_V6_REACT_CHARACTER_SCALE, planEditorV6ReactImport, type EditorV6ReactImport, type EditorV6ReactImportPlan } from '../../../../shared/editorV6ReactImport'
+import { planEditorV6ReactImport, type EditorV6ReactImport, type EditorV6ReactImportPlan } from '../../../../shared/editorV6ReactImport'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
+import { bakeFaceModeAssets } from './faceModeAssets'
+import { compileEditorV6ReactCharacterTracks, type EditorV6ReactRenderedCharacterState } from './editorV6ReactCharacterTracks'
 import { buildSceneExpressionAppearance, buildSceneExpressionTransforms, appearanceWithPupilsLookingLeft } from '../../characters/sceneExpressionTransforms'
 import type { FaceExpressionPreset } from '../../../../shared/fabricator'
 
@@ -21,10 +22,6 @@ type Sources = {
 }
 export type EditorV6ReactPrepared = { document: EditorV6Document; warnings: string[] }
 const stageWidth=1920,stageHeight=1080
-const track = (kind: EditorV6TimelineTrack['kind'], name: string, characterId?: string): EditorV6TimelineTrack => ({
-  id:uuid(),kind,name,muted:false,locked:false,blocks:[],...(characterId?{characterId}:{})
-})
-
 export async function prepareEditorV6ReactSources(source: EditorV6ReactImport, characters: CustomizerCharacter[]): Promise<Sources> {
   const refSet = new Set(source.cast.map((item)=>item.character.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()))
   const targets = characters.filter((item)=>refSet.has(item.id.toLowerCase())||refSet.has(item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()))
@@ -84,7 +81,7 @@ export async function compileEditorV6ReactImport(
   }
 
   const characterById=new Map(sources.characters.map((character)=>[character.id,character]))
-  const renderCache=new Map<string,{base:EditorV6Asset;extras:EditorV6Asset[];faceModeAssetIds:EditorV6Element['faceModeAssetIds'];width:number;height:number;characterCanvasWidth:number;appearance:EditorV6Element['faceAppearance'];transforms:EditorV6Element['faceTransforms'];effects:EditorV6Element['activeExpressionEffects'];presetUpdatedAt?:string}>()
+  const renderCache=new Map<string,EditorV6ReactRenderedCharacterState>()
   const presetCache=new Map<string,FaceExpressionPreset>()
   const referenceSizes=new Map<number,Awaited<ReturnType<typeof editorV6CharacterStageReference>>>()
   const {prepareSavedCharacterRenderer}=await import('../../characters/editorV6CharacterRenderer')
@@ -128,47 +125,18 @@ export async function compileEditorV6ReactImport(
     }finally{renderer.dispose()}
   }
 
-  for(const actor of plan.cast){
-    const actorBeats=plan.beats.filter((item)=>item.characterId===actor.characterId).sort((a,b)=>a.startFrame-b.startFrame)
-    const initial=actorBeats.find((item)=>item.startFrame===0)
-    if(!initial)throw new Error('Personagem sem estado inicial: '+actor.name)
-    let poseSlot:number|null=initial.poseSlot===undefined?null:initial.poseSlot
-    let expression=initial.expression,gaze:'left'|'right'=initial.gaze??'right'
-    const id=uuid()
-    const character=characterById.get(actor.characterId)!
-    const lane=track('character',actor.name,actor.characterId)
-    document.timeline.tracks.push(lane)
-    const baseGeometry={id,kind:'character' as const,characterId:actor.characterId,characterSourceUpdatedAt:character.updatedAt,
-      faceRendererVersion:EDITOR_V6_FACE_RENDER_VERSION,activeFaceMode:'idle' as const,
-      activeExpressionCollectionId:'standard',text:actor.name,x:actor.x,y:actor.y,rotation:0,zIndex:document.elements.length+1,
-      characterScale:actor.scale??EDITOR_V6_REACT_CHARACTER_SCALE,characterWidthScale:100,characterHeightScale:100,flipX:actor.flipX??false
-    }
-    for(let i=0;i<actorBeats.length;i++){
-      const beat=actorBeats[i]
-      if(beat.poseSlot!==undefined)poseSlot=beat.poseSlot
-      if(beat.expression!==undefined)expression=beat.expression
-      if(beat.gaze!==undefined)gaze=beat.gaze
-      onProgress('Preparando '+actor.name+': estado '+(i+1)+'/'+actorBeats.length)
-      const image=await renderState(actor,poseSlot,expression,gaze)
-      const poseRevision=poseSlot===null?undefined:sources.poseRevisions.get(actor.characterId)?.get(poseSlot)??'missing'
-      const state:EditorV6Element={
-        ...baseGeometry,assetId:image.base.id,faceModeAssetIds:image.faceModeAssetIds,poseSlot,
-        ...(poseRevision?{poseSourceRevision:poseRevision}:{}),
-        ...(image.appearance?{faceAppearance:image.appearance,expressionBase:baseGeometry.activeFaceMode?{appearance:structuredClone(character.customization.faceAppearance??image.appearance),transforms:{}}:undefined}:{}),
-        faceTransforms:image.transforms,activeExpressionEffects:image.effects,
-        activeExpressionPresetId:expression??null,activeExpressionPresetUpdatedAt:image.presetUpdatedAt,
-        activeExpressionGaze:gaze,characterCanvasWidth:image.characterCanvasWidth,width:image.width,height:image.height
-      }
-      const next=actorBeats[i+1]?.startFrame??plan.durationFrames
-      if(next<=beat.startFrame)continue
-      lane.blocks.push({id:uuid(),elementId:id,state,label:actor.name,startFrame:beat.startFrame,durationFrames:next-beat.startFrame})
-      if(!i)document.elements.push(state)
-    }
-    if(!lane.blocks.length)throw new Error('Personagem sem imagens visuais: '+actor.name)
-    // Resolve the initial state from the actual first block, even if a duplicate zero-time beat existed.
-    const baseIndex=document.elements.findIndex((element)=>element.id===id)
-    if(baseIndex>=0)document.elements[baseIndex]=lane.blocks[0].state!
-  }
+  const compiledCharacters=await compileEditorV6ReactCharacterTracks({
+    actors:plan.cast,
+    beats:plan.beats,
+    durationFrames:plan.durationFrames,
+    characters:sources.characters,
+    poseRevisions:sources.poseRevisions,
+    renderState,
+    onProgress,
+    createId:uuid
+  })
+  document.elements.push(...compiledCharacters.elements)
+  document.timeline.tracks.push(...compiledCharacters.tracks)
 
   const elementByCharacter=new Map(document.elements.filter((item)=>item.kind==='character').map((item)=>[item.characterId!,item]))
   for(const line of plan.lines){

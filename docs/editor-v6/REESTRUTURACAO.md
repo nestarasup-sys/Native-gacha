@@ -1160,3 +1160,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** mantidas a ordem de importação e gravação, leitura da versão atual do documento, validação de faixas bloqueadas, seleção do playhead/bloco, abertura e fechamento dos pickers, prevenção de vínculo duplicado e seleção de fundos no quadro atual. Não foram alterados IPC, contratos de mídia, biblioteca, documentos ou snapshots persistidos.
 
 **Verificação:** 729 testes Vitest passaram em 167 arquivos (1 arquivo e 1 teste ignorados); 31 testes do arquivo de integração de fontes passaram, incluindo 2 casos novos para fundo e objeto compartilhados. Os 20 testes de harness/perfil sintético, os 29 testes Node de `npm test`, `npm run typecheck`, `npm run audit:architecture` (858 arquivos), `npm run build` e `git diff --check` passaram. Nenhuma exportação real nem benchmark de mídia foi executado.
+
+### Ciclo 137 — montagem das faixas de personagens do importador React (implementado)
+
+**Objetivo:** mover de `editorV6ReactImportCompiler.ts` para `editorV6ReactCharacterTracks.ts` a conversão dos estados planejados dos personagens em snapshots de cena e blocos de faixa. A compilação geral continua responsável por resolver fontes, renderizar/bakear imagens, compor as falas e finalizar o documento; fornece o callback de renderização ao compilador de faixas.
+
+**Compatibilidade:** mantidos a ordem de criação dos IDs, a progressão de pose/expressão/olhar entre beats, o cache e a geração dos snapshots, os metadados de revisão da pose e do personagem, a expressão-base, o estado inicial da cena, os intervalos dos blocos, a ordem das faixas e as mensagens de validação. Não houve mudança nos formatos de importação/documento, IPC, persistência ou sequência de renderização.
+
+**Verificação:** a suíte completa do Editor V6 passou com 731 testes em 168 arquivos (1 arquivo e 1 teste ignorados); os testes de stress/profile sintéticos passaram (20), `npm test` passou (29), `npm run typecheck`, `npm run audit:architecture` (859 arquivos), `npm run build` e `git diff --check` passaram. Dois testes novos cobrem os intervalos/continuidade dos estados e as validações de personagem sem estado inicial ou bloco visível. Nenhuma importação real, exportação ou benchmark foi executado.
