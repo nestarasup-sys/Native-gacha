@@ -55,6 +55,26 @@ describe('timeline do Editor V6', () => {
     expect(resolveEditorV6ElementsAtFrame(withThought, 30).find((element) => element.kind === 'character')?.assetId).toBe(actor.assetId)
   })
 
+  it('mantém o alvo explícito e o personagem mais próximo quando há cópias do mesmo personagem', () => {
+    const document = fixture(), actor = document.elements[0]
+    const nearbyActor: EditorV6Element = { ...actor, id: crypto.randomUUID(), text: 'Cópia próxima', x: 100, zIndex: 2 }
+    document.elements.push(nearbyActor)
+    const characterTrack = document.timeline.tracks.find((track) => track.kind === 'character')!
+    characterTrack.blocks.push({ id: crypto.randomUUID(), elementId: nearbyActor.id, label: nearbyActor.text, startFrame: 0, durationFrames: 300, state: nearbyActor })
+
+    const nearestLinkedSpeech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId, text: 'Mais perto', x: 95, y: 0, width: 28, height: 16, rotation: 0, zIndex: 3 }
+    const exactLinkedThought: EditorV6Element = { ...nearestLinkedSpeech, id: crypto.randomUUID(), kind: 'thought', text: 'Vínculo exato', attachedCharacterElementId: actor.id }
+    document.elements.push(nearestLinkedSpeech, exactLinkedThought)
+    const speechTrack = document.timeline.tracks.find((track) => track.kind === 'speech')!
+    const thoughtTrack = document.timeline.tracks.find((track) => track.kind === 'thought')!
+    speechTrack.blocks = [{ id: crypto.randomUUID(), elementId: nearestLinkedSpeech.id, label: nearestLinkedSpeech.text, startFrame: 0, durationFrames: 60, state: nearestLinkedSpeech }]
+    thoughtTrack.blocks = [{ id: crypto.randomUUID(), elementId: exactLinkedThought.id, label: exactLinkedThought.text, startFrame: 0, durationFrames: 60, state: exactLinkedThought }]
+
+    const resolved = resolveEditorV6ElementsAtFrame(document, 1)
+    expect(resolved.find((element) => element.kind === 'speech')?.speakerName).toBe('Cópia próxima')
+    expect(resolved.find((element) => element.kind === 'thought')?.speakerName).toBe('Alice')
+  })
+
   it('aplica a escala de balões do projeto a todas as falas e mantém documentos antigos válidos', () => {
     const document = fixture(), actor = document.elements[0]
     const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId, attachedCharacterElementId: actor.id, attachmentOriginX: actor.x, attachmentOriginY: actor.y, text: 'Olá', x: actor.x, y: actor.y, width: 28, height: 16, rotation: 0, zIndex: 2 }

@@ -1327,3 +1327,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** a preparação agrupa os IDs de blocos que compartilham o mesmo estado visual usando um `Set`, em vez de procurar cada ID percorrendo a lista acumulada. Isso evita crescimento quadrático quando muitos blocos reutilizam o mesmo estado; a ordem dos IDs e o bake único por estado são preservados.
 
 **Verificação:** um teste com 501 blocos repetidos confirma a ordem, ausência de IDs duplicados e um único bake. `npm run test:editor-v6` passou: 177 arquivos, 763 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura, build e `git diff --check` passaram. Nenhum projeto real ou export pesado foi executado.
+
+### Continuação na `Dev-V2` — índices de personagens para anexar balões (implementado e verificado)
+
+**Mudança:** o resolver de cena constrói, por quadro, mapas de personagens por elemento/ID e de snapshots-base. A associação dos balões deixa de filtrar todos os personagens e procurar a origem em toda a lista para cada fala ou pensamento.
+
+**Compatibilidade:** preservadas prioridade do vínculo explícito, escolha do personagem da mesma identidade mais próximo do balão, ordem original em empates, posição relativa, nome, cor e fallback de snapshots antigos.
+
+**Verificação:** teste de regressão confirma o vínculo explícito e a seleção do personagem mais próximo quando há instâncias duplicadas. `npm run test:editor-v6` passou: 177 arquivos, 764 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.
