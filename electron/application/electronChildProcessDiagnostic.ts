@@ -7,12 +7,16 @@ const errorReasons = new Set<Electron.Details['reason']>([
   'launch-failed',
   'oom'
 ])
+const CRASHPAD_NOT_CONNECTED_EXIT_CODE = 36861
 
 /** Maps unexpected Chromium helper exits to privacy-safe local diagnostics. */
 export function createElectronChildProcessDiagnostic(
   details: Pick<Electron.Details, 'type' | 'reason' | 'exitCode'>
 ): LocalDiagnosticEventInput | undefined {
   if (details.reason === 'clean-exit') return undefined
+  const crashpadNote = Math.abs(details.exitCode) === CRASHPAD_NOT_CONNECTED_EXIT_CODE
+    ? '; Crashpad_NotConnectedToHandler'
+    : ''
 
   return {
     severity: errorReasons.has(details.reason) ? 'error' : 'warning',
@@ -21,6 +25,6 @@ export function createElectronChildProcessDiagnostic(
     operation: 'electron.child-process-gone',
     stage: 'unexpected-exit',
     result: 'failure',
-    message: `Processo auxiliar ${details.type} encerrou (${details.reason}; código ${details.exitCode}).`
+    message: `Processo auxiliar ${details.type} encerrou (${details.reason}; código ${details.exitCode}${crashpadNote}).`
   }
 }

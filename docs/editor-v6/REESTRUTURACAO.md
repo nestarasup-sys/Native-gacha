@@ -1407,3 +1407,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** a construção do plano deixava elegibilidade, IDs e reação de pose em três operações sobre a lista filtrada. Agora um percurso coleta os IDs e testa reações apenas enquanto ainda não encontrou uma ativa; elimina o array filtrado e as passagens posteriores, mantendo a ordem dos IDs e a decisão do quadro.
 
 **Verificação:** `npx vitest run --config vitest.editor-v6.config.ts` passou: 177 arquivos, 777 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` também passaram. Não foi medido ganho em export real.
+
+### Continuação na `Dev-V2` — identificar o código de falha do Crashpad (implementado e verificado)
+
+**Investigação:** o mapeamento do Chromium nomeia 36861 como `Crashpad_NotConnectedToHandler`; essa correspondência também explica a linha `crashpad_client_win.cc ... not connected`. O código aponta a comunicação com o handler, não estabelece se o app ou um processo auxiliar terminou primeiro nem a causa do encerramento.
+
+**Mudança:** o diagnóstico local de encerramento de processos auxiliares agora acrescenta `Crashpad_NotConnectedToHandler` quando o código chega como `36861` ou `-36861`, mantendo separado o campo `reason` do Electron. Não transforma esse código em diagnóstico de OOM.
+
+**Verificação:** quatro testes focados, a suíte completa do Editor V6 (177 arquivos, 778 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos) e build passaram. Não foi reproduzida uma queda do app nem acessado o perfil local.

@@ -12,9 +12,16 @@ describe('diagnóstico de encerramento de processos auxiliares Electron', () => 
       operation: 'electron.child-process-gone',
       stage: 'unexpected-exit',
       result: 'failure',
-      message: 'Processo auxiliar GPU encerrou (oom; código -36861).'
+      message: 'Processo auxiliar GPU encerrou (oom; código -36861; Crashpad_NotConnectedToHandler).'
     })
     expect(JSON.stringify(diagnostic)).not.toMatch(/pid|serviceName|processName/i)
+  })
+
+  it('nomeia o código Crashpad positivo sem presumir OOM', () => {
+    expect(createElectronChildProcessDiagnostic({ type: 'Renderer', reason: 'crashed', exitCode: 36861 })).toMatchObject({
+      severity: 'error',
+      message: 'Processo auxiliar Renderer encerrou (crashed; código 36861; Crashpad_NotConnectedToHandler).'
+    })
   })
 
   it('registra encerramento forçado recuperável como aviso', () => {
