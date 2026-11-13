@@ -1406,4 +1406,4 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Mudança:** a construção do plano deixava elegibilidade, IDs e reação de pose em três operações sobre a lista filtrada. Agora um percurso coleta os IDs e testa reações apenas enquanto ainda não encontrou uma ativa; elimina o array filtrado e as passagens posteriores, mantendo a ordem dos IDs e a decisão do quadro.
 
-**Verificação:** os 9 testes do plano de exportação passaram, cobrindo IDs e decisão de reação; typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` também passaram. Não foi medido ganho em export real.
+**Verificação:** `npx vitest run --config vitest.editor-v6.config.ts` passou: 177 arquivos, 777 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` também passaram. Não foi medido ganho em export real.
