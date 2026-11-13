@@ -14,6 +14,19 @@ export { wrapSceneText } from './sceneTextLayout'
 
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
+type SceneSurfaceProps = {
+  scene: EditorV6ResolvedScene
+  assets: readonly EditorV6Asset[]
+  resolveAssetById?: (id: string) => EditorV6Asset | undefined
+  selectedId?: string | null
+  interaction?: SceneSurfaceInteraction
+  playing?: boolean
+  outputWidth?: number
+  outputHeight?: number
+  renderLayer?: 'all' | 'background' | 'foreground'
+  onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void
+  rasterCanvases?: ReadonlyMap<string, HTMLCanvasElement>
+}
 
 const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, rasterCanvas, rasterFrame = 0, selected, interaction, onImageLoad }: SceneLayerProps) {
   const size = editorV6ElementSize(element)
@@ -34,10 +47,14 @@ const SceneLayer = memo(function SceneLayer({ element, asset, mouthAsset, raster
 }, sceneLayerPropsEqual)
 
 /** Shared scene drawing for the live Chromium preview and sequential frame captures. */
-export const SceneSurface = memo(function SceneSurface({ scene, assets, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all', onImageLoad, rasterCanvases }: { scene: EditorV6ResolvedScene; assets: readonly EditorV6Asset[]; selectedId?: string | null; interaction?: SceneSurfaceInteraction; playing?: boolean; outputWidth?: number; outputHeight?: number; renderLayer?: 'all' | 'background' | 'foreground'; onImageLoad?: (event: SyntheticEvent<SVGImageElement>) => void; rasterCanvases?: ReadonlyMap<string, HTMLCanvasElement> }) {
-  const assetsById = useMemo(() => new Map(assets.map((asset) => [asset.id, asset])), [assets])
+export const SceneSurface = memo(function SceneSurface({ scene, assets, resolveAssetById, selectedId = null, interaction, playing = false, outputWidth = 1920, outputHeight = 1080, renderLayer = 'all', onImageLoad, rasterCanvases }: SceneSurfaceProps) {
+  const resolveAsset = useMemo(() => {
+    if (resolveAssetById) return resolveAssetById
+    const assetsById = new Map(assets.map((asset) => [asset.id, asset]))
+    return (id: string) => assetsById.get(id)
+  }, [assets, resolveAssetById])
   const renderElements = useMemo(() => editorV6ElementsWithBalloonsOnTop(scene.elements), [scene.elements])
-  const background = scene.background, asset = background.backgroundAssetId ? assetsById.get(background.backgroundAssetId) : undefined
+  const background = scene.background, asset = background.backgroundAssetId ? resolveAsset(background.backgroundAssetId) : undefined
   const width = background.backgroundWidth * 19.2, height = background.backgroundHeight * 10.8
   return <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1920 1080" width={outputWidth} height={outputHeight} className="v6-scene-surface" data-frame={scene.frame} aria-label={`Cena no quadro ${scene.frame}`} style={{ display: 'block', width: '100%', height: '100%', overflow: 'hidden', userSelect: 'none', textRendering: 'geometricPrecision', WebkitFontSmoothing: 'antialiased' }}>
     {renderLayer !== 'foreground' && <rect width="1920" height="1080" fill={background.backgroundColor} />}
@@ -48,7 +65,7 @@ export const SceneSurface = memo(function SceneSurface({ scene, assets, selected
     {renderLayer === 'all' && <SceneVideoLayer scene={scene} playing={playing} selectedId={selectedId} interaction={interaction} />}
     {renderLayer !== 'background' && renderElements.map((element) => {
       const rasterCanvas = rasterCanvases?.get(element.id)
-      return <SceneLayer key={element.id} element={element} asset={element.assetId ? assetsById.get(element.assetId) : undefined} mouthAsset={element.mouthPatch ? assetsById.get(element.mouthPatch.assetId) : undefined} rasterCanvas={rasterCanvas} rasterFrame={rasterCanvas ? scene.frame : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />
+      return <SceneLayer key={element.id} element={element} asset={element.assetId ? resolveAsset(element.assetId) : undefined} mouthAsset={element.mouthPatch ? resolveAsset(element.mouthPatch.assetId) : undefined} rasterCanvas={rasterCanvas} rasterFrame={rasterCanvas ? scene.frame : undefined} selected={selectedId === element.id} interaction={interaction} onImageLoad={onImageLoad} />
     })}
   </svg>
 })

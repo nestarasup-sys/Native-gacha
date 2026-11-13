@@ -33,7 +33,9 @@ describe('Editor V6 export visible-asset scope', () => {
       expect(visible.map(item => item.id)).toEqual(expectedIds)
       const full = renderToStaticMarkup(createElement(SceneSurface, { scene: frame, assets: catalog, renderLayer: layer }))
       const scoped = renderToStaticMarkup(createElement(SceneSurface, { scene: frame, assets: visible, renderLayer: layer }))
+      const resolved = renderToStaticMarkup(createElement(SceneSurface, { scene: frame, assets: [], resolveAssetById: registry.resolve, renderLayer: layer }))
       expect(scoped).toBe(full)
+      expect(resolved).toBe(full)
     }
   })
 

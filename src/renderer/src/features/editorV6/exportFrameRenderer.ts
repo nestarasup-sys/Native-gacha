@@ -13,6 +13,7 @@ type RenderLayer = 'all' | 'background' | 'foreground'
 type SurfaceInput = {
   scene: Awaited<ReturnType<HairRuntime['resolveRawSceneAtFrame']>>
   assets: readonly EditorV6Asset[]
+  resolveAssetById: (id: string) => EditorV6Asset | undefined
   outputWidth: number
   outputHeight: number
   renderLayer: RenderLayer
@@ -97,7 +98,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
 
     const reactCommitStarted = now()
     commitSurface({
-      scene: renderScene, assets: renderAssets, outputWidth: width, outputHeight: height,
+      scene: renderScene, assets: renderAssets, resolveAssetById: resolveFrameAsset, outputWidth: width, outputHeight: height,
       renderLayer: activeLayer ?? 'all', onImageLoad, rasterCanvases
     })
     timings.reactCommitMs = now() - reactCommitStarted

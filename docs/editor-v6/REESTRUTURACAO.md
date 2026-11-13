@@ -1415,3 +1415,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** o diagnóstico local de encerramento de processos auxiliares agora acrescenta `Crashpad_NotConnectedToHandler` quando o código chega como `36861` ou `-36861`, mantendo separado o campo `reason` do Electron. Não transforma esse código em diagnóstico de OOM.
 
 **Verificação:** quatro testes focados, a suíte completa do Editor V6 (177 arquivos, 778 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos) e build passaram. Não foi reproduzida uma queda do app nem acessado o perfil local.
+
+### Continuação na `Dev-V2` — reutilizar resolver de assets na superfície de exportação (implementado e verificado)
+
+**Mudança:** o exportador já indexava os assets de cada quadro para preparar apenas as imagens visíveis, mas `SceneSurface` criava um segundo `Map` a partir da lista selecionada em todo commit. Agora a superfície aceita o resolver existente; o caminho de preview continua construindo e memoizando seu índice próprio. Isso remove a segunda construção do mapa por quadro no worker.
+
+**Compatibilidade:** o resolver mantém a precedência dos assets temporários do frame sobre os assets originais. O teste renderiza SVG idêntico usando o catálogo completo, a lista reduzida ou o resolver de frame; assets ausentes continuam ausentes.
+
+**Verificação:** os testes focados de assets visíveis e renderizador passaram (4 testes), a suíte completa passou (177 arquivos, 778 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Não foi medido ganho em export real.
