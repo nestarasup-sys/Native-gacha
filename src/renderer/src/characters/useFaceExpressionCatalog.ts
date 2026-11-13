@@ -4,6 +4,7 @@ import type { FaceExpressionCollection, FaceExpressionPresetSummary } from '../.
 /** Loads the shared expression library and refreshes it when the app becomes visible again. */
 export function useFaceExpressionCatalog({
   modelSlot,
+  enabled = true,
   setCollections,
   setPresets,
   setLoading,
@@ -11,6 +12,7 @@ export function useFaceExpressionCatalog({
   errorFallback
 }: {
   modelSlot: number | null
+  enabled?: boolean
   setCollections: Dispatch<SetStateAction<FaceExpressionCollection[]>>
   setPresets: Dispatch<SetStateAction<FaceExpressionPresetSummary[]>>
   setLoading: Dispatch<SetStateAction<boolean>>
@@ -21,7 +23,7 @@ export function useFaceExpressionCatalog({
     let cancelled = false
     let latestRequest = 0
 
-    if (modelSlot === null) {
+    if (!enabled || modelSlot === null) {
       setCollections([])
       setPresets([])
       setLoading(false)
@@ -58,5 +60,5 @@ export function useFaceExpressionCatalog({
       window.removeEventListener('focus', refresh)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [modelSlot, setCollections, setPresets, setLoading, setError, errorFallback])
+  }, [modelSlot, enabled, setCollections, setPresets, setLoading, setError, errorFallback])
 }

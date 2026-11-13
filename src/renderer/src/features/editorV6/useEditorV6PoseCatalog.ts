@@ -3,7 +3,7 @@ import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
 import { loadEditorV6PoseThumbnails } from './editorV6PoseCatalog'
 
 /** Owns the selected model's saved poses and their lightweight inspector previews. */
-export function useEditorV6PoseCatalog(modelSlot: number | null, reportError: (message: string) => void) {
+export function useEditorV6PoseCatalog(modelSlot: number | null, reportError: (message: string) => void, enabled = true) {
   const [poseSlots, setPoseSlots] = useState<Array<NonNullable<FabricatorPoseSummary>>>([])
   const [poseThumbnails, setPoseThumbnails] = useState<Record<number, string>>({})
   const [poseDimensions, setPoseDimensions] = useState<Record<number, { width: number; height: number }>>({})
@@ -13,7 +13,7 @@ export function useEditorV6PoseCatalog(modelSlot: number | null, reportError: (m
     setPoseSlots([])
     setPoseThumbnails({})
     setPoseDimensions({})
-    if (modelSlot === null) return () => { cancelled = true }
+    if (!enabled || modelSlot === null) return () => { cancelled = true }
 
     void window.desktop.fabricator.listFabricatorPoseSlots(modelSlot).then((poses) => {
       if (!cancelled) setPoseSlots(poses.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose)))
@@ -21,10 +21,10 @@ export function useEditorV6PoseCatalog(modelSlot: number | null, reportError: (m
       if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível carregar as poses do modelo.')
     })
     return () => { cancelled = true }
-  }, [modelSlot, reportError])
+  }, [modelSlot, reportError, enabled])
 
   useEffect(() => {
-    if (modelSlot === null || !poseSlots.length) {
+    if (!enabled || modelSlot === null || !poseSlots.length) {
       setPoseThumbnails({})
       setPoseDimensions({})
       return
@@ -50,7 +50,7 @@ export function useEditorV6PoseCatalog(modelSlot: number | null, reportError: (m
       }
     })
     return () => { cancelled = true }
-  }, [modelSlot, poseSlots])
+  }, [modelSlot, poseSlots, enabled])
 
   return { poseSlots, poseThumbnails, poseDimensions }
 }

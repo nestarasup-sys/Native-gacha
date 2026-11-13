@@ -64,7 +64,7 @@ import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import { openEditorV6Project } from './editorV6ProjectNavigation'
 import { completeEditorV6ProjectImport } from './editorV6ProjectImportCompletion'
 import { createEditorV6StageSelectionCommands } from './editorV6StageSelection'
-import { shouldLoadEditorV6FaceCatalog } from './editorV6FaceCatalogModel'
+import { shouldLoadEditorV6FaceCatalog, shouldLoadEditorV6PresetCatalog } from './editorV6FaceCatalogModel'
 import { EditorV6FaceInspectorPanel } from './EditorV6FaceInspectorPanel'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
@@ -202,7 +202,8 @@ export function EditorV6Page() {
   }, [activeEditorV6, selectedTimelineBlockId, markEditorV6Unsaved])
   const { selectedTimelineVideoClip, selectedTimelineVideo, selectedElement, selectedCharacterElement, selectedBackgroundAsset } = editorV6Selection
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
-  const { poseSlots: editorV6PoseSlots, poseThumbnails: editorV6PoseThumbnails, poseDimensions: editorV6PoseDimensions } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError)
+  const editorV6PresetCatalogEnabled = shouldLoadEditorV6PresetCatalog(inspectorOpen, inspectorTab, inspectorCustomView)
+  const { poseSlots: editorV6PoseSlots, poseThumbnails: editorV6PoseThumbnails, poseDimensions: editorV6PoseDimensions } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError, editorV6PresetCatalogEnabled)
   const reportFaceCatalogError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
   }, [])
@@ -242,6 +243,7 @@ export function EditorV6Page() {
 
   useFaceExpressionCatalog({
     modelSlot: selectedEditorV6CharacterModelSlot,
+    enabled: editorV6PresetCatalogEnabled,
     setCollections: setEditorV6ExpressionCollections,
     setPresets: setEditorV6ExpressionPresets,
     setLoading: setEditorV6ExpressionLoading,

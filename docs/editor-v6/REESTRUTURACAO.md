@@ -1289,3 +1289,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** abrir uma vista personalizada continua carregando as folhas do personagem selecionado; controles de face e presets mantêm os dados e ações atuais. O catálogo continua disponível para reutilização enquanto dentro do limite do cache.
 
 **Verificação:** 1 teste cobre as combinações de aba/estado do Inspector. `npm run test:editor-v6` passou: 177 arquivos, 759 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.
+
+### Continuação na `Dev-V2` — poses e expressões somente em Presets (implementado e verificado)
+
+**Mudança:** a listagem de poses, a renderização de miniaturas e a consulta das coleções/presets de expressão ficam ativas somente quando o Inspector está aberto em “Presets”. Ao sair da vista, o hook de poses libera suas miniaturas e dimensões; a lista facial continua seguindo a regra anterior.
+
+**Compatibilidade:** as vistas Editor e Rosto não dependem desses dados. Ao abrir Presets, poses e expressões do modelo selecionado são carregadas e apresentadas como antes.
+
+**Verificação:** 2 testes cobrem as combinações de estado do Inspector. `npm run test:editor-v6` passou: 177 arquivos, 760 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build passaram.
