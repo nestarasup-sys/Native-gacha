@@ -34,6 +34,20 @@ describe('resolveEditorV6ExportFramePlan', () => {
     })
   })
 
+  it.each([
+    ['balloon scale', actor({ kind: 'speech' }), actor({ kind: 'speech', balloonScalePercent: 125 })],
+    ['balloon vertical offset', actor({ kind: 'thought' }), actor({ kind: 'thought', balloonOffsetY: -5 })],
+    ['linked speaker name', actor({ kind: 'speech' }), actor({ kind: 'speech', speakerName: 'Alice' })],
+    ['linked speaker color', actor({ kind: 'speech' }), actor({ kind: 'speech', speakerColor: '#8C7BFF' })]
+  ])('invalidates frame reuse when %s changes', (_field, before, after) => {
+    const options = { ...common, requestedLayer: 'foreground' as const }
+    const beforePlan = resolveEditorV6ExportFramePlan({ ...options, scene: scene([before]), frame: 10 })
+    const afterPlan = resolveEditorV6ExportFramePlan({ ...options, scene: scene([after]), frame: 11 })
+
+    expect(afterPlan.key).not.toBe(beforePlan.key)
+    expect(afterPlan.layerKeys.foreground).not.toBe(beforePlan.layerKeys.foreground)
+  })
+
   it('activates hair and includes the frame in both visual keys only on foreground captures', () => {
     const frameScene = scene([actor()])
     const backgroundPlan = resolveEditorV6ExportFramePlan({ ...common, scene: frameScene, frame: 10, requestedLayer: 'background', hairAnimation: { poseReactionOnly: false } })

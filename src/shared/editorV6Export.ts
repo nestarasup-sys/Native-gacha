@@ -1,4 +1,4 @@
-import { EDITOR_V6_DEFAULT_DURATION_FRAMES, type EditorV6Document } from './editorV6'
+import { EDITOR_V6_DEFAULT_DURATION_FRAMES, type EditorV6Document, type EditorV6SceneElement } from './editorV6'
 import type { EditorV6MotionFrame } from './editorV6Motion'
 import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
 import { isEditorV6ExportTestMode, type EditorV6ExportTestMode } from './editorV6ExportTestModes'
@@ -98,10 +98,10 @@ export function editorV6BenchmarkAudioMatchesExport(audioClips: number, outputHa
   return Number.isSafeInteger(audioClips) && audioClips >= 0 && outputHasAudio === (audioClips > 0)
 }
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
-type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
+type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6SceneElement[]; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 export type EditorV6VisualKeys = { key: string; layerKeys: { background: string; foreground: string } }
-function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
-  return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch])
+function editorV6ElementVisualKeys(elements: EditorV6SceneElement[]) {
+  return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch, element.balloonScalePercent, element.balloonOffsetY, element.speakerName, element.speakerColor])
 }
 function editorV6LayerVisualKeysForElements(background: unknown, elements: ReturnType<typeof editorV6ElementVisualKeys>, hairAnimationFrame?: number) {
   const foreground = hairAnimationFrame === undefined ? elements : [elements, hairAnimationFrame]

@@ -1393,3 +1393,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** testes do worker e do protocolo cobrem fechamento normal, fechamento externo e sessão sem handler (17 testes). `npm run test:editor-v6` passou: 177 arquivos, 773 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Essa limpeza evita retenção desnecessária entre workers; não prova que seja a causa do encerramento `-36861` observado anteriormente.
 
 **Verificação integrada subsequente:** `npm run test:editor-v6:export` também passou. No fixture sintético de 301 quadros a 320×180/30 fps, o relatório marcou 1,96 s e pico de RSS do processo principal de ~163 MB; o harness limitou o pico a dois workers e passou os casos de movimento, divisão, cancelamento e captura de 1080p. Esses números só descrevem o fixture e não substituem benchmark do projeto longo nem explicam o `-36861`.
+
+### Continuação na `Dev-V2` — completar chave visual dos balões vinculados (implementado e verificado)
+
+**Problema:** a chave de reaproveitamento incluía texto e geometria básica, mas omitira valores de runtime usados pelo SVG de fala/pensamento: escala, deslocamento vertical, nome e cor do personagem vinculado. Quando um desses valores mudava sem alterar os campos já projetados, o worker podia considerar o frame idêntico e enviar de novo o bitmap anterior.
+
+**Mudança:** `editorV6VisualKeys` inclui esses quatro valores na projeção compartilhada pelas chaves de quadro inteiro e de camada. Assim, a renderização volta a ocorrer sempre que a apresentação do balão ou a identificação visual do locutor muda.
+
+**Verificação:** quatro casos focados confirmam invalidação independente para escala, deslocamento, nome e cor. `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportFramePlan.test.ts` passou (9 testes), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`.
