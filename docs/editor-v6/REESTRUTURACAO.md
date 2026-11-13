@@ -1375,3 +1375,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** estados recriados com os mesmos valores ainda passam pela comparação detalhada existente; o fast path depende do contrato imutável já documentado no comparador.
 
 **Verificação:** teste focado cobre identidade do snapshot, comparação de estados equivalentes, alterações visuais e troca de pixels do atlas. `npm run test:editor-v6` passou: 177 arquivos, 771 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — evitar agendamento facial sem assets automáticos (implementado e verificado)
+
+**Mudança:** a resolução de cena só consulta os intervalos de fala e o agendamento de piscadas quando o personagem possui pelo menos um asset de `blink`, `talk` ou `talk-blink`. Um vínculo `idle` sozinho não participa dessa seleção automática e agora é ignorado sem calcular o modo por quadro.
+
+**Compatibilidade:** projetos sem alternativas dinâmicas mantêm o asset base; qualquer alternativa automática configurada continua percorrendo a regra anterior, inclusive o fallback de `talk-blink` para `talk`.
+
+**Verificação:** 41 testes focados de timeline, cena e paridade passaram. `npm run test:editor-v6` passou: 177 arquivos, 772 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

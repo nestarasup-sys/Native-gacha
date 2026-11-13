@@ -35,6 +35,23 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 
+  it('preserva o asset base quando o personagem só tem uma referência facial idle', () => {
+    const document = fixture(), actor = document.elements[0], idleId = crypto.randomUUID()
+    document.assets.push({ id: idleId, category: 'character', name: 'Alice · idle', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true })
+    const state = { ...actor, faceModeAssetIds: { idle: idleId } }
+    document.elements[0] = state
+    document.timeline.tracks.find((track) => track.kind === 'character')!.blocks = [{
+      id: crypto.randomUUID(), elementId: actor.id, label: actor.text, startFrame: 0, durationFrames: 300, state
+    }]
+    document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks = [{
+      id: crypto.randomUUID(), elementId: crypto.randomUUID(), label: 'Fala de Alice', characterId: actor.characterId, startFrame: 0, durationFrames: 300
+    }]
+    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => isEditorV6BlinkFrame(document.id, actor.characterId!, frame))!
+
+    expect(resolveEditorV6ElementsAtFrame(document, blinkFrame)[0].assetId).toBe(actor.assetId)
+    expect(resolveEditorV6ElementsAtFrame(document, 30)[0].assetId).toBe(actor.assetId)
+  })
+
   it('vincula fala e pensamento ao personagem posicionado e só a fala aciona talk', () => {
     const document = fixture(), actor = document.elements[0]
     const talkId = crypto.randomUUID()

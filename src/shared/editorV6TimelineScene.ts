@@ -132,11 +132,14 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
   const applyAutomaticFace = (source: EditorV6Element) => {
     let element = source
     if (element.kind === 'character' && element.characterId) {
-      const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
-      const autoAssetId = autoMode === 'talk-blink'
-        ? element.faceModeAssetIds?.['talk-blink'] ?? element.faceModeAssetIds?.talk
-        : autoMode ? element.faceModeAssetIds?.[autoMode] : undefined
-      if (autoAssetId) element = { ...element, assetId: autoAssetId, motionSprite: undefined }
+      const faceModeAssetIds = element.faceModeAssetIds
+      if (faceModeAssetIds?.blink || faceModeAssetIds?.talk || faceModeAssetIds?.['talk-blink']) {
+        const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
+        const autoAssetId = autoMode === 'talk-blink'
+          ? faceModeAssetIds['talk-blink'] ?? faceModeAssetIds.talk
+          : autoMode ? faceModeAssetIds[autoMode] : undefined
+        if (autoAssetId) element = { ...element, assetId: autoAssetId, motionSprite: undefined }
+      }
     }
     return element
   }
