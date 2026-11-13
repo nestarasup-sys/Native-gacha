@@ -1359,3 +1359,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** teste de paridade verifica chaves idênticas com quadro animado, vídeo e patch de boca. Os critérios de reaproveitamento entre quadros e capturas em camadas não mudaram.
 
 **Verificação:** testes focados do plano, cache de quadros e paridade passaram (11 testes). `npm run test:editor-v6` passou: 177 arquivos, 769 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho em export real.
+
+### Continuação na `Dev-V2` — reutilizar IDs de cabelo elegível por quadro (implementado e verificado)
+
+**Mudança:** o plano de exportação agora recolhe os personagens com cabelo elegível uma vez e devolve seus IDs para a composição usar diretamente. O renderer não repete a consulta de cada personagem nem monta o mapa de snapshots-base quando o quadro não precisa rasterizar cabelo.
+
+**Compatibilidade:** a elegibilidade continua decidida pelo mesmo callback, com os mesmos limites de faixa e de reação; a ordem do SVG e a composição de cabelo permanecem iguais. Sem bundle ou durante captura do fundo, a checagem continua sem varrer os elementos.
+
+**Verificação:** testes focados confirmam IDs, uma única consulta por elemento e ausência de consulta quando não há bundle (9 testes). `npm run test:editor-v6` passou: 177 arquivos, 770 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

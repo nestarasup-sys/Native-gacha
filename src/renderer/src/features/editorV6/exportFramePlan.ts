@@ -26,9 +26,11 @@ export function resolveEditorV6ExportFramePlan({
   hasAnimatedHair
 }: ResolveEditorV6ExportFramePlanOptions) {
   const activeLayer: EditorV6ExportFrameLayer = layeredVideo ? requestedLayer ?? 'background' : undefined
-  const activeHair = Boolean(hairAnimation && activeLayer !== 'background' && scene.elements.some(hasAnimatedHair))
-  const reacting = Boolean(hairAnimation?.poseReactionOnly && activeHair && scene.elements.some(element =>
-    hasAnimatedHair(element) && hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
+  const animatedElements = hairAnimation && activeLayer !== 'background' ? scene.elements.filter(hasAnimatedHair) : []
+  const riggedElementIds = new Set(animatedElements.map(element => element.id))
+  const activeHair = riggedElementIds.size > 0
+  const reacting = Boolean(hairAnimation?.poseReactionOnly && activeHair && animatedElements.some(element =>
+    hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
   ))
   const hairNeedsFrame = activeHair && (!hairAnimation?.poseReactionOnly || reacting)
   const visualKeys = editorV6VisualKeys({ ...scene, mediaVideo: undefined, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
@@ -43,5 +45,5 @@ export function resolveEditorV6ExportFramePlan({
     foreground: JSON.stringify([baseLayerKeys.foreground, signature])
   }
 
-  return { activeLayer, activeHair, reacting, hairNeedsFrame, key, layerKeys }
+  return { activeLayer, activeHair, riggedElementIds, reacting, hairNeedsFrame, key, layerKeys }
 }

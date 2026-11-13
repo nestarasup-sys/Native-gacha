@@ -62,15 +62,17 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
       scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
       hasAnimatedHair: element => hairRuntime.hasAnimatedHair(element, frame)
     })
-    const { activeLayer, activeHair, key, layerKeys } = framePlan
+    const { activeLayer, activeHair, riggedElementIds, key, layerKeys } = framePlan
     timings.sceneResolutionMs = now() - resolutionStarted
     const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
     if (reuseDecision === 'frame') return { reused: true, timings }
     if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
 
     const faceCompositionStarted = now()
-    const originalElements = new Map(scene.elements.map(element => [element.id, element]))
-    const riggedIds = new Set(activeHair ? scene.elements.flatMap(element => hairRuntime.hasAnimatedHair(element, frame) ? [element.id] : []) : [])
+    const originalElements = activeHair
+      ? new Map(scene.elements.map(element => [element.id, element]))
+      : new Map<string, (typeof scene.elements)[number]>()
+    const riggedIds = riggedElementIds
     const faceCompositionInput = riggedIds.size
       ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }
       : { ...scene, mediaVideo: undefined }

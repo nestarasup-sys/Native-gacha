@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6SceneElement } from '../../src/shared/editorV6'
 import { editorV6LayerVisualKeys, editorV6VisualKey, editorV6VisualKeys } from '../../src/shared/editorV6Export'
 import type { EditorV6ResolvedScene } from '../../src/shared/editorV6TimelineScene'
@@ -43,6 +43,23 @@ describe('resolveEditorV6ExportFramePlan', () => {
     expect(foregroundPlan).toMatchObject({ activeLayer: 'foreground', activeHair: true, hairNeedsFrame: true })
     expect(foregroundPlan.key).not.toBe(resolveEditorV6ExportFramePlan({ ...common, scene: frameScene, frame: 11, requestedLayer: 'foreground', hairAnimation: { poseReactionOnly: false } }).key)
     expect(foregroundPlan.layerKeys.foreground).not.toBe(backgroundPlan.layerKeys.foreground)
+    expect(foregroundPlan.riggedElementIds).toEqual(new Set(['actor-1']))
+  })
+
+  it('resolves rigged IDs in one pass and skips the scan when there is no hair bundle', () => {
+    const frameScene = scene([actor(), actor({ id: 'actor-2' })])
+    const hasAnimatedHair = vi.fn((element: EditorV6SceneElement) => element.id === 'actor-2')
+    const plan = resolveEditorV6ExportFramePlan({
+      ...common, layeredVideo: false, scene: frameScene, frame: 10,
+      hairAnimation: { poseReactionOnly: false }, hasAnimatedHair
+    })
+
+    expect(plan.riggedElementIds).toEqual(new Set(['actor-2']))
+    expect(hasAnimatedHair).toHaveBeenCalledTimes(frameScene.elements.length)
+
+    const withoutHair = resolveEditorV6ExportFramePlan({ ...common, scene: frameScene, frame: 10, hairAnimation: undefined, hasAnimatedHair })
+    expect(withoutHair.riggedElementIds).toEqual(new Set())
+    expect(hasAnimatedHair).toHaveBeenCalledTimes(frameScene.elements.length)
   })
 
   it('adds frame motion only while a pose reaction is active and preserves complete scene identity at rest', () => {
