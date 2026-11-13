@@ -1273,3 +1273,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o playhead não muda no primeiro clique; ao repetir o clique no mesmo bloco, segue a posição horizontal do ponteiro. Ao apagar o último estado de personagem, mantém-se um intervalo invisível para impedir que o estado anterior reapareça; esse intervalo não é desenhado como bloco. Nenhum schema ou formato persistido mudou.
 
 **Verificação:** `npm run test:editor-v6` passou: 175 arquivos, 755 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.
+
+### Continuação na `Dev-V2` — diagnóstico de processos auxiliares do Chromium (implementado e verificado)
+
+**Mudança:** o processo principal registra encerramentos inesperados de subprocessos Electron/Chromium, como GPU e Utility. Saídas limpas são ignoradas; crash, OOM e saída anormal ficam como erro, enquanto encerramento forçado e eviction de memória ficam como aviso. O registro contém somente tipo, motivo e código de saída, sem PID, nome ou caminho local.
+
+**Compatibilidade:** nenhum processo é reiniciado ou mantido aberto por esta instrumentação; ela só acrescenta eventos sanitizados ao log local de diagnósticos. O evento de renderer continua coberto pelo listener de `webContents` existente.
+
+**Verificação:** 3 testes cobrem OOM com código `-36861`, encerramento forçado e saída limpa. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.

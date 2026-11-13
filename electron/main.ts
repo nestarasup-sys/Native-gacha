@@ -108,6 +108,7 @@ import { readElectronAppMetrics } from './application/electronAppMetrics'
 import { mapRuntimeProcessMetrics } from './application/runtimeProcessMetrics'
 import { createPersistenceShutdownHandler } from './application/persistenceShutdown'
 import { createMainWindowFactory } from './application/mainWindow'
+import { createElectronChildProcessDiagnostic } from './application/electronChildProcessDiagnostic'
 import { createEditorV6VideoReferenceLookup } from './domains/editorV6/videoReferences'
 import { canVisibleRendererRequestFullscreen, createRendererTrustPolicy, isTrustedRendererFrame } from './application/rendererTrust'
 
@@ -131,6 +132,11 @@ configuredAppDataRoot = configureLocalAppDataRoot({ app })
 const diagnosticsLog = createDiagnosticsLog(app.getPath('appData'))
 process.on('uncaughtExceptionMonitor', (error, origin) => {
   diagnosticsLog.recordFatalMain({ severity: 'error', code: 'main.uncaught-exception', message: `${origin}: ${error.message}` })
+})
+app.on('child-process-gone', (_event, details) => {
+  const diagnostic = createElectronChildProcessDiagnostic(details)
+  if (!diagnostic) return
+  void diagnosticsLog.recordMain(diagnostic).catch(() => undefined)
 })
 process.on('warning', (warning) => {
   void diagnosticsLog.recordMain({ severity: 'warning', code: 'main.process-warning', message: `${warning.name}: ${warning.message}` }).catch(() => undefined)
