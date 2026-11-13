@@ -1334,4 +1334,4 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Compatibilidade:** preservadas prioridade do vínculo explícito, escolha do personagem da mesma identidade mais próximo do balão, ordem original em empates, posição relativa, nome, cor e fallback de snapshots antigos.
 
-**Verificação:** teste de regressão confirma o vínculo explícito e a seleção do personagem mais próximo quando há instâncias duplicadas. `npm run test:editor-v6` passou: 177 arquivos, 764 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.
+**Verificação:** testes confirmam o vínculo explícito e a seleção do personagem mais próximo quando há instâncias duplicadas; outro confirma que a lista de mídia substituída invalida o índice e atualiza as dimensões do vídeo. `npm run test:editor-v6` passou: 177 arquivos, 765 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.

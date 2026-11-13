@@ -7,6 +7,18 @@ import { addEditorV6ElementAtFrame, compareEditorV6TimelineBlocks, editorV6ClipA
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
+type EditorV6MediaCollection = NonNullable<EditorV6Document['media']>
+const videoMediaCache = new WeakMap<EditorV6MediaCollection, Map<string, EditorV6MediaCollection[number]>>()
+
+function videoMediaIndex(media: EditorV6MediaCollection): Map<string, EditorV6MediaCollection[number]> {
+  let index = videoMediaCache.get(media)
+  if (index) return index
+  index = new Map()
+  for (const item of media) if (item.kind === 'video' && !index.has(item.id)) index.set(item.id, item)
+  videoMediaCache.set(media, index)
+  return index
+}
+
 export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
   let backgrounds = backgroundsCache.get(document.timeline)
   if (!backgrounds) {
@@ -36,7 +48,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
     const candidate = videoClips[index].block
     if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
   }
-  const media = video ? document.media?.find((item) => item.id === video.mediaId && item.kind === 'video') : undefined
+  const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
 const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()

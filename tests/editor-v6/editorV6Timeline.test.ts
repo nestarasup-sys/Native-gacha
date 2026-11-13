@@ -105,6 +105,18 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 
+  it('atualiza o índice de vídeos quando a lista de mídia do projeto muda', () => {
+    const document = fixture(), videoId = crypto.randomUUID()
+    const media = { id: videoId, name: 'Cena.mp4', fileName: `${videoId}.mp4`, kind: 'video' as const, mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }
+    document.media = [media]
+    document.timeline.tracks.find((track) => track.kind === 'video')!.blocks = [{ id: crypto.randomUUID(), label: 'Cena.mp4', mediaId: videoId, startFrame: 0, durationFrames: 60 }]
+    expect(resolveEditorV6SceneAtFrame(document, 1).mediaVideo?.layout).toMatchObject({ width: 40, height: 40 })
+
+    const updatedMedia = [{ ...media, width: 720, height: 1280 }]
+    const updatedDocument = { ...document, media: updatedMedia }
+    expect(resolveEditorV6SceneAtFrame(updatedDocument, 1).mediaVideo?.layout).toMatchObject({ width: 12.6563, height: 40 })
+  })
+
   it('resolve vídeo da Base pelo ID sem exigir cópia na pasta do projeto', () => {
     const document = fixture(), libraryId = crypto.randomUUID()
     document.media = [{ id: libraryId, libraryVideoId: libraryId, name: 'Compartilhado.mp4', fileName: `${libraryId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1280, height: 720, sizeBytes: 1024 }]
