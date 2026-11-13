@@ -1455,3 +1455,13 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** 10 testes focados, suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Um caso compara a representação final exatamente com as funções públicas existentes e outro cobre vídeo sem quadro ativo.
 
 **Verificação integrada subsequente:** harness Electron isolado aprovado: 81 quadros com 78 reutilizações, saída Full HD e verificações de fallback/cancelamento/transição; cenário sintético de boca com 301 quadros levou 2,01 s e registrou pico de RSS de 158.441.472 bytes. Execução não controlada; os tempos não medem o ganho da chave.
+
+### Continuação na `Dev-V2` — preencher índice de personagens vinculados em uma passagem
+
+**Mudança:** `indexLinkedCharacters`, no resolvedor compartilhado de cena, agora ignora elementos não-personagem durante o mesmo percurso que preenche os mapas por ID de elemento e ID de personagem. Removeu o `filter` intermediário e a lista de pares criada antes do primeiro `Map`.
+
+**Compatibilidade:** personagens duplicados continuam ordenados como na lista da cena; fala continua escolhendo o personagem mais próximo e vínculo explícito mantém precedência. Testes existentes exercitam ambas as regras.
+
+**Medição isolada:** com 80 personagens sintéticos e 20.000 construções, os loops equivalentes passaram de 148,2 ms para 119,9 ms (19,1% menos no índice apenas). Não é ganho de 19,1% no export.
+
+**Verificação:** 48 testes focados, suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

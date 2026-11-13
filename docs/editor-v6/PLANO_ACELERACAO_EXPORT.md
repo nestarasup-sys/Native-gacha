@@ -395,4 +395,12 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 
 **Verificação integrada:** `npm run test:editor-v6:export` passou em pasta isolada. Confirmou 81 quadros no harness geral (78 reutilizados), validação Full HD, fallback, cancelamento e transição turbo. O teste sintético de boca exportou 301 quadros em 2,01 s, com pico de RSS de 158.441.472 bytes e até 2 workers. O computador estava em uso, então esses números não são benchmark controlado nem comparam a mudança de chaves; o teste só verifica integração.
 
+### Continuação 2026-11-13 — indexar personagens vinculados em um percurso
+
+**Mudança:** ao resolver uma cena com fala/pensamento vinculado, o índice de personagens agora é preenchido em uma passagem, sem o array temporário do filtro nem o array de pares usado no `Map`. A ordem das listas por personagem e a regra de alvo explícito/mais próximo foram preservadas.
+
+**Medição isolada:** um microteste sintético com 80 personagens em quatro grupos, 20.000 construções dos mesmos índices: três percursos/arrays levaram 148,2 ms; o percurso único levou 119,9 ms (19,1% menos nesse trecho). Não mede a resolução completa de cena nem o export total.
+
+**Verificação:** 48 testes focados de timeline/cena/plano visual e suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.

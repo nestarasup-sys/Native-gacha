@@ -82,11 +82,11 @@ function baseCharacterIndex(elements: EditorV6Document['elements']): BaseCharact
 }
 
 function indexLinkedCharacters(document: EditorV6Document, elements: EditorV6Element[]) {
-  const characters = elements.filter((element) => element.kind === 'character' && element.characterId)
-  const charactersByElementId = new Map(characters.map((character) => [character.id, character]))
+  const charactersByElementId = new Map<string, EditorV6Element>()
   const charactersByCharacterId = new Map<string, EditorV6Element[]>()
-  for (const character of characters) {
-    if (!character.characterId) continue
+  for (const character of elements) {
+    if (character.kind !== 'character' || !character.characterId) continue
+    charactersByElementId.set(character.id, character)
     const matches = charactersByCharacterId.get(character.characterId) ?? []
     matches.push(character)
     charactersByCharacterId.set(character.characterId, matches)
