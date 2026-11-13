@@ -17,6 +17,18 @@ describe('planejamento de exportação do Editor V6', () => {
     expect(editorV6ExportContentEndFrame({ ...project, timeline: { ...project.timeline, tracks: [project.timeline.tracks[0]] } })).toBe(930)
   })
 
+  it('não estende o intervalo padrão com conteúdo oculto, silenciado ou invisível', () => {
+    const project = {
+      timeline: { durationFrames: 1200, tracks: [
+        { kind: 'video', blocks: [{ startFrame: 0, durationFrames: 402 }] },
+        { kind: 'video', hidden: true, blocks: [{ startFrame: 402, durationFrames: 600 }] },
+        { kind: 'audio', muted: true, blocks: [{ startFrame: 420, durationFrames: 500 }] },
+        { kind: 'object', blocks: [{ startFrame: 450, durationFrames: 600, state: { visible: false } }] }
+      ] }, exportAudio: []
+    } as never
+    expect(editorV6ExportContentEndFrame(project)).toBe(402)
+  })
+
   it('expõe apenas codificadores aceitos pelo contrato de exportação', () => {
     expect(EDITOR_V6_ENCODER_CHOICES.map((choice) => choice.value)).toEqual(['auto', 'cpu'])
     for (const choice of EDITOR_V6_ENCODER_CHOICES) {

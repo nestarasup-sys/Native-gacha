@@ -4,6 +4,8 @@
 
 Abra **Exportar MP4** na barra lateral do V6. Escolha o intervalo, 1080p ou 720p e a codificação automática ou CPU. O projeto usa 30 FPS. Com Turbo habilitado, o botão é **EXPORTAR TURBO 2×**.
 
+O fim inicial do intervalo acompanha o último bloco ativo e visível, sem contar fundos persistentes, lacunas ou snapshots explicitamente invisíveis. Faixas ocultas e silenciadas não estendem o vídeo. Se não houver outro bloco para delimitar o final, personagens continuam persistindo até a duração do documento; o mínimo padrão é 10 segundos.
+
 O painel também permite adicionar trilhas sonoras, ajustar início na edição, início no arquivo, duração, volume e silenciamento. Esses áudios são copiados para `export-audio` dentro do projeto e suas configurações são persistidas no JSON. Duplicar um projeto copia também esses arquivos. Remover uma trilha do painel remove sua participação na mixagem, preservando a cópia do arquivo no projeto.
 
 Quando há personagem visível ligado a uma fala no intervalo, o exportador anima a boca automaticamente em um ciclo contínuo. Não há opção no painel para desligar a animação; chamadas antigas com `mouthLoop: false` são normalizadas para `true` no coordenador. A prévia e o documento salvo não são alterados pelo atlas temporário. Cenas sem personagem elegível falando não preparam recortes de boca.

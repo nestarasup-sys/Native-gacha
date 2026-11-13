@@ -32,9 +32,9 @@ export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number
 /** Resolve the useful export end when removed content left a longer stored timeline behind. */
 export function editorV6ExportContentEndFrame(project: Pick<EditorV6Document, 'timeline' | 'exportAudio'>): number {
   const contentEnds = project.timeline.tracks
-    .filter((track) => track.kind !== 'character')
+    .filter((track) => track.kind !== 'character' && !track.hidden && !track.muted)
     .flatMap((track) => track.blocks)
-    .filter((block) => !block.background && !block.emptyGap)
+    .filter((block) => !block.background && !block.emptyGap && block.state?.visible !== false)
     .map((block) => block.startFrame + block.durationFrames)
   for (const clip of project.exportAudio ?? []) if (!clip.muted && clip.gain > 0) contentEnds.push(clip.startFrame + clip.durationFrames)
   if (!contentEnds.length) return project.timeline.durationFrames
