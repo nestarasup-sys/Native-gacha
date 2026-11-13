@@ -1297,3 +1297,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** as vistas Editor e Rosto não dependem desses dados. Ao abrir Presets, poses e expressões do modelo selecionado são carregadas e apresentadas como antes.
 
 **Verificação:** 2 testes cobrem as combinações de estado do Inspector. `npm run test:editor-v6` passou: 177 arquivos, 760 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build passaram.
+
+### Continuação na `Dev-V2` — liberação do cache facial ao sair do projeto (implementado e verificado)
+
+**Mudança:** ao perder o modelo selecionado, o hook remove as folhas faciais detalhadas, o estado de carregamento e referências de requisições pendentes. Respostas atrasadas de outro modelo ainda podem concluir a ação que as solicitou, mas não voltam a preencher o cache do projeto atual.
+
+**Compatibilidade:** o cache LRU continua limitado a 16 folhas enquanto há personagem selecionado; a limpeza acontece quando o modelo deixa de existir na tela do Editor V6.
+
+**Verificação:** 3 testes cobrem ativação do catálogo e descarte de respostas de modelo antigo. `npm run test:editor-v6` passou: 177 arquivos, 761 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build passaram.

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import { resolveEditorV6TalkMouthId } from '../../../../shared/editorV6'
 import type { FaceCatalogItem, FaceCatalogItemSummary } from '../../../../shared/fabricator'
+import { isEditorV6FaceCatalogRequestCurrent } from './editorV6FaceCatalogModel'
 import { editorV6FaceDetailIds, editorV6FaceDetailsAreLoading, editorV6FaceSheetKind, editorV6SelectedFaceCatalogItemId, type EditorV6FaceCategory } from './editorV6FaceSelection'
 import { rememberEditorV6FaceCatalogItem } from './editorV6FaceDetailCache'
 
@@ -20,6 +21,8 @@ export function useEditorV6FaceCatalog(
   const [loading, setLoading] = useState(false)
   const [loadingDetails, setLoadingDetails] = useState<ReadonlySet<string>>(() => new Set())
   const detailsRef = useRef(details)
+  const activeModelSlotRef = useRef(modelSlot)
+  activeModelSlotRef.current = modelSlot
   const detailRequestsRef = useRef(new Map<string, Promise<FaceCatalogItem | null>>())
   const loadingDetailsRef = useRef(new Set<string>())
   const modelItems = modelSlot === null ? [] : items.filter((item) => item.modelSlot === modelSlot)
@@ -44,7 +47,7 @@ export function useEditorV6FaceCatalog(
     const request = Promise.resolve()
       .then(() => window.desktop.fabricator.loadFaceCatalogItem(slot, id))
       .then((item) => {
-        if (item) {
+        if (item && isEditorV6FaceCatalogRequestCurrent(slot, activeModelSlotRef.current)) {
           const next = rememberEditorV6FaceCatalogItem(detailsRef.current, key, item)
           detailsRef.current = next
           setDetails(next)
@@ -68,6 +71,13 @@ export function useEditorV6FaceCatalog(
     setItems([])
     if (!enabled || modelSlot === null) {
       setLoading(false)
+      if (modelSlot === null) {
+        detailsRef.current = {}
+        setDetails({})
+        loadingDetailsRef.current = new Set()
+        setLoadingDetails(loadingDetailsRef.current)
+        detailRequestsRef.current.clear()
+      }
       return () => { cancelled = true }
     }
     setLoading(true)

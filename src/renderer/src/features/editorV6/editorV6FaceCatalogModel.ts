@@ -11,3 +11,7 @@ export function shouldLoadEditorV6PresetCatalog(
 ): boolean {
   return inspectorOpen && inspectorTab === 'custom' && customView === 'presets'
 }
+
+export function isEditorV6FaceCatalogRequestCurrent(requestedModelSlot: number, activeModelSlot: number | null): boolean {
+  return requestedModelSlot === activeModelSlot
+}
