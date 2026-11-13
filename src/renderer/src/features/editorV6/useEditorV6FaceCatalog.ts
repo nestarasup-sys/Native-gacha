@@ -12,7 +12,8 @@ export function useEditorV6FaceCatalog(
   category: EditorV6FaceCategory,
   mode: 'idle' | 'blink' | 'talk' | 'talk-blink',
   appearance: CustomizerFaceAppearance | undefined,
-  onError: FaceCatalogErrorHandler
+  onError: FaceCatalogErrorHandler,
+  enabled = true
 ) {
   const [items, setItems] = useState<FaceCatalogItemSummary[]>([])
   const [details, setDetails] = useState<Record<string, FaceCatalogItem>>({})
@@ -65,7 +66,7 @@ export function useEditorV6FaceCatalog(
   useEffect(() => {
     let cancelled = false
     setItems([])
-    if (modelSlot === null) {
+    if (!enabled || modelSlot === null) {
       setLoading(false)
       return () => { cancelled = true }
     }
@@ -78,13 +79,13 @@ export function useEditorV6FaceCatalog(
       if (!cancelled) setLoading(false)
     })
     return () => { cancelled = true }
-  }, [modelSlot, onError])
+  }, [modelSlot, onError, enabled])
 
   const requiredItemIds = editorV6FaceDetailIds(selectedItemId, openMouthId)
   const requiredItemIdsKey = requiredItemIds.join('\u0000')
   const loadingRequiredDetails = editorV6FaceDetailsAreLoading(modelSlot, requiredItemIds, loadingDetails)
   useEffect(() => {
-    if (modelSlot === null || !requiredItemIdsKey) return
+    if (!enabled || modelSlot === null || !requiredItemIdsKey) return
     let cancelled = false
     const requests = requiredItemIdsKey.split('\u0000').map((id) => loadItem(modelSlot, id))
     void Promise.allSettled(requests).then((results) => {
@@ -93,7 +94,7 @@ export function useEditorV6FaceCatalog(
       if (failure) onError(failure.reason)
     })
     return () => { cancelled = true }
-  }, [modelSlot, requiredItemIdsKey, loadItem, onError])
+  }, [modelSlot, requiredItemIdsKey, loadItem, onError, enabled])
 
   return { items: modelItems, details, loading, loadingRequiredDetails, loadItem, openMouthId, selectedItemId, sheetKind }
 }

@@ -1281,3 +1281,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** nenhum processo é reiniciado ou mantido aberto por esta instrumentação; ela só acrescenta eventos sanitizados ao log local de diagnósticos. O evento de renderer continua coberto pelo listener de `webContents` existente.
 
 **Verificação:** 3 testes cobrem OOM com código `-36861`, encerramento forçado e saída limpa. `npm run typecheck`, `npm run audit:architecture`, `npm run build` e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — catálogo facial sob demanda (implementado e verificado)
+
+**Mudança:** o Customizador facial do Editor V6 só lista folhas e carrega os detalhes necessários quando o Inspector está aberto em “Rosto” ou “Presets”. O limite de 16 itens do cache existente foi preservado.
+
+**Compatibilidade:** abrir uma vista personalizada continua carregando as folhas do personagem selecionado; controles de face e presets mantêm os dados e ações atuais. O catálogo continua disponível para reutilização enquanto dentro do limite do cache.
+
+**Verificação:** 1 teste cobre as combinações de aba/estado do Inspector. `npm run test:editor-v6` passou: 177 arquivos, 759 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.

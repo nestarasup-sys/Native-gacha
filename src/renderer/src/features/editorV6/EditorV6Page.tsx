@@ -64,6 +64,7 @@ import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
 import { openEditorV6Project } from './editorV6ProjectNavigation'
 import { completeEditorV6ProjectImport } from './editorV6ProjectImportCompletion'
 import { createEditorV6StageSelectionCommands } from './editorV6StageSelection'
+import { shouldLoadEditorV6FaceCatalog } from './editorV6FaceCatalogModel'
 import { EditorV6FaceInspectorPanel } from './EditorV6FaceInspectorPanel'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
@@ -210,7 +211,14 @@ export function EditorV6Page() {
     loadingRequiredDetails: editorV6FaceDetailsLoading, loadItem: loadEditorV6FaceCatalogItem,
     openMouthId: selectedEditorV6OpenMouthId, selectedItemId: selectedEditorV6FaceCatalogItemId,
     sheetKind: selectedEditorV6FaceSheetKind
-  } = useEditorV6FaceCatalog(selectedEditorV6CharacterModelSlot, editorV6FaceCategory, selectedEditorV6FaceMode, selectedEditorV6FaceAppearance, reportFaceCatalogError)
+  } = useEditorV6FaceCatalog(
+    selectedEditorV6CharacterModelSlot,
+    editorV6FaceCategory,
+    selectedEditorV6FaceMode,
+    selectedEditorV6FaceAppearance,
+    reportFaceCatalogError,
+    shouldLoadEditorV6FaceCatalog(inspectorOpen, inspectorTab)
+  )
   const selectedEditorV6OpenMouth = selectedEditorV6OpenMouthId && selectedEditorV6CharacterModelSlot !== null
     ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
     : undefined
