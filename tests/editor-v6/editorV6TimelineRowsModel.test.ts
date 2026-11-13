@@ -6,6 +6,7 @@ import {
   createEditorV6TimelineDisplayRows,
   createEditorV6TimelineSortedBlocks,
   getEditorV6TimelineBlockPixels,
+  getEditorV6TimelineBlockSeekFrame,
   getEditorV6TimelineMotionPixels,
   getEditorV6TimelineVisibleBlocks
 } from '../../src/renderer/src/features/editorV6/editorV6TimelineRowsModel'
@@ -58,6 +59,15 @@ describe('modelo de linhas da timeline do Editor V6', () => {
     expect(getEditorV6TimelineVisibleBlocks(sorted, [10, 40]).map(({ id }) => id)).toEqual(['end-edge', 'start-edge'])
     expect(getEditorV6TimelineBlockPixels(block('tiny', 30, 1), 60)).toEqual({ left: 60, width: 3 })
     expect(getEditorV6TimelineBlockPixels(block('wide', 30, 30), 60)).toEqual({ left: 60, width: 60 })
+  })
+
+  it('só procura o playhead no segundo clique e limita o quadro aos limites do bloco', () => {
+    const clip = block('selected', 30, 60)
+    expect(getEditorV6TimelineBlockSeekFrame(clip, 1, 160, 100, 60)).toBeUndefined()
+    expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 160, 100, 60)).toBe(60)
+    expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 0, 100, 60)).toBe(30)
+    expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 1000, 100, 60)).toBe(90)
+    expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 160, 100, 0)).toBeUndefined()
   })
 
   it('converte o intervalo de transição em pixels pela escala atual', () => {

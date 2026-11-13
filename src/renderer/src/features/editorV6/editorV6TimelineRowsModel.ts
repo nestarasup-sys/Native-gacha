@@ -48,6 +48,13 @@ export function getEditorV6TimelineBlockPixels(block: Block, pixelsPerSecond: nu
   return { left: block.startFrame / 30 * pixelsPerSecond, width: Math.max(3, block.durationFrames / 30 * pixelsPerSecond) }
 }
 
+/** A block's first click selects it; a repeated click seeks within its frame range. */
+export function getEditorV6TimelineBlockSeekFrame(block: Block, clickCount: number, clientX: number, boundsLeft: number, pixelsPerSecond: number): number | undefined {
+  if (clickCount < 2 || !Number.isFinite(pixelsPerSecond) || pixelsPerSecond <= 0) return undefined
+  const offsetFrames = Math.round((clientX - boundsLeft) / pixelsPerSecond * 30)
+  return Math.min(block.startFrame + block.durationFrames, Math.max(block.startFrame, block.startFrame + offsetFrames))
+}
+
 export function getEditorV6TimelineMotionPixels(plan: EditorV6MotionPlan, pixelsPerSecond: number): EditorV6TimelineBlockPixels {
   return { left: plan.startFrame / 30 * pixelsPerSecond, width: (plan.endFrame - plan.startFrame) / 30 * pixelsPerSecond }
 }

@@ -5,6 +5,7 @@ import { videoCharacterTrackColor } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import {
   getEditorV6TimelineBlockPixels,
+  getEditorV6TimelineBlockSeekFrame,
   getEditorV6TimelineMotionPixels,
   getEditorV6TimelineVisibleBlocks
 } from './editorV6TimelineRowsModel'
@@ -40,10 +41,8 @@ export const EditorV6TimelineLane = memo(function EditorV6TimelineLane({ track, 
         onPointerDown={(event) => { if (event.button === 0) onPointer(event, track, block, 'move'); else event.stopPropagation() }}
         onClick={(event) => {
           event.stopPropagation()
-          const seekToFrame = event.detail > 1
-            ? block.startFrame + Math.round((event.clientX - event.currentTarget.getBoundingClientRect().left) / pixelsPerSecond * 30)
-            : undefined
-          onSelect(block, seekToFrame === undefined ? undefined : Math.min(block.startFrame + block.durationFrames, seekToFrame))
+          const seekToFrame = getEditorV6TimelineBlockSeekFrame(block, event.detail, event.clientX, event.currentTarget.getBoundingClientRect().left, pixelsPerSecond)
+          onSelect(block, seekToFrame)
         }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY, track, block) }}>
         <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
