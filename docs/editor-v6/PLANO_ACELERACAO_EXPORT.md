@@ -385,4 +385,12 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 
 **Verificação:** testes focados (6), suíte completa do Editor V6 (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. O ganho em tempo de export não foi medido; a mudança remove alocações previsíveis e evita atribuir a ela um ganho não comprovado.
 
+### Continuação 2026-11-13 — serializar a projeção visual uma só vez
+
+**Mudança:** a chave do quadro inteiro agora é montada com os trechos JSON já usados pelas chaves de camada. O texto final permanece igual ao formato anterior, mas a projeção de elementos deixa de ser serializada de novo para compor a chave do quadro.
+
+**Medição isolada:** em Node, com cena sintética de 80 elementos e 12.000 cálculos alternados após aquecimento, a construção antiga levou 1.737,1 ms e a nova 887,0 ms (redução de 48,9% nesse cálculo). Isso não representa um ganho de 48,9% no export: mede exclusivamente a geração das chaves e não controla o desempenho do app completo.
+
+**Verificação:** testes focados de plano visual (10), suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Os testes comparam a representação otimizada à API anterior, incluindo quadros sem vídeo ativo.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.

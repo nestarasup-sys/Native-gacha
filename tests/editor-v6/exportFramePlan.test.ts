@@ -34,6 +34,22 @@ describe('resolveEditorV6ExportFramePlan', () => {
     })
   })
 
+  it('keeps the existing key representation when video has no active frame or no clip exists', () => {
+    const noClip = scene([actor()], 42)
+    const inactiveClip = {
+      ...scene([actor({ mouthPatch: { assetId: 'mouth', x: 0.1, y: 0.2, width: 0.3, height: 0.4 } })]),
+      frame: undefined,
+      mediaVideo: { mediaId: 'video-1', startFrame: 12, sourceInFrame: 7, layout: { x: 1, y: 2, width: 80, height: 90, rotation: 5 } }
+    } as unknown as Parameters<typeof editorV6VisualKeys>[0]
+
+    for (const input of [noClip, inactiveClip]) {
+      expect(editorV6VisualKeys(input)).toEqual({
+        key: editorV6VisualKey(input),
+        layerKeys: editorV6LayerVisualKeys(input)
+      })
+    }
+  })
+
   it.each([
     ['balloon scale', actor({ kind: 'speech' }), actor({ kind: 'speech', balloonScalePercent: 125 })],
     ['balloon vertical offset', actor({ kind: 'thought' }), actor({ kind: 'thought', balloonOffsetY: -5 })],

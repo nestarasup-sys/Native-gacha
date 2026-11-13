@@ -103,9 +103,15 @@ export type EditorV6VisualKeys = { key: string; layerKeys: { background: string;
 function editorV6ElementVisualKeys(elements: EditorV6SceneElement[]) {
   return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch, element.balloonScalePercent, element.balloonOffsetY, element.speakerName, element.speakerColor])
 }
+function editorV6SerializeVisualKey(value: unknown): string {
+  return JSON.stringify(value) ?? 'null'
+}
+function editorV6LayerVisualKeysFromSerialized(background: string, elements: string, hairAnimationFrame?: number) {
+  const foreground = hairAnimationFrame === undefined ? elements : `[${elements},${editorV6SerializeVisualKey(hairAnimationFrame)}]`
+  return { background, foreground }
+}
 function editorV6LayerVisualKeysForElements(background: unknown, elements: ReturnType<typeof editorV6ElementVisualKeys>, hairAnimationFrame?: number) {
-  const foreground = hairAnimationFrame === undefined ? elements : [elements, hairAnimationFrame]
-  return { background: JSON.stringify(background), foreground: JSON.stringify(foreground) }
+  return editorV6LayerVisualKeysFromSerialized(editorV6SerializeVisualKey(background), editorV6SerializeVisualKey(elements), hairAnimationFrame)
 }
 function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: ReturnType<typeof editorV6ElementVisualKeys>): string {
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
@@ -115,9 +121,17 @@ function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: R
 /** Builds both frame-reuse keys from one element projection. */
 export function editorV6VisualKeys(scene: EditorV6VisualKeyInput): EditorV6VisualKeys {
   const elements = editorV6ElementVisualKeys(scene.elements)
+  const elementsKey = editorV6SerializeVisualKey(elements)
+  const backgroundKey = editorV6SerializeVisualKey(scene.background)
+  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
+  const mediaKey = editorV6SerializeVisualKey(mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout])
+  const hairFrameKey = scene.hairAnimationFrame === undefined ? undefined : editorV6SerializeVisualKey(scene.hairAnimationFrame)
+  // JSON.stringify([background, media, elements, hairFrame?]) has the same
+  // representation, but serializing the large element projection again is
+  // avoidable after its layer key has already been produced.
   return {
-    key: editorV6VisualKeyForElements(scene, elements),
-    layerKeys: editorV6LayerVisualKeysForElements(scene.background, elements, scene.hairAnimationFrame)
+    key: `[${backgroundKey},${mediaKey},${elementsKey}${hairFrameKey === undefined ? '' : `,${hairFrameKey}`}]`,
+    layerKeys: editorV6LayerVisualKeysFromSerialized(backgroundKey, elementsKey, scene.hairAnimationFrame)
   }
 }
 export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {

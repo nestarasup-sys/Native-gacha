@@ -1445,3 +1445,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o caminho ativo ainda recebe mapas próprios e rasteriza normalmente. O mapa de canvases vazio é compartilhado somente como leitura no caminho estático. Teste de composição confirma a reutilização entre chamadas; testes de cabelo ativo continuam cobrindo geometria, boca e rasterização.
 
 **Verificação:** testes focados (6), suíte completa do Editor V6 (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho de velocidade em um projeto exportado.
+
+### Continuação na `Dev-V2` — compartilhar a serialização da chave do quadro
+
+**Mudança:** `editorV6VisualKeys` reutiliza a string JSON dos elementos ao formar a chave completa e a chave da camada frontal. A composição manual mantém o mesmo formato JSON do array anterior, inclusive os campos de vídeo e cabelo; as funções públicas de chave continuam com o mesmo contrato.
+
+**Medição isolada:** 80 elementos sintéticos, 12.000 chamadas após aquecimento: 1.737,1 ms na implementação anterior e 887,0 ms na nova (48,9% menos tempo só para gerar as chaves). Não é uma medição do tempo total de exportação.
+
+**Verificação:** 10 testes focados, suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Um caso compara a representação final exatamente com as funções públicas existentes e outro cobre vídeo sem quadro ativo.
