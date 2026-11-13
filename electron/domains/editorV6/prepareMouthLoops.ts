@@ -8,7 +8,7 @@ const MAX_ATLAS_BYTES = 64 * 1024 * 1024
 const MAX_ATLAS_PIXELS = 32_000_000
 const MAX_SINGLE_ATLAS_PIXELS = 8_000_000
 type Character = EditorV6MotionBakeRequest['character']
-type Candidate = { state: EditorV6Element; character: Character; blockIds: string[]; key: string }
+type Candidate = { state: EditorV6Element; character: Character; blockIds: string[]; blockIdSet: Set<string>; key: string }
 
 function stateKey(state: EditorV6Element, character: Character): string {
   const visualState = [state.id, state.assetId, state.characterId, state.characterSourceUpdatedAt, state.modelSourceRevision, state.poseSourceRevision, state.wardrobeSourceRevision, state.hairSourceRevision, state.headExtraSourceRevision, state.eyeSourceRevision, state.poseSlot,
@@ -22,8 +22,14 @@ function candidateFor(state: EditorV6Element, blockId: string, character: Charac
   if (state.kind !== 'character' || state.visible === false || state.characterId !== character.id) return
   const key = stateKey(state, character)
   const existing = target.get(key)
-  if (existing) { if (!existing.blockIds.includes(blockId)) existing.blockIds.push(blockId); return }
-  target.set(key, { state, character, blockIds: [blockId], key })
+  if (existing) {
+    if (!existing.blockIdSet.has(blockId)) {
+      existing.blockIdSet.add(blockId)
+      existing.blockIds.push(blockId)
+    }
+    return
+  }
+  target.set(key, { state, character, blockIds: [blockId], blockIdSet: new Set([blockId]), key })
 }
 
 function candidatesFor(project: EditorV6Document, characters: readonly Character[], startFrame: number, endFrame: number) {

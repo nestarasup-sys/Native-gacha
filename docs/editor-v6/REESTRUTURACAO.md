@@ -1321,3 +1321,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o preview do projeto ativo continua reutilizando seu renderer. Ao trocar de projeto, nenhum resultado atrasado publica dados no projeto novo.
 
 **Verificação:** os 11 testes do preview facial passaram. `npm run test:editor-v6` passou: 177 arquivos, 762 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.
+
+### Continuação na `Dev-V2` — agrupamento linear dos estados de boca repetidos (implementado e verificado)
+
+**Mudança:** a preparação agrupa os IDs de blocos que compartilham o mesmo estado visual usando um `Set`, em vez de procurar cada ID percorrendo a lista acumulada. Isso evita crescimento quadrático quando muitos blocos reutilizam o mesmo estado; a ordem dos IDs e o bake único por estado são preservados.
+
+**Verificação:** um teste com 501 blocos repetidos confirma a ordem, ausência de IDs duplicados e um único bake. `npm run test:editor-v6` passou: 177 arquivos, 763 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura, build e `git diff --check` passaram. Nenhum projeto real ou export pesado foi executado.

@@ -145,6 +145,45 @@ describe('preparação dos loops de boca do Editor V6', () => {
     expect(() => parseEditorV6MotionRequest(firstRequest)).not.toThrow()
   })
 
+  it('agrupa blocos com o mesmo estado visual sem repetir IDs nem refazer o bake', async () => {
+    const elementId = randomUUID()
+    const actor: EditorV6Element = { id: elementId, kind: 'character', characterId: 'character', text: 'Personagem', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
+    const blocks = Array.from({ length: 501 }, (_, index) => ({
+      id: `block-${index}`,
+      elementId,
+      label: 'Estado repetido',
+      startFrame: index,
+      durationFrames: 1,
+      state: actor
+    }))
+    const project = linkSpeech({
+      id: randomUUID(), elements: [actor], assets: [],
+      timeline: { durationFrames: blocks.length, knownElementIds: [elementId], tracks: [{ id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false, blocks }] }
+    } as unknown as EditorV6Document)
+    const character = { id: 'character', updatedAt: '2026-10-30T00:00:00.000Z', customization: { modelSlot: 1 } } as CustomizerCharacter
+    let bakeCalls = 0
+    const prepared = await prepareExportMouthLoops(project, 0, blocks.length, 30, {
+      signal: new AbortController().signal,
+      characters: [character],
+      progress: () => {},
+      bake: async request => {
+        bakeCalls++
+        const assetId = randomUUID()
+        const frames = fakePatchFrames(request)
+        return {
+          asset: { id: assetId, category: 'character', name: 'Loop', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' },
+          motion: { version: 1, key: request.plan.key, assetId, frames },
+          metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 100 }
+        } satisfies EditorV6MotionBakeResult
+      }
+    })
+
+    expect(prepared.mouthLoops.states).toHaveLength(1)
+    expect(prepared.mouthLoops.states[0].blockIds).toEqual(blocks.map(block => block.id))
+    expect(new Set(prepared.mouthLoops.states[0].blockIds).size).toBe(blocks.length)
+    expect(bakeCalls).toBe(1)
+  })
+
   it('não prepara bocas em cenas sem personagem falando', async () => {
     const elementId = randomUUID(), actor: EditorV6Element = { id: elementId, kind: 'character', characterId: 'character', text: 'Personagem', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
     const project = { id: randomUUID(), elements: [actor], assets: [], timeline: { durationFrames: 60, knownElementIds: [elementId], tracks: [{ id: randomUUID(), kind: 'character', name: 'Personagem', muted: false, locked: false, blocks: [{ id: randomUUID(), elementId, label: 'Estado', startFrame: 0, durationFrames: 60, state: actor }] }] } } as unknown as EditorV6Document
