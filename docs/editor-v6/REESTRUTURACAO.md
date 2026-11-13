@@ -1437,3 +1437,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Verificação:** o teste confirma que o caminho sem vídeo mantém os mesmos elementos e fundo e que o caminho padrão ainda devolve o clipe ativo. 31 testes focados de timeline e runtime de cabelo, suíte completa (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem benchmark do projeto real.
 
 **Verificação integrada subsequente:** o harness Electron completo passou novamente depois das mudanças na resolução de cena/superfície, usando um diretório novo isolado de saída. O caso de vídeo via FFmpeg concluiu; o cenário sintético de boca marcou 301 quadros a 320×180/30 fps, RSS máximo de ~166 MB e até dois workers. Artefatos mantidos: relatório e MP4 de ~11 KB em `out/editor-v6-isolated-check-2026-11-13/editor-v6-export-check`. Esta execução não é benchmark controlado nem export de projeto real.
+
+### Continuação na `Dev-V2` — reutilizar mapas vazios no caminho sem cabelo ativo
+
+**Mudança:** a resolução de quadro deixa de alocar mapas vazios de elementos originais e canvases rasterizados quando nenhum cabelo está animado. Para quadros com cabelo ativo, a construção do índice de elementos escreve diretamente no `Map`, sem materializar uma lista intermediária de pares.
+
+**Compatibilidade:** o caminho ativo ainda recebe mapas próprios e rasteriza normalmente. O mapa de canvases vazio é compartilhado somente como leitura no caminho estático. Teste de composição confirma a reutilização entre chamadas; testes de cabelo ativo continuam cobrindo geometria, boca e rasterização.
+
+**Verificação:** testes focados (6), suíte completa do Editor V6 (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho de velocidade em um projeto exportado.

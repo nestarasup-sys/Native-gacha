@@ -8,7 +8,11 @@ import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
 
 type HairRuntime = ReturnType<typeof createEditorV6ExportWorkerHairRuntime>
+type ExportScene = ReturnType<HairRuntime['resolveRawSceneAtFrame']>
+type ExportSceneElement = ExportScene['elements'][number]
 type RenderLayer = 'all' | 'background' | 'foreground'
+
+const EMPTY_ORIGINAL_ELEMENTS: ReadonlyMap<string, ExportSceneElement> = new Map()
 
 type SurfaceInput = {
   scene: Awaited<ReturnType<HairRuntime['resolveRawSceneAtFrame']>>
@@ -70,9 +74,12 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
 
     const faceCompositionStarted = now()
-    const originalElements = activeHair
-      ? new Map(scene.elements.map(element => [element.id, element]))
-      : new Map<string, (typeof scene.elements)[number]>()
+    let originalElements = EMPTY_ORIGINAL_ELEMENTS
+    if (activeHair) {
+      const indexedElements = new Map<string, ExportSceneElement>()
+      for (const element of scene.elements) indexedElements.set(element.id, element)
+      originalElements = indexedElements
+    }
     const riggedIds = riggedElementIds
     const faceCompositionInput = riggedIds.size
       ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }

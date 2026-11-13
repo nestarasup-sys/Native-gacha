@@ -57,9 +57,11 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     const current = scene([element()])
     const timings: EditorV6FrameTimings = {}
     const result = factory.compose({ composedScene: current, originalElements: new Map([['actor', current.elements[0]]]), frame: 12, activeHair: false, riggedElementIds: new Set(), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings, metrics: {} })
+    const nextResult = factory.compose({ composedScene: current, originalElements: new Map(), frame: 13, activeHair: false, riggedElementIds: new Set(), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings: {}, metrics: {} })
 
     expect(result.renderScene).toBe(current)
     expect(result.rasterCanvases.size).toBe(0)
+    expect(nextResult.rasterCanvases).toBe(result.rasterCanvases)
     expect(timings).toEqual({})
     expect(factory.composeHairFrame).not.toHaveBeenCalled()
   })

@@ -39,6 +39,7 @@ type ComposeInput = {
 }
 
 const HAIR_DETAIL_KEYS = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
+const EMPTY_RASTER_CANVASES: ReadonlyMap<string, HTMLCanvasElement> = new Map()
 
 /** Resolves which characters need raster hair and composes their export-frame surfaces. */
 export function createEditorV6ExportHairSceneComposer(options: Options) {
@@ -65,8 +66,8 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
 
   const compose = ({ composedScene, originalElements, frame, activeHair, riggedElementIds, assetsById, renderAssetsById, hairSurfaceDataById, timings, metrics }: ComposeInput) => {
     let renderScene = composedScene
+    if (!activeHair) return { renderScene, rasterCanvases: EMPTY_RASTER_CANVASES }
     const rasterCanvases = new Map<string, HTMLCanvasElement>()
-    if (!activeHair) return { renderScene, rasterCanvases }
 
     const started = performance.now()
     const detailBefore = Object.fromEntries(HAIR_DETAIL_KEYS.map(key => [key, timings[key] ?? 0])) as Record<typeof HAIR_DETAIL_KEYS[number], number>

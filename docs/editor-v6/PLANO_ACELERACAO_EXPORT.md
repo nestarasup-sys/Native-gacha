@@ -377,4 +377,12 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 - [ ] Cancelamento, fallback e destino existente protegidos.
 - [ ] Dados originais preservados e commit local revisado.
 
+### Continuação 2026-11-13 — eliminar mapas descartáveis em quadros sem cabelo animado
+
+**Mudança:** quando não há cabelo animado, o renderizador reutiliza mapas vazios e somente leitura para elementos originais e canvases rasterizados, em vez de alocar dois mapas por quadro. Quando há cabelo animado, o índice de elementos agora é construído diretamente no `Map`, sem criar antes o array temporário de pares.
+
+**Compatibilidade:** a composição do cabelo continua criando canvases exclusivos do quadro quando precisa rasterizar. O mapa compartilhado só é usado no caminho sem cabelo ativo, onde nenhum escritor o recebe; a cena e os resultados de captura permanecem os mesmos.
+
+**Verificação:** testes focados (6), suíte completa do Editor V6 (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. O ganho em tempo de export não foi medido; a mudança remove alocações previsíveis e evita atribuir a ela um ganho não comprovado.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.
