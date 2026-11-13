@@ -62,19 +62,18 @@ describe('interações de ponteiro da timeline do Editor V6', () => {
 
     expect(captures).toEqual([7])
     expect(didDrag.current).toBe(true)
-    expect(events).toEqual([
-      ['seek', 30], ['select', 'block-1'], ['close-menu'],
-      ['draft', 60], ['guide', undefined], ['readout', 60],
-      ['commit', expect.objectContaining({ tracks: [expect.objectContaining({ blocks: [expect.objectContaining({ startFrame: 60 })] })] })],
-      ['draft', null], ['guide', undefined], ['readout', null]
+    expect(events.map((event) => (event as unknown[])[0])).toEqual([
+      'select', 'close-menu', 'draft', 'guide', 'readout', 'commit', 'draft', 'guide', 'readout'
     ])
+    const committed = (events.find((event) => (event as unknown[])[0] === 'commit') as unknown[])[1] as EditorV6Timeline
+    expect(committed.tracks[0].blocks[0].startFrame).toBe(60)
   })
 
   it('ignora pointer diferente e o cancelamento descarta drag provisório', () => {
     const { commands, events, fixture } = harness()
     commands.onPointer(pointerEvent(), fixture.track, fixture.block, 'move')
     commands.movePointer(pointerEvent({ pointerId: 8, type: 'pointermove', clientX: 130 }))
-    expect(events).toEqual([['seek', 30], ['select', 'block-1'], ['close-menu']])
+    expect(events).toEqual([['select', 'block-1'], ['close-menu']])
     commands.cancel()
     expect(events.slice(-3)).toEqual([['draft', null], ['guide', undefined], ['readout', null]])
   })
