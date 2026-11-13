@@ -1367,3 +1367,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** a elegibilidade continua decidida pelo mesmo callback, com os mesmos limites de faixa e de reação; a ordem do SVG e a composição de cabelo permanecem iguais. Sem bundle ou durante captura do fundo, a checagem continua sem varrer os elementos.
 
 **Verificação:** testes focados confirmam IDs, uma única consulta por elemento e ausência de consulta quando não há bundle (9 testes). `npm run test:editor-v6` passou: 177 arquivos, 770 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — atalho de identidade na memoização das camadas (implementado e verificado)
+
+**Mudança:** o comparador de `SceneLayer` agora retorna cedo quando o objeto de estado imutável do elemento é a mesma referência. Mudanças de asset, boca, seleção, interação, canvas rasterizado ou callback continuam invalidando antes desse atalho.
+
+**Compatibilidade:** estados recriados com os mesmos valores ainda passam pela comparação detalhada existente; o fast path depende do contrato imutável já documentado no comparador.
+
+**Verificação:** teste focado cobre identidade do snapshot, comparação de estados equivalentes, alterações visuais e troca de pixels do atlas. `npm run test:editor-v6` passou: 177 arquivos, 771 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

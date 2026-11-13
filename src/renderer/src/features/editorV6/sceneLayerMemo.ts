@@ -33,6 +33,9 @@ export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayer
   if (typeof window !== 'undefined' && (window as Window & { __editorV6DisableSceneLayerMemo?: boolean }).__editorV6DisableSceneLayerMemo) return false
   if (previous.asset !== next.asset || previous.mouthAsset !== next.mouthAsset || previous.rasterCanvas !== next.rasterCanvas || previous.rasterFrame !== next.rasterFrame || previous.selected !== next.selected || previous.interaction !== next.interaction || previous.onImageLoad !== next.onImageLoad) return false
   const left = previous.element, right = next.element
+  // Timeline snapshots are immutable; when the same state object survives to
+  // the next frame, no nested field comparison is needed.
+  if (left === right) return true
   const keys = Object.keys(left) as Array<keyof EditorV6Element>
   if (keys.length !== Object.keys(right).length) return false
   return keys.every((key) => key === 'motionSprite' ? sameMotionSprite(left.motionSprite, right.motionSprite)

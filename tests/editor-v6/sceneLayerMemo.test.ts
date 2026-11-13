@@ -20,6 +20,12 @@ describe('SceneLayer memoização por aparência', () => {
     expect(sceneLayerPropsEqual(previous, next)).toBe(true)
   })
 
+  it('usa a identidade do snapshot imutável quando a camada permanece igual', () => {
+    const state = element()
+    const previous = { element: state, asset: undefined, selected: false, interaction: undefined }
+    expect(sceneLayerPropsEqual(previous, { ...previous, element: state })).toBe(true)
+  })
+
   it('renderiza novamente quando posição, seleção ou recorte de animação muda', () => {
     const previous = { element: element(), asset: undefined, selected: false, interaction: undefined }
     expect(sceneLayerPropsEqual(previous, { ...previous, element: element({ x: 2 }) })).toBe(false)
