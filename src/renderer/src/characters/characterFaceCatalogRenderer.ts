@@ -200,9 +200,20 @@ export function createCharacterFaceCatalogRenderer(loaders: CharacterFaceCatalog
         const eyeAsset = loaded.get(eyePart)
         if (!eyeAsset) continue
         const eyeSelection = appearance.components?.[eyePart]
-        const eyeTransformBase = eyeAsset
+        const eyeTransformSource = eyeAsset
           ? studioFaceTransforms?.[`expression-component:${eyePart}`]?.sourceTransformOverride ?? eyeSelection?.transform ?? eyeAsset.defaultTransform
           : undefined
+        const eyeOverride = headOverrides[`head:${eyePart}`]
+        const eyeTransformBase = eyeTransformSource && eyeOverride
+          ? {
+            ...eyeTransformSource,
+            x: eyeTransformSource.x + (eyeOverride.x ?? 0),
+            y: eyeTransformSource.y + (eyeOverride.y ?? 0),
+            scaleX: eyeTransformSource.scaleX * (eyeOverride.scaleX ?? 1),
+            scaleY: eyeTransformSource.scaleY * (eyeOverride.scaleY ?? 1),
+            rotation: eyeTransformSource.rotation + (eyeOverride.rotation ?? 0)
+          }
+          : eyeTransformSource
         if (eyeTransformBase) {
           const eyeTransform = isRight && !eyeAsset?.rightSidePositioned ? { ...eyeTransformBase, x: sourceHead.width - eyeTransformBase.x, rotation: -eyeTransformBase.rotation } : eyeTransformBase
           if (eyeAsset) pupilEyeClip = { asset: eyeAsset, transform: eyeTransform, flipX: Boolean(eyeTransformBase.flipX) !== (isRight && !eyeAsset.rightSidePositioned), colors: eyeSelection?.colors }
