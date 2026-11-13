@@ -1,5 +1,13 @@
 # Editor V6 — plano de aceleração máxima do export
 
+## Continuação local — 2026-11-13
+
+Trabalho retomado na branch local `Dev-V2`, sem abrir `app-data` nem usar projetos reais como fixtures.
+
+- **Commit `6072b9b0` — memória total dos processos:** o relatório das exportações iniciadas pelo app agora amostra `app.getAppMetrics()` a cada segundo, agrega picos de working set e bytes privados por tipo de processo e salva pontos de recuperação a cada 10 segundos. Não grava PID ou nome de processo e não trata esses valores como VRAM. `npm run test:editor-v6:export`, testes focados, typecheck, auditoria de arquitetura e build passaram.
+- **Commit `a9b95fbd` — fim padrão por conteúdo ativo:** faixas ocultas/silenciadas e snapshots invisíveis não aumentam mais o intervalo padrão quando há outro conteúdo visível que determina o fim. `tests/editor-v6/editorV6Export.test.ts` (11 testes), typecheck, auditoria de arquitetura e build passaram.
+- **Próxima prioridade:** usar os relatórios de processos em uma exportação longa controlada e continuar os gates de confiabilidade. Não atribuir `-36861` a RAM sem uma amostra completa que coincida com a queda; o teste sintético de exportação não substitui o projeto real.
+
 ## Rodada 16 — pesquisa além do exportador (04/11/2026)
 
 **Investigação de todo o app:** [Pesquisa sistêmica de motores, Customizador/Fabricador e exportação](PESQUISA_SISTEMICA_MOTORES_E_EXPORT_2026-11-04.md) e [quadro de experimentos rápidos no Windows 11](EXPERIMENTOS_RAPIDOS_WINDOWS11.md).
@@ -66,7 +74,7 @@ Referências: [exportação](EXPORTACAO.md), [preparação de transições](PREP
 - Separar tempo total em leitura/validação, preparação de poses, preparação facial, abertura de workers, renderização/codificação, mixagem/junção, validação e publicação.
 - Aproveitar `motionPreparation` e `frameTiming` dos relatórios existentes. Acrescentar métricas compatíveis quando necessário, sem somar tempos concorrentes como se fossem tempo total.
 - Registrar acertos e falhas dos caches no serviço, bytes carregados, pico de memória e quantidade de workers/processos. `requested` na preparação não equivale a rasterização: pode recuperar cache do serviço.
-- Capturar no relatório o RSS inicial e o pico amostrado do processo principal, identificando explicitamente que esse dado não inclui renderizadores, GPU ou FFmpeg. Correlacionar com medições externas antes de inferir o pico total do app.
+- Capturar o RSS do processo principal e amostrar `app.getAppMetrics()` para agregar picos de working set e bytes privados por tipo de processo. O relatório local salva checkpoints periódicos sem PID ou nome de processo; essas métricas não representam VRAM e working set pode contar memória compartilhada mais de uma vez.
 - Registrar o tempo agregado de preparação dos atlases do loop da boca em `mouthAnimation.preparationMilliseconds`, separado do tempo de renderização; a soma cobre trechos processados em paralelo e não deve ser tratada como tempo de parede.
 - Dividir o orçamento dos atlases do loop da boca pela concorrência real de trechos do export. O limite passa a controlar o total simultâneo em Turbo, e continua respeitando o teto de pixels por atlas.
 - Identificar o caminho que limita o término do export. Ordenar as próximas mudanças pelo tempo recuperável nesse caminho.
