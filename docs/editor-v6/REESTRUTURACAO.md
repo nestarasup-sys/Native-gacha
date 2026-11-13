@@ -1305,3 +1305,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o cache LRU continua limitado a 16 folhas enquanto há personagem selecionado; a limpeza acontece quando o modelo deixa de existir na tela do Editor V6.
 
 **Verificação:** 3 testes cobrem ativação do catálogo e descarte de respostas de modelo antigo. `npm run test:editor-v6` passou: 177 arquivos, 761 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build passaram.
+
+### Continuação na `Dev-V2` — fontes de personagem somente com projeto ativo (implementado e verificado)
+
+**Mudança:** a lista de personagens do Customizador, as assinaturas de atualização e as revisões dos catálogos Fabricador carregam somente enquanto um projeto do Editor V6 está aberto. Ao voltar ao navegador de projetos, os personagens deixam de ser mantidos no hook e as assinaturas são removidas.
+
+**Compatibilidade:** ao abrir qualquer projeto, o hook atualiza o elenco e as revisões antes das operações que dependem dessas fontes. Eventos do Customizador/Fabricador continuam provocando refresh enquanto o editor está ativo.
+
+**Verificação:** os 32 testes de fontes de dados passaram, assim como `npm run test:editor-v6` (177 arquivos, 761 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura e build.

@@ -11,7 +11,7 @@ import {
   editorV6EyeAssetKinds,
   sameSourceRevisionSnapshot
 } from './editorV6CharacterSourceRevisions.ts'
-import { sameCustomizerCharacterCatalog } from './editorV6CharacterSourceModel.ts'
+import { sameCustomizerCharacterCatalog, shouldLoadEditorV6CharacterSources } from './editorV6CharacterSourceModel.ts'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions.ts'
 
 export {
@@ -59,6 +59,11 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
     let cancelled = false
     let requestRunning = false
     let requestQueued = false
+    if (!shouldLoadEditorV6CharacterSources(projectId)) {
+      setAvailableCharacters((current) => current.length ? [] : current)
+      setAvailableCharactersReady(false)
+      return () => { cancelled = true }
+    }
     const refreshCharacters = () => {
       if (requestRunning) { requestQueued = true; return }
       requestRunning = true
@@ -86,7 +91,7 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
       window.removeEventListener('focus', refreshCharacters)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [reportError])
+  }, [projectId, reportError])
 
   useEffect(() => {
     if (!projectId) { setPoseSourceSnapshot(null); return }

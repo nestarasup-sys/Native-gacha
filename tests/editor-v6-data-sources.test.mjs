@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { loadEditorV6ProjectCatalog } from '../src/renderer/src/features/editorV6/editorV6ProjectCatalog.ts'
 import { sameCustomizerCharacterCatalog } from '../src/renderer/src/features/editorV6/useEditorV6CharacterSources.ts'
+import { shouldLoadEditorV6CharacterSources } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import { createEditorV6HairRevisionSnapshot as createLegacyEditorV6HairRevisionSnapshot } from '../src/renderer/src/features/editorV6/editorV6CharacterSourceModel.ts'
 import {
   createEditorV6PoseRevisionSnapshot,
@@ -38,6 +39,11 @@ test('reabrir documento preserva o recorte comum das variantes faciais, inclusiv
     { kind: 'character', assetId: 'shared' }
   ], timeline: { tracks: [{ blocks: [{ state: { kind: 'character', assetId: 'shared', faceModeAssetIds: { blink: 'blink' } } }] }] } }
   assert.deepEqual([...editorV6LegacyCharacterCropAssetIds(JSON.parse(JSON.stringify(project)))], ['legacy'])
+})
+
+test('catálogo de personagens só fica ativo com um projeto aberto no Editor V6', () => {
+  assert.equal(shouldLoadEditorV6CharacterSources(null), false)
+  assert.equal(shouldLoadEditorV6CharacterSources('project-1'), true)
 })
 import {
   importEditorV6ImageToProject,

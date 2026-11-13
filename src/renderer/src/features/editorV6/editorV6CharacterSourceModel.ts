@@ -12,6 +12,10 @@ import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions.ts
 
 export * from './editorV6CharacterSourceRevisions.ts'
 
+export function shouldLoadEditorV6CharacterSources(projectId: string | null): boolean {
+  return projectId !== null
+}
+
 export function sameCustomizerCharacterCatalog(left: CustomizerCharacter[], right: CustomizerCharacter[]): boolean {
   return left.length === right.length && left.every((character, index) => {
     const candidate = right[index]
