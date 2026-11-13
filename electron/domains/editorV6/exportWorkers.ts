@@ -20,6 +20,7 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
     const window = createEditorV6WorkerWindow(payload, deps)
     const id = window.webContents.id
     const registration = registry.register(id, payload)
+    const workerController = new AbortController()
     let closed = false
     let paintCapture: EditorV6PaintFrameCapture | undefined
     let frameRenderer: EditorV6WorkerFrameRenderer | undefined
@@ -30,19 +31,31 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
       registration.retire()
       frameRenderer?.close()
       paintCapture?.close()
-      signal.removeEventListener('abort', close)
-      registration.rejectReady(Error('A janela de exportação foi fechada.'))
+      signal.removeEventListener('abort', abort)
+      if (!workerController.signal.aborted) workerController.abort(Error('O renderizador de exportação foi encerrado: a janela foi fechada.'))
+      registration.rejectReady(Error('O renderizador de exportação foi encerrado: a janela foi fechada.'))
       if (!window.isDestroyed()) window.destroy()
     }
+    const onRenderProcessGone = (_event: Electron.Event, details: Electron.RenderProcessGoneDetails) => {
+      const error = Error(`O renderizador da exportação caiu (${details.reason}; código ${details.exitCode}).`)
+      registration.rejectReady(error)
+      if (!workerController.signal.aborted) workerController.abort(error)
+      close()
+    }
+    const abort = () => {
+      if (!workerController.signal.aborted) workerController.abort(signal.reason ?? Error('Exportação cancelada.'))
+      close()
+    }
     activeWorkers.add(close)
-    signal.addEventListener('abort', close, { once: true })
+    signal.addEventListener('abort', abort, { once: true })
     window.once('closed', close)
+    window.webContents.once('render-process-gone', onRenderProcessGone)
     try {
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
       if (deps.captureMode === 'paint-event') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
-      frameRenderer = createEditorV6WorkerFrameRenderer({ window, payload, signal, captureRetryMilliseconds, paintCapture, inspectCapture: deps.inspectCapture })
+      frameRenderer = createEditorV6WorkerFrameRenderer({ window, payload, signal: workerController.signal, captureRetryMilliseconds, paintCapture, inspectCapture: deps.inspectCapture })
       return { close, frame: frameRenderer.frame }
     } catch (error) { close(); throw error }
   }

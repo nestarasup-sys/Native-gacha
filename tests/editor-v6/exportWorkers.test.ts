@@ -282,4 +282,31 @@ describe('export worker lifecycle', () => {
     await expect(pending).rejects.toThrow('fechada')
     factory.dispose()
   })
+
+  it('reports a crashed export renderer immediately instead of waiting for the startup timeout', async () => {
+    const { factory, payload } = fixture()
+    const pending = factory.create(payload, new AbortController().signal)
+    const window = state.windows[0]
+    window.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: -36861 })
+
+    await expect(pending).rejects.toThrow('O renderizador da exportação caiu (crashed; código -36861).')
+    expect(window.destroyed).toBe(true)
+    factory.dispose()
+  })
+
+  it('rejects an in-flight frame immediately when its renderer crashes', async () => {
+    const { factory, payload, ready } = fixture()
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    window.webContents.executeJavaScript.mockImplementation(() => new Promise(() => {}))
+
+    const frame = worker.frame(20)
+    window.webContents.emit('render-process-gone', {}, { reason: 'crashed', exitCode: -36861 })
+
+    await expect(frame).rejects.toThrow('O renderizador da exportação caiu (crashed; código -36861).')
+    expect(window.destroyed).toBe(true)
+    factory.dispose()
+  })
 })

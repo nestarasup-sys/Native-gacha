@@ -32,6 +32,7 @@ export async function publishEditorV6ExportCandidate(dependencies: Dependencies)
   } = dependencies
 
   signal.throwIfAborted()
+  report.currentPhase = 'publication'
   report.state = 'publishing'
   await saveReport()
   signal.throwIfAborted()

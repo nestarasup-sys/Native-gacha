@@ -62,6 +62,7 @@ function createDependencies(overrides: Partial<Parameters<typeof prepareEditorV6
     signal: new AbortController().signal,
     getCharacters: vi.fn(async () => characters),
     getMotionCacheStats: vi.fn(() => cacheStats),
+    releaseIdleMotionWorkers: vi.fn(),
     bakeMotion: vi.fn(async (_request: EditorV6MotionBakeRequest, _signal: AbortSignal) => ({} as EditorV6MotionBakeResult)),
     report,
     progress: vi.fn<(patch: Partial<EditorV6ExportStatus>) => void>(),
@@ -115,6 +116,7 @@ describe('preparação do estado pronto para exportar no Editor V6', () => {
     expect(dependencies.report.phaseMilliseconds.characterLoading).toBeGreaterThanOrEqual(0)
     expect(dependencies.report.phaseMilliseconds.motionPreparation).toBeGreaterThanOrEqual(0)
     expect(dependencies.saveReport).toHaveBeenCalledOnce()
+    expect(dependencies.releaseIdleMotionWorkers).toHaveBeenCalledOnce()
   })
 
   it('interrompe a exportação se a preparação não entregar todos os movimentos', async () => {
@@ -129,6 +131,7 @@ describe('preparação do estado pronto para exportar no Editor V6', () => {
 
     expect(dependencies.report.motionTransitionsRequired).toBe(2)
     expect(dependencies.saveReport).not.toHaveBeenCalled()
+    expect(dependencies.releaseIdleMotionWorkers).toHaveBeenCalledOnce()
   })
 
   it('respeita o cancelamento antes de carregar personagens ou iniciar bake', async () => {

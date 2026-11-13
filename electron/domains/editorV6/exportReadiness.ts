@@ -22,6 +22,8 @@ type Dependencies = {
   getCharacters: () => Promise<CustomizerCharacter[]>
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
+  /** Close the temporary offscreen motion renderers at the render handoff. */
+  releaseIdleMotionWorkers?: () => void
   report: Pick<EditorV6ExportReport, 'hairPreparation' | 'motionTransitionsRequired' | 'motionTransitionsPrepared' | 'motionPreparation' | 'motionCache' | 'phaseMilliseconds'>
   progress: (patch: Partial<EditorV6ExportStatus>) => void
   saveReport: () => Promise<void>
@@ -32,7 +34,7 @@ type Dependencies = {
 export async function prepareEditorV6ExportReadiness(dependencies: Dependencies): Promise<{ project: EditorV6Document; characters: CustomizerCharacter[] }> {
   const {
     project, options, testSettings, hairPreparation, motionPreparationConcurrency, motionCacheScope,
-    signal, getCharacters, getMotionCacheStats, bakeMotion, report, progress, saveReport
+    signal, getCharacters, getMotionCacheStats, bakeMotion, releaseIdleMotionWorkers, report, progress, saveReport
   } = dependencies
   signal.throwIfAborted()
   report.hairPreparation = hairPreparation
@@ -63,7 +65,10 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
         progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
       }
     })
-  } finally { addEditorV6PhaseTime(report, 'motionPreparation', motionPreparationStarted) }
+  } finally {
+    addEditorV6PhaseTime(report, 'motionPreparation', motionPreparationStarted)
+    releaseIdleMotionWorkers?.()
+  }
 
   report.motionTransitionsRequired = prepared.stats.total
   report.motionTransitionsPrepared = prepared.stats.total

@@ -23,6 +23,7 @@ export type EditorV6ExportReport = {
   schemaVersion: 1
   id: string
   state: string
+  currentPhase: 'preparing' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
   projectId: string
   options: EditorV6ExportOptions
   fps: 30
@@ -87,6 +88,7 @@ export function createEditorV6ExportReportContext({ project, options, testSettin
     schemaVersion: 1,
     id,
     projectId: project.id,
+    currentPhase: 'preparing',
     options,
     fps: 30,
     totalFrames,

@@ -36,6 +36,7 @@ type Dependencies = {
   hairPreparation?: EditorV6HairPreparationProfile
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   releaseMotionCacheScope?: (scope: string) => void
+  releaseIdleMotionWorkers?: () => void
   audioPath: (clip: EditorV6ExportAudio) => string | Promise<string>
   mediaPath: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   /** Test/diagnostic hook for measuring the external encoder without exposing it over IPC. */
@@ -67,31 +68,35 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   let published = false
   let characters: CustomizerCharacter[] = []
   const testEncoder = createEditorV6EncoderProbe({ ffmpeg: deps.ffmpeg, signal: deps.signal, report })
-  const renderAttempt: EditorV6ExportAttempt = (parts, encoder, maxParallelism = 2) => renderEditorV6ExportAttempt({
-    project,
-    parts,
-    encoder,
-    maxParallelism,
-    exportStartedAt: started,
-    options,
-    layeredVideo,
-    speechInRange,
-    characters,
-    testSettings,
-    folder,
-    ffmpeg: deps.ffmpeg,
-    ffprobe: deps.ffprobe,
-    motionCacheScope,
-    signal: deps.signal,
-    report,
-    createWorker: deps.createWorker,
-    bakeMotion: deps.bakeMotion,
-    mediaPath: deps.mediaPath,
-    onFfmpegProcessStarted: deps.onFfmpegProcessStarted,
-    progress: deps.progress,
-    saveReport,
-    formatError: message
-  })
+  const renderAttempt: EditorV6ExportAttempt = async (parts, encoder, maxParallelism = 2) => {
+    report.currentPhase = 'rendering'
+    await saveReport()
+    return renderEditorV6ExportAttempt({
+      project,
+      parts,
+      encoder,
+      maxParallelism,
+      exportStartedAt: started,
+      options,
+      layeredVideo,
+      speechInRange,
+      characters,
+      testSettings,
+      folder,
+      ffmpeg: deps.ffmpeg,
+      ffprobe: deps.ffprobe,
+      motionCacheScope,
+      signal: deps.signal,
+      report,
+      createWorker: deps.createWorker,
+      bakeMotion: deps.bakeMotion,
+      mediaPath: deps.mediaPath,
+      onFfmpegProcessStarted: deps.onFfmpegProcessStarted,
+      progress: deps.progress,
+      saveReport,
+      formatError: message
+    })
+  }
   // Start only after synchronous setup succeeds, immediately before the try/finally
   // that owns the sampler. This guarantees every started timer is cleared.
   const memorySampler = setInterval(() => {
@@ -112,6 +117,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       getCharacters: deps.getCharacters,
       getMotionCacheStats: deps.getMotionCacheStats,
       bakeMotion: deps.bakeMotion,
+      releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
       report,
       progress: deps.progress,
       saveReport
@@ -120,9 +126,13 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     characters = readiness.characters
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
+    report.currentPhase = 'encoderProbe'
+    await saveReport()
     const encoder = await selectEditorV6ExportEncoder(options.encoder, testEncoder)
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: EditorV6ExportPartReport[]) => {
+      report.currentPhase = 'finalization'
+      await saveReport()
       const result = await finalizeEditorV6Export({
         ffmpeg: deps.ffmpeg,
         ffprobe: deps.ffprobe,
@@ -160,7 +170,11 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       progress: deps.progress,
       renderAttempt,
       finishMeasured,
-      selectFallbackEncoder: (attemptedEncoder) => selectEditorV6FallbackEncoder(attemptedEncoder, testEncoder),
+      selectFallbackEncoder: async (attemptedEncoder) => {
+        report.currentPhase = 'encoderProbe'
+        await saveReport()
+        return selectEditorV6FallbackEncoder(attemptedEncoder, testEncoder)
+      },
       formatError: message
     })
     deps.signal.throwIfAborted()

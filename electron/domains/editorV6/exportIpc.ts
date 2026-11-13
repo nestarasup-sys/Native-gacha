@@ -15,6 +15,7 @@ import { parseEditorV6HairMotionBundle } from '../../../src/shared/editorV6HairM
 import { planEditorV6Export, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { editorV6ExportModeFileSuffix } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6WorkerFactory } from './exportWorkers'
+import { createEditorV6ExportWorkerData } from './exportWorkerPayload'
 import { runEditorV6Export, type EditorV6ExportReport } from './exportRunner'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import { publishJsonManifest } from '../storage/atomicManifest'
@@ -36,6 +37,7 @@ type EditorV6ExportIpcDependencies = {
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   releaseMotionCacheScope?: (scope: string) => void
+  releaseIdleMotionWorkers?: () => void
   captureMode?: 'capturePage' | 'paint-event'
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void
@@ -122,7 +124,11 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       onFfmpegProcessStarted,
       getMotionCacheStats: deps.getMotionCacheStats,
       releaseMotionCacheScope: deps.releaseMotionCacheScope,
-      createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => workers.create({ project: renderProject, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal),
+      releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
+      createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
+        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation)
+        return workers.create({ ...workerData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal)
+      },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })
   }
