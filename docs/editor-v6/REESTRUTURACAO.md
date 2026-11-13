@@ -2,9 +2,10 @@
 
 **Estado:** em andamento
 **Início:** 10/11/2026
-**Base:** `Dev-V2` em `eb248d35`
-**Branch de trabalho:** `codex/editor-v6-refactor`
-**Isolamento:** o trabalho continua na worktree `GACHA EM C++-V6-REFACTOR`, branch `codex/editor-v6-refactor`. Por solicitação explícita do usuário, a pasta principal (`Dev-V2`) foi avançada até `6924d792`; as duas branches estavam alinhadas nesse commit antes deste ciclo.
+**Base original:** `Dev-V2` em `eb248d35`
+**Trabalho histórico:** worktree `GACHA EM C++-V6-REFACTOR`, branch `codex/editor-v6-refactor`
+**Continuação atual:** desde 13/11/2026, na pasta principal e branch `Dev-V2`; cada etapa concluída recebe commit local. Os ciclos anteriores registram o trabalho histórico na branch isolada.
+**Isolamento histórico:** por solicitação explícita do usuário, a pasta principal (`Dev-V2`) foi avançada até `6924d792`; as duas branches estavam alinhadas nesse commit antes daquele ciclo.
 
 ## Objetivo
 
@@ -1248,3 +1249,27 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservados os nomes e formatos das chaves (`modelSlot:id` e `modelSlot:kind:id`), o hash ordenado `*-v1`, os valores `missing`, aliases antigos de cabelo e a inclusão das variantes de olho fechado associadas ao olho selecionado. O módulo de modelo reexporta as APIs anteriores, e um teste confirma esse caminho legado. Nenhum snapshot de projeto, contrato IPC ou dado persistido mudou.
 
 **Verificação:** a suíte completa do Editor V6 passou com 744 testes em 173 arquivos (1 arquivo e 1 teste ignorados); os testes sintéticos de stress/profile passaram (20), `npm test` passou (29), os 31 testes de `editor-v6-data-sources` passaram, `npm run typecheck`, `npm run audit:architecture` (871 arquivos), `npm run build` e `git diff --check` passaram. Os testes de fonte exercitam diretamente o módulo novo e preservam o caminho público anterior. Nenhuma exportação real ou benchmark foi executado.
+
+### Continuação na `Dev-V2` — diagnóstico agregado da memória Electron (implementado e verificado)
+
+**Mudança:** o relatório de exportação pode amostrar `app.getAppMetrics()` a cada segundo e acumular picos totais e por tipo de processo. As amostras são salvas em checkpoints periódicos e registram falhas do coletor sem cancelar a exportação. O relatório mantém apenas contagens e bytes agregados, sem PID ou nome de processo.
+
+**Compatibilidade:** o campo é opcional; exports e relatórios legados continuam válidos. Working set não é VRAM e pode contar memória compartilhada mais de uma vez. O dado não identifica sozinho a causa de `-36861`.
+
+**Verificação:** testes de unidade cobrem conversão de KB, agregação por tipo e amostras incompletas; `npm run test:editor-v6:export` passou no Electron real, incluindo falha simulada no coletor sem interromper o MP4. Typecheck, auditoria de arquitetura e build passaram.
+
+### Continuação na `Dev-V2` — intervalo padrão ignora faixas inativas (implementado e verificado)
+
+**Mudança:** o cálculo do fim padrão não estende o vídeo por faixas ocultas/silenciadas ou estados explicitamente invisíveis, quando outro bloco ativo determina o final.
+
+**Compatibilidade:** fundos persistentes, lacunas e trilhas de personagem continuam seguindo as regras existentes. Não houve mudança no intervalo salvo, no schema do projeto nem na validação IPC.
+
+**Verificação:** 11 testes de planejamento cobrem a nova regra; typecheck, auditoria de arquitetura, build e o fluxo de exportação Electron passaram.
+
+### Continuação na `Dev-V2` — seleção e remoção na timeline (implementado e verificado)
+
+**Mudança:** a conversão do segundo clique para quadro do playhead foi extraída para uma função pura e testada, com limites ao intervalo do bloco. Os testes de remoção agora conferem que filhos são removidos, os blocos posteriores avançam pela duração removida e o clique inicial apenas seleciona.
+
+**Compatibilidade:** o playhead não muda no primeiro clique; ao repetir o clique no mesmo bloco, segue a posição horizontal do ponteiro. Ao apagar o último estado de personagem, mantém-se um intervalo invisível para impedir que o estado anterior reapareça; esse intervalo não é desenhado como bloco. Nenhum schema ou formato persistido mudou.
+
+**Verificação:** `npm run test:editor-v6` passou: 175 arquivos, 755 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.
