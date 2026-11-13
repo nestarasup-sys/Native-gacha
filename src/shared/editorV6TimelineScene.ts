@@ -68,7 +68,7 @@ export function prepareEditorV6PositionAtFrame(document: EditorV6Document, eleme
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
-function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Element[], frame: number): EditorV6SceneElement[] {
+function indexLinkedCharacters(document: EditorV6Document, elements: EditorV6Element[]) {
   const characters = elements.filter((element) => element.kind === 'character' && element.characterId)
   const charactersByElementId = new Map(characters.map((character) => [character.id, character]))
   const charactersByCharacterId = new Map<string, EditorV6Element[]>()
@@ -85,13 +85,19 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
     if (!baseCharactersByElementId.has(character.id)) baseCharactersByElementId.set(character.id, character)
     if (!baseCharactersByCharacterId.has(character.characterId)) baseCharactersByCharacterId.set(character.characterId, character)
   }
+  return { charactersByElementId, charactersByCharacterId, baseCharactersByElementId, baseCharactersByCharacterId }
+}
+
+function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Element[], frame: number): EditorV6SceneElement[] {
+  let characterIndexes: ReturnType<typeof indexLinkedCharacters> | undefined
   return elements.map((element): EditorV6SceneElement => {
     if (element.kind !== 'speech' && element.kind !== 'thought') return element
     const balloonScalePercent = document.balloonScalePercent ?? 100
     const balloonOffsetY = document.balloonOffsetY ?? 0
     if (!element.characterId && !element.attachedCharacterElementId) return { ...element, balloonScalePercent, balloonOffsetY }
-    const exactTarget = element.attachedCharacterElementId ? charactersByElementId.get(element.attachedCharacterElementId) : undefined
-    const linkedTargets = element.characterId ? charactersByCharacterId.get(element.characterId) ?? [] : []
+    const indexes = characterIndexes ??= indexLinkedCharacters(document, elements)
+    const exactTarget = element.attachedCharacterElementId ? indexes.charactersByElementId.get(element.attachedCharacterElementId) : undefined
+    const linkedTargets = element.characterId ? indexes.charactersByCharacterId.get(element.characterId) ?? [] : []
     const target = exactTarget ?? linkedTargets.reduce<EditorV6Element | undefined>((nearest, character) => {
       if (!nearest) return character
       const distance = (character.x - element.x) ** 2 + (character.y - element.y) ** 2
@@ -102,8 +108,8 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
     const balloonClip = editorV6ClipAtFrame(document.timeline, element.id, frame)
     const attachmentFrame = balloonClip?.block.startFrame ?? frame
     const anchorCharacterState = editorV6ClipAtFrame(document.timeline, target.id, attachmentFrame)?.block.state
-    const baseCharacter = baseCharactersByElementId.get(target.id)
-      ?? baseCharactersByCharacterId.get(target.characterId)
+    const baseCharacter = indexes.baseCharactersByElementId.get(target.id)
+      ?? indexes.baseCharactersByCharacterId.get(target.characterId)
     const originX = element.attachmentOriginX ?? anchorCharacterState?.x ?? baseCharacter?.x ?? target.x
     const originY = element.attachmentOriginY ?? anchorCharacterState?.y ?? baseCharacter?.y ?? target.y
     const characterId = target.characterId ?? element.characterId

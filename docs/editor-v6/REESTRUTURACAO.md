@@ -1330,7 +1330,7 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 ### Continuação na `Dev-V2` — índices de personagens para anexar balões (implementado e verificado)
 
-**Mudança:** o resolver de cena constrói, por quadro, mapas de personagens por elemento/ID e de snapshots-base. A associação dos balões deixa de filtrar todos os personagens e procurar a origem em toda a lista para cada fala ou pensamento.
+**Mudança:** o resolver de cena constrói, quando há balões vinculados, mapas de personagens por elemento/ID e de snapshots-base. A associação deixa de filtrar todos os personagens e procurar a origem em toda a lista para cada fala ou pensamento. Cenas sem balões vinculados não alocam esses mapas.
 
 **Compatibilidade:** preservadas prioridade do vínculo explícito, escolha do personagem da mesma identidade mais próximo do balão, ordem original em empates, posição relativa, nome, cor e fallback de snapshots antigos.
 
