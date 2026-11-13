@@ -1383,3 +1383,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** projetos sem alternativas dinâmicas mantêm o asset base; qualquer alternativa automática configurada continua percorrendo a regra anterior, inclusive o fallback de `talk-blink` para `talk`.
 
 **Verificação:** 41 testes focados de timeline, cena e paridade passaram. `npm run test:editor-v6` passou: 177 arquivos, 772 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — liberar handler de mídia da sessão do worker (implementado e verificado)
+
+**Mudança:** quando uma janela isolada de exportação fecha, ela remove o handler `gacha-editor-media` de sua sessão Chromium. Isso solta a função do protocolo e as referências ao snapshot do projeto e aos resolvers de mídia mantidos por essa função. Workers sem mídia não chamam `unhandle`.
+
+**Compatibilidade:** a rota permanece disponível durante toda a vida da janela e continua aceitando somente mídias do snapshot atual; a limpeza acontece uma vez no evento `closed`, inclusive em fechamento externo ou falha do renderer.
+
+**Verificação:** testes do worker e do protocolo cobrem fechamento normal, fechamento externo e sessão sem handler (17 testes). `npm run test:editor-v6` passou: 177 arquivos, 773 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Essa limpeza evita retenção desnecessária entre workers; não prova que seja a causa do encerramento `-36861` observado anteriormente.

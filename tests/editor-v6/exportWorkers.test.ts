@@ -49,7 +49,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
         return { reused: false, timings: {} }
       }),
       capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height, window.paintToken)),
-      session: { protocol: { handle: vi.fn() }, setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
+      session: { protocol: { handle: vi.fn(), unhandle: vi.fn() }, setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
     })
     state.windows.push(this)
   }
@@ -93,6 +93,22 @@ describe('export worker lifecycle', () => {
     resourcePolicy({ url: 'gacha-editor-media://project/id/file.mp4', resourceType: 'media' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(false))
     resourcePolicy({ url: 'https://example.com/untrusted.js', resourceType: 'script' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(true))
     worker.close()
+    expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledOnce()
+    expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledWith('gacha-editor-media')
+    factory.dispose()
+  })
+
+  it('releases the session media handler when a worker window closes externally', async () => {
+    const { factory, payload, ready } = fixture(undefined, { projectMedia: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    await pending
+    const window = state.windows[0]
+
+    window.destroy()
+
+    expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledOnce()
+    expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledWith('gacha-editor-media')
     factory.dispose()
   })
 
@@ -106,6 +122,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     expect(window.setContentSize).toHaveBeenCalledWith(payload.width + 24, payload.height)
     window.destroy()
+    expect(window.webContents.session.protocol.unhandle).not.toHaveBeenCalled()
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
     expect(() => handlers.get(editorV6WorkerChannels.payload)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).toThrow('não autorizado')
     expect(() => handlers.get(editorV6WorkerChannels.ready)!({ sender: window.webContents, senderFrame: window.webContents.mainFrame })).not.toThrow()

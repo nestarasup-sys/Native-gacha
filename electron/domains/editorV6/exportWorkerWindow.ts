@@ -19,10 +19,20 @@ export function createEditorV6WorkerWindow(payload: EditorV6WorkerPayload, deps:
   const layeredVideo = payload.layeredVideo
   const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + EDITOR_V6_PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
     webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
+  const session = window.webContents.session
   const hasWorkerMedia = hasEditorV6WorkerMedia({ payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
-  if (hasWorkerMedia) window.webContents.session.protocol.handle('gacha-editor-media', createEditorV6WorkerMediaProtocolHandler({
-    payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset
-  }))
+  let mediaProtocolRegistered = false
+  if (hasWorkerMedia) {
+    session.protocol.handle('gacha-editor-media', createEditorV6WorkerMediaProtocolHandler({
+      payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset
+    }))
+    mediaProtocolRegistered = true
+  }
+  window.once('closed', () => {
+    if (!mediaProtocolRegistered) return
+    mediaProtocolRegistered = false
+    session.protocol.unhandle('gacha-editor-media')
+  })
   restrictRendererNavigation(window.webContents)
   restrictRendererPermissions(window.webContents.session)
   window.removeMenu()
