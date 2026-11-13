@@ -7,11 +7,11 @@ import {
   type PreparedEditorV6FaceRenderer
 } from './faceModeAssets'
 import {
-  createEditorV6FaceRendererCache, editorV6FacePreviewTarget, isCurrentEditorV6FacePreviewTarget,
+  createEditorV6FaceRendererCache, editorV6FacePreviewTarget, isCurrentEditorV6FacePreviewTarget, shouldResetEditorV6FacePreviewCache,
   type EditorV6FacePreviewJob
 } from './editorV6FacePreviewModel'
 export {
-  createEditorV6FaceRendererCache, editorV6FacePreviewTarget, isCurrentEditorV6FacePreviewTarget
+  createEditorV6FaceRendererCache, editorV6FacePreviewTarget, isCurrentEditorV6FacePreviewTarget, shouldResetEditorV6FacePreviewCache
 } from './editorV6FacePreviewModel'
 export type { EditorV6FacePreviewJob } from './editorV6FacePreviewModel'
 export type { PreparedEditorV6FaceRenderer } from './faceModeAssets'
@@ -38,6 +38,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
   const disposedRef = useRef(false)
   const disposeWhenIdleRef = useRef(false)
   const rendererCacheRef = useRef<ReturnType<typeof createEditorV6FaceRendererCache> | null>(null)
+  const rendererCacheProjectIdRef = useRef(dependencies.activeProjectId)
 
   if (!rendererCacheRef.current) {
     rendererCacheRef.current = createEditorV6FaceRendererCache(async (character) => {
@@ -65,6 +66,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
     if (disposedRef.current || disposeWhenIdleRef.current) {
       rendererCache.dispose()
       disposeWhenIdleRef.current = false
+      if (!disposedRef.current) schedulePendingRender(0)
       return
     }
     schedulePendingRender(0)
@@ -74,7 +76,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
     if (renderRunningRef.current || disposedRef.current) return
     renderRunningRef.current = true
     try {
-      while (pendingJobRef.current && !disposedRef.current) {
+      while (pendingJobRef.current && !disposedRef.current && !disposeWhenIdleRef.current) {
         const job = pendingJobRef.current
         pendingJobRef.current = null
         const version = renderVersionRef.current
@@ -185,6 +187,20 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
       else rendererCache.dispose()
     }
   }, [rendererCache])
+
+  useEffect(() => {
+    const currentProjectId = dependencies.activeProjectId
+    if (!shouldResetEditorV6FacePreviewCache(rendererCacheProjectIdRef.current, currentProjectId)) return
+    rendererCacheProjectIdRef.current = currentProjectId
+    renderVersionRef.current += 1
+    pendingJobRef.current = null
+    clearRenderTimer()
+    if (renderRunningRef.current) disposeWhenIdleRef.current = true
+    else {
+      disposeWhenIdleRef.current = false
+      rendererCache.dispose()
+    }
+  }, [dependencies.activeProjectId, rendererCache])
 
   return { renderRunningRef, schedulePreview, flushPreview, cancelPendingAndWait, withRenderer }
 }

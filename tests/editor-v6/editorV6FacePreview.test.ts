@@ -5,6 +5,7 @@ import {
   createEditorV6FaceRendererCache,
   editorV6FacePreviewTarget,
   isCurrentEditorV6FacePreviewTarget,
+  shouldResetEditorV6FacePreviewCache,
   type EditorV6FacePreviewJob,
   type PreparedEditorV6FaceRenderer
 } from '../../src/renderer/src/features/editorV6/editorV6FacePreviewModel'
@@ -27,6 +28,13 @@ describe('cache da prévia facial do Editor V6', () => {
     expect(legacyFacePreviewExports.createEditorV6FaceRendererCache).toBe(createEditorV6FaceRendererCache)
     expect(legacyFacePreviewExports.editorV6FacePreviewTarget).toBe(editorV6FacePreviewTarget)
     expect(legacyFacePreviewExports.isCurrentEditorV6FacePreviewTarget).toBe(isCurrentEditorV6FacePreviewTarget)
+    expect(legacyFacePreviewExports.shouldResetEditorV6FacePreviewCache).toBe(shouldResetEditorV6FacePreviewCache)
+  })
+
+  it('descarta o cache quando o projeto muda ou é fechado', () => {
+    expect(shouldResetEditorV6FacePreviewCache('project-a', 'project-b')).toBe(true)
+    expect(shouldResetEditorV6FacePreviewCache('project-a', null)).toBe(true)
+    expect(shouldResetEditorV6FacePreviewCache(null, null)).toBe(false)
   })
 
   it('reutiliza o renderer e descarta a versão anterior quando muda a revisão da pose', async () => {

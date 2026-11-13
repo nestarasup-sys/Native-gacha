@@ -1313,3 +1313,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** ao abrir qualquer projeto, o hook atualiza o elenco e as revisões antes das operações que dependem dessas fontes. Eventos do Customizador/Fabricador continuam provocando refresh enquanto o editor está ativo.
 
 **Verificação:** os 32 testes de fontes de dados passaram, assim como `npm run test:editor-v6` (177 arquivos, 761 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura e build.
+
+### Continuação na `Dev-V2` — renderer facial liberado ao trocar de projeto (implementado e verificado)
+
+**Mudança:** trocar ou fechar o projeto invalida jobs pendentes do preview facial e libera o renderer preparado. Se uma renderização estiver no meio, o resultado é descartado e a liberação espera o renderer ficar ocioso; um novo projeto pode retomar sua prévia logo depois.
+
+**Compatibilidade:** o preview do projeto ativo continua reutilizando seu renderer. Ao trocar de projeto, nenhum resultado atrasado publica dados no projeto novo.
+
+**Verificação:** os 11 testes do preview facial passaram. `npm run test:editor-v6` passou: 177 arquivos, 762 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura e build também passaram.

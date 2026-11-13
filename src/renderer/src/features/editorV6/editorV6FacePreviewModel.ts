@@ -16,6 +16,10 @@ export type EditorV6FacePreviewJob = {
   previousState?: Pick<EditorV6Element, 'faceAppearance' | 'faceTransforms' | 'activeExpressionEffects' | 'activeFaceMode'>
 }
 
+export function shouldResetEditorV6FacePreviewCache(previousProjectId: string | null, currentProjectId: string | null): boolean {
+  return previousProjectId !== currentProjectId
+}
+
 type PrepareRenderer = (character: CustomizerCharacter) => Promise<PreparedEditorV6FaceRenderer>
 type KeyForRenderer = (character: CustomizerCharacter, poseSourceRevision?: string, modelSourceRevision?: string) => string
 
