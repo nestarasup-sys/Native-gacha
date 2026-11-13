@@ -1423,3 +1423,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o resolver mantém a precedência dos assets temporários do frame sobre os assets originais. O teste renderiza SVG idêntico usando o catálogo completo, a lista reduzida ou o resolver de frame; assets ausentes continuam ausentes.
 
 **Verificação:** os testes focados de assets visíveis e renderizador passaram (4 testes), a suíte completa passou (177 arquivos, 778 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Não foi medido ganho em export real.
+
+### Continuação na `Dev-V2` — reutilizar índice compilado na resolução de cena (implementado e verificado)
+
+**Mudança:** `resolveEditorV6StaticElementsAtFrame` já compilava a timeline uma vez, mas chamava `editorV6ClipAtFrame` para cada elemento, repetindo a consulta ao `WeakMap`. A busca por bloco foi extraída para uma função interna que recebe o índice compilado; o resolvedor passa a obtê-lo uma única vez e consultar cada elemento diretamente. A API pública `editorV6ClipAtFrame` continua buscando pelo mesmo índice e usa a mesma busca binária.
+
+**Verificação:** 37 testes focados de cena e timeline, a suíte completa (177 arquivos, 778 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho em export real.

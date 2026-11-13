@@ -80,7 +80,10 @@ function compile(timeline: EditorV6Timeline): CompiledTimeline {
 }
 
 export function editorV6ClipAtFrame(timeline: EditorV6Timeline, elementId: string, frame: number): TimelineClip | undefined {
-  const entry = compile(timeline).byElement.get(elementId)
+  return clipAtFrame(compile(timeline).byElement.get(elementId), frame)
+}
+
+function clipAtFrame(entry: ElementIndex | undefined, frame: number): TimelineClip | undefined {
   if (!entry) return undefined
   let left = 0, right = entry.clips.length
   while (left < right) { const middle = (left + right) >>> 1; if (entry.clips[middle].block.startFrame <= frame) left = middle + 1; else right = middle }
@@ -96,9 +99,10 @@ export function resolveEditorV6StaticElementsAtFrame(document: EditorV6Document,
   const compiled = compile(document.timeline)
   const resolved: EditorV6Element[] = []
   for (const base of document.elements) {
-    const clip = editorV6ClipAtFrame(document.timeline, base.id, frame)
+    const elementIndex = compiled.byElement.get(base.id)
+    const clip = clipAtFrame(elementIndex, frame)
     if (clip?.track.muted || clip?.track.hidden) continue
-    if (!clip && (compiled.managed.has(base.id) || compiled.byElement.has(base.id))) continue
+    if (!clip && (compiled.managed.has(base.id) || elementIndex)) continue
     const state = clip?.block.state ?? base
     if (state.visible === false) continue
     resolved.push(state.id === base.id ? state : { ...state, id: base.id })
