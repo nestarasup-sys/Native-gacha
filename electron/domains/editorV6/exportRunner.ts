@@ -5,6 +5,7 @@ import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import type { ProcessMetric } from 'electron'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
@@ -22,6 +23,7 @@ import { addEditorV6PhaseTime } from './exportMetrics'
 import { finalizeEditorV6Export } from './exportFinalization'
 import { cleanupEditorV6ExportRun } from './exportRunCleanup'
 import { prepareEditorV6ExportReadiness } from './exportReadiness'
+import { createEditorV6ExportProcessMemoryReport, recordEditorV6ExportProcessMemorySample, recordEditorV6ExportProcessMemorySampleFailure } from './exportProcessMemory'
 
 export { editorV6OutputColorFilter } from './exportVideoComposition'
 export { encodingArgs, probeExportMedia }
@@ -37,6 +39,7 @@ type Dependencies = {
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   releaseMotionCacheScope?: (scope: string) => void
   releaseIdleMotionWorkers?: () => void
+  getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
   audioPath: (clip: EditorV6ExportAudio) => string | Promise<string>
   mediaPath: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   /** Test/diagnostic hook for measuring the external encoder without exposing it over IPC. */
@@ -49,7 +52,13 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const { options, testSettings, requestedParts, parts: planned, speechInRange, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
   const { report, layeredVideo, started, totalFrames } = createEditorV6ExportReportContext({ project, options, testSettings, id: deps.id, outputPath: deps.outputPath })
-  const saveReport = () => writeEditorV6ExportReport(deps.reportPath, report)
+  let reportWriteQueue = Promise.resolve()
+  const saveReport = () => {
+    const write = reportWriteQueue.then(() => writeEditorV6ExportReport(deps.reportPath, report))
+    reportWriteQueue = write.catch(() => {})
+    return write
+  }
+  if (deps.getElectronProcessMetrics) report.electronProcessMemory = createEditorV6ExportProcessMemoryReport()
   let folder: string
   const temporarySetupStarted = performance.now()
   try {
@@ -99,9 +108,26 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
   }
   // Start only after synchronous setup succeeds, immediately before the try/finally
   // that owns the sampler. This guarantees every started timer is cleared.
+  let nextProcessMemorySampleAt = performance.now()
+  let lastProcessMemoryReportSaveAt = nextProcessMemorySampleAt
+  let processMemoryReportSaveInFlight = false
   const memorySampler = setInterval(() => {
     const memory = report.mainProcessMemory
     if (memory) memory.peakRssBytes = Math.max(memory.peakRssBytes, process.memoryUsage().rss)
+    const now = performance.now()
+    const processMemory = report.electronProcessMemory
+    if (deps.getElectronProcessMetrics && processMemory && now >= nextProcessMemorySampleAt) {
+      nextProcessMemorySampleAt = now + processMemory.sampleIntervalMs
+      try { recordEditorV6ExportProcessMemorySample(processMemory, deps.getElectronProcessMetrics()) }
+      catch { recordEditorV6ExportProcessMemorySampleFailure(processMemory) }
+    }
+    if (deps.getElectronProcessMetrics && processMemory && now - lastProcessMemoryReportSaveAt >= 10000 && !processMemoryReportSaveInFlight) {
+      lastProcessMemoryReportSaveAt = now
+      processMemoryReportSaveInFlight = true
+      void saveReport()
+        .catch(error => console.warn('[Editor V6 export] Falha ao atualizar amostra de memória:', message(error)))
+        .finally(() => { processMemoryReportSaveInFlight = false })
+    }
   }, 500)
   const motionCacheScope = randomUUID()
   let exportFailure: unknown

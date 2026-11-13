@@ -6,6 +6,7 @@ import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6Exp
 import type { EditorV6MotionCacheReport, EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import type { EditorV6ExportPhaseTimings } from './exportMetrics'
+import type { EditorV6ExportProcessMemoryReport } from './exportProcessMemory'
 import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
@@ -43,6 +44,7 @@ export type EditorV6ExportReport = {
   motionCache?: EditorV6MotionCacheReport
   mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }
   mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }
+  electronProcessMemory?: EditorV6ExportProcessMemoryReport
   phaseMilliseconds: EditorV6ExportPhaseTimings
   startedAt: string
   endedAt?: string

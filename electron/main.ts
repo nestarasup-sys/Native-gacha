@@ -1116,6 +1116,7 @@ app.whenReady().then(async () => {
     getMotionCacheStats: () => editorV6MotionService!.getCacheStats(),
     releaseMotionCacheScope: (scope) => editorV6MotionService!.releaseExportCacheScope(scope),
     releaseIdleMotionWorkers: () => editorV6MotionService!.releaseIdle(),
+    getElectronProcessMetrics: () => readElectronAppMetrics().metrics,
     ...(process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? { onFfmpegProcessStarted: (pid: number) => stressFfmpegPids.add(pid) } : {}),
     captureMode: process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
       ? (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage')

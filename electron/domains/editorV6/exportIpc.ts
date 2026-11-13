@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent } from 'electron'
+import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent, type ProcessMetric } from 'electron'
 import * as fs from 'node:fs/promises'
 import { stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
@@ -38,6 +38,7 @@ type EditorV6ExportIpcDependencies = {
   getMotionCacheStats?: () => EditorV6MotionCacheStats
   releaseMotionCacheScope?: (scope: string) => void
   releaseIdleMotionWorkers?: () => void
+  getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
   captureMode?: 'capturePage' | 'paint-event'
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void
@@ -125,6 +126,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       getMotionCacheStats: deps.getMotionCacheStats,
       releaseMotionCacheScope: deps.releaseMotionCacheScope,
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
+      getElectronProcessMetrics: deps.getElectronProcessMetrics,
       createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
         const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation)
         return workers.create({ ...workerData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal)
