@@ -232,6 +232,12 @@ async function main() {
   const silent = { ...project, exportAudio: [] }
   const single = await runEditorV6Export(silent, { ...options, startFrame: 50, endFrame: 51 }, { ...base, id: randomUUID(), outputPath: join(folder, 'single.mp4'), reportPath: join(folder, 'single.report.json') })
   assert(single.totalFrames === 1 && single.attempts[0].parallelism === 1 && !single.fallback, 'Intervalo de um quadro não foi tratado corretamente.')
+  const telemetryFailure = await runEditorV6Export(silent, { ...options, startFrame: 50, endFrame: 51 }, {
+    ...base, id: randomUUID(), outputPath: join(folder, 'telemetry-failure.mp4'), reportPath: join(folder, 'telemetry-failure.report.json'),
+    getCharacters: async () => { await new Promise(resolve => setTimeout(resolve, 1100)); return [] },
+    getElectronProcessMetrics: () => { throw Error('Falha simulada no coletor de métricas.') }
+  })
+  assert(telemetryFailure.state === 'completed' && (telemetryFailure.electronProcessMemory?.failedSamples ?? 0) > 0, 'Uma falha no coletor de memória interrompeu a exportação ou não foi registrada como amostra perdida.')
   await mkdir(join(folder, 'media'), { recursive: true })
   const videoId = randomUUID(), videoFileName = `${videoId}.mp4`, videoPath = join(folder, 'media', videoFileName)
   run(['-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=30:duration=4', '-f', 'lavfi', '-i', 'sine=frequency=600:sample_rate=48000:duration=4', '-c:v', 'mpeg4', '-q:v', '3', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', '-c:a', 'aac', '-shortest', videoPath])
