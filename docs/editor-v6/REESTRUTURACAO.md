@@ -1401,3 +1401,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** `editorV6VisualKeys` inclui esses quatro valores na projeção compartilhada pelas chaves de quadro inteiro e de camada. Assim, a renderização volta a ocorrer sempre que a apresentação do balão ou a identificação visual do locutor muda.
 
 **Verificação:** quatro casos focados confirmam invalidação independente para escala, deslocamento, nome e cor. `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportFramePlan.test.ts` passou (9 testes), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`.
+
+### Continuação na `Dev-V2` — unificar o percurso do plano de cabelo por quadro (implementado e verificado)
+
+**Mudança:** a construção do plano deixava elegibilidade, IDs e reação de pose em três operações sobre a lista filtrada. Agora um percurso coleta os IDs e testa reações apenas enquanto ainda não encontrou uma ativa; elimina o array filtrado e as passagens posteriores, mantendo a ordem dos IDs e a decisão do quadro.
+
+**Verificação:** os 9 testes do plano de exportação passaram, cobrindo IDs e decisão de reação; typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` também passaram. Não foi medido ganho em export real.
