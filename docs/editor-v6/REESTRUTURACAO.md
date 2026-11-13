@@ -1330,8 +1330,8 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 ### Continuação na `Dev-V2` — índices de personagens para anexar balões (implementado e verificado)
 
-**Mudança:** o resolver de cena constrói, quando há balões vinculados, mapas de personagens por elemento/ID e de snapshots-base. A associação deixa de filtrar todos os personagens e procurar a origem em toda a lista para cada fala ou pensamento. Cenas sem balões vinculados não alocam esses mapas.
+**Mudança:** o resolver de cena constrói, quando há balões vinculados, mapas de personagens por quadro. O índice dos snapshots-base é reutilizado enquanto a lista `document.elements` for a mesma. A associação deixa de filtrar todos os personagens e procurar a origem em toda a lista para cada fala ou pensamento. Cenas sem balões vinculados não alocam esses mapas.
 
 **Compatibilidade:** preservadas prioridade do vínculo explícito, escolha do personagem da mesma identidade mais próximo do balão, ordem original em empates, posição relativa, nome, cor e fallback de snapshots antigos.
 
-**Verificação:** testes confirmam o vínculo explícito e a seleção do personagem mais próximo quando há instâncias duplicadas; outro confirma que a lista de mídia substituída invalida o índice e atualiza as dimensões do vídeo. `npm run test:editor-v6` passou: 177 arquivos, 765 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.
+**Verificação:** testes confirmam o vínculo explícito, a seleção do personagem mais próximo quando há instâncias duplicadas, invalidação do índice-base após trocar a lista de elementos e atualização das dimensões do vídeo após substituir a lista de mídia. `npm run test:editor-v6` passou: 177 arquivos, 766 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.

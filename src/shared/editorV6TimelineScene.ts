@@ -80,6 +80,24 @@ export function prepareEditorV6PositionAtFrame(document: EditorV6Document, eleme
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
+type BaseCharacterIndex = { byElementId: Map<string, EditorV6Element>; byCharacterId: Map<string | undefined, EditorV6Element> }
+const baseCharacterIndexCache = new WeakMap<EditorV6Document['elements'], BaseCharacterIndex>()
+
+function baseCharacterIndex(elements: EditorV6Document['elements']): BaseCharacterIndex {
+  let index = baseCharacterIndexCache.get(elements)
+  if (index) return index
+  const byElementId = new Map<string, EditorV6Element>()
+  const byCharacterId = new Map<string | undefined, EditorV6Element>()
+  for (const character of elements) {
+    if (character.kind !== 'character') continue
+    if (!byElementId.has(character.id)) byElementId.set(character.id, character)
+    if (!byCharacterId.has(character.characterId)) byCharacterId.set(character.characterId, character)
+  }
+  index = { byElementId, byCharacterId }
+  baseCharacterIndexCache.set(elements, index)
+  return index
+}
+
 function indexLinkedCharacters(document: EditorV6Document, elements: EditorV6Element[]) {
   const characters = elements.filter((element) => element.kind === 'character' && element.characterId)
   const charactersByElementId = new Map(characters.map((character) => [character.id, character]))
@@ -90,14 +108,7 @@ function indexLinkedCharacters(document: EditorV6Document, elements: EditorV6Ele
     matches.push(character)
     charactersByCharacterId.set(character.characterId, matches)
   }
-  const baseCharactersByElementId = new Map<string, EditorV6Element>()
-  const baseCharactersByCharacterId = new Map<string | undefined, EditorV6Element>()
-  for (const character of document.elements) {
-    if (character.kind !== 'character') continue
-    if (!baseCharactersByElementId.has(character.id)) baseCharactersByElementId.set(character.id, character)
-    if (!baseCharactersByCharacterId.has(character.characterId)) baseCharactersByCharacterId.set(character.characterId, character)
-  }
-  return { charactersByElementId, charactersByCharacterId, baseCharactersByElementId, baseCharactersByCharacterId }
+  return { charactersByElementId, charactersByCharacterId, base: baseCharacterIndex(document.elements) }
 }
 
 function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Element[], frame: number): EditorV6SceneElement[] {
@@ -120,8 +131,8 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
     const balloonClip = editorV6ClipAtFrame(document.timeline, element.id, frame)
     const attachmentFrame = balloonClip?.block.startFrame ?? frame
     const anchorCharacterState = editorV6ClipAtFrame(document.timeline, target.id, attachmentFrame)?.block.state
-    const baseCharacter = indexes.baseCharactersByElementId.get(target.id)
-      ?? indexes.baseCharactersByCharacterId.get(target.characterId)
+    const baseCharacter = indexes.base.byElementId.get(target.id)
+      ?? indexes.base.byCharacterId.get(target.characterId)
     const originX = element.attachmentOriginX ?? anchorCharacterState?.x ?? baseCharacter?.x ?? target.x
     const originY = element.attachmentOriginY ?? anchorCharacterState?.y ?? baseCharacter?.y ?? target.y
     const characterId = target.characterId ?? element.characterId

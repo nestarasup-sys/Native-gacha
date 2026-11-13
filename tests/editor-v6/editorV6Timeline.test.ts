@@ -75,6 +75,20 @@ describe('timeline do Editor V6', () => {
     expect(resolved.find((element) => element.kind === 'thought')?.speakerName).toBe('Alice')
   })
 
+  it('recria o índice de snapshots-base quando a lista de elementos é substituída', () => {
+    const document = fixture(), actor = document.elements[0]
+    document.timeline.tracks.find((track) => track.kind === 'character')!.blocks = [{
+      id: crypto.randomUUID(), elementId: actor.id, label: 'Posição posterior', startFrame: 50, durationFrames: 250, state: { ...actor, x: 50 }
+    }]
+    const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId, attachedCharacterElementId: actor.id, text: 'Olá', x: 20, y: 0, width: 28, height: 16, rotation: 0, zIndex: 2 }
+    document.elements.push(speech)
+    document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks = [{ id: crypto.randomUUID(), elementId: speech.id, label: speech.text, startFrame: 0, durationFrames: 300, state: speech }]
+    expect(resolveEditorV6ElementsAtFrame(document, 60).find((element) => element.kind === 'speech')?.x).toBe(70)
+
+    const updatedDocument = { ...document, elements: [{ ...actor, x: 10 }, speech] }
+    expect(resolveEditorV6ElementsAtFrame(updatedDocument, 60).find((element) => element.kind === 'speech')?.x).toBe(60)
+  })
+
   it('aplica a escala de balões do projeto a todas as falas e mantém documentos antigos válidos', () => {
     const document = fixture(), actor = document.elements[0]
     const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId, attachedCharacterElementId: actor.id, attachmentOriginX: actor.x, attachmentOriginY: actor.y, text: 'Olá', x: actor.x, y: actor.y, width: 28, height: 16, rotation: 0, zIndex: 2 }
