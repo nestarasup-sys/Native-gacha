@@ -1,6 +1,6 @@
 import type { EditorV6Document, EditorV6Element, EditorV6TimelineBlock } from '../../../../shared/editorV6'
 import { normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
-import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
 
 type DocumentTransform = (project: EditorV6Document) => EditorV6Document
 type Dependencies = {

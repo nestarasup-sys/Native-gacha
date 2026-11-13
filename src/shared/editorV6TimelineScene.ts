@@ -1,9 +1,9 @@
 /** Scene and background resolution at a frame. */
-import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6SceneElement, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack, EditorV6VideoLayout } from './editorV6'
+import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, EditorV6SceneElement, EditorV6Timeline, EditorV6TimelineBlock, EditorV6VideoLayout } from './editorV6'
 import { editorV6DefaultVideoLayout, editorV6MediaUrl, videoCharacterTrackColor } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
-import { addEditorV6ElementAtFrame, compareEditorV6TimelineBlocks, editorV6ClipAtFrame, normalizeEditorV6Timeline, resolveEditorV6StaticElementsAtFrame, timelineClips, type TimelineClip } from './editorV6TimelineCore'
+import { compareEditorV6TimelineBlocks, editorV6ClipAtFrame, resolveEditorV6StaticElementsAtFrame, timelineClips, type TimelineClip } from './editorV6TimelineCore'
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
@@ -56,32 +56,6 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
   }
   const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
-}
-
-/** Background changes are persistent states on the visual lane. */
-export function editEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number, values: Partial<EditorV6BackgroundState>, blockId: string = crypto.randomUUID()): EditorV6Document {
-  const track = document.timeline.tracks.find((candidate) => candidate.kind === 'video')
-  if (track?.locked) return document
-  const startFrame = Math.min(document.timeline.durationFrames - 1, Math.max(0, Math.round(frame)))
-  const background = { ...resolveEditorV6BackgroundAtFrame(document, startFrame), ...values }
-  const existing = track?.blocks.find((block) => block.background && block.startFrame === startFrame)
-  const name = document.assets.find((asset) => asset.id === background.backgroundAssetId)?.name
-  const block: EditorV6TimelineBlock = { id: existing?.id ?? blockId, label: `Fundo: ${name ?? background.backgroundColor}`.slice(0, 120), startFrame, durationFrames: document.timeline.durationFrames - startFrame, background }
-  const target: EditorV6TimelineTrack = track ?? { id: crypto.randomUUID(), kind: 'video', name: 'Vídeo', muted: false, locked: false, blocks: [] }
-  const blocks = [...target.blocks.filter((item) => item.id !== block.id), block]
-  return { ...document, timeline: normalizeEditorV6Timeline({ ...document.timeline, tracks: track ? document.timeline.tracks.map((item) => item.id === target.id ? { ...item, blocks } : item) : [...document.timeline.tracks, { ...target, blocks }] }) }
-}
-
-/** Prepare a character edit at the cursor without committing a click or a cancelled gesture. */
-export function prepareEditorV6PositionAtFrame(document: EditorV6Document, elementId: string, frame: number): { document: EditorV6Document; blockId: string } | null {
-  const scene = resolveEditorV6SceneAtFrame(document, frame)
-  const element = resolveEditorV6StaticElementsAtFrame(document, scene.frame).find((item) => item.id === elementId)
-  const clip = editorV6ClipAtFrame(document.timeline, elementId, scene.frame)
-  if (!element || element.positionLocked || clip?.track.locked) return null
-  if (element.kind !== 'character') return clip ? { document, blockId: clip.block.id } : null
-  if (clip && clip.block.startFrame === scene.frame) return { document, blockId: clip.block.id }
-  const blockId = crypto.randomUUID()
-  return { document: addEditorV6ElementAtFrame(document, element, scene.frame, blockId), blockId }
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()

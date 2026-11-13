@@ -1,6 +1,6 @@
 import type { VideoBackgroundLibraryDesktopApi } from '../../../../shared/studio'
 import type { EditorV6Document, EditorV6DesktopApi, EditorV6MediaLibraryDesktopApi } from '../../../../shared/editorV6'
-import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
+import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
 import type { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
 import type { addEditorV6ImageAsset, addEditorV6TimelineMedia } from './editorV6MediaChanges'
 import type { importEditorV6ImageToProject, importEditorV6MediaToTimeline } from './editorV6MediaImport'

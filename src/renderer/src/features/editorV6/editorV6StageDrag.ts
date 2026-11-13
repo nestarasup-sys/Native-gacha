@@ -2,7 +2,8 @@ import type { EditorV6Document, EditorV6SceneElement, EditorV6VideoLayout } from
 import { EDITOR_V6_DEFAULT_VIDEO_LAYOUT, editorV6DefaultVideoLayout } from '../../../../shared/editorV6'
 import { normalizeEditorV6Timeline, timelineClips, type TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { moveEditorV6ElementInPeriod } from '../../../../shared/editorV6TimelineEdits'
-import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame, type EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
+import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
+import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 
 export type StageDragTarget = 'element' | 'background' | 'video'
 

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createEditorV6DeleteSelectedCommand } from '../src/renderer/src/features/editorV6/editorV6DeleteSelectedCommand.ts'
 import { syncEditorV6TimelineElements } from '../src/shared/editorV6.ts'
-import { editEditorV6BackgroundAtFrame, resolveEditorV6BackgroundAtFrame } from '../src/shared/editorV6TimelineScene.ts'
+import { editEditorV6BackgroundAtFrame } from '../src/shared/editorV6TimelineSceneEdits.ts'
+import { resolveEditorV6BackgroundAtFrame } from '../src/shared/editorV6TimelineScene.ts'
 
 const pageSource = await readFile(new URL('../src/renderer/src/features/editorV6/EditorV6Page.tsx', import.meta.url), 'utf8')
 const timestamp = '2026-11-02T14:00:00.000Z'

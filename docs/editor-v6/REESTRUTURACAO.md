@@ -1335,3 +1335,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** preservadas prioridade do vínculo explícito, escolha do personagem da mesma identidade mais próximo do balão, ordem original em empates, posição relativa, nome, cor e fallback de snapshots antigos.
 
 **Verificação:** testes confirmam o vínculo explícito, a seleção do personagem mais próximo quando há instâncias duplicadas, invalidação do índice-base após trocar a lista de elementos, atualização das dimensões após substituir a lista de mídia, lacunas e prioridade entre vídeos sobrepostos. `npm run test:editor-v6` passou: 177 arquivos, 767 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A redução de buscas é estrutural; não foi feito benchmark de export nem usada mídia/projeto real.
+
+### Continuação na `Dev-V2` — edições de cena em módulo próprio (implementado e verificado)
+
+**Mudança:** `editEditorV6BackgroundAtFrame` e `prepareEditorV6PositionAtFrame` foram movidas de `editorV6TimelineScene.ts` para `editorV6TimelineSceneEdits.ts`. Os consumidores de aplicação importam o módulo de edições; a fachada compatível `editorV6Timeline.ts` continua reexportando as duas funções.
+
+**Compatibilidade:** regras de criação/seleção dos blocos, normalização da timeline, IDs injetáveis, fundo persistente e validação de bloqueio permaneceram iguais. Nenhum schema, persistência ou canal IPC mudou.
+
+**Verificação:** 45 testes focados de cena, timeline e arraste passaram; os 5 testes Node da remoção passaram; `npm run test:editor-v6` passou com 767 testes e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

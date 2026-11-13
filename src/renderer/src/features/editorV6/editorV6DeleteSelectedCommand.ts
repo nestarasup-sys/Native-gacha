@@ -1,5 +1,5 @@
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
-import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineScene'
+import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
 
 export type EditorV6DeleteSelectedCommandDependencies = {
   activeProject: EditorV6Document | null
