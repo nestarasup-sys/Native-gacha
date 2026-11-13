@@ -136,6 +136,20 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
   })
 
+  it('pode omitir a resolução do vídeo sem alterar os elementos da cena', () => {
+    const document = fixture(), videoId = crypto.randomUUID()
+    document.media = [{ id: videoId, name: 'Cena.mp4', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }]
+    document.timeline.tracks.find((item) => item.kind === 'video')!.blocks.push({ id: crypto.randomUUID(), label: 'Cena.mp4', mediaId: videoId, startFrame: 30, durationFrames: 90 })
+
+    const complete = resolveEditorV6SceneAtFrame(document, 45)
+    const withoutVideo = resolveEditorV6SceneAtFrame(document, 45, { includeVideo: false })
+
+    expect(complete.mediaVideo?.mediaId).toBe(videoId)
+    expect(withoutVideo.mediaVideo).toBeUndefined()
+    expect(withoutVideo.elements).toEqual(complete.elements)
+    expect(withoutVideo.background).toEqual(complete.background)
+  })
+
   it('atualiza o índice de vídeos quando a lista de mídia do projeto muda', () => {
     const document = fixture(), videoId = crypto.randomUUID()
     const media = { id: videoId, name: 'Cena.mp4', fileName: `${videoId}.mp4`, kind: 'video' as const, mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1920, height: 1080, sizeBytes: 1024 }

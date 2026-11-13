@@ -1429,3 +1429,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** `resolveEditorV6StaticElementsAtFrame` já compilava a timeline uma vez, mas chamava `editorV6ClipAtFrame` para cada elemento, repetindo a consulta ao `WeakMap`. A busca por bloco foi extraída para uma função interna que recebe o índice compilado; o resolvedor passa a obtê-lo uma única vez e consultar cada elemento diretamente. A API pública `editorV6ClipAtFrame` continua buscando pelo mesmo índice e usa a mesma busca binária.
 
 **Verificação:** 37 testes focados de cena e timeline, a suíte completa (177 arquivos, 778 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho em export real.
+
+### Continuação na `Dev-V2` — omitir vídeo externo na cena Chromium de exportação (implementado e verificado)
+
+**Mudança:** o render worker resolvia e montava o objeto/URL do vídeo ativo em todo quadro, embora o FFmpeg sobreponha os vídeos usando o plano da timeline. `resolveEditorV6SceneAtFrame` agora aceita `includeVideo: false`; o runtime de cabelo/export usa essa opção para suas duas resoluções de cena. O valor padrão continua incluindo vídeo para preview e outros consumidores.
+
+**Verificação:** o teste confirma que o caminho sem vídeo mantém os mesmos elementos e fundo e que o caminho padrão ainda devolve o clipe ativo. 31 testes focados de timeline e runtime de cabelo, suíte completa (177 arquivos, 779 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem benchmark do projeto real.

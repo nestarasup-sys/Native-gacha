@@ -36,26 +36,30 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
     backgroundWidth: document.backgroundWidth, backgroundHeight: document.backgroundHeight, backgroundRotation: document.backgroundRotation
   }
 }
-export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6ResolvedScene {
+export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean; includeVideo?: boolean } = {}): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
-  let videoIndex = videoClipsCache.get(document.timeline)
-  if (!videoIndex) {
-    const clips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
-    let maximumEnd = 0
-    const maximumEnds = clips.map(({ block }) => { maximumEnd = Math.max(maximumEnd, block.startFrame + block.durationFrames); return maximumEnd })
-    videoIndex = { clips, maximumEnds }
-    videoClipsCache.set(document.timeline, videoIndex)
+  let mediaVideo: EditorV6ResolvedScene['mediaVideo']
+  if (options.includeVideo !== false) {
+    let videoIndex = videoClipsCache.get(document.timeline)
+    if (!videoIndex) {
+      const clips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+      let maximumEnd = 0
+      const maximumEnds = clips.map(({ block }) => { maximumEnd = Math.max(maximumEnd, block.startFrame + block.durationFrames); return maximumEnd })
+      videoIndex = { clips, maximumEnds }
+      videoClipsCache.set(document.timeline, videoIndex)
+    }
+    let left = 0, right = videoIndex.clips.length
+    while (left < right) { const middle = (left + right) >>> 1; if (videoIndex.clips[middle].block.startFrame <= normalizedFrame) left = middle + 1; else right = middle }
+    let video: EditorV6TimelineBlock | undefined
+    for (let index = left - 1; index >= 0; index--) {
+      if (videoIndex.maximumEnds[index] <= normalizedFrame) break
+      const candidate = videoIndex.clips[index].block
+      if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
+    }
+    const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
+    if (video && media) mediaVideo = { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 }
   }
-  let left = 0, right = videoIndex.clips.length
-  while (left < right) { const middle = (left + right) >>> 1; if (videoIndex.clips[middle].block.startFrame <= normalizedFrame) left = middle + 1; else right = middle }
-  let video: EditorV6TimelineBlock | undefined
-  for (let index = left - 1; index >= 0; index--) {
-    if (videoIndex.maximumEnds[index] <= normalizedFrame) break
-    const candidate = videoIndex.clips[index].block
-    if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
-  }
-  const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
-  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
+  return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(mediaVideo ? { mediaVideo } : {}) }
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
