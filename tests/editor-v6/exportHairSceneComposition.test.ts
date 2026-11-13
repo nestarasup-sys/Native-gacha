@@ -126,4 +126,23 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     expect(renderAssetsById.get('face-atlas')).toBe(assetsById.get('face-atlas'))
     expect(factory.composeMotionHairFrame).toHaveBeenCalledTimes(2)
   })
+
+  it('checks indexed transition layers without interpolating the rig twice', () => {
+    const factory = makeComposer()
+    const transitioning = element({ motionSprite: { sprite: { x: 0, y: 0, width: 10, height: 10, atlasWidth: 10, atlasHeight: 10 }, x: 0, y: 0, width: 1, height: 1, rotation: 0, flipX: false } })
+    factory.transitionLookup.mockReturnValue({
+      transition: { from: motionRig, to: motionRig },
+      poseSample: { offset: -1, progress: 0.5 }
+    } as never)
+
+    expect(factory.hasAnimatedHair(transitioning, 12)).toBe(true)
+    expect(factory.hairRigAtFrame).not.toHaveBeenCalled()
+
+    factory.transitionLookup.mockReturnValue({
+      transition: { from: { ...motionRig, layers: [] }, to: motionRig },
+      poseSample: { offset: -1, progress: 0.5 }
+    } as never)
+    expect(factory.hasAnimatedHair(transitioning, 12)).toBe(false)
+    expect(factory.hairRigAtFrame).not.toHaveBeenCalled()
+  })
 })

@@ -1343,3 +1343,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** regras de criação/seleção dos blocos, normalização da timeline, IDs injetáveis, fundo persistente e validação de bloqueio permaneceram iguais. Nenhum schema, persistência ou canal IPC mudou.
 
 **Verificação:** 45 testes focados de cena, timeline e arraste passaram; os 5 testes Node da remoção passaram; `npm run test:editor-v6` passou com 767 testes e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — evitar interpolação duplicada do rig de cabelo (implementado e verificado)
+
+**Mudança:** o teste de elegibilidade de cabelo em um quadro de transição consulta o rig de origem no índice já preparado. Como a interpolação mantém exatamente a quantidade de camadas do rig de origem, a decisão de rasterização deixa de construir um rig interpolado que seria imediatamente recalculado pela composição.
+
+**Compatibilidade:** os quadros elegíveis e a composição final continuam usando a mesma transição, interpolação e camadas; quando não há amostra facial indexada, o caminho anterior de resolução permanece como fallback.
+
+**Verificação:** o teste focado confirma tanto rigs com camadas quanto sem camadas e garante que a verificação não chama uma segunda resolução/interpolação. `npm run test:editor-v6` passou: 177 arquivos, 768 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos) e build passaram. É uma redução estrutural de trabalho repetido; não foi medido ganho de tempo em export real.

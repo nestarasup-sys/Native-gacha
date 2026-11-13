@@ -46,11 +46,22 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
   const patchSourceCrop = options.facePatchSourceCrop ?? (() => undefined)
   const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
 
-  const hasAnimatedHair = (element: SceneElement, frame: number): boolean => element.kind === 'character' && Boolean(
-    element.motionSprite
-      ? !animation?.poseReactionOnly && Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
-      : hairSourceAssetId(element) && (hairRigs.get(`${element.id}:${hairSourceAssetId(element)}`)?.layers.length ?? 0) > 0
-  )
+  const hasAnimatedHair = (element: SceneElement, frame: number): boolean => {
+    if (element.kind !== 'character') return false
+    if (element.motionSprite) {
+      if (animation?.poseReactionOnly) return false
+      const indexedTransition = hairTransitionIndex.get(element.id, frame)
+      // The compositor interpolates this same rig immediately after the
+      // eligibility check. Its layer count comes from the `from` rig, so avoid
+      // building a second interpolated rig just to answer a boolean question.
+      if (indexedTransition?.poseSample && indexedTransition.transition.from) {
+        return indexedTransition.transition.from.layers.length > 0
+      }
+      return Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
+    }
+    const sourceAssetId = hairSourceAssetId(element)
+    return Boolean(sourceAssetId && (hairRigs.get(`${element.id}:${sourceAssetId}`)?.layers.length ?? 0) > 0)
+  }
 
   const compose = ({ composedScene, originalElements, frame, activeHair, riggedElementIds, assetsById, renderAssetsById, hairSurfaceDataById, timings, metrics }: ComposeInput) => {
     let renderScene = composedScene
