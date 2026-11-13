@@ -7,6 +7,8 @@ import { addEditorV6ElementAtFrame, compareEditorV6TimelineBlocks, editorV6ClipA
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
+type VideoClipIndex = { clips: TimelineClip[]; maximumEnds: number[] }
+const videoClipsCache = new WeakMap<EditorV6Timeline, VideoClipIndex>()
 type EditorV6MediaCollection = NonNullable<EditorV6Document['media']>
 const videoMediaCache = new WeakMap<EditorV6MediaCollection, Map<string, EditorV6MediaCollection[number]>>()
 
@@ -36,22 +38,25 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
 }
 export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
-  let videoClips = videoClipsCache.get(document.timeline)
-  if (!videoClips) {
-    videoClips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
-    videoClipsCache.set(document.timeline, videoClips)
+  let videoIndex = videoClipsCache.get(document.timeline)
+  if (!videoIndex) {
+    const clips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+    let maximumEnd = 0
+    const maximumEnds = clips.map(({ block }) => { maximumEnd = Math.max(maximumEnd, block.startFrame + block.durationFrames); return maximumEnd })
+    videoIndex = { clips, maximumEnds }
+    videoClipsCache.set(document.timeline, videoIndex)
   }
-  let left = 0, right = videoClips.length
-  while (left < right) { const middle = (left + right) >>> 1; if (videoClips[middle].block.startFrame <= normalizedFrame) left = middle + 1; else right = middle }
+  let left = 0, right = videoIndex.clips.length
+  while (left < right) { const middle = (left + right) >>> 1; if (videoIndex.clips[middle].block.startFrame <= normalizedFrame) left = middle + 1; else right = middle }
   let video: EditorV6TimelineBlock | undefined
   for (let index = left - 1; index >= 0; index--) {
-    const candidate = videoClips[index].block
+    if (videoIndex.maximumEnds[index] <= normalizedFrame) break
+    const candidate = videoIndex.clips[index].block
     if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
   }
   const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(video && media ? { mediaVideo: { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 } } : {}) }
 }
-const videoClipsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 
 /** Background changes are persistent states on the visual lane. */
 export function editEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number, values: Partial<EditorV6BackgroundState>, blockId: string = crypto.randomUUID()): EditorV6Document {

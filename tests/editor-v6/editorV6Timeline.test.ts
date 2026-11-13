@@ -131,6 +131,22 @@ describe('timeline do Editor V6', () => {
     expect(resolveEditorV6SceneAtFrame(updatedDocument, 1).mediaVideo?.layout).toMatchObject({ width: 12.6563, height: 40 })
   })
 
+  it('mantém a prioridade do clipe de vídeo mais recente e respeita lacunas longas', () => {
+    const document = fixture()
+    const clips = [
+      { id: 'video-a', startFrame: 0, durationFrames: 10 },
+      { id: 'video-b', startFrame: 100, durationFrames: 20 },
+      { id: 'video-c', startFrame: 105, durationFrames: 25 }
+    ]
+    document.media = clips.map(({ id }) => ({ id, name: id, fileName: `${id}.mp4`, kind: 'video' as const, mimeType: 'video/mp4', sourceFrames: 180, hasAudio: false, sizeBytes: 1024 }))
+    document.timeline.tracks.find((track) => track.kind === 'video')!.blocks = clips.map(({ id, startFrame, durationFrames }) => ({ id: `block-${id}`, label: id, mediaId: id, startFrame, durationFrames }))
+
+    expect(resolveEditorV6SceneAtFrame(document, 50).mediaVideo).toBeUndefined()
+    expect(resolveEditorV6SceneAtFrame(document, 102).mediaVideo?.mediaId).toBe('video-b')
+    expect(resolveEditorV6SceneAtFrame(document, 110).mediaVideo?.mediaId).toBe('video-c')
+    expect(resolveEditorV6SceneAtFrame(document, 130).mediaVideo).toBeUndefined()
+  })
+
   it('resolve vídeo da Base pelo ID sem exigir cópia na pasta do projeto', () => {
     const document = fixture(), libraryId = crypto.randomUUID()
     document.media = [{ id: libraryId, libraryVideoId: libraryId, name: 'Compartilhado.mp4', fileName: `${libraryId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: true, width: 1280, height: 720, sizeBytes: 1024 }]
