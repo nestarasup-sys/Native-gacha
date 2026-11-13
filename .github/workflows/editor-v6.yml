@@ -1,0 +1,52 @@
+name: Editor V6 - import, timeline and build
+
+on:
+  pull_request:
+    branches: [Dev-V2]
+    paths:
+      - 'src/renderer/src/features/editorV6/**'
+      - 'src/shared/editorV6*'
+      - 'electron/domains/editorV6/**'
+      - 'tests/editor-v6/**'
+      - 'docs/editor-v6/**'
+      - '.github/workflows/editor-v6.yml'
+  push:
+    branches: [Dev-V2]
+    paths:
+      - 'src/renderer/src/features/editorV6/**'
+      - 'src/shared/editorV6*'
+      - 'electron/domains/editorV6/**'
+      - 'tests/editor-v6/**'
+      - '.github/workflows/editor-v6.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-v6-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  editor-v6:
+    name: Editor V6 / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.22.0'
+          cache: npm
+      - name: Install dependencies without Electron postinstall
+        run: npm ci --ignore-scripts
+      - name: Editor V6 unit and contract tests
+        run: npm run test:editor-v6
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Compile renderer and Electron
+        run: npm run build
