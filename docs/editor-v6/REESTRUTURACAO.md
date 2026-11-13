@@ -1453,3 +1453,5 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** 80 elementos sintéticos, 12.000 chamadas após aquecimento: 1.737,1 ms na implementação anterior e 887,0 ms na nova (48,9% menos tempo só para gerar as chaves). Não é uma medição do tempo total de exportação.
 
 **Verificação:** 10 testes focados, suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Um caso compara a representação final exatamente com as funções públicas existentes e outro cobre vídeo sem quadro ativo.
+
+**Verificação integrada subsequente:** harness Electron isolado aprovado: 81 quadros com 78 reutilizações, saída Full HD e verificações de fallback/cancelamento/transição; cenário sintético de boca com 301 quadros levou 2,01 s e registrou pico de RSS de 158.441.472 bytes. Execução não controlada; os tempos não medem o ganho da chave.

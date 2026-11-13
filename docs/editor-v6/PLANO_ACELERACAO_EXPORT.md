@@ -393,4 +393,6 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 
 **Verificação:** testes focados de plano visual (10), suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Os testes comparam a representação otimizada à API anterior, incluindo quadros sem vídeo ativo.
 
+**Verificação integrada:** `npm run test:editor-v6:export` passou em pasta isolada. Confirmou 81 quadros no harness geral (78 reutilizados), validação Full HD, fallback, cancelamento e transição turbo. O teste sintético de boca exportou 301 quadros em 2,01 s, com pico de RSS de 158.441.472 bytes e até 2 workers. O computador estava em uso, então esses números não são benchmark controlado nem comparam a mudança de chaves; o teste só verifica integração.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.
