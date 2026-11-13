@@ -54,13 +54,32 @@ describe('createEditorV6ExportFrameAssetImageLoader', () => {
     expect(cache.has('asset-32')).toBe(true)
   })
 
+  it('keeps recently reused images when the bounded cache evicts an entry', async () => {
+    installImageFactory()
+    const cache = new Map<string, Promise<void>>()
+    const loader = createEditorV6ExportFrameAssetImageLoader(cache)
+
+    await loader.prepare(Array.from({ length: 32 }, (_, index) => asset(`asset-${index}`)))
+    await loader.prepare([asset('asset-0')])
+    await loader.prepare([asset('asset-32')])
+
+    expect(cache.size).toBe(32)
+    expect(cache.has('asset-0')).toBe(true)
+    expect(cache.has('asset-1')).toBe(false)
+    expect(cache.has('asset-32')).toBe(true)
+  })
+
   it('preserves distinct image-load and image-decode errors', async () => {
     installImageFactory('load')
-    const loadLoader = createEditorV6ExportFrameAssetImageLoader(new Map())
+    const loadCache = new Map<string, Promise<void>>()
+    const loadLoader = createEditorV6ExportFrameAssetImageLoader(loadCache)
     await expect(loadLoader.prepare([asset('load-failure')])).rejects.toThrow('Não foi possível preparar Asset load-failure.')
+    expect(loadCache.has('load-failure')).toBe(false)
 
     installImageFactory('decode')
-    const decodeLoader = createEditorV6ExportFrameAssetImageLoader(new Map())
+    const decodeCache = new Map<string, Promise<void>>()
+    const decodeLoader = createEditorV6ExportFrameAssetImageLoader(decodeCache)
     await expect(decodeLoader.prepare([asset('decode-failure')])).rejects.toThrow('Não foi possível decodificar Asset decode-failure.')
+    expect(decodeCache.has('decode-failure')).toBe(false)
   })
 })

@@ -403,4 +403,10 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 
 **Verificação:** 48 testes focados de timeline/cena/plano visual e suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
 
+### Continuação 2026-11-13 — promover imagens reutilizadas no cache limitado
+
+**Mudança:** o cache de decode SVG do worker mantém agora as 32 imagens usadas mais recentemente. Uma falha de load/decode remove a promessa rejeitada se ela ainda for a entrada atual, permitindo uma nova tentativa sem apagar uma entrada mais recente para o mesmo ID.
+
+**Verificação:** testes focados confirmam promoção LRU, limite de 32 imagens e remoção de load/decode com falha. Suíte completa do Editor V6 (177 arquivos, 781 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho no tempo total de export.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.

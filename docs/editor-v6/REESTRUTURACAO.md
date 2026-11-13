@@ -1465,3 +1465,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** com 80 personagens sintéticos e 20.000 construções, os loops equivalentes passaram de 148,2 ms para 119,9 ms (19,1% menos no índice apenas). Não é ganho de 19,1% no export.
 
 **Verificação:** 48 testes focados, suíte completa do Editor V6 (177 arquivos, 780 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — cache limitado de decode por uso recente
+
+**Mudança:** hits promovem a imagem ao fim da ordem do `Map`, que agora representa LRU para o cache de até 32 entradas. Promessas rejeitadas são removidas apenas se ainda forem a entrada associada àquele ID.
+
+**Compatibilidade:** decodes em andamento continuam deduplicados e o limite permanece em 32. Testes cobrem a escolha do item removido e falhas distintas de carregamento e decode.
+
+**Verificação:** 7 testes focados, suíte completa do Editor V6 (177 arquivos, 781 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem medição de export total.

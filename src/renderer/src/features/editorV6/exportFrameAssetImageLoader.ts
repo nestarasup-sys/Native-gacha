@@ -18,8 +18,17 @@ export function createEditorV6ExportFrameAssetImageLoader(images: Map<string, Pr
         })
         if (images.size >= 32) images.delete(images.keys().next().value!)
         images.set(asset.id, prepared)
+      } else {
+        // Map insertion order is the worker-local LRU order.
+        images.delete(asset.id)
+        images.set(asset.id, prepared)
       }
-      await prepared
+      try { await prepared }
+      catch (error) {
+        // A failed decode must not poison later attempts for this asset.
+        if (images.get(asset.id) === prepared) images.delete(asset.id)
+        throw error
+      }
     }
   }
 
