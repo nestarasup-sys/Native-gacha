@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EditorV6SceneElement } from '../../src/shared/editorV6'
+import { editorV6LayerVisualKeys, editorV6VisualKey, editorV6VisualKeys } from '../../src/shared/editorV6Export'
 import type { EditorV6ResolvedScene } from '../../src/shared/editorV6TimelineScene'
 import { resolveEditorV6ExportFramePlan } from '../../src/renderer/src/features/editorV6/exportFramePlan'
 
@@ -19,6 +20,20 @@ const common = {
 }
 
 describe('resolveEditorV6ExportFramePlan', () => {
+  it('builds full-frame and layer reuse keys from the same visual projection', () => {
+    const frameScene = {
+      ...scene([actor({ mouthPatch: { assetId: 'mouth', x: 0.2, y: 0.3, width: 0.1, height: 0.1 } })]),
+      frame: 42,
+      hairAnimationFrame: 42,
+      mediaVideo: { mediaId: 'video-1', startFrame: 12, sourceInFrame: 7, layout: { x: 1, y: 2, width: 80, height: 90, rotation: 5 } }
+    } as Parameters<typeof editorV6VisualKeys>[0]
+
+    expect(editorV6VisualKeys(frameScene)).toEqual({
+      key: editorV6VisualKey(frameScene),
+      layerKeys: editorV6LayerVisualKeys(frameScene)
+    })
+  })
+
   it('activates hair and includes the frame in both visual keys only on foreground captures', () => {
     const frameScene = scene([actor()])
     const backgroundPlan = resolveEditorV6ExportFramePlan({ ...common, scene: frameScene, frame: 10, requestedLayer: 'background', hairAnimation: { poseReactionOnly: false } })

@@ -99,15 +99,30 @@ export function editorV6BenchmarkAudioMatchesExport(audioClips: number, outputHa
 }
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
 type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6Document['elements']; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
+export type EditorV6VisualKeys = { key: string; layerKeys: { background: string; foreground: string } }
 function editorV6ElementVisualKeys(elements: EditorV6Document['elements']) {
   return elements.map((element) => [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch])
 }
+function editorV6LayerVisualKeysForElements(background: unknown, elements: ReturnType<typeof editorV6ElementVisualKeys>, hairAnimationFrame?: number) {
+  const foreground = hairAnimationFrame === undefined ? elements : [elements, hairAnimationFrame]
+  return { background: JSON.stringify(background), foreground: JSON.stringify(foreground) }
+}
+function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: ReturnType<typeof editorV6ElementVisualKeys>): string {
+  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
+  const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], elements]
+  return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
+}
+/** Builds both frame-reuse keys from one element projection. */
+export function editorV6VisualKeys(scene: EditorV6VisualKeyInput): EditorV6VisualKeys {
+  const elements = editorV6ElementVisualKeys(scene.elements)
+  return {
+    key: editorV6VisualKeyForElements(scene, elements),
+    layerKeys: editorV6LayerVisualKeysForElements(scene.background, elements, scene.hairAnimationFrame)
+  }
+}
 export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {
-  const foreground = editorV6ElementVisualKeys(scene.elements)
-  return { background: JSON.stringify(scene.background), foreground: JSON.stringify(scene.hairAnimationFrame === undefined ? foreground : [foreground, scene.hairAnimationFrame]) }
+  return editorV6LayerVisualKeysForElements(scene.background, editorV6ElementVisualKeys(scene.elements), scene.hairAnimationFrame)
 }
 export function editorV6VisualKey(scene: EditorV6VisualKeyInput): string {
-  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
-  const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], editorV6ElementVisualKeys(scene.elements)]
-  return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
+  return editorV6VisualKeyForElements(scene, editorV6ElementVisualKeys(scene.elements))
 }

@@ -1351,3 +1351,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** os quadros elegíveis e a composição final continuam usando a mesma transição, interpolação e camadas; quando não há amostra facial indexada, o caminho anterior de resolução permanece como fallback.
 
 **Verificação:** o teste focado confirma tanto rigs com camadas quanto sem camadas e garante que a verificação não chama uma segunda resolução/interpolação. `npm run test:editor-v6` passou: 177 arquivos, 768 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos) e build passaram. É uma redução estrutural de trabalho repetido; não foi medido ganho de tempo em export real.
+
+### Continuação na `Dev-V2` — compartilhar projeção das chaves visuais por quadro (implementado e verificado)
+
+**Mudança:** o plano de cada quadro gerava separadamente a projeção visual dos elementos para a chave do quadro inteiro e para as chaves das camadas. Agora calcula a projeção uma vez e serializa os mesmos dados para ambas as chaves; as funções públicas anteriores continuam disponíveis.
+
+**Compatibilidade:** teste de paridade verifica chaves idênticas com quadro animado, vídeo e patch de boca. Os critérios de reaproveitamento entre quadros e capturas em camadas não mudaram.
+
+**Verificação:** testes focados do plano, cache de quadros e paridade passaram (11 testes). `npm run test:editor-v6` passou: 177 arquivos, 769 testes aprovados e 1 ignorado. Typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho em export real.
