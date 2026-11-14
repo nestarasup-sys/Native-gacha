@@ -69,19 +69,19 @@ async function buildMotionMouthlessBaseAssets({
   createId = () => crypto.randomUUID()
 }: PrepareMotionMouthlessBaseAssetsOptions): Promise<MotionMouthlessBaseAssets> {
   let isolatedBaseline = suppliedIsolatedBaseline
-  try {
-  const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
-  let sourceCrop: MotionPixelCrop
-  try { sourceCrop = readCrop(fullTalk.canvas, false, 0) }
-  finally { fullTalk.canvas.width = fullTalk.canvas.height = 1 }
-  try {
+    try {
+    const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
+    let sourceCrop: MotionPixelCrop
+    try { sourceCrop = readCrop(fullTalk.canvas, false, 0) }
+    finally { fullTalk.canvas.width = fullTalk.canvas.height = 1 }
+    try {
     const fullTalkBlink = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, 'talk-blink', { mouthLayer: 'all' })
     try { sourceCrop = unionMotionCrops(sourceCrop, readCrop(fullTalkBlink.canvas, false, 0)) }
     finally { fullTalkBlink.canvas.width = fullTalkBlink.canvas.height = 1 }
-  } catch (error) { if (!isBlinkUnavailableError(error)) throw error }
+    } catch (error) { if (!isBlinkUnavailableError(error)) throw error }
 
-  if (requiredCrop) sourceCrop = unionMotionCrops(sourceCrop, requiredCrop)
-  isolatedBaseline ??= await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
+    if (requiredCrop) sourceCrop = unionMotionCrops(sourceCrop, requiredCrop)
+    isolatedBaseline ??= await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
     const baseTalkId = createId()
     const baseTalkCanvas = cropCanvas(isolatedBaseline.canvas, sourceCrop)
     let baseTalkDataUrl: string

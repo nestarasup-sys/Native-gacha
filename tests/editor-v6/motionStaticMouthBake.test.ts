@@ -80,6 +80,45 @@ describe('pipeline de boca em pose estática', () => {
     expect(canvases.length).toBe(0)
   })
 
+  it('includes a mouth sample beyond the original character crop before building bases and atlas', async () => {
+    const baseline = frame()
+    const reference = frame({ mouthCrop: { left: 8, top: 9, width: 7, height: 6, fingerprint: 1 } })
+    const middle = frame({ mouthCrop: { left: 12, top: 10, width: 8, height: 5, fingerprint: 2 } })
+    const enlarged = frame({ mouthCrop: { left: 35, top: 12, width: 12, height: 8, fingerprint: 3 } })
+    const frames = [baseline, reference, middle, enlarged]
+    const render = vi.fn(async () => frames.shift()!) as unknown as EditorV6MotionFrameRenderer
+    const bodyCrop = { left: 0, top: 0, width: 40, height: 50 }
+    const expectedCrop = { left: 0, top: 0, width: 47, height: 50 }
+    const bases = [{ faceMode: 'talk', asset: { id: 'full-width-base' } }]
+    const prepareMouthlessBaseAssets = vi.fn(async (input: { requiredCrop: { left: number; top: number; width: number; height: number } }) => {
+      expect(input.requiredCrop).toEqual({ left: 8, top: 9, width: 39, height: 11 })
+      return { sourceCrop: expectedCrop, isolatedBaseline: reference, assets: bases } as never
+    })
+    const createTransparentPatch = vi.fn((_canvas: HTMLCanvasElement, crop: { width: number; height: number }) =>
+      ({ width: crop.width + 4, height: crop.height + 4 } as HTMLCanvasElement))
+    const createCanvas = vi.fn(() => ({ width: 1, height: 1, getContext: () => ({ drawImage: vi.fn() }) } as unknown as HTMLCanvasElement))
+    const atlas = { width: 15, height: 20 } as HTMLCanvasElement
+    const packed = { atlas, asset: { id: 'mouth-atlas' }, motion: { version: 1, key: 'static-mouth', assetId: 'mouth-atlas', frames: [] }, atlasPixels: 300 }
+    const buildIsolatedMouthAtlas = vi.fn((input: { sourceCrop: typeof expectedCrop }) => {
+      expect(input.sourceCrop).toEqual(expectedCrop)
+      return packed as never
+    })
+    const result = await bakeEditorV6StaticMouthLoop({
+      request: request(), from: pose, to: { ...pose }, samePose: true, captureLayerAtlases: false,
+      render, elapsedMilliseconds: () => 2, rigMetrics: () => rigMetrics, prepareMouthlessBaseAssets,
+      buildIsolatedMouthAtlas, createTransparentPatch, createCanvas
+    } as never)
+    expect(result?.facePatchSourceCrop).toEqual(expectedCrop)
+    expect(result?.mouthlessBaseAssets).toBe(bases)
+    expect(prepareMouthlessBaseAssets).toHaveBeenCalledOnce()
+    expect(buildIsolatedMouthAtlas).toHaveBeenCalledOnce()
+    expect(reference.dispose).toHaveBeenCalledOnce()
+    expect(baseline.dispose).toHaveBeenCalledOnce()
+    expect(middle.dispose).toHaveBeenCalledOnce()
+    expect(enlarged.dispose).toHaveBeenCalledOnce()
+    expect(bodyCrop.width).toBeLessThan(expectedCrop.width)
+  })
+
   it('usa o fallback legacy quando o renderer não consegue separar a boca', async () => {
     const baseline = frame({ mouthCanvas: undefined, mouthCrop: undefined })
     const render = vi.fn(async () => baseline) as unknown as EditorV6MotionFrameRenderer
