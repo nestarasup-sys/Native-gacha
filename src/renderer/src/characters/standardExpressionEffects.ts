@@ -3,8 +3,9 @@ import type { CharacterRenderAssetProvider } from '../../../shared/characterRend
 import { legacyStandardExpressionEffects } from '../../../shared/legacyExpressionEffects'
 
 export type StandardExpressionEffects = Record<number, FaceExpressionEffects>
+export type StandardExpressionEffectsCache = WeakMap<CharacterRenderAssetProvider, Map<number, Promise<StandardExpressionEffects>>>
 
-export async function loadStandardExpressionEffects(modelSlot: number, assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator): Promise<StandardExpressionEffects> {
+async function loadStandardExpressionEffectsUncached(modelSlot: number, assetProvider: CharacterRenderAssetProvider): Promise<StandardExpressionEffects> {
   const summaries = await assetProvider.listFaceExpressionPresets(modelSlot)
   const standard = summaries.filter((preset) => (preset.collectionId ?? 'standard') === 'standard'
     && Number.isInteger(preset.expressionIndex) && preset.expressionIndex! >= 0 && preset.expressionIndex! < 21)
@@ -24,4 +25,26 @@ export async function loadStandardExpressionEffects(modelSlot: number, assetProv
     }
   }
   return effectsByIndex
+}
+
+export function loadStandardExpressionEffects(
+  modelSlot: number,
+  assetProvider: CharacterRenderAssetProvider = window.desktop.fabricator,
+  cache?: StandardExpressionEffectsCache
+): Promise<StandardExpressionEffects> {
+  if (!cache) return loadStandardExpressionEffectsUncached(modelSlot, assetProvider)
+  let byModelSlot = cache.get(assetProvider)
+  if (!byModelSlot) {
+    byModelSlot = new Map()
+    cache.set(assetProvider, byModelSlot)
+  }
+  const pending = byModelSlot.get(modelSlot)
+  if (pending) return pending
+
+  const request = loadStandardExpressionEffectsUncached(modelSlot, assetProvider)
+  byModelSlot.set(modelSlot, request)
+  void request.catch(() => {
+    if (byModelSlot?.get(modelSlot) === request) byModelSlot.delete(modelSlot)
+  })
+  return request
 }

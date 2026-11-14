@@ -9,6 +9,7 @@ import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairPreparationReuse } from './motion/hairPreparationReuse'
 import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
+import type { StandardExpressionEffectsCache } from '../../characters/standardExpressionEffects'
 import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
 import { groupEditorV6HairMotionTargets } from './editorV6HairMotionGroups'
 import { prepareEditorV6HairMotionCharacterGroup } from './editorV6HairMotionCharacterGroup'
@@ -55,6 +56,7 @@ export async function prepareEditorV6HairMotionBundle(
   // renderer material loader). Share wardrobe/hair manifests across poses;
   // never reuse any characters/materials from an earlier export.
   const materialCache: GachaReusableMaterialCache = new Map()
+  const expressionEffectsCache: StandardExpressionEffectsCache = new WeakMap()
   const currentExportReuse = createEditorV6HairPreparationReuse()
   const rawSources = createEditorV6HairSourceBatch(window.desktop.fabricator)
   const [{ prepareSavedCharacterRenderer, createPreparedGachaWardrobePair }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
@@ -72,6 +74,7 @@ export async function prepareEditorV6HairMotionBundle(
       createWardrobePair: createPreparedGachaWardrobePair,
       assetProvider: window.desktop.fabricator,
       materialCache,
+      expressionEffectsCache,
       reportStage,
       isCancelled
     })

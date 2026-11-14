@@ -19,14 +19,14 @@ import type { ClosedEyeAssetResolver } from './characterFaceCatalogSupport'
 import { createCharacterCanvas } from './canvasSurface'
 import { createGachaPairedResource, type GachaPairedResource } from './pairedCharacterPreparation'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
-import { loadStandardExpressionEffects, type StandardExpressionEffects } from './standardExpressionEffects'
+import { loadStandardExpressionEffects, type StandardExpressionEffects, type StandardExpressionEffectsCache } from './standardExpressionEffects'
 export { loadCachedImage } from './editorV6CharacterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
 export type { GachaReusableMaterialCache, GachaReusableMaterials }
 
 export { loadStandardExpressionEffects }
-export type { StandardExpressionEffects }
+export type { StandardExpressionEffects, StandardExpressionEffectsCache }
 
 export const isRightFaceAsset = resolveIsRightFaceAsset
 
@@ -91,6 +91,14 @@ export type PreparedGachaLayerFrame = Readonly<{
   shapeScaleY: number
 }>
 
+type EditorV6CharacterRendererSource = {
+  artwork: CatalogArtwork
+  source: FabricatorProject
+  assetProvider?: CharacterRenderAssetProvider
+  materialCache?: GachaReusableMaterialCache
+  wardrobePair?: GachaPreparedWardrobePair
+  expressionEffectsCache?: StandardExpressionEffectsCache
+}
 
 export async function materialsForPreparedCharacter(
   character: CustomizerCharacter, slot: number, assetProvider: CharacterRenderAssetProvider,
@@ -99,7 +107,7 @@ export async function materialsForPreparedCharacter(
   return loadPreparedCharacterMaterials(character, slot, assetProvider, loadHairAppearanceLayers, cache)
 }
 
-export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: { artwork: CatalogArtwork; source: FabricatorProject; assetProvider?: CharacterRenderAssetProvider; materialCache?: GachaReusableMaterialCache; wardrobePair?: GachaPreparedWardrobePair }): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderToCanvasWithLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number; layers: PreparedGachaLayerFrame }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
+export async function prepareSavedCharacterRenderer(character: CustomizerCharacter, renderSource?: EditorV6CharacterRendererSource): Promise<{ width: number; height: number; render: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ dataUrl: string; width: number; height: number }>; renderToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; renderMouthToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number }>; canIsolateMouth: (appearance?: CustomizerFaceAppearance) => boolean; renderToCanvasWithLayers: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<{ canvas: HTMLCanvasElement; width: number; height: number; layers: PreparedGachaLayerFrame }>; renderLayersToCanvas: (appearance?: CustomizerFaceAppearance, studioFaceTransforms?: EditorV6FaceTransforms, expressionEffects?: FaceExpressionEffects, studioFaceMode?: EditorV6FaceRenderMode, options?: { mouthLayer?: FaceCatalogMouthLayer }) => Promise<PreparedGachaLayerFrame> ; dispose: () => void }> {
   const { modelSlot, assetProvider, source, artwork } = await resolveSavedCharacterSource(character, renderSource)
   const proportions = getCharacterProportions(character.customization)
   const hairAppearance = character.customization.hairAppearance
@@ -126,7 +134,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
 
   const appearance = character.customization.faceAppearance
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
-    ? await loadStandardExpressionEffects(modelSlot, assetProvider).catch((): StandardExpressionEffects => ({}))
+    ? await loadStandardExpressionEffects(modelSlot, assetProvider, renderSource?.expressionEffectsCache).catch((): StandardExpressionEffects => ({}))
     : {}
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
   const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()

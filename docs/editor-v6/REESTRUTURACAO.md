@@ -1503,3 +1503,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** em Node, com 14 campos sintéticos e 1.500.000 iterações aquecidas, a forma anterior com `Object.entries` levou 1.104,9 ms e a iteração direta com `for...in`/verificação de propriedade própria levou 306,9 ms (72,2% menos apenas nesse loop). Isso não mede o tempo de exportação.
 
 **Verificação:** testes focados do pipeline e captura de workers passaram (23), incluindo exclusão de propriedades herdadas; a suíte completa do Editor V6 passou (177 arquivos, 786 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`.
+
+### Continuação na `Dev-V2` — compartilhar leitura de presets de expressão no preparo de cabelo
+
+**Mudança:** durante um único preparo de exportação de cabelo, o renderizador normal e o renderizador sem cabelo reutilizam a mesma promessa de presets faciais padrão para cada provedor e `modelSlot`. A cache é criada dentro do preparo da exportação e não persiste entre exportações; superfícies/canvases continuam independentes. Uma leitura que falha é removida da cache para permitir nova tentativa.
+
+**Compatibilidade:** chamadas fora desse fluxo continuam sem cache. Testes cobrem deduplicação concorrente, isolamento por provedor/slot e recuperação após rejeição.
+
+**Verificação:** testes focados (6), suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Foi removida uma leitura duplicada por provedor/slot nesse preparo; não foi medido ganho em segundos nem em exportação real.

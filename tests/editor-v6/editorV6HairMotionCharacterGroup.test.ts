@@ -24,7 +24,7 @@ function dependencies(overrides: Partial<EditorV6HairMotionCharacterGroupDepende
       loadHairStyle: vi.fn(async () => ({ id: 'style-a' }) as HairStyle),
       prepareRenderer: vi.fn(async () => renderer),
       createWardrobePair: vi.fn(() => wardrobePair),
-      assetProvider: {}, materialCache: new Map(), reportStage: vi.fn(), isCancelled: () => false,
+      assetProvider: {}, materialCache: new Map(), expressionEffectsCache: new WeakMap(), reportStage: vi.fn(), isCancelled: () => false,
       ...overrides
     } as unknown as EditorV6HairMotionCharacterGroupDependencies,
     renderer,
@@ -56,6 +56,8 @@ describe('preparação de grupo de personagem para movimento de cabelo', () => {
       source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: deps.values.assetProvider,
       materialCache: deps.values.materialCache, wardrobePair: deps.wardrobePair
     })
+    expect(deps.values.prepareRenderer.mock.calls[0][1]?.expressionEffectsCache)
+      .toBe(deps.values.prepareRenderer.mock.calls[1][1]?.expressionEffectsCache)
     expect(profiler.snapshot()).toEqual([
       { name: 'resolveSavedCharacterSource', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },
       { name: 'loadHairStyles', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },

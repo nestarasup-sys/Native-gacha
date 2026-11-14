@@ -2,6 +2,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { HairStyle } from '../../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../../shared/characterRenderAssets'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
+import type { StandardExpressionEffectsCache } from '../../characters/standardExpressionEffects'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import type { EditorV6HairMotionGroup } from './editorV6HairMotionGroups'
@@ -35,6 +36,7 @@ export type EditorV6HairMotionCharacterGroupDependencies = {
   createWardrobePair: CharacterRendererModule['createPreparedGachaWardrobePair']
   assetProvider: CharacterRenderAssetProvider
   materialCache: GachaReusableMaterialCache
+  expressionEffectsCache: StandardExpressionEffectsCache
   reportStage: (stage: string, startedAt: number) => void
   isCancelled: () => boolean
   now?: () => number
@@ -71,7 +73,8 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   const wardrobePair = dependencies.createWardrobePair()
   const renderSource = {
     source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: dependencies.assetProvider,
-    materialCache: dependencies.materialCache, wardrobePair
+    materialCache: dependencies.materialCache, wardrobePair,
+    expressionEffectsCache: dependencies.expressionEffectsCache
   }
   stageStarted = now()
   const rendererResults = await Promise.allSettled([
