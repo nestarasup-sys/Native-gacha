@@ -118,10 +118,7 @@ function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: R
   const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], elements]
   return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
 }
-/** Builds both frame-reuse keys from one element projection. */
-export function editorV6VisualKeys(scene: EditorV6VisualKeyInput): EditorV6VisualKeys {
-  const elements = editorV6ElementVisualKeys(scene.elements)
-  const elementsKey = editorV6SerializeVisualKey(elements)
+function editorV6VisualKeysFromSerializedElements(scene: EditorV6VisualKeyInput, elementsKey: string): EditorV6VisualKeys {
   const backgroundKey = editorV6SerializeVisualKey(scene.background)
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
   const mediaKey = editorV6SerializeVisualKey(mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout])
@@ -133,6 +130,14 @@ export function editorV6VisualKeys(scene: EditorV6VisualKeyInput): EditorV6Visua
     key: `[${backgroundKey},${mediaKey},${elementsKey}${hairFrameKey === undefined ? '' : `,${hairFrameKey}`}]`,
     layerKeys: editorV6LayerVisualKeysFromSerialized(backgroundKey, elementsKey, scene.hairAnimationFrame)
   }
+}
+/** Builds both frame-reuse keys from one element projection. */
+export function editorV6VisualKeys(scene: EditorV6VisualKeyInput): EditorV6VisualKeys {
+  return editorV6VisualKeysFromSerializedElements(scene, editorV6SerializeVisualKey(editorV6ElementVisualKeys(scene.elements)))
+}
+/** Uses the full scene element state when a runtime mode depends on fields outside the compact projection. */
+export function editorV6CompleteVisualKeys(scene: EditorV6VisualKeyInput): EditorV6VisualKeys {
+  return editorV6VisualKeysFromSerializedElements(scene, editorV6SerializeVisualKey(scene.elements))
 }
 export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {
   return editorV6LayerVisualKeysForElements(scene.background, editorV6ElementVisualKeys(scene.elements), scene.hairAnimationFrame)

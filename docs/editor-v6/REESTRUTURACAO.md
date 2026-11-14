@@ -1473,3 +1473,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** decodes em andamento continuam deduplicados e o limite permanece em 32. Testes cobrem a escolha do item removido e falhas distintas de carregamento e decode.
 
 **Verificação:** 7 testes focados, suíte completa do Editor V6 (177 arquivos, 781 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem medição de export total.
+
+### Continuação na `Dev-V2` — reduzir assinaturas redundantes no modo reação de pose
+
+**Mudança:** o modo que mantém expressões completas durante reação de pose passa a gerar uma assinatura baseada diretamente nos elementos completos e a reutiliza como chave de camada. Isso mantém a invalidação de campos de expressão que não estão na projeção compacta sem serializar a projeção e depois os mesmos elementos mais uma vez.
+
+**Medição isolada:** 80 personagens sintéticos, 12.000 chamadas: 3.918,0 ms na composição antiga de chave compacta + assinatura completa e 1.126,9 ms na nova chave completa (71,2% menos apenas nesse cálculo). O export total não foi medido.
+
+**Verificação:** 12 testes focados (incluindo uma propriedade fora da projeção compacta), suíte completa do Editor V6 (177 arquivos, 782 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.

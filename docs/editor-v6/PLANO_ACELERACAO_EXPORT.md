@@ -409,4 +409,12 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 
 **Verificação:** testes focados confirmam promoção LRU, limite de 32 imagens e remoção de load/decode com falha. Suíte completa do Editor V6 (177 arquivos, 781 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Não foi medido ganho no tempo total de export.
 
+### Continuação 2026-11-13 — compor uma única chave completa para reação de pose
+
+**Mudança:** no modo `poseReactionOnly`, o plano usava a chave compacta, serializava toda a cena para cobrir propriedades de expressão e combinava as duas assinaturas em novas strings. Agora usa diretamente a chave de cena completa, que contém os mesmos elementos e propriedades, e a compõe com fundo/vídeo/quadro uma vez. Os demais modos continuam usando a projeção compacta.
+
+**Medição isolada:** implementação anterior e nova em Node com cena sintética de 80 personagens e 12.000 cálculos após aquecimento: 3.918,0 ms contra 1.126,9 ms (71,2% menos nessa geração da chave de reação de pose). Não é medição de export completo.
+
+**Verificação:** 12 testes focados, incluindo alteração de `characterCanvasWidth` em repouso, suíte completa do Editor V6 (177 arquivos, 782 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.

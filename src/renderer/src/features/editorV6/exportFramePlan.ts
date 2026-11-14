@@ -1,4 +1,4 @@
-import { editorV6VisualKeys } from '../../../../shared/editorV6Export'
+import { editorV6CompleteVisualKeys, editorV6VisualKeys } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
 import { hairMotionPoseReactionIsActive } from '../../../../shared/hairMotionEngine'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
@@ -39,17 +39,12 @@ export function resolveEditorV6ExportFramePlan({
   }
   const activeHair = riggedElementIds.size > 0
   const hairNeedsFrame = activeHair && (!hairAnimation?.poseReactionOnly || reacting)
-  const visualKeys = editorV6VisualKeys({ ...scene, mediaVideo: undefined, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) })
-  const baseKey = visualKeys.key
-  const baseLayerKeys = visualKeys.layerKeys
-  // Original visual keys omit some expression and effect properties. For a
-  // resting pose reaction, retain the complete scene identity in both keys.
-  const signature = hairAnimation?.poseReactionOnly ? JSON.stringify(scene.elements) : null
-  const key = signature === null ? baseKey : JSON.stringify([baseKey, signature])
-  const layerKeys = signature === null ? baseLayerKeys : {
-    ...baseLayerKeys,
-    foreground: JSON.stringify([baseLayerKeys.foreground, signature])
-  }
+  const keyScene = { ...scene, mediaVideo: undefined, ...(hairNeedsFrame ? { hairAnimationFrame: frame } : {}) }
+  // Pose-reaction frames also depend on expression/effect fields outside the
+  // compact projection, so serialize the complete element state once.
+  const visualKeys = hairAnimation?.poseReactionOnly
+    ? editorV6CompleteVisualKeys(keyScene)
+    : editorV6VisualKeys(keyScene)
 
-  return { activeLayer, activeHair, riggedElementIds, reacting, hairNeedsFrame, key, layerKeys }
+  return { activeLayer, activeHair, riggedElementIds, reacting, hairNeedsFrame, key: visualKeys.key, layerKeys: visualKeys.layerKeys }
 }

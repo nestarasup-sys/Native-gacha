@@ -107,6 +107,19 @@ describe('resolveEditorV6ExportFramePlan', () => {
     expect(reacting.key).not.toBe(atRest.key)
   })
 
+  it('uses complete element state for pose-reaction cache keys', () => {
+    const before = scene([actor({ characterCanvasWidth: 100 })])
+    const after = scene([actor({ characterCanvasWidth: 140 })])
+    const options = { ...common, requestedLayer: 'foreground' as const, hairAnimation: { poseReactionOnly: true }, hairPoseReactionEnds: new Map([['actor-1', [100]]]) }
+
+    const beforeRest = resolveEditorV6ExportFramePlan({ ...options, scene: before, frame: 130 })
+    const afterRest = resolveEditorV6ExportFramePlan({ ...options, scene: after, frame: 130 })
+
+    expect(beforeRest.hairNeedsFrame).toBe(false)
+    expect(afterRest.key).not.toBe(beforeRest.key)
+    expect(afterRest.layerKeys.foreground).not.toBe(beforeRest.layerKeys.foreground)
+  })
+
   it('does not include the media video in scene cache keys', () => {
     const withMedia = { ...scene([actor()]), mediaVideo: { blockId: 'video-1', mediaId: 'media-1', url: 'local://video', layout: { x: 0, y: 0, width: 100, height: 100, rotation: 0 }, startFrame: 0, sourceInFrame: 0, durationFrames: 60, hasAudio: false, audioEnabled: true, gain: 1 } }
     const withoutMedia = scene([actor()])
