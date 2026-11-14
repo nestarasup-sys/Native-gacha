@@ -1575,3 +1575,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 Quando uma transição tem rigs visuais e físicos completos, a trajetória física já usa seu interpolador compilado; o índice de `flipX` agora compila apenas os pares de camadas por `(id, lado)` e registra o flip por quadro, sem montar outro rig e sem chamar `hairRigAtFrame` nesse caminho. O ponto de troca continua usando o progresso suavizado e o mesmo limiar da interpolação anterior. Rigs incompletos ainda usam o resolver existente, e a trajetória física continua funcionando mesmo sem rigs visuais.
 
 **Verificação:** 6 testes focados da trajetória, suíte Editor V6 (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos), build e `git diff --check` passaram. A mudança elimina a criação do rig completo somente neste caminho; não foi medido ganho de tempo do export completo.
+
+### Continuação na `Dev-V2` — reutilizar o índice de personagens da trajetória
+
+O pré-cálculo da trajetória do cabelo agora limpa e reaproveita o mesmo `Map` entre quadros e indexa somente os IDs que participam da animação. O percurso continua mantendo a última instância de personagem com ID duplicado, como antes; isso reduz um objeto de mapa por quadro e evita entradas de personagens que não serão consultados.
+
+**Verificação:** teste focado da trajetória (6), suíte Editor V6 (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos), build e `git diff --check` passaram. É uma redução estrutural de alocações; não foi medida uma exportação completa.

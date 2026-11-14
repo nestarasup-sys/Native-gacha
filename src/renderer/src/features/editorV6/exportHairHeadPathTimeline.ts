@@ -34,6 +34,9 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
   const flipChanges = new Map<string, Array<{ frame: number; flipX: boolean }>>()
   const transitionPathInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionHeadPathPoint>()
   const transitionLayerFlips = new WeakMap<object, readonly TransitionLayerFlip[]>()
+  const animatedIds = new Set(animatedElementIds)
+  // Reuse the per-frame index and retain only characters consumed by this timeline.
+  const charactersById = new Map<string, SceneElement>()
 
   const recordLayerFlip = (elementId: string, layerId: string, frame: number, flipX: boolean) => {
     const key = `${elementId}:${layerId}`
@@ -56,11 +59,13 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
 
     for (let frame = latestFrame + 1; frame <= targetFrame; frame += 1) {
       const resolved = resolveScene(frame)
-      const elements = new Map<string, SceneElement>()
-      for (const element of resolved.elements) if (element.kind === 'character') elements.set(element.id, element)
+      charactersById.clear()
+      for (const element of resolved.elements) {
+        if (element.kind === 'character' && animatedIds.has(element.id)) charactersById.set(element.id, element)
+      }
       for (const elementId of animatedElementIds) {
         const path = paths.get(elementId)!
-        const element = elements.get(elementId)
+        const element = charactersById.get(elementId)
         if (!element) {
           path[frame] = frame > 0 ? path[frame - 1] : 0
           continue

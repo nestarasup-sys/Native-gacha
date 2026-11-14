@@ -479,3 +479,9 @@ Os 7 testes do lote de bakes, a suíte (179 arquivos, 796 aprovados e 1 ignorado
 Para transições com rigs visuais e físicos, os flips são compilados por camada (ID e lado) e registrados diretamente a partir do progresso suavizado. A rotina deixa de criar o rig visual interpolado por quadro apenas para ler `flipX`; as trajetórias seguem os pontos físicos compilados. Quando faltam rigs ou amostras, a resolução anterior continua como fallback.
 
 6 testes focados da trajetória, suíte (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. O ganho ainda não foi medido no MP4 ou em projeto real.
+
+### Continuação 2026-11-13 — reutilizar o índice de personagens da trajetória
+
+O índice por quadro agora é reaproveitado e limitado aos IDs com cabelo animado. A passagem ainda conserva o último personagem de IDs repetidos, mas deixa de construir um novo `Map` e de guardar personagens irrelevantes a cada amostra.
+
+Teste focado (6), suíte (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. A redução é estrutural, sem benchmark de MP4.
