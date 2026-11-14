@@ -9,10 +9,13 @@ type ResolvedHairRig = { rig: EditorV6HairMotionRig; element: SceneElement }
 type HeadPathTransition = {
   fromElement: EditorV6Element
   toElement: EditorV6Element
+  from?: EditorV6HairMotionRig
+  to?: EditorV6HairMotionRig
   physicsFrom?: EditorV6HairMotionRig
   physicsTo?: EditorV6HairMotionRig
 }
 type HeadPathTransitionSample = { transition?: HeadPathTransition; poseSample?: { progress: number } }
+type TransitionLayerFlip = { id: string; from: boolean; to: boolean }
 
 type Options = {
   animatedElementIds: readonly string[]
@@ -30,6 +33,14 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
   const previousPoints = new Map<string, EditorV6HairMotionHeadPathPoint>()
   const flipChanges = new Map<string, Array<{ frame: number; flipX: boolean }>>()
   const transitionPathInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionHeadPathPoint>()
+  const transitionLayerFlips = new WeakMap<object, readonly TransitionLayerFlip[]>()
+
+  const recordLayerFlip = (elementId: string, layerId: string, frame: number, flipX: boolean) => {
+    const key = `${elementId}:${layerId}`
+    const changes = flipChanges.get(key) ?? []
+    if (changes.length === 0 || changes[changes.length - 1].flipX !== flipX) changes.push({ frame, flipX })
+    if (changes.length) flipChanges.set(key, changes)
+  }
 
   const ensure = (targetFrame: number) => {
     if (!hasHairAnimation || targetFrame <= latestFrame) return
@@ -58,15 +69,19 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
         const indexed = getTransitionSample(elementId, frame)
         const transition = indexed?.transition
         const transitionSample = indexed?.poseSample
-        const resolvedRig = hairRigAtFrame(element, frame)
+        const canInterpolateTransitionLayerFlips = Boolean(transition && transitionSample && transition.from && transition.to)
+        const canInterpolateTransitionPath = Boolean(transition && transitionSample && transition.physicsFrom && transition.physicsTo)
+        const easedProgress = transitionSample ? motionEase(transitionSample.progress) : undefined
+        let resolvedRig: ResolvedHairRig | undefined
+        if (!canInterpolateTransitionLayerFlips || !canInterpolateTransitionPath) resolvedRig = hairRigAtFrame(element, frame)
         let pathPoint: EditorV6HairMotionHeadPathPoint
-        if (transition && transitionSample && transition.physicsFrom && transition.physicsTo) {
+        if (canInterpolateTransitionPath && transition && easedProgress !== undefined && transition.physicsFrom && transition.physicsTo) {
           let interpolatePath = transitionPathInterpolators.get(transition)
           if (!interpolatePath) {
             interpolatePath = createEditorV6HairMotionHeadPathInterpolator(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo)
             transitionPathInterpolators.set(transition, interpolatePath)
           }
-          pathPoint = interpolatePath(motionEase(transitionSample.progress))
+          pathPoint = interpolatePath(easedProgress)
         } else if (resolvedRig) pathPoint = editorV6HairMotionHeadPathPoint(resolvedRig.element, resolvedRig.rig)
         else pathPoint = { centerX: (50 + element.x) / 100, centerY: (50 + element.y) / 100, localX: 0, rotation: element.rotation, flipX: Boolean(element.flipX) }
         path[frame] = !previous || frame === 0
@@ -75,12 +90,19 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
           : path[frame - 1] + editorV6HairMotionHeadPathDelta(previous, pathPoint)
         previousPoints.set(elementId, pathPoint)
 
-        const layers = resolvedRig?.rig.layers
-        if (layers) for (const layer of layers) {
-          const key = `${elementId}:${layer.id}`
-          const changes = flipChanges.get(key) ?? []
-          if (changes.length === 0 || changes[changes.length - 1].flipX !== layer.flipX) changes.push({ frame, flipX: layer.flipX })
-          if (changes.length) flipChanges.set(key, changes)
+        if (canInterpolateTransitionLayerFlips && transition && transition.from && transition.to && easedProgress !== undefined) {
+          let layerFlips = transitionLayerFlips.get(transition)
+          if (!layerFlips) {
+            layerFlips = transition.from.layers.map(layer => {
+              const matching = transition.to!.layers.find(candidate => candidate.id === layer.id && candidate.side === layer.side)
+              return { id: layer.id, from: layer.flipX, to: matching?.flipX ?? layer.flipX }
+            })
+            transitionLayerFlips.set(transition, layerFlips)
+          }
+          for (const layer of layerFlips) recordLayerFlip(elementId, layer.id, frame, easedProgress < .5 ? layer.from : layer.to)
+        } else {
+          const layers = resolvedRig?.rig.layers
+          if (layers) for (const layer of layers) recordLayerFlip(elementId, layer.id, frame, layer.flipX)
         }
       }
     }

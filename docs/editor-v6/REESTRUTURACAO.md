@@ -1569,3 +1569,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** a cópia de `CustomizerCharacter` sem cabelo foi movida para dentro da função de bake da transição. Como a cache em lote não executa essa função em chaves já preparadas, transições repetidas deixam de clonar o personagem e sua personalização sem necessidade. O conteúdo da chave e o personagem passado ao bake real continuam iguais.
 
 **Verificação:** 7 testes do lote de bakes, suíte Editor V6 (179 arquivos, 796 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. O harness Electron rodou, mas falhou na verificação de `flipX` individual da fixture estática sem transições (2,27 px para tolerância de 2 px); esse cenário não chama a função de bake alterada. A falha fica registrada; não foi alterada a tolerância nem declarada aprovação integrada desta etapa.
+
+### Continuação na `Dev-V2` — indexar flips de mechas sem interpolar o rig completo
+
+Quando uma transição tem rigs visuais e físicos completos, a trajetória física já usa seu interpolador compilado; o índice de `flipX` agora compila apenas os pares de camadas por `(id, lado)` e registra o flip por quadro, sem montar outro rig e sem chamar `hairRigAtFrame` nesse caminho. O ponto de troca continua usando o progresso suavizado e o mesmo limiar da interpolação anterior. Rigs incompletos ainda usam o resolver existente, e a trajetória física continua funcionando mesmo sem rigs visuais.
+
+**Verificação:** 6 testes focados da trajetória, suíte Editor V6 (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos), build e `git diff --check` passaram. A mudança elimina a criação do rig completo somente neste caminho; não foi medido ganho de tempo do export completo.

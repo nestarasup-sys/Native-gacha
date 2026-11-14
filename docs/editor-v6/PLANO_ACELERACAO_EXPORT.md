@@ -473,3 +473,9 @@ Testes focados (5) confirmam o compartilhamento e a recuperação de falha. Suí
 A cópia de personagem sem cabelo agora é montada dentro do callback da cache de bakes. Quando uma transição reutiliza resultado existente, seu callback nem roda; assim, a tentativa repetida não cria cópia de personagem/customização antes da consulta à cache.
 
 Os 7 testes do lote de bakes, a suíte (179 arquivos, 796 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos) e build passaram. O harness rodou, mas falhou no teste de `flipX` de uma fixture estática sem transições (2,27 px contra 2 px); ela não executa o callback alterado. Não afirmo aprovação integrada desta etapa e mantive os critérios do harness.
+
+### Continuação 2026-11-13 — indexar flips de mechas sem interpolar o rig completo
+
+Para transições com rigs visuais e físicos, os flips são compilados por camada (ID e lado) e registrados diretamente a partir do progresso suavizado. A rotina deixa de criar o rig visual interpolado por quadro apenas para ler `flipX`; as trajetórias seguem os pontos físicos compilados. Quando faltam rigs ou amostras, a resolução anterior continua como fallback.
+
+6 testes focados da trajetória, suíte (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. O ganho ainda não foi medido no MP4 ou em projeto real.

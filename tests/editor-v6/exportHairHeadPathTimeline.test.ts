@@ -98,6 +98,27 @@ describe('createEditorV6HairHeadPathTimeline', () => {
     expect(timeline.headXAtFrame('actor', 2)).toBeCloseTo(0.1)
   })
 
+  it('indexes transition layer flips without resolving a full rig for every frame', () => {
+    const fromElement = { id: 'actor', kind: 'character', x: 0, y: 0, width: 100, height: 100, rotation: 0, flipX: false } as EditorV6Element
+    const toElement = { ...fromElement, x: 20 }
+    const fromRig = rigWithFlip(false)
+    const toRig = rigWithFlip(true)
+    const transition = { fromElement, toElement, from: fromRig, to: toRig, physicsFrom: fromRig, physicsTo: toRig }
+    const hairRigAtFrame = vi.fn(() => undefined)
+    const timeline = createEditorV6HairHeadPathTimeline({
+      animatedElementIds: ['actor'],
+      hasHairAnimation: true,
+      resolveScene: () => sceneAt(0),
+      getTransitionSample: (_elementId, frame) => ({ transition, poseSample: { progress: frame / 4 } }),
+      hairRigAtFrame
+    })
+
+    expect(timeline.headXAtFrame('actor', 4)).toBeCloseTo(0.2)
+    expect(hairRigAtFrame).not.toHaveBeenCalled()
+    expect(timeline.pieceFlipXAtFrame('actor', 'strand', 1, true)).toBe(false)
+    expect(timeline.pieceFlipXAtFrame('actor', 'strand', 2, false)).toBe(true)
+  })
+
   it('indexes per-layer flip changes and preserves fallback before the first indexed frame', () => {
     const timeline = createEditorV6HairHeadPathTimeline({
       animatedElementIds: ['actor'],
