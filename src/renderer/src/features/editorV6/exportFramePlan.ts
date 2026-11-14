@@ -1,4 +1,4 @@
-import { editorV6CompleteVisualKeys, editorV6VisualKeys } from '../../../../shared/editorV6Export'
+import { editorV6CompleteVisualKeys, editorV6VisualKeys, type EditorV6ExportFrameVisualKeyCache } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle } from '../../../../shared/editorV6HairMotion'
 import { hairMotionPoseReactionIsActive } from '../../../../shared/hairMotionEngine'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
@@ -12,6 +12,7 @@ type ResolveEditorV6ExportFramePlanOptions = {
   layeredVideo: boolean
   hairAnimation?: Pick<EditorV6HairMotionBundle, 'poseReactionOnly'>
   hairPoseReactionEnds: ReadonlyMap<string, readonly number[]>
+  elementVisualKeyCache?: EditorV6ExportFrameVisualKeyCache
   hasAnimatedHair: (element: EditorV6ResolvedScene['elements'][number]) => boolean
 }
 
@@ -23,6 +24,7 @@ export function resolveEditorV6ExportFramePlan({
   layeredVideo,
   hairAnimation,
   hairPoseReactionEnds,
+  elementVisualKeyCache,
   hasAnimatedHair
 }: ResolveEditorV6ExportFramePlanOptions) {
   const activeLayer: EditorV6ExportFrameLayer = layeredVideo ? requestedLayer ?? 'background' : undefined
@@ -43,8 +45,8 @@ export function resolveEditorV6ExportFramePlan({
   // Pose-reaction frames also depend on expression/effect fields outside the
   // compact projection, so serialize the complete element state once.
   const visualKeys = hairAnimation?.poseReactionOnly
-    ? editorV6CompleteVisualKeys(keyScene)
-    : editorV6VisualKeys(keyScene)
+    ? editorV6CompleteVisualKeys(keyScene, elementVisualKeyCache)
+    : editorV6VisualKeys(keyScene, elementVisualKeyCache)
 
   return { activeLayer, activeHair, riggedElementIds, reacting, hairNeedsFrame, key: visualKeys.key, layerKeys: visualKeys.layerKeys }
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6SceneElement } from '../../src/shared/editorV6'
-import { editorV6LayerVisualKeys, editorV6VisualKey, editorV6VisualKeys } from '../../src/shared/editorV6Export'
+import { editorV6LayerVisualKeys, editorV6VisualKey, editorV6VisualKeys, type EditorV6ExportFrameVisualKeyCache, editorV6CompleteVisualKeys } from '../../src/shared/editorV6Export'
 import type { EditorV6ResolvedScene } from '../../src/shared/editorV6TimelineScene'
 import { resolveEditorV6ExportFramePlan } from '../../src/renderer/src/features/editorV6/exportFramePlan'
 
@@ -48,6 +48,19 @@ describe('resolveEditorV6ExportFramePlan', () => {
         layerKeys: editorV6LayerVisualKeys(input)
       })
     }
+  })
+
+  it('preserves compact and complete keys when reusing serialized immutable scene elements', () => {
+    const firstElement = actor({ activeExpressionEffects: [{ id: 'spark', intensity: 40 }] })
+    const frameScene = scene([firstElement])
+    const cache: EditorV6ExportFrameVisualKeyCache = new WeakMap()
+
+    expect(editorV6VisualKeys(frameScene, cache)).toEqual(editorV6VisualKeys(frameScene))
+    expect(editorV6CompleteVisualKeys(frameScene, cache)).toEqual(editorV6CompleteVisualKeys(frameScene))
+
+    const changedFrameScene = scene([actor({ ...firstElement, text: 'Changed' })], 11)
+    expect(editorV6VisualKeys(changedFrameScene, cache)).not.toEqual(editorV6VisualKeys(frameScene, cache))
+    expect(editorV6CompleteVisualKeys(changedFrameScene, cache)).not.toEqual(editorV6CompleteVisualKeys(frameScene, cache))
   })
 
   it.each([

@@ -499,3 +499,11 @@ A composição de cada quadro monta o índice original somente para IDs rigged e
 A guarda de recuperação de assets não monta mais um array com os IDs em cada mudança de seleção; verifica em um percurso e memoriza o resultado pela referência da coleção. Quando a lista não muda, o Editor V6 não repete essa varredura.
 
 Teste focado (31), suíte (179 arquivos, 800 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não há medição de tempo de export para esta alteração.
+
+### Continuação na `Dev-V2` — reutilizar a serialização de elementos visuais por exportação
+
+`editorV6VisualKeys` e `editorV6CompleteVisualKeys` agora aceitam uma cache opcional indexada por referência de elemento. O renderizador cria uma `WeakMap` local à exportação; snapshots imutáveis que reaparecem em outros quadros reaproveitam a serialização compacta ou completa. Elementos dinâmicos de movimento e boca continuam gerando novos objetos/chaves, e as chamadas sem cache mantêm o caminho anterior. Um teste compara as chaves com e sem cache e confirma que um novo snapshot visual produz uma chave diferente.
+
+**Microbenchmark isolado:** 1.800 chamadas por rodada, 80 elementos estáveis, cinco rodadas; mediana de 55,35 ms sem cache e 7,31 ms com cache (86,8% menos nesta operação sintética). Isso mede somente a criação das chaves de cena e não estima a duração do MP4.
+
+**Verificação:** teste focado do plano (12); suíte Editor V6, incluindo perfil sintético (179 arquivos aprovados, 1 ignorado; 801 testes aprovados, 1 ignorado); typecheck; auditoria de arquitetura (878 arquivos); build; `git diff --check`; e harness Electron integrado passaram. O harness cobriu 81 quadros, 78 reutilizados, emenda contínua de áudio, fallback, cancelamento com destino preservado, Full HD e uma fixture de boca de 301 quadros. O RSS máximo reportado do processo principal foi 168.407.040 bytes. O harness não mede os processos GPU/renderer/FFmpeg em conjunto nem o projeto real longo.

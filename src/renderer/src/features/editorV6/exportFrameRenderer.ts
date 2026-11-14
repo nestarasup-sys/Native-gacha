@@ -1,6 +1,6 @@
 import type { SyntheticEvent } from 'react'
 import type { EditorV6Asset, EditorV6Document } from '../../../../shared/editorV6'
-import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameResult, EditorV6WorkerPayload } from '../../../../shared/editorV6Export'
+import type { EditorV6ExportFrameVisualKeyCache, EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameResult, EditorV6WorkerPayload } from '../../../../shared/editorV6Export'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime'
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
@@ -51,6 +51,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
   } = options
   const now = options.now ?? (() => performance.now())
   const frameReuse = createEditorV6ExportFrameReuseState()
+  const elementVisualKeyCache: EditorV6ExportFrameVisualKeyCache = new WeakMap()
 
   return async (
     frame: number,
@@ -65,6 +66,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     const scene = hairRuntime.applyMouthLoop(rawScene, frame)
     const framePlan = resolveEditorV6ExportFramePlan({
       scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
+      elementVisualKeyCache,
       hasAnimatedHair: element => hairRuntime.hasAnimatedHair(element, frame)
     })
     const { activeLayer, activeHair, riggedElementIds, key, layerKeys } = framePlan

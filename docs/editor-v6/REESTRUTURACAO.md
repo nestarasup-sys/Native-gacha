@@ -1595,3 +1595,9 @@ O renderer do export detecta no mesmo percurso da cena se algum personagem com c
 A verificação de integridade dos assets no Editor V6 agora percorre os IDs sem criar o array temporário de `assets.map(...)` e seu resultado é memorizado pela referência da lista. Assim, selecionar outro bloco ou personagem não repete a varredura se a coleção de assets não mudou; a reparação de duplicados continua usando o mesmo comando e preserva os assets existentes.
 
 **Verificação:** teste focado da timeline (31), suíte Editor V6 (179 arquivos, 800 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não foi medido o efeito em tempo de abertura ou exportação.
+
+### Continuação na `Dev-V2` — reutilizar a serialização de elementos visuais por exportação
+
+O renderizador do export agora mantém uma cache fraca e local à exportação, indexada pela identidade dos snapshots imutáveis da cena. As chaves compactas e completas dos elementos estáticos são serializadas uma vez e reutilizadas nos quadros em que a mesma referência aparece. Elementos dinâmicos continuam recebendo novas chaves; o caminho público sem cache permanece compatível.
+
+Teste do plano (12), suíte Editor V6 (179 arquivos, 801 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e harness Electron de exportação passaram. Microbenchmark de geração de chaves (1.800 quadros, 80 elementos, cinco rodadas) teve medianas de 55,35 ms sem cache e 7,31 ms com cache. A medida é isolada e não estima a duração do MP4.
