@@ -9,7 +9,7 @@ import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } fro
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
-export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint' }) {
+export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint' }) {
   const registry = createEditorV6WorkerRegistry(deps.ipcMain)
   const activeWorkers = new Set<() => void>()
   let disposed = false

@@ -62,7 +62,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event' | 'compare-paint', options: { layeredVideo?: boolean; projectMedia?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
+function fixture(captureMode?: 'capturePage' | 'paint-event' | 'compare-paint', options: { layeredVideo?: boolean; projectMedia?: boolean; inspectCapture?: (capture: { window: any; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void> } = {}) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
   const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture: options.inspectCapture, mediaPath: options.projectMedia ? () => 'project-media.mp4' : undefined })
@@ -206,6 +206,63 @@ describe('export worker lifecycle', () => {
     expect(frame.timings?.capturePageMs).toBe(0)
     worker.close()
     expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1)
+    factory.dispose()
+  })
+
+  it('compares page and paint captures for both video layers using each layer token', async () => {
+    const { factory, payload, ready } = fixture('compare-paint', { layeredVideo: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    const paintedTokens: number[] = []
+    let layerFill = 0
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      window.paintToken = token
+      layerFill = script.includes("'background'") ? 31 : 73
+      paintedTokens.push(token)
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token, layerFill), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+      return { reused: false, timings: {} }
+    })
+    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width, payload.height, window.paintToken, layerFill))
+
+    const frame = await worker.frame(21)
+    const layerBytes = payload.width * payload.height * 4
+
+    expect(contents.beginFrameSubscription).toHaveBeenCalledWith(false, expect.any(Function))
+    expect(contents.capturePage).toHaveBeenCalledTimes(2)
+    expect(paintedTokens).toHaveLength(2)
+    expect(frame.bitmap?.subarray(0, layerBytes).every((byte) => byte === 31)).toBe(true)
+    expect(frame.bitmap?.subarray(layerBytes).every((byte) => byte === 73)).toBe(true)
+    expect(frame.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 0 })
+    worker.close()
+    expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
+    factory.dispose()
+  })
+
+  it('identifies which layered capture diverged from the same-token paint frame', async () => {
+    const { factory, payload, ready } = fixture('compare-paint', { layeredVideo: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    let layerFill = 0
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      window.paintToken = token
+      layerFill = script.includes("'background'") ? 31 : 73
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token, layerFill), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+      return { reused: false, timings: {} }
+    })
+    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width, payload.height, window.paintToken, layerFill === 73 ? 74 : layerFill))
+
+    await expect(worker.frame(22)).rejects.toThrow('camada foreground do quadro 22')
+
+    worker.close()
+    expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
     factory.dispose()
   })
 

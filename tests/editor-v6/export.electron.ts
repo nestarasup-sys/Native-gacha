@@ -6,7 +6,9 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { editorV6MotionPlans, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
-import type { EditorV6ExportMouthLoops } from '../../src/shared/editorV6Export'
+import type { EditorV6ExportMouthLoops, EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
+import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
+import type { EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
@@ -71,10 +73,10 @@ async function main() {
     await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
   } })
   let active = 0, peak = 0
-  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => {
+  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation']) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal)
+      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
@@ -480,6 +482,75 @@ async function main() {
     && sameWorkerParts.reduce((sum, part) => sum + part.reused, 0) === 0
     && sameWorkerParts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.samples ?? 0), 0) === uniqueCaptureFrameCount
   assert(sameWorkerPaintParityPassed && active === 0, 'A comparação paint/capturePage no mesmo worker não verificou os 60 tokens/quadro ou deixou renderizadores abertos.')
+  const svgDataUrl = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
+  const hairAvatarBase = svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160"><path d="M18 157 Q22 117 43 111 L47 96 76 96 80 111 Q105 119 107 157Z" fill="#48527a" stroke="#25263b" stroke-width="4"/><path d="M25 79 Q8 51 25 26 Q40 4 67 12 Q103 12 104 51 L94 102 80 115 39 108 26 95Z" fill="#302b42" stroke="#201d2b" stroke-width="5"/><ellipse cx="61" cy="66" rx="27" ry="34" fill="#f2c5a5" stroke="#9a625b" stroke-width="3"/><path d="M33 62 Q29 23 57 15 Q91 7 99 43 Q83 31 68 37 Q49 26 33 62Z" fill="#343044" stroke="#201d2b" stroke-width="4"/></svg>')
+  const faceSurface = (eyes: string, mouth: string) => svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160"><g stroke="#302b42" stroke-linecap="round" stroke-linejoin="round">${eyes}<path d="M59 72l-3 8 5 1" fill="none" stroke-width="2"/><path d="${mouth}" fill="#a93c61" stroke-width="2.5"/></g></svg>`)
+  const faceSurfaces = [
+    { id: 'synthetic-face-neutral', dataUrl: faceSurface('<path d="M42 59q8-7 16 0M65 59q8-7 16 0" fill="none" stroke-width="3"/><circle cx="50" cy="62" r="3.5" fill="#28243a"/><circle cx="73" cy="62" r="3.5" fill="#28243a"/>', 'M55 88q6 4 12 0') },
+    { id: 'synthetic-face-talk', dataUrl: faceSurface('<path d="M42 59q8-7 16 0M65 59q8-7 16 0" fill="none" stroke-width="3"/><circle cx="50" cy="62" r="3.5" fill="#28243a"/><circle cx="73" cy="62" r="3.5" fill="#28243a"/>', 'M55 85q6-2 12 0q-1 11-6 11q-5 0-6-11') },
+    { id: 'synthetic-face-blink', dataUrl: faceSurface('<path d="M42 62q8 4 16 0M65 62q8 4 16 0" fill="none" stroke-width="3"/>', 'M55 88q6 4 12 0') },
+    { id: 'synthetic-face-talk-blink', dataUrl: faceSurface('<path d="M42 62q8 4 16 0M65 62q8 4 16 0" fill="none" stroke-width="3"/>', 'M55 85q6-2 12 0q-1 11-6 11q-5 0-6-11') }
+  ]
+  const hairFaceVideoProject: EditorV6Document = {
+    ...faceProject, media: mediaProject.media,
+    timeline: { ...faceProject.timeline, tracks: faceProject.timeline.tracks.map(track => track.kind === 'video'
+      ? { ...track, blocks: mediaProject.timeline.tracks.find(candidate => candidate.kind === 'video')!.blocks }
+      : track) }
+  }
+  const syntheticHairPreset = {
+    ...FIRST_HAIR_MOTION_PRESET,
+    physics: { ...FIRST_HAIR_MOTION_PRESET.physics, wind: 100, gust: 100, speed: 200, stiffness: 24, damping: 32, responsiveness: 75, anchor: 8 },
+    enabled: { back: false, front: false, fringe: true },
+    intensity: { back: 0, front: 0, fringe: 150 }
+  }
+  const syntheticHairMotion: EditorV6HairMotionBundle = {
+    presetSlot: 1, preset: syntheticHairPreset,
+    surfaces: [{ id: 'synthetic-avatar-base', dataUrl: hairAvatarBase }, ...faceSurfaces],
+    textures: [{ id: 'synthetic-moving-fringe', dataUrl: svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="80" height="64" viewBox="0 0 80 64"><path d="M5 8 Q24 1 39 9 Q55 16 76 5 Q68 30 48 31 Q29 32 18 58 Q19 34 5 8Z" fill="#282433"/><path d="M11 10 Q28 6 40 14 Q55 21 70 10 Q62 26 46 27 Q28 28 21 48 Q21 30 11 10Z" fill="#827c96"/><path d="M19 13 Q34 12 43 18 Q54 22 64 17 Q55 24 44 23 Q31 23 24 36Z" fill="#d8d4e0"/></svg>') }],
+    rigs: [
+      [assetId, 'synthetic-face-neutral'], [talkAssetId, 'synthetic-face-talk'], [blinkAssetId, 'synthetic-face-blink'], [talkBlinkAssetId, 'synthetic-face-talk-blink']
+    ].map(([rigAssetId, faceSurfaceId]) => ({
+      elementId: faceActor.id, assetId: rigAssetId, characterId: 'alice', poseSlot: null,
+      baseSurfaceId: 'synthetic-avatar-base', faceSurfaceId, eyesAboveRearHairSurfaceId: null, overlaySurfaceId: null,
+      artworkWidth: 120, artworkHeight: 160, outputWidth: 120, outputHeight: 160, shapeScaleX: 1, shapeScaleY: 1,
+      sourceCrop: { left: 0, top: 0, width: 120, height: 160 }, sourceHead: { width: 60, height: 70 },
+      targetHead: { x: 30, y: 30, width: 60, height: 68, rotation: 0 },
+      layers: [{ id: 'synthetic-fringe', textureId: 'synthetic-moving-fringe', side: 'fringe' as const, width: 78, height: 58, x: 0, y: -36, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, phase: 0.25 }]
+    }))
+  }
+  const animatedHairCaptureDigests: Array<{ frame: number; layer?: 'background' | 'foreground'; digest: string }> = []
+  const hairFaceCompareFactory = createEditorV6WorkerFactory({
+    ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
+    mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), captureMode: 'compare-paint',
+    inspectCapture: async ({ frame, layer, bitmap }) => {
+      if (layer !== 'foreground') return
+      const digest = createHash('sha256')
+      for (let y = 48; y < 104; y++) digest.update(bitmap.subarray((y * 320 + 200) * 4, (y * 320 + 280) * 4))
+      animatedHairCaptureDigests.push({ frame, layer, digest: digest.digest('hex') })
+    }
+  })
+  const layeredHairFaceOutput = join(folder, 'capture-profile-layered-hair-face.mp4')
+  const layeredHairFaceParity = await runEditorV6Export(hairFaceVideoProject, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: layeredHairFaceOutput, reportPath: join(folder, 'capture-profile-layered-hair-face.report.json'),
+    getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
+    createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => {
+      assert(layeredVideo, 'A fixture de cabelo/face não ativou a renderização de vídeo em camadas.')
+      return makeWorkerWithFactory(hairFaceCompareFactory, signal, 320, 180, renderProject, layeredVideo, mouthLoops, syntheticHairMotion)
+    }
+  })
+  hairFaceCompareFactory.dispose()
+  const layeredHairFaceParts = layeredHairFaceParity.attempts.flatMap(attempt => attempt.parts)
+  const layeredHairRasterFrames = layeredHairFaceParts.reduce((sum, part) => sum + (part.frameMetrics?.hairRasterFrames ?? 0), 0)
+  const layeredBackgroundCaptureSamples = layeredHairFaceParts.reduce((sum, part) => sum + (part.frameTiming?.backgroundCaptureMs?.samples ?? 0), 0)
+  const layeredForegroundCaptureSamples = layeredHairFaceParts.reduce((sum, part) => sum + (part.frameTiming?.foregroundCaptureMs?.samples ?? 0), 0)
+  const sameWorkerLayerComparisons = layeredBackgroundCaptureSamples + layeredForegroundCaptureSamples
+  const earlyAnimatedHairDigests = animatedHairCaptureDigests.filter(item => item.frame < 8).map(item => item.digest)
+  const layeredHairFaceParityPassed = layeredHairFaceParity.state === 'completed' && !layeredHairFaceParity.fallback
+    && layeredHairFaceParity.totalFrames === 40 && layeredHairFaceParity.videoInputs === 1
+    && layeredHairRasterFrames >= 30 && layeredBackgroundCaptureSamples > 0 && layeredForegroundCaptureSamples >= 30
+    && sameWorkerLayerComparisons === 41
+    && new Set(earlyAnimatedHairDigests).size > 1 && active === 0
+  assert(layeredHairFaceParityPassed, `Paridade de vídeo/cabelo/face no mesmo worker incompleta: quadros=${layeredHairFaceParity.totalFrames}, camadas=${layeredBackgroundCaptureSamples}/${layeredForegroundCaptureSamples}, cabelo=${layeredHairRasterFrames}, cabelo animado único=${new Set(earlyAnimatedHairDigests).size}, workers=${active}.`)
   const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
     frames: part.frames,
     rendered: part.rendered,
@@ -492,7 +563,8 @@ async function main() {
     captureBitmapMs: part.frameTiming?.captureBitmapMs,
     backgroundCaptureMs: part.frameTiming?.backgroundCaptureMs,
     foregroundCaptureMs: part.frameTiming?.foregroundCaptureMs,
-    ffmpegWriteMs: part.frameTiming?.ffmpegWriteMs
+    ffmpegWriteMs: part.frameTiming?.ffmpegWriteMs,
+    frameMetrics: part.frameMetrics
   })))
   assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
   assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
@@ -503,7 +575,20 @@ async function main() {
       unique1080: { totalFrames: uniqueCapture1080.totalFrames, milliseconds: uniqueCapture1080.milliseconds, uniqueFrames: uniqueCapturePageHashes?.length, parts: captureProfile(uniqueCapture1080) },
       paintEvent1080: { totalFrames: uniquePaint1080.totalFrames, milliseconds: uniquePaint1080.milliseconds, parts: captureProfile(uniquePaint1080) },
       separateWorkerPaintParity,
-      sameWorkerPaintParity: { passed: sameWorkerPaintParityPassed, totalFrames: sameWorkerPaintParity.totalFrames, milliseconds: sameWorkerPaintParity.milliseconds, parts: captureProfile(sameWorkerPaintParity) }
+      sameWorkerPaintParity: { passed: sameWorkerPaintParityPassed, totalFrames: sameWorkerPaintParity.totalFrames, milliseconds: sameWorkerPaintParity.milliseconds, parts: captureProfile(sameWorkerPaintParity) },
+      layeredHairFacePaintParity: {
+        passed: layeredHairFaceParityPassed,
+        totalFrames: layeredHairFaceParity.totalFrames,
+        milliseconds: layeredHairFaceParity.milliseconds,
+        videoInputs: layeredHairFaceParity.videoInputs,
+        sameWorkerLayerComparisons,
+        backgroundCaptureSamples: layeredBackgroundCaptureSamples,
+        foregroundCaptureSamples: layeredForegroundCaptureSamples,
+        hairRasterFrames: layeredHairRasterFrames,
+        distinctEarlyHairFrames: new Set(earlyAnimatedHairDigests).size,
+        expressionFrames: faceModes.filter(Boolean).length,
+        parts: captureProfile(layeredHairFaceParity)
+      }
     },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))

@@ -19,7 +19,7 @@ export function createEditorV6WorkerFrameRenderer({
   captureRetryMilliseconds: number
   paintCapture?: EditorV6PaintFrameCapture
   comparePaintCapture?: EditorV6PaintFrameCapture
-  inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
+  inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
 }): EditorV6WorkerFrameRenderer {
   const { width, height, layeredVideo } = payload
   const layerBytes = width * height * 4
@@ -36,18 +36,21 @@ export function createEditorV6WorkerFrameRenderer({
     return { ...result, timings: { ...result.timings, ipcDrawMs: performance.now() - started } }
   }
 
-  const capture = async (frame: number, outputOffset = 0) => {
+  const capture = async (frame: number, outputOffset = 0, layer?: 'background' | 'foreground') => {
     const started = performance.now()
     const token = nextPaintToken
     const output = layeredVideo ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2)) : undefined
     const captured = await captureEditorV6PaintedFrame({ window, signal, width, height, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
     const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
     const sceneBitmap = layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap
-    await inspectCapture?.({ window, frame, bitmap: sceneBitmap })
+    await inspectCapture?.({ window, frame, ...(layer ? { layer } : {}), bitmap: sceneBitmap })
     const elapsedMs = performance.now() - started
     if (comparePaintCapture) {
       const painted = await comparePaintCapture.capture(token)
-      if (!sceneBitmap.equals(painted.bitmap)) throw Error(`capturePage e paint-event divergiram no quadro ${frame}, token ${token}.`)
+      if (!sceneBitmap.equals(painted.bitmap)) {
+        const target = layer ? `na camada ${layer} do quadro ${frame}` : `no quadro ${frame}`
+        throw Error(`capturePage e paint-event divergiram ${target}, token ${token}.`)
+      }
     }
     return { bitmap, readbacks, elapsedMs, paintWaitMs, capturePageMs, captureBitmapMs }
   }
@@ -72,7 +75,7 @@ export function createEditorV6WorkerFrameRenderer({
     }
     const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
       if (drawn.layerReused) return
-      const captured = await capture(frameNumber, offset)
+      const captured = await capture(frameNumber, offset, layer)
       timings.captureMs = (timings.captureMs ?? 0) + captured.elapsedMs
       timings.paintWaitMs = (timings.paintWaitMs ?? 0) + captured.paintWaitMs
       timings.capturePageMs = (timings.capturePageMs ?? 0) + captured.capturePageMs

@@ -40,7 +40,7 @@ type EditorV6ExportIpcDependencies = {
   releaseIdleMotionWorkers?: () => void
   getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
   captureMode?: 'capturePage' | 'paint-event'
-  inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
+  inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
   resolveLibraryAudio: (id: string) => Promise<{ path: string; name: string; mimeType: string; extension: string; size: number }>

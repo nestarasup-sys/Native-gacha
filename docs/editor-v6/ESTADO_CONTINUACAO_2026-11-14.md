@@ -103,3 +103,36 @@ Foi fechado um experimento para verificar se a divergência observada anteriorme
 ### Arquivos e dados preservados
 
 Além das quatro entradas não rastreadas já listadas acima, esta rodada não abriu nem modificou `app-data`, mídia do usuário, projetos ou perfis locais. O commit deve incluir somente os quatro arquivos de código/teste da comparação e este checkpoint mais o plano de aceleração.
+
+## Continuação salva — paridade de vídeo em camadas com cabelo/face
+
+### O que foi feito
+
+- O comparador do modo de teste `compare-paint` passou a identificar a camada no erro e a fornecer essa informação ao callback de inspeção.
+- Dois testes unitários validam comparação de fundo e primeiro plano com tokens independentes e erro apontando a camada divergente.
+- O harness Electron exporta uma fixture sintética com vídeo, personagem SVG, deformação de cabelo por malha, fala e piscadas. A cena usa 40 quadros e mantém o mesmo worker para ambas as fontes de captura.
+
+### Evidência
+
+- **41 comparações de camada passaram:** 1 captura de fundo + 40 de primeiro plano, todas no mesmo worker/token; nenhuma divergência BGRA.
+- `videoInputs=1`, `hairRasterFrames=40`, `distinctEarlyHairFrames=8` e `expressionFrames=13`.
+- A exportação sintética levou 2,63 s nesta execução. `capturePageMs` p50/p95 ficou em 13,0/24,8 ms e `captureBitmapMs` em 0,1/0,3 ms. O p95 de round-trip foi 107 ms, com picos acima disso; o PC estava em uso. Não tratar como benchmark de velocidade ou base para trocar o caminho de captura.
+- A fixture testa captura por camada, movimento sintético do cabelo e mudanças de expressão juntos; não é teste de personagem real ou projeto salvo.
+- `capturePage` continua sendo o padrão de produção; o modo paint permanece diagnóstico.
+
+### Verificações
+
+- `npm run test:editor-v6:export`: passou, inclusive com verificação de 41 capturas por camada.
+- `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportWorkers.test.ts`: 18/18 passou.
+- `npm run test:editor-v6`: 179 arquivos passaram, 1 ignorado; 808 testes passaram, 1 ignorado.
+- `npm run typecheck`: passou.
+- `npm run audit:architecture`: passou em 878 arquivos TS/TSX, sem violações ou imports locais ausentes.
+- Branch `Dev-V2`; não houve push. Os arquivos modificados desta rodada ainda serão gravados em commit local após revisão final.
+
+### Próximos passos
+
+1. Revisar o diff e registrar o comparador, a fixture, os testes e este estado em commit local.
+2. Repetir o A/B de desempenho com carga controlada e várias rodadas; a diferença anterior entre `capturePage` e paint não justifica trocar produção.
+3. Aumentar a diversidade das cenas sintéticas mantendo os perfis menores e seguros; usar os relatórios para separar IPC, composição e captura.
+4. Retomar a investigação do erro `-36861` e da exportação de 12 minutos/473 transições apenas num teste controlado. Os harnesses sintéticos não reproduzem esse crash.
+5. Preservar os caminhos locais não rastreados e não abrir `app-data` ou projetos reais como fixtures.
