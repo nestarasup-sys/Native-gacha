@@ -307,7 +307,7 @@ async function runSuite() {
     project: snapshot.projectTitles,
     snapshot: { path: backupRoot, projects: snapshotInfo.projects, inventory: snapshotInfo.inventory, hairPreset: 'FIRST_HAIR_MOTION_PRESET shipped by the app, assigned to slot 2; same preset snapshot for every encoder/build.' },
     machine: collectMachineInfo(), toolchains: tools, wpr: { executable: spawnSync('where.exe', ['wpr.exe'], { encoding: 'utf8', windowsHide: true }).stdout?.trim() ?? null, traces },
-    methodology: { mode: smoke ? 'smoke' : 'full', failureProjectRounds: smoke ? 1 : 3, encoders: ['cpu', 'amf'], ffmpegBuilds: modes.map(tool => tool.id), profile: '1920x1080, Turbo strict, mouth animation disabled, hair preset slot 2, 30fps', fullFailureProjectFrames: 519, planBSampleFrames: smoke ? null : 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
+    methodology: { mode: smoke ? 'smoke' : 'full', framePipelineOverlap: process.env.GACHA_EDITOR_V6_FRAME_OVERLAP === '0' ? 'disabled' : 'enabled', failureProjectRounds: smoke ? 1 : 3, encoders: ['cpu', 'amf'], ffmpegBuilds: modes.map(tool => tool.id), profile: '1920x1080, Turbo strict, mouth animation disabled, hair preset slot 2, 30fps', fullFailureProjectFrames: 519, planBSampleFrames: smoke ? null : 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
     groups: [...new Set(results.map(item => JSON.stringify([item.project, item.toolchain, item.encoder])))].map(key => {
       const [project, toolchain, encoder] = JSON.parse(key)
       const selected = results.filter(item => item.project === project && item.toolchain === toolchain && item.encoder === encoder)
