@@ -29,11 +29,8 @@ export async function renderAndWriteEditorV6Frames(dependencies: Dependencies): 
   // reuses an assembly buffer, so the caller must keep this path disabled.
   const renderFrame = async (frame: number) => {
     const started = now()
-    const result = await worker.frame(frame)
-    recordEditorV6Timing(timingAccumulators, 'frameRoundTripMs', now() - started)
-    recordEditorV6Timings(timingAccumulators, result.timings)
-    addEditorV6FrameMetrics(frameMetrics, result.metrics)
-    return result
+    const value = await worker.frame(frame)
+    return { value, elapsedMs: now() - started }
   }
   type RenderedFrame = Awaited<ReturnType<typeof renderFrame>>
   type Lookahead = { ok: true; value: RenderedFrame } | { ok: false; error: unknown }
@@ -51,10 +48,15 @@ export async function renderAndWriteEditorV6Frames(dependencies: Dependencies): 
     }
     nextFrame = undefined
 
-    if (rendered.reused && previousBitmap) counters.reused++
+    // Count diagnostics only when consuming a frame, not for speculative
+    // lookahead that may have completed just as FFmpeg fails its prior write.
+    recordEditorV6Timing(timingAccumulators, 'frameRoundTripMs', rendered.elapsedMs)
+    recordEditorV6Timings(timingAccumulators, rendered.value.timings)
+    addEditorV6FrameMetrics(frameMetrics, rendered.value.metrics)
+    if (rendered.value.reused && previousBitmap) counters.reused++
     else {
-      if (!rendered.bitmap) throw Error('O renderizador não entregou o bitmap.')
-      previousBitmap = rendered.bitmap
+      if (!rendered.value.bitmap) throw Error('O renderizador não entregou o bitmap.')
+      previousBitmap = rendered.value.bitmap
       counters.rendered++
     }
 

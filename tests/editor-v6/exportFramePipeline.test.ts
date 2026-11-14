@@ -153,6 +153,25 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
     expect(summary.ffmpegWriteMs?.samples).toBe(3)
   })
 
+  it('excludes speculative next-frame metrics if the encoder rejects the previous write', async () => {
+    const failure = Error('FFmpeg rejeitou o buffer')
+    const renderer = worker([
+      { reused: false, bitmap: Buffer.from([1]), metrics: { captureReadbacks: 1 } },
+      { reused: false, bitmap: Buffer.from([2]), metrics: { captureReadbacks: 99 } }
+    ])
+    const state = accounting()
+    await expect(renderAndWriteEditorV6Frames({
+      worker: renderer, part: { startFrame: 0, endFrame: 2 },
+      signal: new AbortController().signal, ...state, overlapEncoding: true,
+      writeFrame: async () => { throw failure }, onFrameWritten: vi.fn()
+    })).rejects.toBe(failure)
+    expect(renderer.frame).toHaveBeenCalledTimes(2)
+    expect(state.frameMetrics).toEqual({ captureReadbacks: 1 })
+    expect(state.counters).toEqual({ rendered: 1, reused: 0, frames: 0 })
+    const summary = summarizeEditorV6Timings(state.timingAccumulators)
+    expect(summary.frameRoundTripMs?.samples).toBe(1)
+  })
+
   it('agrega somente campos próprios das métricas por quadro', async () => {
     const timings = Object.assign(Object.create({ sceneResolutionMs: 99 }), { assetPreparationMs: 0.35 }) as EditorV6FrameTimings
     const metrics = Object.assign(Object.create({ hairRasterFrames: 99 }), { captureReadbacks: 1 }) as EditorV6FrameMetrics

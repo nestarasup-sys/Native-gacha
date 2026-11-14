@@ -27,7 +27,7 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   frameTiming?: EditorV6FrameTimingReport
   frameMetrics?: EditorV6FrameMetrics
   /** Whether one ordinary offscreen frame may render during FFmpeg backpressure. */
-  framePipelineOverlap: boolean
+  framePipelineOverlap?: boolean
 }
 
 type PreparedMouthLoops = Awaited<ReturnType<typeof prepareExportMouthLoops>>
