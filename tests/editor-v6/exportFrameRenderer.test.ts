@@ -38,14 +38,16 @@ function resources(): Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2
 
 function activeHairRenderer(scene: EditorV6ResolvedScene) {
   const composedScenes: EditorV6ResolvedScene[] = []
+  const originalElementMaps: ReadonlyMap<string, EditorV6ResolvedScene['elements'][number]>[] = []
   const hairRuntime = {
     hairPoseReactionEnds: new Map<string, readonly number[]>(),
     hairSurfaceDataById: new Map<string, string>(),
     resolveRawSceneAtFrame: () => scene,
     applyMouthLoop: (raw: EditorV6ResolvedScene) => raw,
-    hasAnimatedHair: () => true,
-    composeHairScene: ({ composedScene }: { composedScene: EditorV6ResolvedScene }) => {
+    hasAnimatedHair: (element: EditorV6ResolvedScene['elements'][number]) => element.kind === 'character',
+    composeHairScene: ({ composedScene, originalElements }: { composedScene: EditorV6ResolvedScene; originalElements: ReadonlyMap<string, EditorV6ResolvedScene['elements'][number]> }) => {
       composedScenes.push(composedScene)
+      originalElementMaps.push(originalElements)
       return { renderScene: composedScene, rasterCanvases: new Map() }
     }
   } as unknown as Parameters<typeof createEditorV6ExportFrameRenderer>[0]['hairRuntime']
@@ -65,7 +67,7 @@ function activeHairRenderer(scene: EditorV6ResolvedScene) {
     setPaintToken: vi.fn(),
     waitForPaintFrame: vi.fn(async () => {})
   })
-  return { renderFrame, composedScenes }
+  return { renderFrame, composedScenes, originalElementMaps }
 }
 
 describe('createEditorV6ExportFrameRenderer', () => {
@@ -104,12 +106,14 @@ describe('createEditorV6ExportFrameRenderer', () => {
 
   it('reaproveita o array da cena de cabelo quando não há mouth patch para remover', async () => {
     const actor: EditorV6Element = { id: 'actor', kind: 'character', characterId: 'alice', assetId: 'hair', text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1 }
-    const scene = { frame: 10, background: '#fff', elements: [actor] } as EditorV6ResolvedScene
-    const { renderFrame, composedScenes } = activeHairRenderer(scene)
+    const decoration = { id: 'decoration', kind: 'image', assetId: 'sticker', text: '', x: 0, y: 0, width: 10, height: 10, rotation: 0, zIndex: 2 } as EditorV6Element
+    const scene = { frame: 10, background: '#fff', elements: [actor, decoration] } as EditorV6ResolvedScene
+    const { renderFrame, composedScenes, originalElementMaps } = activeHairRenderer(scene)
 
     await renderFrame(10, undefined, 42)
 
     expect(composedScenes[0].elements).toBe(scene.elements)
+    expect([...originalElementMaps[0].keys()]).toEqual(['actor'])
   })
 
   it('ainda remove mouth patches dos personagens com cabelo antes da composição facial', async () => {

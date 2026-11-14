@@ -79,8 +79,9 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     if (activeHair) {
       const indexedElements = new Map<string, ExportSceneElement>()
       for (const element of scene.elements) {
+        if (!riggedElementIds.has(element.id)) continue
         indexedElements.set(element.id, element)
-        if (riggedElementIds.has(element.id) && element.mouthPatch) hasRiggedMouthPatch = true
+        if (element.mouthPatch) hasRiggedMouthPatch = true
       }
       originalElements = indexedElements
     }
