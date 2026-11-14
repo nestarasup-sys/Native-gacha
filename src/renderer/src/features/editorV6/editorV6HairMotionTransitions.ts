@@ -47,7 +47,6 @@ export async function prepareEditorV6HairMotionTransitions({
     const fromRig = plan.from.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const toRig = plan.to.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     if (!fromRig || !toRig) throw Error(`Não foi possível preparar o cabelo durante a troca de pose de ${plan.from.text || character.name}.`)
-    const hairlessCharacter: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
     const mouthScaleSamples = exportOptions.mouthLoop && plan.samples.some(sample => sample.faceMode === 'talk')
       ? plan.samples.map(sample => sample.faceMode === 'talk'
         ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, exportOptions.startFrame, exportOptions.mouthLoopCycleFrames ?? 30)
@@ -69,6 +68,9 @@ export async function prepareEditorV6HairMotionTransitions({
       mouthScaleSamples: facialMotion
     })
     const prepared = await hairBakeBatch.run(bakeKey, async () => {
+      // Build this snapshot only for a real bake; reused transitions share
+      // the result and do not need another character/customization clone.
+      const hairlessCharacter: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
       let layerCapture: EditorV6SerializedMotionLayerAtlas | undefined
       const bakeStarted = performance.now()
       const result = await bakeEditorV6Motion({

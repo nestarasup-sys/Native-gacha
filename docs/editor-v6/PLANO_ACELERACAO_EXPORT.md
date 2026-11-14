@@ -467,3 +467,9 @@ Microteste de 100.000 pontos de trajetória: mediana 17,38 ms com os extremos re
 O renderer normal e o sem cabelo agora compartilham as promessas `loadFaceCatalogItem` apenas durante uma preparação de pose. Se o mesmo ID é pedido pelos dois, o provedor é chamado uma vez; uma rejeição não fica presa na cache e pode ser repetida. A cache não sobrevive ao par nem à exportação.
 
 Testes focados (5) confirmam o compartilhamento e a recuperação de falha. Suíte Editor V6 (179 arquivos, 796 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos) e build passaram. O harness de cabelo falhou uma vez no limite fixo de 2 px de `flipX` individual numa fixture sem transições e passou na repetição; o limite foi mantido. Ainda não foi medido o tempo real de leitura nem a duração total do export.
+
+### Continuação 2026-11-13 — só clonar o personagem em bakes que realmente executam
+
+A cópia de personagem sem cabelo agora é montada dentro do callback da cache de bakes. Quando uma transição reutiliza resultado existente, seu callback nem roda; assim, a tentativa repetida não cria cópia de personagem/customização antes da consulta à cache.
+
+Os 7 testes do lote de bakes, a suíte (179 arquivos, 796 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos) e build passaram. O harness rodou, mas falhou no teste de `flipX` de uma fixture estática sem transições (2,27 px contra 2 px); ela não executa o callback alterado. Não afirmo aprovação integrada desta etapa e mantive os critérios do harness.
