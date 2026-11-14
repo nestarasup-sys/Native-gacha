@@ -5,8 +5,8 @@ Data do checkpoint: 13/11/2026, BRT
 - **Repositório:** `C:\TRABALHO 2\OUTROS\GACHA EM C++`
 - **Branch:** `Dev-V2`
 - **Base desta retomada:** `b16faabf Fix Editor V6 checkpoint formatting`
-- **Estado Git:** branch local já estava 65 commits à frente de `origin/Dev-V2`; esta continuação foi commitada localmente depois das verificações, deixando-a 66 commits à frente. Nada foi enviado ao GitHub.
-- **Continuação mais recente:** cache local de serializações de elementos visuais no plano de quadros do exportador.
+- **Estado Git antes desta continuação:** branch local estava 66 commits à frente de `origin/Dev-V2`; este trabalho será commitado localmente depois das verificações, deixando-a 67 commits à frente. Nada será enviado ao GitHub.
+- **Continuação mais recente:** cache de snapshots e chaves visuais de elementos e fundos na resolução do exportador.
 
 ## O que estava sendo feito
 
@@ -16,6 +16,8 @@ Nesta última alteração, o caminho que gera as chaves de reaproveitamento de q
 
 O benchmark sintético comparou a criação dessas chaves em 1.800 quadros por rodada, 80 elementos estáveis e cinco rodadas: mediana de **55,35 ms sem cache** contra **7,31 ms com cache** (86,8% menos nesta operação isolada). Isso não mede nem prevê a duração do MP4 completo.
 
+Na continuação seguinte, também eliminei a criação de um novo objeto para o fundo padrão a cada quadro. O resolver agora conserva o snapshot padrão por referência de documento e verifica seus campos para perceber alterações até se o mesmo objeto for modificado. A serialização de fundos persistentes também é reutilizada pela cache fraca do renderizador. O benchmark atualizado (mesma fixture, cinco rodadas) marcou medianas de **54,33 ms sem cache** e **6,66 ms com cache**; continua medindo só a construção de chaves.
+
 ## O que melhorou nesta linha de trabalho
 
 As otimizações de cabelo e exportação documentadas em `PLANO_ACELERACAO_EXPORT.md` e `REESTRUTURACAO.md` reduzem trabalho repetido por quadro: preparo da física do cabelo, correspondência e interpolação das mechas, trajetória da cabeça, mapas de personagens, cópias da cena, consultas a assets, leituras faciais e geração das chaves visuais. A resolução dos frames, a composição e as regras visuais foram preservadas.
@@ -24,12 +26,12 @@ Benchmarks anteriores também mostraram ganhos isolados nas operações medidas:
 
 ## Verificações concluídas nesta retomada
 
-- Teste focado `tests/editor-v6/exportFramePlan.test.ts`: **12 testes aprovados**.
-- `npm run test:editor-v6`: **179 arquivos aprovados, 1 ignorado; 801 testes aprovados, 1 ignorado**. O perfil sintético incluído também passou (23 verificações).
+- Testes focados de cena e plano: **21 testes aprovados**.
+- `npm run test:editor-v6`: **179 arquivos aprovados, 1 ignorado; 802 testes aprovados, 1 ignorado**. O perfil sintético incluído também passou (23 verificações).
 - `npm run typecheck`: passou.
 - `npm run audit:architecture`: passou; 878 arquivos TS/TSX, sem erros de sintaxe, imports ausentes ou violações de fronteira.
-- `npm run test:editor-v6:export`: build e harness Electron integrado passaram. Cobriu 81 quadros (78 reutilizados), áudio contínuo na emenda, fallback, cancelamento preservando o destino anterior, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros; o pico de RSS reportado do processo principal foi **168.407.040 bytes**. O harness removeu os próprios temporários.
-- Microbenchmark das chaves visuais: cinco rodadas, mediana de 55,35 ms sem cache e 7,31 ms com cache, na fixture sintética descrita acima.
+- `npm run test:editor-v6:export`: build e harness Electron integrado passaram. Cobriu 81 quadros (78 reutilizados), áudio contínuo na emenda, fallback, cancelamento preservando o destino anterior, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros; o pico de RSS reportado do processo principal foi **165.109.760 bytes**. O harness removeu os próprios temporários.
+- Microbenchmarks das chaves visuais: a rodada anterior teve mediana 55,35 ms sem cache e 7,31 ms com cache; a rodada após incluir os fundos, 54,33 ms e 6,66 ms. Ambos são isolados da exportação MP4.
 - `git diff --check`: passou antes do commit local.
 
 ## O que permanece sem comprovação

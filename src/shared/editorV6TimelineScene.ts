@@ -7,6 +7,7 @@ import { compareEditorV6TimelineBlocks, editorV6ClipAtFrame, resolveEditorV6Stat
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
+const defaultBackgroundsCache = new WeakMap<EditorV6Document, EditorV6BackgroundState>()
 type VideoClipIndex = { clips: TimelineClip[]; maximumEnds: number[] }
 const videoClipsCache = new WeakMap<EditorV6Timeline, VideoClipIndex>()
 type EditorV6MediaCollection = NonNullable<EditorV6Document['media']>
@@ -30,11 +31,23 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
   let left = 0, right = backgrounds.length
   while (left < right) { const middle = (left + right) >>> 1; if (backgrounds[middle].block.startFrame <= frame) left = middle + 1; else right = middle }
   const background = backgrounds[left - 1]?.block.background
-  return background ?? {
+  if (background) return background
+  const cachedDefault = defaultBackgroundsCache.get(document)
+  if (cachedDefault
+    && cachedDefault.backgroundColor === document.backgroundColor
+    && cachedDefault.backgroundAssetId === document.backgroundAssetId
+    && cachedDefault.backgroundX === document.backgroundX
+    && cachedDefault.backgroundY === document.backgroundY
+    && cachedDefault.backgroundWidth === document.backgroundWidth
+    && cachedDefault.backgroundHeight === document.backgroundHeight
+    && cachedDefault.backgroundRotation === document.backgroundRotation) return cachedDefault
+  const resolvedDefault = {
     backgroundColor: document.backgroundColor, backgroundAssetId: document.backgroundAssetId,
     backgroundX: document.backgroundX, backgroundY: document.backgroundY,
     backgroundWidth: document.backgroundWidth, backgroundHeight: document.backgroundHeight, backgroundRotation: document.backgroundRotation
   }
+  defaultBackgroundsCache.set(document, resolvedDefault)
+  return resolvedDefault
 }
 export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean; includeVideo?: boolean } = {}): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))

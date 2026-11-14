@@ -102,7 +102,13 @@ type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; bac
 export type EditorV6VisualKeys = { key: string; layerKeys: { background: string; foreground: string } }
 type CachedElementVisualKeys = { compact?: string; complete?: string }
 /** Export-local memo for immutable scene element snapshots reused across frames. */
-export type EditorV6ExportFrameVisualKeyCache = WeakMap<EditorV6SceneElement, CachedElementVisualKeys>
+export type EditorV6ExportFrameVisualKeyCache = {
+  elements: WeakMap<EditorV6SceneElement, CachedElementVisualKeys>
+  backgrounds: WeakMap<object, string>
+}
+export function createEditorV6ExportFrameVisualKeyCache(): EditorV6ExportFrameVisualKeyCache {
+  return { elements: new WeakMap(), backgrounds: new WeakMap() }
+}
 function editorV6ElementVisualKeyParts(element: EditorV6SceneElement) {
   return [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch, element.balloonScalePercent, element.balloonOffsetY, element.speakerName, element.speakerColor]
 }
@@ -116,10 +122,10 @@ function editorV6SerializeElementsWithCache(elements: EditorV6SceneElement[], ca
   const serializedElements = new Array<string>(elements.length)
   for (let index = 0; index < elements.length; index += 1) {
     const element = elements[index]
-    let cached = cache.get(element)
+    let cached = cache.elements.get(element)
     if (!cached) {
       cached = {}
-      cache.set(element, cached)
+      cache.elements.set(element, cached)
     }
     let serialized = cached[mode]
     if (serialized === undefined) {
@@ -129,6 +135,15 @@ function editorV6SerializeElementsWithCache(elements: EditorV6SceneElement[], ca
     serializedElements[index] = serialized
   }
   return `[${serializedElements.join(',')}]`
+}
+function editorV6SerializeBackground(background: unknown, cache?: EditorV6ExportFrameVisualKeyCache): string {
+  if (!cache || typeof background !== 'object' || background === null) return editorV6SerializeVisualKey(background)
+  let serialized = cache.backgrounds.get(background)
+  if (serialized === undefined) {
+    serialized = editorV6SerializeVisualKey(background)
+    cache.backgrounds.set(background, serialized)
+  }
+  return serialized
 }
 function editorV6LayerVisualKeysFromSerialized(background: string, elements: string, hairAnimationFrame?: number) {
   const foreground = hairAnimationFrame === undefined ? elements : `[${elements},${editorV6SerializeVisualKey(hairAnimationFrame)}]`
@@ -142,8 +157,8 @@ function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: R
   const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], elements]
   return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
 }
-function editorV6VisualKeysFromSerializedElements(scene: EditorV6VisualKeyInput, elementsKey: string): EditorV6VisualKeys {
-  const backgroundKey = editorV6SerializeVisualKey(scene.background)
+function editorV6VisualKeysFromSerializedElements(scene: EditorV6VisualKeyInput, elementsKey: string, cache?: EditorV6ExportFrameVisualKeyCache): EditorV6VisualKeys {
+  const backgroundKey = editorV6SerializeBackground(scene.background, cache)
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
   const mediaKey = editorV6SerializeVisualKey(mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout])
   const hairFrameKey = scene.hairAnimationFrame === undefined ? undefined : editorV6SerializeVisualKey(scene.hairAnimationFrame)
@@ -160,14 +175,14 @@ export function editorV6VisualKeys(scene: EditorV6VisualKeyInput, elementCache?:
   const elementsKey = elementCache
     ? editorV6SerializeElementsWithCache(scene.elements, elementCache, 'compact')
     : editorV6SerializeVisualKey(editorV6ElementVisualKeys(scene.elements))
-  return editorV6VisualKeysFromSerializedElements(scene, elementsKey)
+  return editorV6VisualKeysFromSerializedElements(scene, elementsKey, elementCache)
 }
 /** Uses the full scene element state when a runtime mode depends on fields outside the compact projection. */
 export function editorV6CompleteVisualKeys(scene: EditorV6VisualKeyInput, elementCache?: EditorV6ExportFrameVisualKeyCache): EditorV6VisualKeys {
   const elementsKey = elementCache
     ? editorV6SerializeElementsWithCache(scene.elements, elementCache, 'complete')
     : editorV6SerializeVisualKey(scene.elements)
-  return editorV6VisualKeysFromSerializedElements(scene, elementsKey)
+  return editorV6VisualKeysFromSerializedElements(scene, elementsKey, elementCache)
 }
 export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {
   return editorV6LayerVisualKeysForElements(scene.background, editorV6ElementVisualKeys(scene.elements), scene.hairAnimationFrame)

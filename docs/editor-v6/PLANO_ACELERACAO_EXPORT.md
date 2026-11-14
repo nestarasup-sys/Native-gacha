@@ -507,3 +507,11 @@ Teste focado (31), suíte (179 arquivos, 800 aprovados e 1 ignorado), typecheck,
 **Microbenchmark isolado:** 1.800 chamadas por rodada, 80 elementos estáveis, cinco rodadas; mediana de 55,35 ms sem cache e 7,31 ms com cache (86,8% menos nesta operação sintética). Isso mede somente a criação das chaves de cena e não estima a duração do MP4.
 
 **Verificação:** teste focado do plano (12); suíte Editor V6, incluindo perfil sintético (179 arquivos aprovados, 1 ignorado; 801 testes aprovados, 1 ignorado); typecheck; auditoria de arquitetura (878 arquivos); build; `git diff --check`; e harness Electron integrado passaram. O harness cobriu 81 quadros, 78 reutilizados, emenda contínua de áudio, fallback, cancelamento com destino preservado, Full HD e uma fixture de boca de 301 quadros. O RSS máximo reportado do processo principal foi 168.407.040 bytes. O harness não mede os processos GPU/renderer/FFmpeg em conjunto nem o projeto real longo.
+
+### Continuação na `Dev-V2` — reutilizar o estado e a chave do fundo
+
+O resolver de cena agora reutiliza o objeto do fundo padrão enquanto os campos do documento permanecem iguais. Ele compara os campos antes de retornar o snapshot em cache, então também percebe mutação acidental no mesmo objeto de documento. O plano de chave visual mantém, por referência, a serialização de fundo persistente. Ambas as caches são fracas; a chave completa não muda de formato.
+
+**Microbenchmark isolado:** com 80 elementos estáveis e 1.800 quadros por rodada, cinco rodadas deram mediana de 54,33 ms sem cache e 6,66 ms com a cache combinada de elementos e fundo (87,7% menos na geração dessas chaves sintéticas). O benchmark não mede o MP4.
+
+**Verificação:** testes focados de cena e plano (21); suíte Editor V6 (179 arquivos, 802 aprovados e 1 ignorado); typecheck; auditoria (878 arquivos); build e harness Electron integrado passaram. O harness cobriu 81 quadros e uma fixture de boca de 301 quadros, com RSS máximo reportado do processo principal de 165.109.760 bytes.

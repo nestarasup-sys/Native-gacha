@@ -11,6 +11,18 @@ function fixture(): EditorV6Document {
 }
 
 describe('preview e posicionamento do Editor V6', () => {
+  it('reutiliza o estado de fundo padrão e atualiza sua cache quando o projeto muda', () => {
+    const document = fixture()
+    const firstBackground = resolveEditorV6SceneAtFrame(document, 10).background
+    expect(resolveEditorV6SceneAtFrame(document, 11).background).toBe(firstBackground)
+
+    document.backgroundColor = '#202020'
+    const changedBackground = resolveEditorV6SceneAtFrame(document, 12).background
+    expect(changedBackground).not.toBe(firstBackground)
+    expect(changedBackground.backgroundColor).toBe('#202020')
+    expect(resolveEditorV6SceneAtFrame(document, 13).background).toBe(changedBackground)
+  })
+
   it('compartilha a posição em todos os quadros do personagem', () => {
     const document = fixture(), id = document.elements[0].id
     const operation = prepareEditorV6PositionAtFrame(document, id, 120)!

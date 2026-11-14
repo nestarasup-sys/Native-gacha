@@ -1601,3 +1601,9 @@ A verificação de integridade dos assets no Editor V6 agora percorre os IDs sem
 O renderizador do export agora mantém uma cache fraca e local à exportação, indexada pela identidade dos snapshots imutáveis da cena. As chaves compactas e completas dos elementos estáticos são serializadas uma vez e reutilizadas nos quadros em que a mesma referência aparece. Elementos dinâmicos continuam recebendo novas chaves; o caminho público sem cache permanece compatível.
 
 Teste do plano (12), suíte Editor V6 (179 arquivos, 801 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e harness Electron de exportação passaram. Microbenchmark de geração de chaves (1.800 quadros, 80 elementos, cinco rodadas) teve medianas de 55,35 ms sem cache e 7,31 ms com cache. A medida é isolada e não estima a duração do MP4.
+
+### Continuação na `Dev-V2` — reutilizar o estado e a chave do fundo
+
+O resolver de cena reutiliza o estado padrão do fundo enquanto seus campos não mudam e detecta alterações mesmo quando o objeto do documento é atualizado no lugar. A cache de chaves visuais também serializa uma vez cada snapshot de fundo persistente. O formato das chaves e o estado visual renderizado permanecem iguais.
+
+Testes focados de cena e plano (21), suíte Editor V6 (179 arquivos, 802 aprovados e 1 ignorado), typecheck, auditoria, build e harness integrado passaram. O benchmark sintético das chaves (1.800 quadros, 80 elementos, cinco rodadas) teve mediana de 54,33 ms sem cache e 6,66 ms com cache; é uma medida isolada, não do MP4 completo.
