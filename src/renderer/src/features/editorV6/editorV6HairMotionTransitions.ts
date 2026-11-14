@@ -9,6 +9,10 @@ import { createEditorV6HairMotionBundleAssets, type EditorV6SerializedMotionLaye
 import { editorV6HairMotionCanvasDataUrl } from './editorV6HairMotionCanvas'
 
 type CaptureTransitionLayers = ReturnType<typeof createEditorV6HairMotionBundleAssets>['captureTransitionLayers']
+type HairTransitionBake = {
+  result: Pick<EditorV6MotionBakeResult, 'faceAsset'>
+  layerCapture: EditorV6SerializedMotionLayerAtlas
+}
 
 /** Prepares the hairless motion atlases needed to keep hair continuous through pose changes. */
 export async function prepareEditorV6HairMotionTransitions({
@@ -35,7 +39,7 @@ export async function prepareEditorV6HairMotionTransitions({
   const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
   // Reuse renderer material/provider caches only within this export's transition batch.
   const transitionSession = createEditorV6BakeSession(fabricator)
-  const hairBakeBatch = createEditorV6HairBakeBatch<{ result: EditorV6MotionBakeResult; layerCapture: EditorV6SerializedMotionLayerAtlas }>()
+  const hairBakeBatch = createEditorV6HairBakeBatch<HairTransitionBake>()
   const preparedTransitions = await mapConcurrentItems(relevantPlans, async (plan) => {
     if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
     const character = characterById.get(plan.characterId)
@@ -86,7 +90,10 @@ export async function prepareEditorV6HairMotionTransitions({
       })
       recordStage('bakeHairlessMotionTransition', performance.now() - bakeStarted)
       if (!layerCapture) throw Error(`Não foi possível capturar as camadas sem cabelo da transição de ${character.name}.`)
-      return { result, layerCapture }
+      // Hair-motion composition consumes only the optional face atlas and the
+      // independently captured layers. Do not retain the full motion PNG (or
+      // mouthless snapshots) for every transition in this export batch.
+      return { result: { faceAsset: result.faceAsset }, layerCapture }
     })
     if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
     return { plan, ...prepared }

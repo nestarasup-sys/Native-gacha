@@ -1519,3 +1519,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** o objeto novo é opcional no contrato validado, então pacotes e relatórios antigos continuam aceitos. O perfil contém apenas contadores numéricos; nenhum nome, caminho, identificador de personagem ou dado de imagem foi acrescentado.
 
 **Verificação:** suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), harness Electron de animação de cabelo, teste direto do validador de pacote (12 casos), build e `git diff --check` passaram. Os números permitem inspecionar reutilização futura; ainda não demonstram ganho de velocidade.
+
+### Continuação na `Dev-V2` — não reter atlases completos descartados no preparo das transições
+
+**Problema:** cada bake de transição retorna também um atlas PNG completo de movimento e pode retornar bases adicionais sem boca. A composição de animação de cabelo consome somente `faceAsset` e as camadas capturadas. O lote mantinha o resultado completo de todos os bakes até terminar a lista, embora esses outros atlases não fossem adicionados ao pacote de cabelo.
+
+**Mudança:** o resultado é reduzido a `{ faceAsset }` antes de entrar na cache limitada ao preparo atual. Os quadros e PNGs de camada necessários continuam sendo serializados e entregues à composição; o atlas completo de movimento e as bases sem boca deixam de ficar retidos por essa cache.
+
+**Verificação:** teste focado das transições (3), suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos) e build passaram. O harness Electron de cabelo falhou uma vez numa checagem pixelar de `flipX` em exportações estáticas; a repetição integral passou. Essa checagem não percorre o preparo de transições alterado, portanto a primeira falha foi registrada sem atribuí-la à mudança. Não houve exportação de projeto real nem medição de memória em 473 transições.

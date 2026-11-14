@@ -100,16 +100,33 @@ describe('preparação de transições sem cabelo do Editor V6', () => {
       ]
     )
     const recordStage = vi.fn()
+    const captureTransitionLayers = vi.fn(assets.captureTransitionLayers)
+    const fullMotionAtlas = { id: 'unused-motion-atlas', dataUrl: `data:image/png;base64,${'A'.repeat(4096)}` }
+    const faceAtlas = { id: 'used-face-atlas', dataUrl: 'data:image/png;base64,AA==' }
+    state.bake = vi.fn(async (_request, _fabricator, _session, captureLayers) => {
+      captureLayers({
+        frames: [{ offset: -2 }],
+        behindFace: canvas('data:behind'), face: canvas('data:face'),
+        eyesAboveRearHair: canvas('data:raised-eyes'), inFrontOfFace: null
+      })
+      return { asset: fullMotionAtlas, faceAsset: faceAtlas, mouthlessBaseAssets: [{ asset: fullMotionAtlas }] }
+    })
 
     await prepareEditorV6HairMotionTransitions({
       project, rigs, characterById: new Map([[character.id, character]]), exportOptions,
-      isCancelled: () => false, fabricator, recordStage, captureTransitionLayers: assets.captureTransitionLayers
+      isCancelled: () => false, fabricator, recordStage, captureTransitionLayers
     })
 
     expect(state.bake).toHaveBeenCalledTimes(2)
     expect(assets.motionTransitions.map(transition => transition.key)).toEqual(['geometry-key', 'missing-face-key'])
     expect(assets.motionTransitions.every(transition => transition.eyesAboveRearHairSurfaceId !== null)).toBe(true)
     expect(assets.surfaces.map(surface => surface.dataUrl)).toContain('data:behind')
+    expect(captureTransitionLayers).toHaveBeenCalledTimes(2)
+    for (const [, result] of captureTransitionLayers.mock.calls) {
+      expect(result).toEqual({ faceAsset: faceAtlas })
+      expect(result).not.toHaveProperty('asset')
+      expect(result).not.toHaveProperty('mouthlessBaseAssets')
+    }
     expect(recordStage).toHaveBeenCalledTimes(2)
     expect(state.createSession).toHaveBeenCalledWith(fabricator)
     expect(session.materials.size).toBe(0)
