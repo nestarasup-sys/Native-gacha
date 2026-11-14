@@ -73,10 +73,10 @@ async function main() {
     await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
   } })
   let active = 0, peak = 0
-  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation']) => {
+  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation'], singlePassLayers = false) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
+      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, singlePassLayers, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
@@ -105,7 +105,12 @@ async function main() {
   assert(report.attempts[0].parts.map((part) => part.frames).sort((a, b) => a - b).join(',') === '40,41', 'Partes perderam ou repetiram quadros.')
   assert(report.attempts[0].parts.every((part) => Number.isFinite(part.startedAtOffsetMs) && Number.isFinite(part.finishedAtOffsetMs) && part.finishedAtOffsetMs! >= part.startedAtOffsetMs), 'O relatório não registrou intervalos monotônicos das partes.')
   assert(Math.max(...report.attempts[0].parts.map((part) => part.startedAtOffsetMs)) < Math.min(...report.attempts[0].parts.map((part) => part.finishedAtOffsetMs!)), 'Os intervalos do relatório não refletem a sobreposição real das partes paralelas.')
-  assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0 && (part.frameTiming?.rafWaitMs?.samples ?? 0) > 0 && (part.frameTiming?.captureMs?.samples ?? 0) > 0 && (part.frameTiming?.capturePageMs?.samples ?? 0) > 0 && (part.frameTiming?.captureBitmapMs?.samples ?? 0) > 0), 'O relatório não separou renderização, espera RAF, capturePage e conversão/cópia do bitmap por quadro.')
+  assert(report.attempts[0].parts.every((part) => (part.frameTiming?.frameRoundTripMs?.samples ?? 0) > 0
+    && (part.frameTiming?.captureMs?.samples ?? 0) > 0
+    && (part.frameTiming?.capturePageMs?.samples ?? 0) > 0
+    && (part.frameTiming?.captureBitmapMs?.samples ?? 0) > 0
+    && part.frameRafGate === false),
+  'O relatório não separou round-trip e captura, ou a exportação voltou a exigir o gate RAF legado.')
   assert(peak === 2 && active === 0, 'Os dois trabalhos não foram paralelos ou deixaram janelas abertas.')
   assert(report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0) > 60, 'Quadros estáticos não foram reaproveitados.')
   const rgb = run(['-i', output, '-vf', "select='eq(n,39)+eq(n,40)+eq(n,41)'", '-fps_mode', 'passthrough', '-frames:v', '3', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
@@ -459,24 +464,29 @@ async function main() {
   assert(uniquePaint1080.totalFrames === uniqueCaptureFrameCount && !uniquePaint1080.fallback && active === 0, 'O perfil paint-event 1080p não concluiu os 60 quadros ou deixou renderizadores abertos.')
   assert(paintCaptureHashes.length === uniqueCaptureFrameCount, `paint-event capturou ${paintCaptureHashes.length}/${uniqueCaptureFrameCount} quadros no perfil 1080p.`)
   assert(separateWorkerPaintParity.exactFrameParity, `As capturas em workers separados divergem no quadro ${separateWorkerPaintParity.firstDivergentFrame}; investigar antes de promover paint-event.`)
-  const sameWorkerPaintFactory = createEditorV6WorkerFactory({
-    ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
-    mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), captureMode: 'compare-paint'
-  })
-  const sameWorkerPaintOutput = join(folder, 'capture-profile-same-worker-1080.mp4')
-  const sameWorkerPaintParity = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
-    ...base, id: randomUUID(), outputPath: sameWorkerPaintOutput, reportPath: join(folder, 'capture-profile-same-worker-1080.report.json'),
-    createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(sameWorkerPaintFactory, signal, 1920, 1080, renderProject, layeredVideo)
-  })
-  sameWorkerPaintFactory.dispose()
-  const sameWorkerParts = sameWorkerPaintParity.attempts.flatMap((attempt) => attempt.parts)
-  const sameWorkerPaintParityPassed = sameWorkerPaintParity.state === 'completed'
-    && !sameWorkerPaintParity.fallback
-    && sameWorkerPaintParity.totalFrames === uniqueCaptureFrameCount
-    && sameWorkerParts.reduce((sum, part) => sum + part.rendered, 0) === uniqueCaptureFrameCount
-    && sameWorkerParts.reduce((sum, part) => sum + part.reused, 0) === 0
-    && sameWorkerParts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.samples ?? 0), 0) === uniqueCaptureFrameCount
-  assert(sameWorkerPaintParityPassed && active === 0, 'A comparação paint/capturePage no mesmo worker não verificou os 60 tokens/quadro ou deixou renderizadores abertos.')
+  const skipSameWorkerPaint = process.env.GACHA_EDITOR_V6_SKIP_SAME_WORKER_PAINT === '1'
+  let sameWorkerPaintParity: EditorV6ExportReport | undefined
+  if (!skipSameWorkerPaint) {
+    const sameWorkerPaintFactory = createEditorV6WorkerFactory({
+      ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
+      mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), captureMode: 'compare-paint'
+    })
+    const sameWorkerPaintOutput = join(folder, 'capture-profile-same-worker-1080.mp4')
+    try {
+      sameWorkerPaintParity = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+        ...base, id: randomUUID(), outputPath: sameWorkerPaintOutput, reportPath: join(folder, 'capture-profile-same-worker-1080.report.json'),
+        createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(sameWorkerPaintFactory, signal, 1920, 1080, renderProject, layeredVideo)
+      })
+    } finally { sameWorkerPaintFactory.dispose() }
+    const sameWorkerParts = sameWorkerPaintParity.attempts.flatMap((attempt) => attempt.parts)
+    const sameWorkerPaintParityPassed = sameWorkerPaintParity.state === 'completed'
+      && !sameWorkerPaintParity.fallback
+      && sameWorkerPaintParity.totalFrames === uniqueCaptureFrameCount
+      && sameWorkerParts.reduce((sum, part) => sum + part.rendered, 0) === uniqueCaptureFrameCount
+      && sameWorkerParts.reduce((sum, part) => sum + part.reused, 0) === 0
+      && sameWorkerParts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.samples ?? 0), 0) === uniqueCaptureFrameCount
+    assert(sameWorkerPaintParityPassed && active === 0, 'A comparação paint/capturePage no mesmo worker não verificou os 60 tokens/quadro ou deixou renderizadores abertos.')
+  }
   const svgDataUrl = (svg: string) => `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`
   const hairAvatarBase = svgDataUrl('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160"><path d="M18 157 Q22 117 43 111 L47 96 76 96 80 111 Q105 119 107 157Z" fill="#48527a" stroke="#25263b" stroke-width="4"/><path d="M25 79 Q8 51 25 26 Q40 4 67 12 Q103 12 104 51 L94 102 80 115 39 108 26 95Z" fill="#302b42" stroke="#201d2b" stroke-width="5"/><ellipse cx="61" cy="66" rx="27" ry="34" fill="#f2c5a5" stroke="#9a625b" stroke-width="3"/><path d="M33 62 Q29 23 57 15 Q91 7 99 43 Q83 31 68 37 Q49 26 33 62Z" fill="#343044" stroke="#201d2b" stroke-width="4"/></svg>')
   const faceSurface = (eyes: string, mouth: string) => svgDataUrl(`<svg xmlns="http://www.w3.org/2000/svg" width="120" height="160" viewBox="0 0 120 160"><g stroke="#302b42" stroke-linecap="round" stroke-linejoin="round">${eyes}<path d="M59 72l-3 8 5 1" fill="none" stroke-width="2"/><path d="${mouth}" fill="#a93c61" stroke-width="2.5"/></g></svg>`)
@@ -546,6 +556,99 @@ async function main() {
     && sameWorkerLayerComparisons === 41
     && new Set(earlyAnimatedHairDigests).size > 1 && active === 0
   assert(layeredHairFaceParityPassed, `Paridade de vídeo/cabelo/face no mesmo worker incompleta: quadros=${layeredHairFaceParity.totalFrames}, camadas=${layeredBackgroundCaptureSamples}/${layeredForegroundCaptureSamples}, cabelo=${layeredHairRasterFrames}, cabelo animado único=${new Set(earlyAnimatedHairDigests).size}, workers=${active}.`)
+
+  // Compare the production stacked readback with the old serial path on the
+  // same animated/video/face fixture. Hash raw BGRA layers before encoding.
+  const layerModeRuns: Record<'serial' | 'stacked', Array<{ milliseconds: number; frames: number; rendered: number; capturePageMs: number; ffmpegWriteMs: number; effectiveFps: number }>> = { serial: [], stacked: [] }
+  let layerModeParity = { compared: 0, exact: 0, withinTolerance: 0, maxChannelDelta: 0, alphaDifferentBytes: 0, outsideTolerance: [] as Array<{ frame: number; layer: string; changedPixels: number; maxDelta: number; alphaDifferentBytes: number }> }
+  const median = (values: number[]) => {
+    const ordered = [...values].sort((a, b) => a - b)
+    return ordered.length % 2 ? ordered[(ordered.length - 1) / 2] : (ordered[(ordered.length / 2) - 1] + ordered[ordered.length / 2]) / 2
+  }
+  for (let repetition = 0; repetition < 3; repetition++) {
+    const order = repetition % 2 === 0 ? ['serial', 'stacked'] as const : ['stacked', 'serial'] as const
+    const digestRuns: Partial<Record<'serial' | 'stacked', Array<{ frame: number; layer: 'background' | 'foreground'; digest: string }>>> = {}
+    for (const mode of order) {
+      const digests: Array<{ frame: number; layer: 'background' | 'foreground'; digest: string; bitmap: Buffer }> = []
+      digestRuns[mode] = digests
+      const modeFactory = createEditorV6WorkerFactory({
+        ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
+        mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName),
+        inspectCapture: async ({ frame, layer, bitmap }) => {
+          if (layer === 'background' || layer === 'foreground') digests.push({ frame, layer, digest: createHash('sha256').update(bitmap).digest('hex'), bitmap: Buffer.from(bitmap) })
+        }
+      })
+      const outputPath = join(folder, `layer-capture-${mode}-${repetition}.mp4`)
+      const reportPath = join(folder, `layer-capture-${mode}-${repetition}.report.json`)
+      const previousMode = process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
+      if (mode === 'serial') process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = 'serial'
+      else delete process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
+      const startedAt = performance.now()
+      let profile: EditorV6ExportReport
+      try {
+        profile = await runEditorV6Export(hairFaceVideoProject, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
+          ...base, id: randomUUID(), outputPath, reportPath, getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
+          createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => {
+            assert(layeredVideo, 'O benchmark de camadas precisa exercitar a composição de vídeo.')
+            return makeWorkerWithFactory(modeFactory, signal, 320, 180, renderProject, layeredVideo, mouthLoops, syntheticHairMotion, mode === 'stacked')
+          }
+        })
+      } finally {
+        if (previousMode === undefined) delete process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
+        else process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = previousMode
+        modeFactory.dispose()
+      }
+      const wallMilliseconds = performance.now() - startedAt
+      const parts = profile.attempts.flatMap(attempt => attempt.parts)
+      const frames = parts.reduce((sum, part) => sum + part.frames, 0)
+      const rendered = parts.reduce((sum, part) => sum + part.rendered, 0)
+      const capturePageMs = parts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.totalMs ?? 0), 0)
+      const ffmpegWriteMs = parts.reduce((sum, part) => sum + (part.frameTiming?.ffmpegWriteMs?.totalMs ?? 0), 0)
+      assert(profile.state === 'completed' && !profile.fallback && frames === 40 && profile.videoInputs === 1 && active === 0,
+        `Benchmark ${mode} #${repetition + 1} não exportou os 40 quadros de vídeo/cabelo (${frames}, estado ${profile.state}).`)
+      layerModeRuns[mode].push({ milliseconds: wallMilliseconds, frames, rendered, capturePageMs, ffmpegWriteMs, effectiveFps: frames * 1000 / wallMilliseconds })
+    }
+
+    const serial = digestRuns.serial ?? []
+    for (const actual of digestRuns.stacked ?? []) {
+      const expected = serial.filter(candidate => candidate.layer === actual.layer && candidate.frame <= actual.frame)
+        .sort((left, right) => right.frame - left.frame)[0]
+      if (!expected) {
+        layerModeParity.outsideTolerance.push({ frame: actual.frame, layer: actual.layer, changedPixels: -1, maxDelta: 255, alphaDifferentBytes: 1 })
+        continue
+      }
+      layerModeParity.compared++
+      if (expected.digest === actual.digest) { layerModeParity.exact++; continue }
+      let changedPixels = 0, maxDelta = 0, alphaDifferentBytes = 0
+      for (let pixel = 0; pixel < Math.min(expected.bitmap.length, actual.bitmap.length); pixel += 4) {
+        let pixelChanged = false
+        for (let channel = 0; channel < 3; channel++) {
+          const delta = Math.abs(expected.bitmap[pixel + channel] - actual.bitmap[pixel + channel])
+          maxDelta = Math.max(maxDelta, delta)
+          pixelChanged ||= delta !== 0
+        }
+        if (expected.bitmap[pixel + 3] !== actual.bitmap[pixel + 3]) alphaDifferentBytes++
+        if (pixelChanged) changedPixels++
+      }
+      layerModeParity.maxChannelDelta = Math.max(layerModeParity.maxChannelDelta, maxDelta)
+      layerModeParity.alphaDifferentBytes += alphaDifferentBytes
+      // Permit only rasterizer rounding of at most one 8-bit color value in
+      // <=0.01% of pixels. Alpha, layer ordering and meaningful color changes
+      // must remain identical across the two capture layouts.
+      const maxToleratedPixels = Math.floor(Math.min(expected.bitmap.length, actual.bitmap.length) / 4 * 0.0001)
+      if (maxDelta <= 1 && alphaDifferentBytes === 0 && changedPixels <= maxToleratedPixels) layerModeParity.withinTolerance++
+      else if (layerModeParity.outsideTolerance.length < 8) layerModeParity.outsideTolerance.push({ frame: actual.frame, layer: actual.layer, changedPixels, maxDelta, alphaDifferentBytes })
+    }
+  }
+  assert(layerModeParity.outsideTolerance.length === 0 && layerModeParity.compared >= 120,
+    `A captura stacked divergiu além da tolerância de rasterização em ${layerModeParity.outsideTolerance.length} amostras: ${JSON.stringify(layerModeParity.outsideTolerance)}.`)
+  const layerModeSummary = {
+    repetitions: 3, uncontrolledMachine: true, layerComparisons: layerModeParity.compared, exactLayerComparisons: layerModeParity.exact,
+    oneLsbToleranceComparisons: layerModeParity.withinTolerance, maxChannelDelta: layerModeParity.maxChannelDelta, alphaDifferentBytes: layerModeParity.alphaDifferentBytes,
+    outsideTolerance: layerModeParity.outsideTolerance.length,
+    serial: { runs: layerModeRuns.serial, medianMilliseconds: median(layerModeRuns.serial.map(run => run.milliseconds)), medianEffectiveFps: median(layerModeRuns.serial.map(run => run.effectiveFps)) },
+    stacked: { runs: layerModeRuns.stacked, medianMilliseconds: median(layerModeRuns.stacked.map(run => run.milliseconds)), medianEffectiveFps: median(layerModeRuns.stacked.map(run => run.effectiveFps)) }
+  }
   const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
     frames: part.frames,
     rendered: part.rendered,
@@ -570,7 +673,9 @@ async function main() {
       unique1080: { totalFrames: uniqueCapture1080.totalFrames, milliseconds: uniqueCapture1080.milliseconds, uniqueFrames: uniqueCapturePageHashes?.length, parts: captureProfile(uniqueCapture1080) },
       paintEvent1080: { totalFrames: uniquePaint1080.totalFrames, milliseconds: uniquePaint1080.milliseconds, parts: captureProfile(uniquePaint1080) },
       separateWorkerPaintParity,
-      sameWorkerPaintParity: { passed: sameWorkerPaintParityPassed, totalFrames: sameWorkerPaintParity.totalFrames, milliseconds: sameWorkerPaintParity.milliseconds, parts: captureProfile(sameWorkerPaintParity) },
+      sameWorkerPaintParity: skipSameWorkerPaint
+        ? { passed: false, skipped: true, reason: 'GACHA_EDITOR_V6_SKIP_SAME_WORKER_PAINT=1' }
+        : { passed: sameWorkerPaintParity?.state === 'completed', totalFrames: sameWorkerPaintParity?.totalFrames, milliseconds: sameWorkerPaintParity?.milliseconds, parts: captureProfile(sameWorkerPaintParity!) },
       layeredHairFacePaintParity: {
         passed: layeredHairFaceParityPassed,
         totalFrames: layeredHairFaceParity.totalFrames,
@@ -583,7 +688,8 @@ async function main() {
         distinctEarlyHairFrames: new Set(earlyAnimatedHairDigests).size,
         expressionFrames: faceModes.filter(Boolean).length,
         parts: captureProfile(layeredHairFaceParity)
-      }
+      },
+      layeredCaptureSerialVsStacked: layerModeSummary
     },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))

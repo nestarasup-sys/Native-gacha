@@ -28,9 +28,12 @@ async function initialize() {
   const renderFrame = createEditorV6ExportFrameRenderer({
     project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById, hairRuntime,
     prepareAssets: prepareFrameAssets,
-    commitSurface: surface => flushSync(() => root.render(surface.renderLayer === 'stacked'
-      ? <EditorV6StackedExportSurface {...surface} />
-      : <SceneSurface {...surface} />)),
+    commitSurface: surface => flushSync(() => {
+      const { renderLayer, ...sceneProps } = surface
+      root.render(renderLayer === 'stacked'
+        ? <EditorV6StackedExportSurface {...sceneProps} />
+        : <SceneSurface {...sceneProps} renderLayer={renderLayer} />)
+    }),
     onImageLoad: onSvgImageLoad,
     waitForSvgImages: () => {
       let pending: Promise<void>[] | undefined

@@ -7,7 +7,7 @@ import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper
 type ImageLoader = (dataUrl: string) => Promise<ImageBitmap>
 type HairMeshRenderer = ReturnType<typeof createExportHairMeshRenderer>
 
-async function loadHairImage(dataUrl: string): Promise<ImageBitmap> {
+export async function loadHairImage(dataUrl: string): Promise<ImageBitmap> {
   try {
     // Data URLs have opaque origins in Chromium. Although they can be drawn to
     // 2D canvases, uploading an HTMLImageElement sourced from one to WebGL can
@@ -22,13 +22,38 @@ async function loadHairImage(dataUrl: string): Promise<ImageBitmap> {
         return await createImageBitmap(image)
       } finally { image.src = '' }
     }
-    const prefix = 'data:image/png;base64,'
-    if (!dataUrl.startsWith(prefix)) throw Error(`A camada de cabelo tem origem ou formato não aceito (${dataUrl.slice(0, 32)}).`)
+    const prefixes = ['data:image/png;base64,', 'data:image/svg+xml;base64,'] as const
+    const prefix = prefixes.find(candidate => dataUrl.startsWith(candidate))
+    if (!prefix) throw Error(`A camada de cabelo tem origem ou formato não aceito (${dataUrl.slice(0, 32)}).`)
     if (dataUrl.length > 48_000_000) throw Error(`A camada de cabelo excede o limite de 48 MB (${dataUrl.length} caracteres).`)
     let binary = atob(dataUrl.slice(prefix.length))
     const bytes = Uint8Array.from(binary, character => character.charCodeAt(0))
     binary = ''
-    return await createImageBitmap(new Blob([bytes], { type: 'image/png' }))
+    const blob = new Blob([bytes], { type: prefix.includes('svg+xml') ? 'image/svg+xml' : 'image/png' })
+    if (blob.type === 'image/png') return await createImageBitmap(blob)
+
+    // Chromium's createImageBitmap(Blob) SVG decoder is inconsistent across
+    // Electron builds. Decode through an object URL and rasterize once into an
+    // origin-clean canvas before handing the bitmap to WebGL.
+    const image = new Image()
+    const objectUrl = URL.createObjectURL(blob)
+    let canvas: HTMLCanvasElement | undefined
+    try {
+      image.src = objectUrl
+      await image.decode()
+      if (!image.naturalWidth || !image.naturalHeight) throw Error('A camada SVG de cabelo não tem dimensões válidas.')
+      canvas = document.createElement('canvas')
+      canvas.width = image.naturalWidth
+      canvas.height = image.naturalHeight
+      const context = canvas.getContext('2d')
+      if (!context) throw Error('Não foi possível criar o contexto 2D para rasterizar a camada SVG de cabelo.')
+      context.drawImage(image, 0, 0)
+      return await createImageBitmap(canvas)
+    } finally {
+      image.src = ''
+      URL.revokeObjectURL(objectUrl)
+      if (canvas) canvas.width = canvas.height = 1
+    }
   } catch (error) {
     throw Error('Não foi possível decodificar uma camada da animação de cabelo.', { cause: error })
   }

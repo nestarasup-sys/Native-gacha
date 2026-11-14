@@ -21,7 +21,7 @@ function canvasFactory(contextAvailable = true) {
 }
 
 function image(width = 100, height = 50) {
-  return { naturalWidth: width, naturalHeight: height } as HTMLImageElement
+  return { width, height } as ImageBitmap
 }
 
 const settings: HairMotionSettings = { ...FIRST_HAIR_MOTION_PRESET.physics, enabled: true }
