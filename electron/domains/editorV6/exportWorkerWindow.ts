@@ -12,20 +12,19 @@ export type EditorV6WorkerWindowDependencies = {
   devUrl?: string
   mediaPath?: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   resolveLibraryAsset?: (assetId: string) => Promise<{ path: string; mimeType: string }>
-  assetSources?: EditorV6WorkerAssetSources
 }
 
 /** Creates and locks down the isolated offscreen window used by one export worker. */
-export function createEditorV6WorkerWindow(payload: EditorV6WorkerPayload, deps: EditorV6WorkerWindowDependencies): BrowserWindow {
+export function createEditorV6WorkerWindow(payload: EditorV6WorkerPayload, deps: EditorV6WorkerWindowDependencies, assetSources?: EditorV6WorkerAssetSources): BrowserWindow {
   const layeredVideo = payload.layeredVideo
   const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width, height: payload.height + EDITOR_V6_PAINT_TOKEN_SIZE, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
     webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
   const session = window.webContents.session
-  const hasWorkerMedia = hasEditorV6WorkerMedia({ payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, assetSources: deps.assetSources })
+  const hasWorkerMedia = hasEditorV6WorkerMedia({ payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, assetSources })
   let mediaProtocolRegistered = false
   if (hasWorkerMedia) {
     session.protocol.handle('gacha-editor-media', createEditorV6WorkerMediaProtocolHandler({
-      payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, assetSources: deps.assetSources
+      payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, assetSources
     }))
     mediaProtocolRegistered = true
   }

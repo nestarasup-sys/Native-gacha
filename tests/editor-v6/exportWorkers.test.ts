@@ -142,6 +142,40 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('routes hair-only snapshots through the isolated session without exposing image bytes over IPC', async () => {
+    const { factory, payload, ready, handlers } = fixture()
+    const projectId = '11111111-1111-4111-8111-111111111111'
+    const snapshotUrl = `gacha-editor-media://snapshot/${projectId}/asset-0`
+    const imageBytes = Buffer.from('worker-snapshot')
+    const assetSources = new Map([['asset-0', { dataUrl: `data:image/png;base64,${imageBytes.toString('base64')}`, mimeType: 'image/png' }]])
+    const workerPayload = {
+      ...payload,
+      project: { ...payload.project, id: projectId, media: [], assets: [] },
+      hairAnimation: { surfaces: [{ id: 'hair-surface', dataUrl: snapshotUrl }], textures: [], rigs: [] }
+    } as EditorV6WorkerPayload
+
+    const pending = factory.create(workerPayload, new AbortController().signal, assetSources)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    expect(window.webContents.session.protocol.handle).toHaveBeenCalledWith('gacha-editor-media', expect.any(Function))
+    const handler = window.webContents.session.protocol.handle.mock.calls[0][1] as (request: Request) => Promise<Response>
+    const response = await handler(new Request(snapshotUrl))
+    expect(response.status).toBe(200)
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(imageBytes)
+    const ipcPayload = handlers.get(editorV6WorkerChannels.payload)!({
+      sender: window.webContents, senderFrame: window.webContents.mainFrame
+    })
+    expect(ipcPayload).toEqual(workerPayload)
+    expect(JSON.stringify(ipcPayload)).not.toContain(imageBytes.toString('base64'))
+    expect((await handler(new Request(`gacha-editor-media://snapshot/${projectId}/asset-999`))).status).toBe(404)
+
+    worker.close()
+    expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledWith('gacha-editor-media')
+    factory.dispose()
+  })
+
   it('releases the session media handler when a worker window closes externally', async () => {
     const { factory, payload, ready } = fixture(undefined, { projectMedia: true })
     const pending = factory.create(payload, new AbortController().signal)

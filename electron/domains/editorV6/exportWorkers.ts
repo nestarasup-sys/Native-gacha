@@ -4,9 +4,9 @@ import { waitForExport } from './exportProcess'
 import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6PaintFrameCapture, type EditorV6PaintFrameCapture } from './exportFrameCapture'
 import { createEditorV6WorkerRegistry } from './exportWorkerRegistry'
+import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 import { createEditorV6WorkerFrameRenderer, type EditorV6WorkerFrameRenderer } from './exportWorkerFrameRenderer'
 import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } from './exportWorkerWindow'
-import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
@@ -18,7 +18,7 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
-    const window = createEditorV6WorkerWindow(payload, { ...deps, assetSources })
+    const window = createEditorV6WorkerWindow(payload, deps, assetSources)
     const id = window.webContents.id
     const registration = registry.register(id, payload)
     const workerController = new AbortController()
