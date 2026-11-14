@@ -1,6 +1,6 @@
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
-import type { bakeFaceModeAssets, PreparedEditorV6FaceRenderer } from './faceModeAssets'
+import type { bakeFaceModeAssets, measureFaceModeCrop, PreparedEditorV6FaceRenderer } from './faceModeAssets'
 import type { TrimmedImage } from '../../characters/transparentImageTrim'
 
 type BakedFace = Awaited<ReturnType<typeof bakeFaceModeAssets>>
@@ -13,7 +13,7 @@ export type EditorV6FaceAppearanceExpressionState = Pick<EditorV6Element,
 
 type FaceAppearancePreparationDependencies = {
   faceModeForElement: (element: EditorV6Element, appearance?: CustomizerFaceAppearance) => EditorV6FaceRenderMode
-  trimCanvas: (canvas: HTMLCanvasElement) => TrimmedImage | null
+  measureCrop: typeof measureFaceModeCrop
   bakeAssets: typeof bakeFaceModeAssets
 }
 
@@ -21,7 +21,7 @@ export type PreparedEditorV6FaceAppearance = {
   baseMode: EditorV6FaceRenderMode
   rendered: FaceRender
   baked: BakedFace
-  previousCrop: TrimmedImage | null
+  previousCrop: Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null
 }
 
 /** Prepares the before/after face images while leaving cache and project writes to their owners. */
@@ -51,7 +51,13 @@ export async function prepareEditorV6FaceAppearance(
     element.activeExpressionEffects,
     element.activeFaceMode
   )
-  const previousCrop = dependencies.trimCanvas(previousRendered.canvas)
+  // Saved snapshots use the union of all face modes, not the active frame alone.
+  const previousCrop = await dependencies.measureCrop(
+    element.text, renderer, element.faceAppearance ?? character.customization.faceAppearance,
+    element.faceTransforms, element.activeExpressionEffects,
+    element.activeFaceMode ?? dependencies.faceModeForElement(element, element.faceAppearance ?? character.customization.faceAppearance),
+    previousRendered, true
+  )
   const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
   const baked = await dependencies.bakeAssets(
     element.text,

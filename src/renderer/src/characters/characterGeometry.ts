@@ -11,7 +11,8 @@ export function faceRenderGeometry(
 ) {
   const cropWidth = crop?.width ?? rendered.width
   const cropHeight = crop?.height ?? rendered.height
-  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, cropWidth)
+  const originalCropWidth = previousCrop === undefined ? cropWidth : previousCrop?.width ?? rendered.width
+  const characterCanvasWidth = element.characterCanvasWidth ?? element.width * rendered.width / Math.max(1, originalCropWidth)
   const geometry = {
     characterCanvasWidth,
     width: characterCanvasWidth * cropWidth / rendered.width,
