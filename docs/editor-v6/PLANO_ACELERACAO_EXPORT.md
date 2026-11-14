@@ -491,3 +491,5 @@ Teste focado (6), suíte (179 arquivos, 797 aprovados e 1 ignorado), typecheck, 
 A composição de cada quadro só percorre e copia a lista de elementos para remover `mouthPatch` quando um personagem rigged realmente tem um. O mesmo percurso que prepara o índice original detecta essa necessidade; a cópia e a remoção continuam iguais quando o patch existe.
 
 3 testes do renderer, suíte (179 arquivos, 799 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Redução estrutural de alocações; sem benchmark do export completo.
+
+**Harness integrado subsequente:** `npm run test:editor-v6:export` passou com 81 quadros, 78 reutilizados, emenda de áudio, fallback/cancelamento, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros e registrou RSS máximo do processo principal de 168.607.744 bytes; os arquivos temporários foram removidos pelo próprio harness. Isso confirma integração, sem medir ganho nem prever o projeto longo.
