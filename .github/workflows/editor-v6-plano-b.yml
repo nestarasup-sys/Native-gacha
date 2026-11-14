@@ -1,0 +1,48 @@
+# Branch-specific gates: never promote an experimental Editor V6 change by default.
+name: Editor V6 - Plano B validation
+
+on:
+  push:
+    branches:
+      - codex/editor-v6-plano-b
+    paths:
+      - 'src/**'
+      - 'electron/**'
+      - 'tests/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vitest.editor-v6.config.ts'
+      - '.github/workflows/editor-v6-plano-b.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-v6-plano-b-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  editor-contracts:
+    name: Plano B - typecheck, architecture, and Editor V6 contracts
+    runs-on: windows-2025
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.5'
+          cache: npm
+      - name: Install packages without native postinstall
+        run: npm ci --ignore-scripts
+      - name: Check types
+        run: npm run typecheck
+      - name: Check dependency boundaries
+        run: npm run audit:architecture
+      - name: Check snapshot, worker, mouth crop and atlas regressions
+        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionStaticMouthBake.test.ts tests/editor-v6/motionMouthlessBaseAssets.test.ts tests/editor-v6/motionIsolatedMouthAtlas.test.ts tests/editor-v6/exportWorkers.test.ts tests/editor-v6/exportWorkerMediaProtocol.test.ts tests/editor-v6/exportWorkerPayload.test.ts
+      - name: Run full Editor V6 contracts
+        run: npm run test:editor-v6
+      - name: Compile renderer and Electron
+        run: npm run build

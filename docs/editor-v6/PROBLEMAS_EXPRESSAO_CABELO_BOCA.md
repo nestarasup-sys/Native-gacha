@@ -1,6 +1,6 @@
 # Editor V6 — Problemas de expressão, cabelo e boca
 
-Estado: **pendentes de correção e validação**. Os três problemas foram relatados em projeto longo; um projeto curto pode não reproduzi-los. As hipóteses abaixo não substituem uma reprodução com os quadros e dados da cena afetada.
+Estado: **correção estrutural da boca implementada na branch Plano B, aguardando validação real; expressão e reações de cabelo ainda pendentes**. Os três sintomas foram relatados em projeto longo; um projeto curto pode não reproduzi-los. As hipóteses abaixo não substituem uma reprodução com os quadros e dados da cena afetada.
 
 ## 1. Personagem muda de altura durante troca de expressão
 
@@ -26,7 +26,7 @@ Estado: **pendentes de correção e validação**. Os três problemas foram rela
 
 **Evidência:** `src/renderer/src/features/editorV6/motion/motionMouthlessBaseAssets.ts` calcula o recorte das bases; `src/renderer/src/features/editorV6/motion/motionStaticMouthBake.ts` prepara as amostras da boca; `src/renderer/src/features/editorV6/motion/motionIsolatedMouthAtlas.ts` valida se elas cabem no recorte. Uma hipótese consistente com o código é que uma amostra ampliada ultrapasse o recorte calculado anteriormente. O relatório não identificou a geometria específica que causou a falha, portanto a hipótese precisa de confirmação.
 
-**Investigação:** registrar ou reproduzir os limites do canvas, do recorte corporal e de cada amostra; preservar a posição e a escala ao ajustar a representação. Examinar o transporte e os consumidores de `facePatchSourceCrop`, inclusive a composição de cabelo e a validação IPC. Não apenas remover a verificação, pois a boca poderia aparecer na posição errada ou ser cortada.
+**Implementado (branch Plano B):** a preparação agora renderiza primeiro as amostras da boca ampliada, calcula a união dos recortes e só então recorta as bases `talk` e `talk-blink` usando o mesmo `facePatchSourceCrop`. Evita eliminar a validação do atlas ou deslocar silenciosamente o patch. Testes unitários cobrem a expansão do recorte, mas **o projeto real de seis minutos com CPU e AMF ainda precisa confirmar o resultado**. Também falta verificar os consumidores de `facePatchSourceCrop` na composição de cabelo.
 
 **Aceite:** exportar o trecho que falha com boca animada, CPU e AMF, confirmando visualmente a posição da boca e a integridade do arquivo. Repetir no projeto longo completo após validar o trecho.
 
