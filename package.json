@@ -28,7 +28,7 @@
     "test:editor-v6:quick-offscreen": "node scripts/editor-v6/rapid-gates-windows.cjs --gate=offscreen",
     "test:editor-v6:integration": "node scripts/editor-v6/rapid-gates-windows.cjs --gate=integration",
     "test:editor-v6": "npm run test:editor-v6:stress-profile && vitest run --config vitest.editor-v6.config.ts",
-    "test:editor-v6:stress-profile": "node --test tests/editor-v6/nativeCompositorSpike.test.cjs tests/editor-v6/editorV6StressProfile.test.cjs tests/editor-v6/editorV6MemoAbAnalyzer.test.cjs tests/editor-v6/testOutputDirectory.test.cjs tests/editor-v6/testVideoTools.test.cjs tests/editor-v6/ipc-performance-report.test.cjs tests/editor-v6/editorV6StressFrameSamples.test.mjs",
+    "test:editor-v6:stress-profile": "node --test tests/editor-v6/nativeCompositorSpike.test.cjs tests/editor-v6/editorV6StressProfile.test.cjs tests/editor-v6/editorV6MemoAbAnalyzer.test.cjs tests/editor-v6/testOutputDirectory.test.cjs tests/editor-v6/temporaryFixture.test.cjs tests/editor-v6/testVideoTools.test.cjs tests/editor-v6/ipc-performance-report.test.cjs tests/editor-v6/editorV6StressFrameSamples.test.mjs",
     "editor-v6:stress-projects": "node scripts/editor-v6/test-stress-offscreen.cjs",
     "test:editor-v6:stress-offscreen": "node scripts/editor-v6/test-stress-offscreen.cjs",
     "test:editor-v6:stress-trace": "node scripts/editor-v6/test-stress-offscreen.cjs --trace",

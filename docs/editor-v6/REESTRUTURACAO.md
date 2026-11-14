@@ -1490,6 +1490,12 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Verificação:** testes sintéticos confirmam preenchimento da vaga livre enquanto outro trecho permanece lento, limite de concorrência, ordenação, lotes de relatório e interrupção em falhas de renderização/gravação. A suíte completa do Editor V6 passou (177 arquivos, 785 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Ainda não foi feita comparação de tempo no projeto de estresse; portanto, o ganho total de exportação permanece sem medição.
 
+### Continuação na `Dev-V2` — limpar perfis temporários dos harnesses Electron
+
+**Mudança:** os harnesses gerais, de cabelo e facial agora removem o perfil Chromium e os fixtures da pasta temporária do sistema somente depois de copiar MP4s e relatórios para a saída de teste. Falhas preservam a pasta para diagnóstico. O helper recusa caminhos fora da raiz temporária, pastas que não sejam filhas diretas, prefixos diferentes e links simbólicos. O resultado registra o nome do fixture e se ele foi removido; o harness geral também preserva o MP4 principal que antes só existia dentro da pasta temporária.
+
+**Verificação:** 3 testes Node cobrem remoção própria e rejeições de caminhos/prefixos; a suíte completa do Editor V6 passou (23 testes Node, 177 arquivos Vitest, 787 aprovados e 1 ignorado), junto com typecheck, auditoria (877 arquivos), build e `git diff --check`. O harness Electron geral passou com 81 quadros, 78 reutilizados, fallback, cancelamento, transição e stress sintético da boca de 301 quadros; o perfil criado foi confirmado ausente após a execução. O diretório de saída isolado reteve 80.411 bytes. Esse é um teste integrado, não benchmark controlado; nenhum perfil existente ou dado do usuário foi removido.
+
 ### Continuação na `Dev-V2` — reduzir alocações na coleta de métricas por quadro
 
 **Mudança:** os loops quentes de agregação de tempos e contadores deixaram de materializar arrays de `Object.entries`/`Object.keys` por quadro. A iteração direta confere propriedades próprias, mantendo a exclusão de valores herdados e as validações de números inteiros/tempos finitos. O cálculo de tempo do quadro e a forma final do relatório permanecem iguais.

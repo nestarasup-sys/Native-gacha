@@ -5,6 +5,7 @@ const { basename, join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 const os = require('node:os')
 const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
+const { removeEditorV6TemporaryFixture } = require('./temporaryFixture.cjs')
 async function main() {
   const root = resolve(__dirname, '../..'), folder = await mkdtemp(join(tmpdir(), 'editor-v6-export-check-'))
   const output = join(resolveEditorV6TestOutputDirectory(root), 'editor-v6-export-check')
@@ -17,7 +18,7 @@ async function main() {
   const child = spawn(require('electron'), [entry, root, folder], { windowsHide: true, stdio: 'inherit', env })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   process.exitCode = typeof code === 'number' ? code : 1
-  if (code !== 0) await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'failed', exitCode: code, fixtureDirectory: basename(folder) }))
+  if (code !== 0) await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'failed', exitCode: code, fixtureDirectory: basename(folder), fixtureDirectoryCleaned: false }))
   if (code === 0) {
     const contents = await readFile(join(folder, 'result.json'), 'utf8')
     const result = JSON.parse(contents)
@@ -37,6 +38,16 @@ async function main() {
       await copyFile(result.mouthStress.output, mouthOutput)
       result.mouthStress.output = mouthOutput
     }
+    if (result.output) {
+      const exportOutput = join(output, 'export-check.mp4')
+      await copyFile(result.output, exportOutput)
+      result.output = exportOutput
+    }
+    result.fixtureDirectory = basename(folder)
+    result.fixtureDirectoryCleaned = false
+    await writeFile(join(output, 'result.json'), JSON.stringify(result, null, 2))
+    await removeEditorV6TemporaryFixture(folder, 'editor-v6-export-check-')
+    result.fixtureDirectoryCleaned = true
     await writeFile(join(output, 'result.json'), JSON.stringify(result, null, 2))
   }
 }

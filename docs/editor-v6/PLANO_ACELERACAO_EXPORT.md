@@ -428,3 +428,7 @@ O plano termina quando os custos dominantes foram tratados ou possuem limite té
 ### Continuação 2026-11-13 — reduzir alocações na coleta de métricas por quadro
 
 Os caminhos de coleta de tempos e contadores não criam mais arrays de pares/keys para cada quadro ou camada. O loop direto preserva somente campos próprios dos objetos e as validações de valores. Um microbenchmark sintético de 14 campos e 1.500.000 iterações levou 1.104,9 ms com `Object.entries` e 306,9 ms com `for...in`/checagem de propriedade; essa redução aplica-se somente à iteração e não representa ganho no export completo. Testes, typecheck, auditoria de arquitetura e build passaram.
+
+### Continuação 2026-11-13 — encerrar fixtures temporários dos harnesses
+
+Os harnesses Electron geral, de cabelo e facial agora copiam os resultados necessários para `out` e removem apenas a pasta temporária que criaram, validada por raiz, prefixo e tipo de arquivo. Se a execução falhar, os fixtures são mantidos para diagnóstico. O harness geral passou integrado: 81 quadros, fallback/cancelamento/transição, stress sintético da boca com 301 quadros e perfil temporário confirmado removido; cerca de 80 KB de resultados foram preservados na saída isolada. Isso verifica fluxo e cleanup, não desempenho do export. A suíte Editor V6 (23 testes Node, 787 Vitest aprovados e 1 ignorado), typecheck, auditoria e build passaram.

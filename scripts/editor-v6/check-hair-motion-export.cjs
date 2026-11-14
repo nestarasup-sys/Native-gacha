@@ -5,6 +5,7 @@ const { createHash } = require('node:crypto')
 const { basename, join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
+const { removeEditorV6TemporaryFixture } = require('./temporaryFixture.cjs')
 
 async function main() {
   const root = resolve(__dirname, '../..')
@@ -19,7 +20,7 @@ async function main() {
   const child = spawn(require('electron'), [entry, root, folder, ...process.argv.slice(2)], { windowsHide: true, stdio: 'inherit', env })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   if (code !== 0) {
-    await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'failed', exitCode: code, fixtureDirectory: basename(folder) }))
+    await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'failed', exitCode: code, fixtureDirectory: basename(folder), fixtureDirectoryCleaned: false }))
     process.exitCode = typeof code === 'number' ? code : 1
     return
   }
@@ -37,7 +38,11 @@ async function main() {
     manifest.push({ file: `artifacts/${name}`, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') })
   }
   await writeFile(join(output, 'artifact-manifest.json'), JSON.stringify({ syntheticOnly: true, artifacts: manifest }, null, 2))
-  await writeFile(join(output, 'result.json'), JSON.stringify({ ...result, fixtureDirectory: basename(folder) }, null, 2))
+  const completedResult = { ...result, fixtureDirectory: basename(folder), fixtureDirectoryCleaned: false }
+  await writeFile(join(output, 'result.json'), JSON.stringify(completedResult, null, 2))
+  await removeEditorV6TemporaryFixture(folder, 'editor-v6-hair-motion-')
+  completedResult.fixtureDirectoryCleaned = true
+  await writeFile(join(output, 'result.json'), JSON.stringify(completedResult, null, 2))
 }
 
 main().catch(error => { console.error(error); process.exitCode = 1 })
