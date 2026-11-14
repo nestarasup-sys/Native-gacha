@@ -169,3 +169,11 @@ Cada janela de exportação registrava listeners de `closed` e `render-process-g
 Um teste de regressão confirma que `render-process-gone` está registrado durante a vida do worker e ausente após `worker.close()`. Verificações desta alteração: worker focado (18/18), suíte Editor V6 (179 arquivos passaram, 1 ignorado; 808 testes passaram, 1 ignorado), typecheck e auditoria de arquitetura (878 arquivos, sem imports locais ausentes ou violações).
 
 Próximo: continuar pelas medições existentes para localizar um gargalo reproduzível; depois investigar o `-36861` e export longo em sessão controlada. A mudança de listeners, isoladamente, não corrige nem explica o crash histórico.
+
+### Verificação Electron integrada subsequente
+
+`npm run test:editor-v6:export` passou depois da limpeza dos listeners. O harness confirmou 81 quadros, duas janelas worker no pico, cancelamento preservando o destino e export sintético com boca de 301 quadros. A captura Full HD produziu 60/60 imagens únicas; o comparador por camada passou em 41/41 capturas de cena sintética com vídeo, cabelo e expressão. Nenhum worker permaneceu aberto ao final da comparação.
+
+No perfil único 1080p, 60 quadros levaram 3,017 s; `capturePage` somou 1,281 s (p50 18,2 ms, p95 34,6 ms), conversão/cópia do bitmap 0,246 s (p50 3,5 ms, p95 7,1 ms) e FFmpeg write 0,324 s. Houve 7 readbacks obsoletos em 60 quadros. `paint-event` levou 4,319 s no mesmo harness, acima do caminho de página; portanto continua só diagnóstico. O PC não estava em condição controlada, então estes valores localizam etapas, mas não são benchmark comparável nem prova de ganho.
+
+A fixture sintética de fala percorreu 301 quadros em 1,806 s e mediu RSS do processo principal de 166.600.704 bytes. Essa medição não inclui a memória conjunta de renderer, GPU e FFmpeg. O teste preservou os dois vídeos sintéticos em `out/editor-v6-export-check` (aprox. 67 KB e 11 KB); o diretório temporário de trabalho foi removido pelo harness.

@@ -567,3 +567,11 @@ O modo diagnóstico `compare-paint` agora identifica no erro qual camada divergi
 Um primeiro passe calculou hash numa região vazia e acusou ausência de movimento. A inspeção do quadro mostrou que o personagem ficava mais à direita; o recorte sintético foi corrigido para cobrir a cabeça. A rodada final passou com oito regiões de cabelo distintas. O teste mede uma fixture SVG criada pelo harness, não personagem real ou projeto salvo.
 
 **Verificação:** harness Electron completo aprovado; worker focado (18 testes); suíte Editor V6 (179 arquivos aprovados, 1 ignorado; 808 aprovados, 1 ignorado); typecheck e auditoria de arquitetura (878 arquivos) passaram. Foi usado somente conteúdo sintético. Próximo: repetir os perfis A/B sob carga controlada, medir mais cenas complexas e investigar `-36861` no projeto longo quando houver uma janela específica de exportação.
+
+### Harness repetido após cleanup do worker — 14/11/2026
+
+`npm run test:editor-v6:export` passou novamente após o cleanup explícito dos listeners de cada worker. Resultado funcional: 81 quadros na exportação integrada, dois workers no pico, destino preservado no cancelamento, 60 quadros Full HD únicos e 41/41 comparações BGRA por camada numa cena sintética com vídeo/cabelo/expressão. A fixture de fala exportou 301 quadros. Nenhum worker de comparação ficou aberto.
+
+O perfil 1080p de 60 quadros levou 3,017 s: captura `capturePage` total 1,281 s (p50 18,2 ms, p95 34,6 ms), bitmap 0,246 s (p50 3,5 ms, p95 7,1 ms) e escrita FFmpeg 0,324 s. Foram observados 7 readbacks obsoletos. `paint-event` levou 4,319 s, mais que `capturePage`, e teve cauda de espera maior; fica fora do fluxo padrão. A fixture complexa em camadas levou 2,690 s.
+
+O PC não estava sob carga controlada. Estes dados justificam investigar captura/recomposição e readbacks obsoletos, mas não permitem alegar ganho nem projetar o tempo do MP4 longo. O harness deixou `export-check.mp4` (~67 KB) e `mouth-stress.mp4` (~11 KB) em `out/editor-v6-export-check`; o restante da fixture temporária foi removido pelo script.
