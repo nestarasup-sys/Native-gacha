@@ -36,7 +36,10 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
     }
     const { canvas, context } = surface
     const resting = reuseRestHair && !hairMotionPoseReactionIsActive(poseReactionEnds?.get(element.id) ?? [], frame)
-    if (resting && readyRestSurfaces.has(canvasKey)) return canvas
+    if (resting && readyRestSurfaces.has(canvasKey)) {
+      metrics.hairCompositeReuseFrames = (metrics.hairCompositeReuseFrames ?? 0) + 1
+      return canvas
+    }
     readyRestSurfaces.delete(canvasKey)
     const clearStarted = performance.now()
     context.clearRect(0, 0, canvas.width, canvas.height)

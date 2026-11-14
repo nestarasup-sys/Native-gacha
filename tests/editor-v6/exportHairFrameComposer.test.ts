@@ -74,7 +74,7 @@ describe('createEditorV6ExportHairFrameComposer', () => {
 
     expect(nextMouth).toBe(first)
     expect(order).toHaveLength(8)
-    expect(metrics).toEqual({ hairRasterFrames: 1, hairRasterPixels: 80 })
+    expect(metrics).toEqual({ hairRasterFrames: 1, hairRasterPixels: 80, hairCompositeReuseFrames: 1 })
 
     factory.composeHairFrame(baseRig, element, 11, {}, metrics)
     factory.composeHairFrame(baseRig, element, 12, {}, metrics)
@@ -83,12 +83,12 @@ describe('createEditorV6ExportHairFrameComposer', () => {
     factory.composeHairFrame(baseRig, element, 40, {}, metrics)
     factory.composeHairFrame(baseRig, element, 41, {}, metrics)
     expect(order).toHaveLength(32)
-    expect(metrics).toEqual({ hairRasterFrames: 4, hairRasterPixels: 320 })
+    expect(metrics).toEqual({ hairRasterFrames: 4, hairRasterPixels: 320, hairCompositeReuseFrames: 2 })
 
     factory.composeHairFrame({ ...baseRig, assetId: 'new-pose' }, element, 42, {}, metrics)
     expect(factory.hairFrameCanvases.size).toBe(2)
     expect(order).toHaveLength(40)
-    expect(metrics).toEqual({ hairRasterFrames: 5, hairRasterPixels: 400 })
+    expect(metrics).toEqual({ hairRasterFrames: 5, hairRasterPixels: 400, hairCompositeReuseFrames: 2 })
   })
 
   it('keeps independent rasterization for non-opted-in or continuous hair', () => {

@@ -135,6 +135,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
         const { assetSources, ...payloadData } = workerData
         return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
+          reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
           ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)
       },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress

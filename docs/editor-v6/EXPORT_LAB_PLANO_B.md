@@ -97,3 +97,30 @@ Cada exportação do Plano B **reconstrói as transições de pose/expressão do
 
 **A reutilização de trabalho idêntico dentro da mesma execução continua**: grupos com a mesma chave de transição compartilham o atlas recém-preparado, rigs/materiais permanecem na sessão temporária e o cache de memória de bake é separado por um escopo aleatório de cada exportação, liberado no encerramento. Isso não exclui arquivos de cache do disco nem modifica a timeline persistida pelo usuário. Preparar tudo do zero pode **aumentar a duração de exportações repetidas**; a intenção é previsibilidade e isolamento, não prometer uma aceleração automática.
 
+
+
+## Experimento renderização vs. composição do cabelo (sem cache entre exportações)
+
+O Plano B passa a ter **duas otimizações estruturais independentes** no renderizador:
+
+1. **Compositor do cabelo em repouso.** Quando o preset de cabelo é de reação única após a pose, a composição do personagem em `canvas` não é limpa nem reconstruída a cada alteração do recorte SVG da boca. A superfície só é reconstruída ao entrar em reação, durante o movimento real, ao voltar ao repouso e ao trocar o rig/pose. O contador `frameMetrics.hairCompositeReuseFrames` registra quantas recomposições completas foram evitadas. Este reaproveitamento é **apenas memória de um worker da exportação atual**, não o cache persistente entre exportações que foi desativado na preparação.
+
+2. **Captura orientada pelo token, sem espera por vsync extra.** Depois do commit React síncrono, o worker muda o token de 24 células e entrega o controle à captura, sem pedir um `requestAnimationFrame` adicional. `capturePage` continua verificando os bytes reais do token e repetindo capturas que ainda tenham pixels antigos. O modo anterior pode ser reativado para comparação: `GACHA_EDITOR_V6_RAF_GATE=1`.
+
+Para fazer um A/B na mesma build e com os mesmos arquivos, use PowerShell e **reinicie o app após ajustar as variáveis**, porque são enviadas aos workers no início da exportação. Para o controle antigo:
+
+```powershell
+$env:GACHA_EDITOR_V6_RAF_GATE = '1'
+$env:GACHA_EDITOR_V6_REUSE_REST_HAIR = '0'
+npm run dev
+```
+
+Para o novo comportamento:
+
+```powershell
+Remove-Item Env:\GACHA_EDITOR_V6_RAF_GATE -ErrorAction SilentlyContinue
+Remove-Item Env:\GACHA_EDITOR_V6_REUSE_REST_HAIR -ErrorAction SilentlyContinue
+npm run dev
+```
+
+Executar o mesmo trecho longo (idealmente os seis minutos) com as mesmas opções CPU/AMF. Verificar nos relatórios `attempts[].parts[].frameRafGate`, `frameRestHairReuse`, `frameTiming.rafWaitMs`, `capturePageMs`, `captureStaleReadbacks`, `frameMetrics.hairRasterFrames`, `hairCompositeReuseFrames`, `phaseMilliseconds.motionPreparation`, `phaseMilliseconds.rendering`, além do tempo total. Uma redução apenas em `rafWaitMs` **não garante** exportação mais rápida se `capturePageMs` ou FFmpeg compensarem a diferença. O teste ainda precisa validar conteúdo e número de quadros, especialmente na saída/entrada de poses e após a reação do cabelo. A implementação foi publicada sem medição do hardware Windows.
