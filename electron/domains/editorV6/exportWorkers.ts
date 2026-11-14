@@ -4,6 +4,7 @@ import { waitForExport } from './exportProcess'
 import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { createEditorV6PaintFrameCapture, type EditorV6PaintFrameCapture } from './exportFrameCapture'
 import { createEditorV6WorkerRegistry } from './exportWorkerRegistry'
+import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 import { createEditorV6WorkerFrameRenderer, type EditorV6WorkerFrameRenderer } from './exportWorkerFrameRenderer'
 import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } from './exportWorkerWindow'
 
@@ -13,11 +14,11 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
   const registry = createEditorV6WorkerRegistry(deps.ipcMain)
   const activeWorkers = new Set<() => void>()
   let disposed = false
-  const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal): Promise<EditorV6FrameWorker> => {
+  const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal, assetSources?: EditorV6WorkerAssetSources): Promise<EditorV6FrameWorker> => {
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
-    const window = createEditorV6WorkerWindow(payload, deps)
+    const window = createEditorV6WorkerWindow(payload, deps, assetSources)
     const id = window.webContents.id
     const registration = registry.register(id, payload)
     const workerController = new AbortController()
