@@ -161,3 +161,11 @@ Estava investigando gargalos e estabilidade da exportação do Editor V6 sem usa
 ### Estado de uso
 
 O app segue utilizável nos fluxos cobertos pelas verificações automatizadas. O exportador de produção não foi trocado nesta etapa. A estabilidade do export longo de 12 minutos ainda é uma pendência real: o harness sintético não reproduziu o encerramento `-36861`, então não se deve afirmar que esse caso foi corrigido ou validado.
+
+## Continuação após o checkpoint — cleanup de listeners do worker
+
+Cada janela de exportação registrava listeners de `closed` e `render-process-gone`, mas o encerramento explícito do worker não os removia antes de destruir a janela. O cleanup agora remove os dois listeners no mesmo ponto que encerra captura, registro e sinal de cancelamento. Isso torna o ciclo de vida explícito e evita callbacks de falha associados a workers já encerrados.
+
+Um teste de regressão confirma que `render-process-gone` está registrado durante a vida do worker e ausente após `worker.close()`. Verificações desta alteração: worker focado (18/18), suíte Editor V6 (179 arquivos passaram, 1 ignorado; 808 testes passaram, 1 ignorado), typecheck e auditoria de arquitetura (878 arquivos, sem imports locais ausentes ou violações).
+
+Próximo: continuar pelas medições existentes para localizar um gargalo reproduzível; depois investigar o `-36861` e export longo em sessão controlada. A mudança de listeners, isoladamente, não corrige nem explica o crash histórico.

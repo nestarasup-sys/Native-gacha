@@ -93,7 +93,9 @@ describe('export worker lifecycle', () => {
     const resourcePolicy = window.webContents.session.webRequest.onBeforeRequest.mock.calls[0][0]
     resourcePolicy({ url: 'gacha-editor-media://project/id/file.mp4', resourceType: 'media' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(false))
     resourcePolicy({ url: 'https://example.com/untrusted.js', resourceType: 'script' }, (decision: { cancel: boolean }) => expect(decision.cancel).toBe(true))
+    expect(window.webContents.listenerCount('render-process-gone')).toBe(1)
     worker.close()
+    expect(window.webContents.listenerCount('render-process-gone')).toBe(0)
     expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledOnce()
     expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledWith('gacha-editor-media')
     factory.dispose()

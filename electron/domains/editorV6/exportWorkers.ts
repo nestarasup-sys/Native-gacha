@@ -32,6 +32,8 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
       frameRenderer?.close()
       paintCapture?.close()
       signal.removeEventListener('abort', abort)
+      window.removeListener('closed', close)
+      window.webContents.removeListener('render-process-gone', onRenderProcessGone)
       if (!workerController.signal.aborted) workerController.abort(Error('O renderizador de exportação foi encerrado: a janela foi fechada.'))
       registration.rejectReady(Error('O renderizador de exportação foi encerrado: a janela foi fechada.'))
       if (!window.isDestroyed()) window.destroy()
