@@ -126,6 +126,9 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       counters: result,
       timingAccumulators,
       frameMetrics,
+      // CapturePage/toBitmap owns its BGRA buffer; layered exports reuse one.
+      // Set GACHA_EDITOR_V6_FRAME_OVERLAP=0 for a comparable serial A/B run.
+      overlapEncoding: !layeredVideo && process.env.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0',
       writeFrame: (bitmap) => waitForExport(
         new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap, (error) => {
           if (!error) { resolve(); return }
