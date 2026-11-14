@@ -54,11 +54,21 @@ Isso não garante o cenário do projeto longo, a duração total do export, a au
 ## Próximos passos ao retomar
 
 1. Permanecer na `Dev-V2`; não trocar para a branch Lab nem sincronizar com GitHub sem pedido.
-2. Priorizar o caminho de renderização por quadro: o perfil histórico aponta 88,9 s acumulados de round-trip, 57,4 s de escrita FFmpeg, 48,1 s de desenho IPC, 39,4 s de captura e 24,7 s de espera RAF em um export aquecido; são contadores sobrepostos, não somáveis.
-3. Quando houver condição de medir sem interferência, comparar a mesma exportação longa com parâmetros e máquina iguais, registrando duração, RSS dos processos e logs do Electron/FFmpeg. Usar projeto pessoal somente quando necessário e sem modificar seus dados.
-4. Investigar o `-36861` a partir de logs e perfis de processo; o harness curto não é evidência suficiente para atribuir causa.
-5. Repetir o teste específico de transições/flip e fazer inspeção visual no app quando a sessão permitir.
-6. Para cada alteração: revisão do diff, teste focado, suíte V6, typecheck, auditoria, build, checkpoint atualizado e commit local. Não fazer push sem solicitação.
+2. **Ponto exato da pausa:** estava mapeando o round-trip de cada frame entre `exportWorkers.ts`, `exportWorkerFrameRenderer.ts` e o renderer. O worker chama `executeJavaScript` para desenhar, captura o bitmap reutilizável e, em modo de camadas, desenha/captura fundo e primeiro plano sequencialmente. Não houve alteração de código depois de `e945e2b9`; o worktree versionado está limpo.
+3. **Leitura seguinte:** examinar individualmente `exportPartRenderer.ts`, `exportAttemptRenderer.ts`, `exportFrameCapture.ts` e `exportFramePipeline.ts`, seus chamadores e testes. Localizar o custo evitável sem remover sincronização de pintura, captura validada, paridade visual ou proteção de cancelamento. Experimentos anteriores de captura antecipada e remoção de espera causaram divergência e não devem ser repetidos sem teste de paridade apropriado.
+4. **Escolha da próxima mudança:** só depois desse mapa implementar uma otimização pequena e mensurável. Primeiro adicionar/ajustar teste de regressão e, se a mudança tiver efeito isolável, microbenchmark; não inferir ganho no MP4 a partir de microbenchmark.
+5. Priorizar o caminho de renderização por quadro: o perfil histórico aponta 88,9 s acumulados de round-trip, 57,4 s de escrita FFmpeg, 48,1 s de desenho IPC, 39,4 s de captura e 24,7 s de espera RAF em um export aquecido; são contadores sobrepostos, não somáveis.
+6. Quando houver condição de medir sem interferência, comparar a mesma exportação longa com parâmetros e máquina iguais, registrando duração, RSS dos processos e logs do Electron/FFmpeg. Usar projeto pessoal somente quando necessário e sem modificar seus dados.
+7. Investigar o `-36861` a partir de logs e perfis de processo; o harness curto não é evidência suficiente para atribuir causa.
+8. Repetir o teste específico de transições/flip e fazer inspeção visual no app quando a sessão permitir.
+9. Para cada alteração: revisar o diff, rodar o teste focado, suíte V6, typecheck, auditoria e build conforme o escopo, atualizar este checkpoint e criar commit local. Não fazer push sem solicitação.
+
+## Registro da pausa solicitada
+
+- O código otimizado e a documentação da retomada anterior já estão salvos no commit local `e945e2b9`; não havia edição de código pendente quando este checkpoint foi escrito.
+- Esta atualização registra a leitura técnica em andamento e uma sequência concreta de investigação para a próxima retomada. Ela não interrompe o objetivo contínuo de melhorar confiabilidade e desempenho do Editor V6.
+- A branch permanece `Dev-V2`, 68 commits à frente de `origin/Dev-V2`. Nenhum push foi feito.
+- Os quatro caminhos não rastreados listados abaixo já existiam e foram preservados; eles não fazem parte deste checkpoint nem devem ser removidos como limpeza.
 
 ## Arquivos locais preservados
 
