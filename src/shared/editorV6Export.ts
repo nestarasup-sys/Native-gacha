@@ -27,7 +27,7 @@ export type EditorV6ExportStatus = {
   frames: number; totalFrames: number; message: string; fallback: boolean; testMode?: EditorV6ExportTestMode; totalExportMilliseconds?: number; motionProgress?: { completed: number; total: number }; outputPath?: string; reportPath?: string; error?: string
 }
 export type EditorV6ExportPart = { index: number; startFrame: number; endFrame: number }
-export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; sourceAssetId?: string; baseAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; facePatchSourceCrop?: { left: number; top: number; width: number; height: number }; frames: EditorV6MotionFrame[] }
+export type EditorV6ExportMouthLoopState = { elementId: string; characterId: string; blockIds: string[]; assetId: string; sourceAssetId?: string; baseAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; baseSourceAssetIds?: Partial<Record<'talk' | 'talk-blink', string>>; facePatchSourceCrop?: { left: number; top: number; width: number; height: number }; frames: EditorV6MotionFrame[] }
 export type EditorV6ExportMouthLoops = { startFrame: number; cycleFrames: number; states: EditorV6ExportMouthLoopState[] }
 
 /** Resolve the useful export end when removed content left a longer stored timeline behind. */

@@ -14,7 +14,9 @@ export function createEditorV6ExportMouthLoopResolver(project: Pick<EditorV6Docu
   for (const state of mouthLoops?.states ?? []) {
     for (const blockId of state.blockIds) mouthLoopByBlock.set(`${state.elementId}:${blockId}`, state)
     if (state.facePatchSourceCrop) patchSourceCropByAssetId.set(state.assetId, state.facePatchSourceCrop)
-    if (state.sourceAssetId) for (const baseAssetId of Object.values(state.baseAssetIds ?? {})) mouthlessSourceAssetById.set(baseAssetId, state.sourceAssetId)
+    for (const [mode, baseAssetId] of Object.entries(state.baseAssetIds ?? {})) {
+      if (baseAssetId) mouthlessSourceAssetById.set(baseAssetId, state.baseSourceAssetIds?.[mode as 'talk' | 'talk-blink'] ?? state.sourceAssetId ?? baseAssetId)
+    }
   }
 
   const hairSourceAssetId = (element: { assetId?: string }) => element.assetId ? mouthlessSourceAssetById.get(element.assetId) ?? element.assetId : undefined

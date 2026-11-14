@@ -27,7 +27,7 @@ function mouthLoops(overrides: Partial<EditorV6ExportMouthLoops['states'][number
   return {
     startFrame: 0,
     cycleFrames: 30,
-    states: [{ elementId: 'actor', characterId: 'character', blockIds: ['character-block'], assetId: 'mouth-atlas', sourceAssetId: 'mouthless-source', baseAssetIds: { talk: 'talk-base', 'talk-blink': 'talk-blink-base' }, facePatchSourceCrop: { left: 3, top: 4, width: 80, height: 90 }, frames, ...overrides }]
+    states: [{ elementId: 'actor', characterId: 'character', blockIds: ['character-block'], assetId: 'mouth-atlas', sourceAssetId: 'mouthless-source', baseAssetIds: { talk: 'talk-base', 'talk-blink': 'talk-blink-base' }, baseSourceAssetIds: { talk: 'talk-source', 'talk-blink': 'talk-blink-source' }, facePatchSourceCrop: { left: 3, top: 4, width: 80, height: 90 }, frames, ...overrides }]
   }
 }
 
@@ -39,8 +39,8 @@ describe('createEditorV6ExportMouthLoopResolver', () => {
   it('maps mouthless base assets to their source for hair-rig lookup', () => {
     const resolver = createEditorV6ExportMouthLoopResolver(project(), mouthLoops())
 
-    expect(resolver.hairSourceAssetId({ assetId: 'talk-base' })).toBe('mouthless-source')
-    expect(resolver.hairSourceAssetId({ assetId: 'talk-blink-base' })).toBe('mouthless-source')
+    expect(resolver.hairSourceAssetId({ assetId: 'talk-base' })).toBe('talk-source')
+    expect(resolver.hairSourceAssetId({ assetId: 'talk-blink-base' })).toBe('talk-blink-source')
     expect(resolver.hairSourceAssetId({ assetId: 'unrelated' })).toBe('unrelated')
     expect(resolver.facePatchSourceCrop('mouth-atlas')).toEqual({ left: 3, top: 4, width: 80, height: 90 })
   })
