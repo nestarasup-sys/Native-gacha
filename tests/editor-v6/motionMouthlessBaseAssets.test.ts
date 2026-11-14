@@ -62,7 +62,11 @@ describe('Editor V6 mouthless base assets', () => {
       cropCalls.push(bounds)
       return canvas(bounds.width, bounds.height)
     })
-    const render = vi.fn(async () => { throw Error('A imagem de referência não deve ser renderizada duas vezes.') })
+    const blink = frame(renderer)
+    const render = vi.fn(async (_progress: number, mode?: string) => {
+      if (mode !== 'talk-blink') throw Error('A imagem de referência não deve ser renderizada duas vezes.')
+      return blink
+    })
     const result = await prepareEditorV6MouthlessBaseAssets({
       from, baseline, render, isolatedBaseline: isolated,
       requiredCrop: { left: 14, top: 15, width: 12, height: 9 },
@@ -72,7 +76,9 @@ describe('Editor V6 mouthless base assets', () => {
     expect(result.sourceCrop).toEqual({ left: 2, top: 3, width: 24, height: 24 })
     expect(cropCalls).toEqual([result.sourceCrop, result.sourceCrop])
     expect(result.isolatedBaseline).toBe(isolated)
-    expect(render).not.toHaveBeenCalled()
+    expect(render).toHaveBeenCalledOnce()
+    expect(render.mock.calls[0][1]).toBe('talk-blink')
+    expect(blink.dispose).toHaveBeenCalledOnce()
     expect(isolated.dispose).not.toHaveBeenCalled()
     expect(baseline.dispose).not.toHaveBeenCalled()
   })
