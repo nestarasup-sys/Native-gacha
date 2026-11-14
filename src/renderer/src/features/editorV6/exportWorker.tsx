@@ -6,11 +6,12 @@ import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResou
 import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
 import { createEditorV6ExportFrameRenderer } from './exportFrameRenderer'
+import { createEditorV6ExportPaintHandoff } from './exportPaintHandoff'
 import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } from './exportWorkerSurface'
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
-  const { project, width, height, layeredVideo, includeSpeechMouth = true, mouthLoops, hairAnimation } = await worker.payload()
+  const { project, width, height, layeredVideo, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false } = await worker.payload()
   const surface = createEditorV6ExportWorkerSurface(width, height)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
@@ -39,9 +40,10 @@ async function initialize() {
       return pending ? Promise.all(pending).then(() => undefined) : undefined
     },
     setPaintToken,
-    // capturePage validates this exact paint with the per-frame token and retries a stale readback.
-    // One refresh handoff avoids an unconditional second display interval on every exported frame.
-    waitForPaintFrame: () => new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+    // The main process checks paint-token pixels and retries stale readbacks.
+    // Do not force a 60Hz display tick here unless explicitly benchmarking the
+    // legacy path; otherwise the UI can be ready before the next vsync.
+    waitForPaintFrame: createEditorV6ExportPaintHandoff(waitForRaf)
   })
   ;(window as unknown as { renderEditorV6ExportFrame: typeof renderFrame }).renderEditorV6ExportFrame = renderFrame
   await worker.ready()
