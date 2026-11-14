@@ -112,11 +112,11 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(result.framePipelineOverlap).toBe(true)
   })
 
-  it('disables frame overlap for layered video and for an explicit A/B baseline', async () => {
+  it('enables safe overlap for layered video but honors the serial A/B baseline', async () => {
     const process = mockProcess()
     vi.mocked(spawnExportProcess).mockReturnValue(process.value)
     const layered = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
-    expect(layered.framePipelineOverlap).toBe(false)
+    expect(layered.framePipelineOverlap).toBe(true)
 
     vi.stubEnv('GACHA_EDITOR_V6_FRAME_OVERLAP', '0')
     const baseline = await renderEditorV6ExportPart(createDependencies())
