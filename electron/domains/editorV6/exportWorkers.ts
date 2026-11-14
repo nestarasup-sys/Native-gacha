@@ -58,13 +58,13 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
-      if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
+      if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.layeredVideo && payload.singlePassLayers ? payload.height * 2 : payload.height, signal)
       frameRenderer = createEditorV6WorkerFrameRenderer({
         window, payload, signal: workerController.signal, captureRetryMilliseconds,
         paintCapture: deps.captureMode === 'paint-event' ? paintCapture : undefined,
         comparePaintCapture: deps.captureMode === 'compare-paint' ? paintCapture : undefined,
         inspectCapture: deps.inspectCapture,
-        doubleBufferLayers: payload.layeredVideo && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+        doubleBufferLayers: payload.layeredVideo && !payload.singlePassLayers && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
       })
       return { close, frame: frameRenderer.frame }
     } catch (error) { close(); throw error }
