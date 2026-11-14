@@ -3,6 +3,7 @@ import type { HairStyle } from '../../../../shared/fabricator'
 import type { CharacterRenderAssetProvider } from '../../../../shared/characterRenderAssets'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 import type { StandardExpressionEffectsCache } from '../../characters/standardExpressionEffects'
+import type { PreparedFaceCatalogItemCache } from '../../characters/preparedFaceCatalogItems'
 import { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
 import type { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import type { EditorV6HairMotionGroup } from './editorV6HairMotionGroups'
@@ -27,6 +28,7 @@ export type PreparedEditorV6HairMotionCharacterGroup = {
   originalRenderer: PreparedRenderer
   hairlessRenderer: PreparedRenderer
   wardrobePair: WardrobePair
+  faceCatalogItemsCache: PreparedFaceCatalogItemCache
 }
 
 export type EditorV6HairMotionCharacterGroupDependencies = {
@@ -71,10 +73,12 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   const hairless: CustomizerCharacter = { ...character, customization: { ...character.customization, hairAppearance: undefined } }
   // Pair only the immutable wardrobe painting; each renderer still composes its own character buffers.
   const wardrobePair = dependencies.createWardrobePair()
+  const faceCatalogItemsCache: PreparedFaceCatalogItemCache = new Map()
   const renderSource = {
     source: resolved.source, artwork: resolved.sourceArtwork, assetProvider: dependencies.assetProvider,
     materialCache: dependencies.materialCache, wardrobePair,
-    expressionEffectsCache: dependencies.expressionEffectsCache
+    expressionEffectsCache: dependencies.expressionEffectsCache,
+    faceCatalogItemsCache
   }
   stageStarted = now()
   const rendererResults = await Promise.allSettled([
@@ -85,6 +89,7 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   if (rendererFailure) {
     for (const result of rendererResults) if (result.status === 'fulfilled') result.value.dispose()
     wardrobePair.clear()
+    faceCatalogItemsCache.clear()
     throw rendererFailure.reason
   }
   const [originalRenderer, hairlessRenderer] = rendererResults.map((result) =>
@@ -93,6 +98,6 @@ export async function prepareEditorV6HairMotionCharacterGroup(
   dependencies.reportStage('prepareCharacterRenderers', stageStarted)
   return {
     groupKey, character, resolved, appearance, references, styles, sourceHeadPart, targetHeadPart,
-    originalRenderer, hairlessRenderer, wardrobePair
+    originalRenderer, hairlessRenderer, wardrobePair, faceCatalogItemsCache
   }
 }

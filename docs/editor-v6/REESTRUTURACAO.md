@@ -1557,3 +1557,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** 100.000 interpolações aquecidas, cinco rodadas com geometrias sintéticas: mediana de 17,38 ms no cálculo completo dos extremos por chamada e 2,42 ms com extremos compilados (86,1% menos nessa operação). Não inclui a resolução da cena, a física completa ou o desenho/export.
 
 **Verificação:** equivalência da trajetória em seis progressos, com giro e mudança de `flipX`; cobertura de IDs duplicados; 11 testes focados, teste Node específico (14), suíte Editor V6 (178 arquivos, 794 aprovados e 1 ignorado), typecheck, auditoria, build e harness integrado de cabelo passaram. Nenhum projeto real foi exportado.
+
+### Continuação na `Dev-V2` — compartilhar leituras faciais entre renderizadores pareados
+
+**Mudança:** o renderizador normal e o sem cabelo da mesma pose passam a compartilhar promessas de leitura de itens do catálogo facial. A cache vive apenas durante a preparação daquele par; o renderer ainda mantém seu cache local, e falhas removem a promessa compartilhada e a local para permitir nova tentativa. Chaves incluem o `modelSlot`; nenhuma cache entre exportações foi criada.
+
+**Verificação:** testes confirmam deduplicação concorrente, retenção dentro do par, isolamento por slot, nova tentativa após falha e uso da mesma cache pelos dois renderizadores. A suíte Editor V6 passou com 179 arquivos, 796 testes aprovados e 1 ignorado; typecheck, auditoria de arquitetura (878 arquivos), build e harness Electron de cabelo passaram. O harness falhou uma vez na checagem fixa de 2 px para `flipX` individual de uma fixture sem transições de pose e passou na repetição, sem alteração da tolerância. A fixture integrada não mede o custo real de leitura do catálogo no projeto de estresse.

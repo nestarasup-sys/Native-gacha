@@ -79,7 +79,7 @@ export async function prepareEditorV6HairMotionBundle(
       isCancelled
     })
     if (!prepared) return
-    const { character, appearance, references, styles, sourceHeadPart, targetHeadPart, originalRenderer, hairlessRenderer, wardrobePair } = prepared
+    const { character, appearance, references, styles, sourceHeadPart, targetHeadPart, originalRenderer, hairlessRenderer, wardrobePair, faceCatalogItemsCache } = prepared
     let groupStageStarted: number
     try {
       groupStageStarted = performance.now()
@@ -118,7 +118,7 @@ export async function prepareEditorV6HairMotionBundle(
         isCancelled
       })
       rigs.push(...groupRigs)
-    } finally { originalRenderer.dispose(); hairlessRenderer.dispose(); wardrobePair.clear() }
+    } finally { originalRenderer.dispose(); hairlessRenderer.dispose(); wardrobePair.clear(); faceCatalogItemsCache.clear() }
   }, isCancelled, 2)
   if (isCancelled()) throw Error('Preparação da animação de cabelo cancelada.')
   materialCache.clear()

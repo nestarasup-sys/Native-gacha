@@ -58,6 +58,8 @@ describe('preparação de grupo de personagem para movimento de cabelo', () => {
     })
     expect(deps.values.prepareRenderer.mock.calls[0][1]?.expressionEffectsCache)
       .toBe(deps.values.prepareRenderer.mock.calls[1][1]?.expressionEffectsCache)
+    expect(deps.values.prepareRenderer.mock.calls[0][1]?.faceCatalogItemsCache)
+      .toBe(deps.values.prepareRenderer.mock.calls[1][1]?.faceCatalogItemsCache)
     expect(profiler.snapshot()).toEqual([
       { name: 'resolveSavedCharacterSource', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },
       { name: 'loadHairStyles', samples: 1, totalMilliseconds: 1, maxMilliseconds: 1 },

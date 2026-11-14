@@ -20,6 +20,7 @@ import { createCharacterCanvas } from './canvasSurface'
 import { createGachaPairedResource, type GachaPairedResource } from './pairedCharacterPreparation'
 import { createCharacterWardrobeRenderer } from './characterWardrobeRenderer'
 import { loadStandardExpressionEffects, type StandardExpressionEffects, type StandardExpressionEffectsCache } from './standardExpressionEffects'
+import { createPreparedFaceCatalogItemLoader, type PreparedFaceCatalogItemCache } from './preparedFaceCatalogItems'
 export { loadCachedImage } from './editorV6CharacterImageMemos'
 export { withCharacterHeadSize, characterShapeScale } from './characterSourceResolver'
 export type { CatalogArtwork } from './characterSourceResolver'
@@ -98,6 +99,7 @@ type EditorV6CharacterRendererSource = {
   materialCache?: GachaReusableMaterialCache
   wardrobePair?: GachaPreparedWardrobePair
   expressionEffectsCache?: StandardExpressionEffectsCache
+  faceCatalogItemsCache?: PreparedFaceCatalogItemCache
 }
 
 export async function materialsForPreparedCharacter(
@@ -133,11 +135,11 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
   const wardrobe = await (renderSource?.wardrobePair ? renderSource.wardrobePair.load(prepareWardrobe) : prepareWardrobe())
 
   const appearance = character.customization.faceAppearance
+  const loadFaceCatalogItem = createPreparedFaceCatalogItemLoader(modelSlot, assetProvider, renderSource?.faceCatalogItemsCache)
   const expressionEffectsByIndex = appearance?.modelSlot === modelSlot
     ? await loadStandardExpressionEffects(modelSlot, assetProvider, renderSource?.expressionEffectsCache).catch((): StandardExpressionEffects => ({}))
     : {}
   let faceItems: Partial<Record<FaceSheetKind | FaceElementKind, FaceCatalogItem>> = {}
-  const faceItemPromises = new Map<string, Promise<FaceCatalogItem | null>>()
   let faceCatalogSummariesPromise: Promise<FaceCatalogItemSummary[]> | null = null
   const resolveClosedEye = createClosedEyeAssetResolver(modelSlot, assetProvider)
   let legacyFaceUrl: string | null = null
@@ -149,7 +151,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
         ['eye-left', appearance.eyeLeftCatalogId ?? undefined], ['eye-right', appearance.eyeRightCatalogId ?? undefined], ['brow-left', appearance.eyebrowLeftCatalogId ?? undefined], ['brow-right', appearance.eyebrowRightCatalogId ?? undefined],
         ['mouth-closed', appearance.mouthClosedCatalogId], ['mouth-open', appearance.mouthOpenCatalogId]
       ]
-      const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await assetProvider.loadFaceCatalogItem(modelSlot, id)] as const))
+      const entries = await Promise.all(selections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => [category, await loadFaceCatalogItem(id)] as const))
       for (const [category, item] of entries) if (item) faceItems[category] = item
     } else if (appearance.setId) {
       const face = await assetProvider.loadFaceSet(modelSlot, appearance.setId)
@@ -230,13 +232,7 @@ export async function prepareSavedCharacterRenderer(character: CustomizerCharact
       await Promise.all(neededSelections.filter((entry): entry is [FaceSheetKind | FaceElementKind, string] => Boolean(entry[1])).map(async ([category, id]) => {
         let item = faceItems[category]?.id === id ? faceItems[category] : null
         if (!item) {
-          const key = `${category}:${id}`
-          let pending = faceItemPromises.get(key)
-          if (!pending) {
-            pending = assetProvider.loadFaceCatalogItem(modelSlot, id)
-            faceItemPromises.set(key, pending)
-          }
-          item = await pending ?? null
+          item = await loadFaceCatalogItem(id) ?? null
           if (item) faceItems[category] = item
         }
         if (item) activeItems[category] = item

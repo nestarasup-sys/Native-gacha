@@ -461,3 +461,9 @@ Em microteste sintético com 20 camadas e 20.000 chamadas, a mediana caiu de 44,
 Cada transição armazena em `WeakMap` os pontos físicos fixos dos dois extremos, evitando recalcular âncoras, escala, seno/cosseno e geometria de pose em cada amostra. O loop que indexa personagens por quadro também preenche o `Map` diretamente e conserva o último item por ID, removendo os arrays temporários de `filter` e `map`.
 
 Microteste de 100.000 pontos de trajetória: mediana 17,38 ms com os extremos recalculados em cada ponto e 2,42 ms com os extremos compilados (86,1% nessa operação isolada). Testes focados (11), teste Node de cabelo (14), suíte (178 arquivos, 794 aprovados e 1 ignorado), typecheck, auditoria, build e harness Electron de cabelo passaram. A medição não representa o export inteiro; falta comparação A/B do mesmo projeto de estresse.
+
+### Continuação 2026-11-13 — deduplicar leituras de itens faciais por par de renderizadores
+
+O renderer normal e o sem cabelo agora compartilham as promessas `loadFaceCatalogItem` apenas durante uma preparação de pose. Se o mesmo ID é pedido pelos dois, o provedor é chamado uma vez; uma rejeição não fica presa na cache e pode ser repetida. A cache não sobrevive ao par nem à exportação.
+
+Testes focados (5) confirmam o compartilhamento e a recuperação de falha. Suíte Editor V6 (179 arquivos, 796 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos) e build passaram. O harness de cabelo falhou uma vez no limite fixo de 2 px de `flipX` individual numa fixture sem transições e passou na repetição; o limite foi mantido. Ainda não foi medido o tempo real de leitura nem a duração total do export.
