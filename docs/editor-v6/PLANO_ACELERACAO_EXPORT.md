@@ -314,7 +314,7 @@ O SSIM dos 5.700 quadros entre A1 e B1 foi 0,999888 (Y 0,999872, U 0,999923, V 0
 ## 5. Usar melhor CPU, GPU e memória — prioridade após reduzir desperdício
 
 - Comparar um e dois workers com o mesmo projeto. Testar quantidades maiores apenas como experimento limitado por recursos, sem aumentar o padrão automaticamente.
-- Investigar fila dinâmica de partes: partes desiguais em custo não devem deixar um worker ocioso enquanto outro termina sozinho.
+- Fila dinâmica implementada: workers livres recebem o próximo trecho sem aguardar o restante do lote; confirmar impacto no tempo total com comparação A/B no projeto de estresse.
 - Equilibrar tamanho dos trechos, custo de abertura e reutilização de workers. Mais partes também aumentam preparação, emendas e validações.
 - Respeitar pressão de memória e limites de sessões do encoder. Limitar tanto tarefas quanto bytes em trânsito; manter contrapressão na escrita do FFmpeg.
 - Comparar encoder por hardware e CPU no tempo total e na qualidade. Alterações de parâmetros precisam preservar compatibilidade entre partes.
@@ -364,6 +364,12 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 4. **Quadros:** reduzir resolução de cena, commits, captura ou cópias conforme o maior custo restante.
 5. **Agendamento e encoder:** testar distribuição de partes e limites de concorrência.
 6. **Experimentos estruturais:** executar somente os que atacarem gargalos comprovados.
+
+### Continuação 2026-11-13 — fila dinâmica de trechos
+
+O scheduler deixou de aguardar todos os trechos de um grupo fixo. Cada worker agora puxa o próximo trecho assim que termina o atual, sem elevar o limite de concorrência configurado. Isso reduz ociosidade quando há trechos com custos diferentes; testes sintéticos confirmam que um worker pode começar o terceiro trecho enquanto o primeiro ainda está ativo.
+
+Os relatórios continuam sendo gravados após cada lote equivalente ao número de workers e no lote final. Falhas de renderização ou de gravação param novas atribuições, abortam os trechos ativos e aguardam sua saída. A mudança foi verificada com a suíte do Editor V6, typecheck, auditoria e build. Ainda não há medição A/B no projeto de estresse, então não atribuo ganho de duração total à alteração.
 
 Cada entrega deve conter diff pequeno, verificação focada, comparação antes/depois, documentação dos contratos alterados e commit local. Executar typecheck, auditoria de arquitetura, testes relevantes do Editor V6 e build quando a implementação atingir esses caminhos. Não rodar export pesado para validar uma alteração apenas documental.
 

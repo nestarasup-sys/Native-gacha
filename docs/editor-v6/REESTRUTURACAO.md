@@ -1481,3 +1481,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** 80 personagens sintéticos, 12.000 chamadas: 3.918,0 ms na composição antiga de chave compacta + assinatura completa e 1.126,9 ms na nova chave completa (71,2% menos apenas nesse cálculo). O export total não foi medido.
 
 **Verificação:** 12 testes focados (incluindo uma propriedade fora da projeção compacta), suíte completa do Editor V6 (177 arquivos, 782 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
+
+### Continuação na `Dev-V2` — manter workers ocupados entre trechos de exportação
+
+**Mudança:** a tentativa de exportação passa a atribuir um novo trecho assim que qualquer worker termina, respeitando o mesmo limite de concorrência. Isso evita que um trecho longo deixe o outro worker ocioso enquanto ainda há trabalho na fila. Resultados continuam ordenados por índice e os relatórios são salvos a cada lote completo de conclusões, incluindo o lote final menor.
+
+**Falhas e cancelamento:** uma falha de renderização ou de gravação do relatório interrompe novas atribuições, aborta os trechos ativos e aguarda sua liberação antes de propagar o erro. O listener de cancelamento externo permanece removido no `finally`.
+
+**Verificação:** testes sintéticos confirmam preenchimento da vaga livre enquanto outro trecho permanece lento, limite de concorrência, ordenação, lotes de relatório e interrupção em falhas de renderização/gravação. A suíte completa do Editor V6 passou (177 arquivos, 785 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Ainda não foi feita comparação de tempo no projeto de estresse; portanto, o ganho total de exportação permanece sem medição.

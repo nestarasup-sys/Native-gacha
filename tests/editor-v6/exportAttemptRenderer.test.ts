@@ -72,7 +72,7 @@ function createDependencies(overrides: Partial<Parameters<typeof renderEditorV6E
 }
 
 describe('agendamento de tentativas do Editor V6', () => {
-  it('limita concorrência por grupos, salva cada grupo e devolve as partes ordenadas', async () => {
+  it('limita a concorrência dinâmica, salva os lotes concluídos e devolve as partes ordenadas', async () => {
     let active = 0
     let peak = 0
     const dependencies = createDependencies({
@@ -100,6 +100,91 @@ describe('agendamento de tentativas do Editor V6', () => {
     expect(dependencies.saveReport).toHaveBeenCalledTimes(2)
     expect(dependencies.progress).toHaveBeenCalledWith(expect.objectContaining({ state: 'rendering', frames: 0 }))
     expect(dependencies.progress).toHaveBeenCalledWith({ frames: 1 })
+  })
+
+  it('inicia outro trecho quando um worker fica livre, sem esperar o trecho lento', async () => {
+    let releaseSlowPart: (() => void) | undefined
+    let markThirdPartStarted: (() => void) | undefined
+    const slowPart = new Promise<void>((resolve) => { releaseSlowPart = resolve })
+    const thirdPartStarted = new Promise<void>((resolve) => { markThirdPartStarted = resolve })
+    const started: number[] = []
+    const finished: number[] = []
+    const dependencies = createDependencies({
+      parts: [createPart(0), createPart(1), createPart(2)],
+      maxParallelism: 2,
+      renderPart: vi.fn<EditorV6ExportPartRenderer>(async (partDependencies) => {
+        const { part } = partDependencies
+        started.push(part.index)
+        if (part.index === 2) markThirdPartStarted?.()
+        const result = createPartReport(part, partDependencies.encoder)
+        partDependencies.onPartCreated(result)
+        if (part.index === 0) await slowPart
+        finished.push(part.index)
+        return result
+      })
+    })
+
+    const rendering = renderEditorV6ExportAttempt(dependencies)
+    await thirdPartStarted
+
+    expect(started).toEqual([0, 1, 2])
+    expect(finished).toEqual([1, 2])
+    releaseSlowPart?.()
+    const results = await rendering
+
+    expect(results.map((part) => part.index)).toEqual([0, 1, 2])
+    expect(dependencies.saveReport).toHaveBeenCalledTimes(2)
+  })
+
+  it('interrompe novas atribuições quando um trecho falha e aguarda o trecho ativo', async () => {
+    const failure = new Error('falha sintética ao renderizar trecho')
+    const started: number[] = []
+    const dependencies = createDependencies({
+      parts: [createPart(0), createPart(1), createPart(2), createPart(3)],
+      maxParallelism: 2,
+      renderPart: vi.fn<EditorV6ExportPartRenderer>(async (partDependencies) => {
+        const { part, signal } = partDependencies
+        started.push(part.index)
+        if (part.index === 0) throw failure
+        await new Promise<void>((_resolve, reject) => {
+          signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+        })
+        throw new Error('esperava cancelamento do trecho ativo')
+      })
+    })
+
+    await expect(renderEditorV6ExportAttempt(dependencies)).rejects.toBe(failure)
+
+    expect(started).toEqual([0, 1])
+    expect(dependencies.saveReport).not.toHaveBeenCalled()
+    expect(dependencies.report.attempts[0]).toMatchObject({ error: failure.message })
+  })
+
+  it('interrompe workers ativos se não conseguir salvar o relatório', async () => {
+    const failure = new Error('falha sintética ao salvar relatório')
+    const started: number[] = []
+    const dependencies = createDependencies({
+      parts: [createPart(0), createPart(1), createPart(2)],
+      maxParallelism: 2,
+      saveReport: vi.fn(async () => { throw failure }),
+      renderPart: vi.fn<EditorV6ExportPartRenderer>(async (partDependencies) => {
+        const { part, signal } = partDependencies
+        started.push(part.index)
+        const result = createPartReport(part, partDependencies.encoder)
+        partDependencies.onPartCreated(result)
+        if (part.index === 2) {
+          await new Promise<void>((_resolve, reject) => {
+            signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+          })
+        }
+        return result
+      })
+    })
+
+    await expect(renderEditorV6ExportAttempt(dependencies)).rejects.toBe(failure)
+
+    expect(started).toEqual([0, 1, 2])
+    expect(dependencies.saveReport).toHaveBeenCalledTimes(1)
   })
 
   it('agrega diagnósticos de loops de boca e limita detalhes repetidos', async () => {

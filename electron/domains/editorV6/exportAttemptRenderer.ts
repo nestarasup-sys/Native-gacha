@@ -127,14 +127,45 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
   try {
     progress({ state: 'rendering', frames: 0, motionProgress: undefined, message: parallelism > 1 ? `Renderizando até ${parallelism} trechos em paralelo…` : 'Renderizando um trecho por vez…', fallback: report.fallback })
     const results: EditorV6ExportPartReport[] = []
-    for (let offset = 0; offset < parts.length; offset += parallelism) {
-      const group = parts.slice(offset, offset + parallelism)
-      const settled = await Promise.allSettled(group.map(renderPart))
-      const failed = settled.find((item) => item.status === 'rejected')
-      if (failed?.status === 'rejected') throw failed.reason
-      results.push(...settled.flatMap((item) => item.status === 'fulfilled' ? [item.value] : []))
-      await saveReport()
+    let nextPart = 0
+    let completedSinceSave = 0
+    let failure: { error: unknown } | undefined
+    let saveQueue = Promise.resolve()
+    const scheduleReportSave = () => {
+      saveQueue = saveQueue.then(async () => {
+        if (failure) return
+        try {
+          await saveReport()
+        } catch (error) {
+          failure ??= { error }
+          controller.abort(error)
+        }
+      })
     }
+    const worker = async () => {
+      while (!failure && !controller.signal.aborted) {
+        const part = parts[nextPart++]
+        if (!part) return
+        try {
+          results.push(await renderPart(part))
+        } catch (error) {
+          failure ??= { error }
+          controller.abort(error)
+          return
+        }
+        completedSinceSave++
+        if (completedSinceSave >= parallelism) {
+          completedSinceSave = 0
+          scheduleReportSave()
+        }
+      }
+    }
+
+    await Promise.all(Array.from({ length: parallelism }, worker))
+    if (!failure && completedSinceSave > 0) scheduleReportSave()
+    await saveQueue
+    if (failure) throw failure.error
+    if (controller.signal.aborted) throw signal.reason
     return results.sort((a, b) => a.index - b.index)
   } catch (error) {
     attempt.error = formatError(error)
