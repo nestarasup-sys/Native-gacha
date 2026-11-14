@@ -453,7 +453,7 @@ async function main() {
     createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(paintFactory, signal, 1920, 1080, renderProject, layeredVideo)
   })
   paintFactory.dispose()
-  const paintCaptureParity = {
+  const separateWorkerPaintParity = {
     capturePageFrames: uniqueCapturePageHashes?.length ?? 0,
     paintEventFrames: paintCaptureHashes.length,
     exactFrameParity: uniqueCapturePageHashes?.length === uniqueCaptureFrameCount && paintCaptureHashes.length === uniqueCaptureFrameCount && uniqueCapturePageHashes.every((hash, index) => hash === paintCaptureHashes[index]),
@@ -461,7 +461,25 @@ async function main() {
   }
   assert(uniquePaint1080.totalFrames === uniqueCaptureFrameCount && !uniquePaint1080.fallback && active === 0, 'O perfil paint-event 1080p não concluiu os 60 quadros ou deixou renderizadores abertos.')
   assert(paintCaptureHashes.length === uniqueCaptureFrameCount, `paint-event capturou ${paintCaptureHashes.length}/${uniqueCaptureFrameCount} quadros no perfil 1080p.`)
-  assert(paintCaptureParity.exactFrameParity, `As capturas independentes divergem no quadro ${paintCaptureParity.firstDivergentFrame}; não promover paint-event com esse fixture.`)
+  assert(separateWorkerPaintParity.exactFrameParity, `As capturas em workers separados divergem no quadro ${separateWorkerPaintParity.firstDivergentFrame}; investigar antes de promover paint-event.`)
+  const sameWorkerPaintFactory = createEditorV6WorkerFactory({
+    ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
+    mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), captureMode: 'compare-paint'
+  })
+  const sameWorkerPaintOutput = join(folder, 'capture-profile-same-worker-1080.mp4')
+  const sameWorkerPaintParity = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: sameWorkerPaintOutput, reportPath: join(folder, 'capture-profile-same-worker-1080.report.json'),
+    createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(sameWorkerPaintFactory, signal, 1920, 1080, renderProject, layeredVideo)
+  })
+  sameWorkerPaintFactory.dispose()
+  const sameWorkerParts = sameWorkerPaintParity.attempts.flatMap((attempt) => attempt.parts)
+  const sameWorkerPaintParityPassed = sameWorkerPaintParity.state === 'completed'
+    && !sameWorkerPaintParity.fallback
+    && sameWorkerPaintParity.totalFrames === uniqueCaptureFrameCount
+    && sameWorkerParts.reduce((sum, part) => sum + part.rendered, 0) === uniqueCaptureFrameCount
+    && sameWorkerParts.reduce((sum, part) => sum + part.reused, 0) === 0
+    && sameWorkerParts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.samples ?? 0), 0) === uniqueCaptureFrameCount
+  assert(sameWorkerPaintParityPassed && active === 0, 'A comparação paint/capturePage no mesmo worker não verificou os 60 tokens/quadro ou deixou renderizadores abertos.')
   const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
     frames: part.frames,
     rendered: part.rendered,
@@ -484,7 +502,8 @@ async function main() {
       unique320: { totalFrames: uniqueCapture320.totalFrames, milliseconds: uniqueCapture320.milliseconds, parts: captureProfile(uniqueCapture320) },
       unique1080: { totalFrames: uniqueCapture1080.totalFrames, milliseconds: uniqueCapture1080.milliseconds, uniqueFrames: uniqueCapturePageHashes?.length, parts: captureProfile(uniqueCapture1080) },
       paintEvent1080: { totalFrames: uniquePaint1080.totalFrames, milliseconds: uniquePaint1080.milliseconds, parts: captureProfile(uniquePaint1080) },
-      paintCaptureParity
+      separateWorkerPaintParity,
+      sameWorkerPaintParity: { passed: sameWorkerPaintParityPassed, totalFrames: sameWorkerPaintParity.totalFrames, milliseconds: sameWorkerPaintParity.milliseconds, parts: captureProfile(sameWorkerPaintParity) }
     },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))

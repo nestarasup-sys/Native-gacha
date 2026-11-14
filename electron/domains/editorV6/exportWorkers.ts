@@ -9,7 +9,7 @@ import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } fro
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
-export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' }) {
+export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint' }) {
   const registry = createEditorV6WorkerRegistry(deps.ipcMain)
   const activeWorkers = new Set<() => void>()
   let disposed = false
@@ -54,8 +54,13 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
       await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
-      if (deps.captureMode === 'paint-event') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
-      frameRenderer = createEditorV6WorkerFrameRenderer({ window, payload, signal: workerController.signal, captureRetryMilliseconds, paintCapture, inspectCapture: deps.inspectCapture })
+      if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
+      frameRenderer = createEditorV6WorkerFrameRenderer({
+        window, payload, signal: workerController.signal, captureRetryMilliseconds,
+        paintCapture: deps.captureMode === 'paint-event' ? paintCapture : undefined,
+        comparePaintCapture: deps.captureMode === 'compare-paint' ? paintCapture : undefined,
+        inspectCapture: deps.inspectCapture
+      })
       return { close, frame: frameRenderer.frame }
     } catch (error) { close(); throw error }
   }

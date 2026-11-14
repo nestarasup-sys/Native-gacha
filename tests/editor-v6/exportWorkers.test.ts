@@ -62,7 +62,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
 } }))
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 
-function fixture(captureMode?: 'capturePage' | 'paint-event', options: { layeredVideo?: boolean; projectMedia?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
+function fixture(captureMode?: 'capturePage' | 'paint-event' | 'compare-paint', options: { layeredVideo?: boolean; projectMedia?: boolean; inspectCapture?: (capture: { window: any; frame: number; bitmap: Buffer }) => Promise<void> } = {}) {
   const handlers = new Map<string, (...args: any[]) => any>()
   const ipcMain = { handle: (name: string, handler: (...args: any[]) => any) => handlers.set(name, handler), removeHandler: (name: string) => handlers.delete(name) } as unknown as IpcMain
   const factory = createEditorV6WorkerFactory({ ipcMain, html: 'worker.html', preload: 'preload.cjs', captureMode, inspectCapture: options.inspectCapture, mediaPath: options.projectMedia ? () => 'project-media.mp4' : undefined })
@@ -206,6 +206,32 @@ describe('export worker lifecycle', () => {
     expect(frame.timings?.capturePageMs).toBe(0)
     worker.close()
     expect(contents.endFrameSubscription).toHaveBeenCalledTimes(1)
+    factory.dispose()
+  })
+
+  it('compares page and paint captures from the same worker frame and token', async () => {
+    const { factory, payload, ready } = fixture('compare-paint')
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      window.paintToken = token
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token, 39), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+      return { reused: false, timings: {} }
+    })
+    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width, payload.height, window.paintToken, 39))
+
+    const frame = await worker.frame(21)
+
+    expect(contents.beginFrameSubscription).toHaveBeenCalledWith(false, expect.any(Function))
+    expect(contents.capturePage).toHaveBeenCalledOnce()
+    expect(frame.bitmap?.every((byte) => byte === 39)).toBe(true)
+    expect(frame.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
+    worker.close()
+    expect(contents.endFrameSubscription).toHaveBeenCalledOnce()
     factory.dispose()
   })
 

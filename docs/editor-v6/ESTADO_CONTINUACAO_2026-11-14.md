@@ -64,3 +64,42 @@ O primeiro teste do caminho paint encontrou um timeout reproduzível: depois de 
 Verificações executadas nesta continuação: worker (15/15), suíte Editor V6 (804 aprovados, 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos) e harness Electron de exportação com perfil e comparação paint; tudo passou. Ainda falta comparar captura de página e paint no mesmo worker/mesmo estado com cabelo/face, verificar layered video e repetir A/B em múltiplas rodadas. O projeto real de 12 min/473 transições e o erro `-36861` seguem pendentes.
 
 Na retomada, preservar a branch `Dev-V2`, `capturePage` como padrão e os quatro caminhos locais não rastreados listados acima. O próximo trabalho é localizar o estágio dominante no cenário atual e testar uma intervenção pequena com paridade, sem presumir que o resultado deste fixture sintético se aplica ao MP4 longo.
+
+## Continuação salva — comparação no mesmo worker
+
+### O que estava sendo feito
+
+Foi fechado um experimento para verificar se a divergência observada anteriormente vinha de comparar workers em estados de pintura diferentes. O modo de teste `compare-paint` captura a página e o frame paint dentro do mesmo worker, usando o mesmo token antes de avançar o frame. Ele compara byte a byte os buffers BGRA. O modo é diagnóstico do harness e não muda o export normal.
+
+### Resultado e estado atual
+
+- Paridade BGRA no mesmo worker/token: **60 de 60 quadros** únicos em Full HD.
+- Sem fallback, reutilização de quadro, renderizador residual ou erro no harness.
+- `capturePage`: 2.882,92 ms nos 60 quadros; paint em worker independente: 2.861,76 ms. Diferença de ~0,7% em uma única dupla, insuficiente para declarar ganho.
+- Espera paint p50/p95: 17,4/92 ms. A cauda continua alta.
+- Captura pareada no mesmo worker: 3.275 ms porque faz as duas capturas; não usar como medição de velocidade.
+- `capturePageMs` p50/p95: 17,2/33,7 ms. Conversão do bitmap: 3,3/6,6 ms.
+- Escopo: fixture sintética simples; ainda não cobre cabelo/face em movimento, personagem real, layered video ou o projeto longo de 12 minutos.
+- `capturePage` permanece o caminho padrão de produção.
+
+### Verificações concluídas
+
+- `npm run test:editor-v6:export`: passou, incluindo 60 quadros de paridade no mesmo worker e a fixture sintética de boca.
+- `npm run test:editor-v6`: 179 arquivos passaram, 1 ignorado; 806 testes passaram, 1 ignorado.
+- `npm run typecheck`: passou.
+- `npm run audit:architecture`: passou; 878 arquivos TS/TSX, sem imports ausentes ou violações de fronteira.
+- `git diff --check`: passou antes da atualização deste documento; repetir antes do commit.
+- Branch `Dev-V2`, commit base `cba7dc1b`; pendente salvar esta rodada em commit local. Não fazer push.
+
+### O que fazer em seguida
+
+1. Revisar o diff desta comparação e salvar o código, testes e os dois documentos em um commit local pequeno.
+2. Acrescentar ao harness uma comparação equivalente com vídeo em camadas, se possível usando o mesmo token e verificando as duas camadas separadamente.
+3. Criar fixture sintética controlada com personagem/cabelo/face em movimento e verificar paridade de pixels, retries e cancelamento. Não usar mídia pessoal nem dados de `app-data`.
+4. Repetir A/B independente em várias rodadas; manter `capturePage` se paint não mostrar ganho repetível sem regressão de cauda.
+5. Depois dos perfis, escolher o próximo estágio dominante (IPC/desenho, captura, composição ou FFmpeg) com base nos relatórios.
+6. Investigar o erro `-36861` e o projeto longo de 12 minutos/473 transições somente numa janela de export controlado; os harnesses sintéticos não reproduzem essa falha.
+
+### Arquivos e dados preservados
+
+Além das quatro entradas não rastreadas já listadas acima, esta rodada não abriu nem modificou `app-data`, mídia do usuário, projetos ou perfis locais. O commit deve incluir somente os quatro arquivos de código/teste da comparação e este checkpoint mais o plano de aceleração.

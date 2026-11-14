@@ -11,13 +11,14 @@ export type EditorV6WorkerFrameRenderer = {
 
 /** Owns frame requests, paint-token capture, and layered bitmap assembly for one worker window. */
 export function createEditorV6WorkerFrameRenderer({
-  window, payload, signal, captureRetryMilliseconds, paintCapture, inspectCapture
+  window, payload, signal, captureRetryMilliseconds, paintCapture, comparePaintCapture, inspectCapture
 }: {
   window: BrowserWindow
   payload: EditorV6WorkerPayload
   signal: AbortSignal
   captureRetryMilliseconds: number
   paintCapture?: EditorV6PaintFrameCapture
+  comparePaintCapture?: EditorV6PaintFrameCapture
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; bitmap: Buffer }) => Promise<void>
 }): EditorV6WorkerFrameRenderer {
   const { width, height, layeredVideo } = payload
@@ -41,8 +42,14 @@ export function createEditorV6WorkerFrameRenderer({
     const output = layeredVideo ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2)) : undefined
     const captured = await captureEditorV6PaintedFrame({ window, signal, width, height, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
     const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
-    await inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap })
-    return { bitmap, readbacks, elapsedMs: performance.now() - started, paintWaitMs, capturePageMs, captureBitmapMs }
+    const sceneBitmap = layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap
+    await inspectCapture?.({ window, frame, bitmap: sceneBitmap })
+    const elapsedMs = performance.now() - started
+    if (comparePaintCapture) {
+      const painted = await comparePaintCapture.capture(token)
+      if (!sceneBitmap.equals(painted.bitmap)) throw Error(`capturePage e paint-event divergiram no quadro ${frame}, token ${token}.`)
+    }
+    return { bitmap, readbacks, elapsedMs, paintWaitMs, capturePageMs, captureBitmapMs }
   }
 
   const frame = async (frameNumber: number): Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }> => {
