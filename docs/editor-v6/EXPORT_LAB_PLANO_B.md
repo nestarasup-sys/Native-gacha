@@ -21,6 +21,21 @@ Para validar uma correção antes da matriz completa, `npm run lab:editor-v6:pla
 
 O primeiro comando baixa uma build LGPL do FFmpeg 9.0.2 para `out/editor-v6-stress/tools`, verifica o SHA-256 pinado e confere `ffmpeg.exe`, `ffprobe.exe`, `libopenh264` e `h264_amf`. A cópia empacotada do app permanece intacta.
 
+## Experimento de throughput do pipeline de quadros (branch Plano B)
+
+A exportação normal agora pode preparar **um único quadro independente** enquanto o FFmpeg ainda recebe o anterior, reduzindo a serialização entre Chromium e encoder. O processamento de vídeo **em camadas** continua sequencial porque reutiliza o bitmap combinado, e a próxima gravação só começa depois da confirmação do pipe. A otimização beneficia a alimentação dos encoders CPU/Turbo e AMD AMF, **sem alterar parâmetros, bitrate, cor ou presets**. O efeito sobre o tempo final ainda não foi medido.
+
+Para comparar a versão serial com a versão com sobreposição, usando o mesmo commit, projeto, GPU e FFmpeg, executar no PowerShell após o build e a preparação de ferramentas:
+
+```powershell
+$env:GACHA_EDITOR_V6_FRAME_OVERLAP = '0'
+npm run lab:editor-v6:plan-b -- --smoke
+Remove-Item Env:\GACHA_EDITOR_V6_FRAME_OVERLAP
+npm run lab:editor-v6:plan-b -- --smoke
+```
+
+Cada execução escreve snapshots e resultados próprios em `out/editor-v6-stress/runs/<run-id>`; o relatório registra `methodology.framePipelineOverlap`, e cada parte de exportação registra `framePipelineOverlap`. Comparar `medianExportWallMs`, `ffmpegWriteMs`, `frameRoundTripMs`, `rendered/reused`, integridade FFprobe, pixels de referência, RSS e falhas para **cada encoder separadamente**. Repetir as rodadas alternando a ordem para atenuar variações de cache/temperatura. Não declarar aceleração caso a exportação ainda falhe antes do encoder.
+
 ## Matriz e controles
 
 - Projeto de reprodução `Editor V6 01`: timeline inteira (519 quadros, 17,3 s), três rodadas por encoder/build.

@@ -84,7 +84,7 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     vi.mocked(buildEditorV6VideoComposition).mockReset().mockReturnValue({ rawHeight: 180, videoInputs: [], filterArgs: [] })
   })
 
-  afterEach(() => vi.clearAllMocks())
+  afterEach(() => { vi.unstubAllEnvs(); vi.clearAllMocks() })
 
   it('registra, compõe, escreve, valida e fecha os recursos de um trecho', async () => {
     const process = mockProcess()
@@ -109,6 +109,20 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(result.path).toBe(join('C:/synthetic/temp', 'attempt-2-part-0.mp4'))
     expect(result).toMatchObject({ rendered: 2, reused: 0, frames: 2, probe: { streams: [{ nb_frames: '2' }] } })
     expect(result.frameMetrics).toEqual({ hairRasterFrames: 2 })
+    expect(result.framePipelineOverlap).toBe(true)
+  })
+
+  it('disables frame overlap for layered video and for an explicit A/B baseline', async () => {
+    const process = mockProcess()
+    vi.mocked(spawnExportProcess).mockReturnValue(process.value)
+    const layered = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
+    expect(layered.framePipelineOverlap).toBe(false)
+
+    vi.stubEnv('GACHA_EDITOR_V6_FRAME_OVERLAP', '0')
+    const baseline = await renderEditorV6ExportPart(createDependencies())
+    expect(baseline.framePipelineOverlap).toBe(false)
+    expect(baseline.frames).toBe(2)
+    vi.unstubAllEnvs()
   })
 
   it('prepara os loops de fala antes de criar o worker e encaminha projeto e atlas preparados', async () => {
