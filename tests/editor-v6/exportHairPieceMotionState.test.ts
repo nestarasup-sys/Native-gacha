@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { FIRST_HAIR_MOTION_PRESET, type HairMotionLoop, type HairMotionState } from '../../src/shared/hairMotionEngine'
 import type { EditorV6FrameTimings } from '../../src/shared/editorV6Export'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer } from '../../src/shared/editorV6HairMotion'
-import { prepareEditorV6ExportHairPieceMotion } from '../../src/renderer/src/features/editorV6/exportHairPieceMotionState'
+import { createEditorV6ExportHairPieceMotionPreparer, prepareEditorV6ExportHairPieceMotion } from '../../src/renderer/src/features/editorV6/exportHairPieceMotionState'
 
 const piece = (id = 'front-piece', side: EditorV6HairMotionLayer['side'] = 'front'): EditorV6HairMotionLayer => ({ id, side, textureId: 'texture', width: 10, height: 20, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, phase: 0 })
 const animation = (overrides: Partial<Pick<EditorV6HairMotionBundle, 'posteriorOnly' | 'poseReactionOnly' | 'loopFrames'>> = {}): Pick<EditorV6HairMotionBundle, 'preset' | 'posteriorOnly' | 'poseReactionOnly' | 'loopFrames'> => ({ preset: FIRST_HAIR_MOTION_PRESET, ...overrides })
@@ -25,6 +25,18 @@ describe('prepareEditorV6ExportHairPieceMotion', () => {
     expect(rewound.state).toBe(result.state)
     expect(rewound.state.frame).toBe(2)
     expect(rewound.phase).toBeCloseTo(1.25 + piece().phase)
+  })
+
+  it('reuses immutable strand settings and phase across absolute frames', () => {
+    const { options } = prepare()
+    const prepareFrame = createEditorV6ExportHairPieceMotionPreparer(options)
+    const first = prepareFrame(options)
+    const second = prepareFrame({ ...options, frame: 5 })
+
+    expect(second.settings).toBe(first.settings)
+    expect(second.phase).toBe(first.phase)
+    expect(second.intensity).toBe(first.intensity)
+    expect(second.state).toBe(first.state)
   })
 
   it('caches absolute loop samples and applies authored head impulses', () => {

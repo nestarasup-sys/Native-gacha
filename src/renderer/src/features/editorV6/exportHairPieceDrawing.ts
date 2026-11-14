@@ -3,7 +3,7 @@ import type { EditorV6FrameTimings } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { editorV6HairMotionLayerHeadPosition } from '../../../../shared/editorV6HairMotion'
-import { prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
+import { createEditorV6ExportHairPieceMotionPreparer, prepareEditorV6ExportHairPieceMotion } from './exportHairPieceMotionState'
 
 type SceneElement = ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]
 type AnimationSettings = Pick<EditorV6HairMotionBundle, 'preset' | 'posteriorOnly' | 'poseReactionOnly' | 'loopFrames'>
@@ -25,29 +25,50 @@ type Options = {
 
 /** Draws one animated strand into the character surface using its authored rig and export motion state. */
 export function createEditorV6ExportHairPieceDrawer(options: Options) {
-  const prepareMotion = options.preparePieceMotion ?? prepareEditorV6ExportHairPieceMotion
+  const compiledPieces = new WeakMap<EditorV6HairMotionLayer, Map<string, {
+    prepare?: ReturnType<typeof createEditorV6ExportHairPieceMotionPreparer>
+    headAtFrame: (frame: number) => number
+  }>>()
+  const preparedFor = (elementId: string, piece: EditorV6HairMotionLayer) => {
+    let byElement = compiledPieces.get(piece)
+    if (!byElement) { byElement = new Map(); compiledPieces.set(piece, byElement) }
+    let prepared = byElement.get(elementId)
+    if (!prepared) {
+      prepared = {
+        ...(!options.preparePieceMotion ? { prepare: createEditorV6ExportHairPieceMotionPreparer({
+          animation: options.animation, elementId, piece, instancePhases: options.instancePhases
+        }) } : {}),
+        headAtFrame: (sample) => editorV6HairMotionLayerHeadPosition(
+          options.headXAtFrame(elementId, sample),
+          options.pieceFlipXAtFrame(elementId, piece.id, sample, piece.flipX)
+        )
+      }
+      byElement.set(elementId, prepared)
+    }
+    return prepared
+  }
 
   return (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: SceneElement, frame: number, timings: EditorV6FrameTimings): void => {
     const motionStateStarted = performance.now()
     const texture = options.textures.get(piece.textureId)
     if (!texture) throw Error('A exportação perdeu uma imagem do cabelo preparado.')
-    const headAtFrame = (sample: number) => editorV6HairMotionLayerHeadPosition(
-      options.headXAtFrame(element.id, sample),
-      options.pieceFlipXAtFrame(element.id, piece.id, sample, piece.flipX)
-    )
-    const { state, settings, phase, intensity } = prepareMotion({
-      animation: options.animation,
-      elementId: element.id,
-      piece,
+    const prepared = preparedFor(element.id, piece)
+    const frameOptions = {
       frame,
       poseReactionEnds: options.poseReactionEnds.get(element.id) ?? [],
       motionStateStarted,
       states: options.states,
       loops: options.loops,
-      instancePhases: options.instancePhases,
-      headAtFrame,
+      headAtFrame: prepared.headAtFrame,
       timings
-    })
+    }
+    const motion = options.preparePieceMotion
+      ? options.preparePieceMotion({
+        animation: options.animation, elementId: element.id, piece, ...frameOptions,
+        instancePhases: options.instancePhases
+      })
+      : prepared.prepare!(frameOptions)
+    const { state, settings, phase, intensity } = motion
     const warped = options.warpHairTexture(piece.textureId, texture, state, settings, intensity, phase, timings)
     const layerDrawStarted = performance.now()
     context.save()

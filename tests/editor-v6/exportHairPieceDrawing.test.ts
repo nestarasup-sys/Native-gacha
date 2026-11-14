@@ -40,6 +40,27 @@ function makeDrawer(overrides: Partial<Parameters<typeof createEditorV6ExportHai
 }
 
 describe('createEditorV6ExportHairPieceDrawer', () => {
+  it('compiles immutable strand settings once for repeated frame draws', () => {
+    const settingsSeen: HairMotionSettings[] = []
+    const warpHairTexture = vi.fn((
+      _textureId: string, _image: HTMLImageElement, _state: HairMotionState,
+      settings: HairMotionSettings
+    ) => { settingsSeen.push(settings); return warped })
+    const context = Object.fromEntries(['save', 'translate', 'scale', 'rotate', 'drawImage', 'restore'].map(key => [key, vi.fn()])) as unknown as CanvasRenderingContext2D
+    const draw = createEditorV6ExportHairPieceDrawer({
+      animation, textures: new Map([['texture', texture]]),
+      states: new Map(), loops: new Map(), instancePhases: new Map([['actor', 1]]),
+      poseReactionEnds: new Map(), headXAtFrame: (_id, frame) => frame * 2,
+      pieceFlipXAtFrame: (_id, _pieceId, _frame, fallback) => fallback, warpHairTexture
+    })
+
+    draw(context, rig, piece, { id: 'actor' } as SceneElement, 0, {})
+    draw(context, rig, piece, { id: 'actor' } as SceneElement, 1, {})
+
+    expect(warpHairTexture).toHaveBeenCalledTimes(2)
+    expect(settingsSeen[1]).toBe(settingsSeen[0])
+  })
+
   it('prepares deterministic motion, applies the head path and preserves strand drawing transforms', () => {
     const drawer = makeDrawer()
     const timings: EditorV6FrameTimings = {}

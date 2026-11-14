@@ -1527,3 +1527,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** o resultado é reduzido a `{ faceAsset }` antes de entrar na cache limitada ao preparo atual. Os quadros e PNGs de camada necessários continuam sendo serializados e entregues à composição; o atlas completo de movimento e as bases sem boca deixam de ficar retidos por essa cache.
 
 **Verificação:** teste focado das transições (3), suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos) e build passaram. O harness Electron de cabelo falhou uma vez numa checagem pixelar de `flipX` em exportações estáticas; a repetição integral passou. Essa checagem não percorre o preparo de transições alterado, portanto a primeira falha foi registrada sem atribuí-la à mudança. Não houve exportação de projeto real nem medição de memória em 473 transições.
+
+### Continuação na `Dev-V2` — compilar a preparação do movimento de cada mecha
+
+**Mudança:** a preparação por quadro agora reaproveita, por objeto de mecha e personagem, as configurações físicas, fase e função de posição da cabeça que não mudam durante uma exportação. O estado dinâmico continua separado por personagem/mecha e é atualizado para cada quadro absoluto. A cache é fraca e fica no drawer daquela exportação; o caminho público de chamada direta mantém o contrato anterior. O hook de preparação usado pelos testes também preserva o formato de entrada existente.
+
+**Medição isolada:** 50.000 desenhos sem custo de canvas, cinco rodadas aquecidas: mediana de 47,16 ms com preparação completa repetida e 18,63 ms com preparação compilada (60,5% menos nesse loop sintético). Esse resultado não estima o ganho do export completo.
+
+**Verificação:** testes focados do estado e drawer de cabelo (8), suíte completa do Editor V6 (178 arquivos, 792 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura, build e harness Electron de cabelo passaram. Nenhum projeto real foi exportado para medir velocidade.

@@ -435,3 +435,11 @@ Os caminhos de coleta de tempos e contadores não criam mais arrays de pares/key
 ### Continuação 2026-11-13 — encerrar fixtures temporários dos harnesses
 
 Os harnesses Electron geral, de cabelo e facial agora copiam os resultados necessários para `out` e removem apenas a pasta temporária que criaram, validada por raiz, prefixo e tipo de arquivo. Se a execução falhar, os fixtures são mantidos para diagnóstico. O harness geral passou integrado: 81 quadros, fallback/cancelamento/transição, stress sintético da boca com 301 quadros e perfil temporário confirmado removido; cerca de 80 KB de resultados foram preservados na saída isolada. Isso verifica fluxo e cleanup, não desempenho do export. A suíte Editor V6 (23 testes Node, 787 Vitest aprovados e 1 ignorado), typecheck, auditoria e build passaram.
+
+### Continuação 2026-11-13 — compilar configurações estáticas da animação de cabelo
+
+O drawer de cada exportação mantém uma preparação compilada por mecha e personagem. Física, fase e cálculo do centro da cabeça deixam de ser recriados em todos os quadros; mapas de estado e de loops continuam sendo atualizados normalmente por quadro. A cache usa referências fracas para não prolongar a vida dos objetos das mechas.
+
+No microbenchmark sintético, 50.000 desenhos sem canvas tiveram mediana de 47,16 ms no caminho que refazia a preparação contra 18,63 ms com a configuração compilada (60,5% menos naquele loop). O cálculo isola preparação JavaScript e não inclui warp, composição, codificação ou outros custos do app, então não é um ganho de 60,5% no MP4 final.
+
+Testes focados (8), suíte Editor V6 (178 arquivos, 792 testes aprovados e 1 ignorado), typecheck, auditoria, build e harness Electron de cabelo passaram. A exportação do projeto de estresse ainda precisa ser medida com baseline equivalente para estimar efeito no tempo total.
