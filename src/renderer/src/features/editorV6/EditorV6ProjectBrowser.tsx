@@ -46,9 +46,10 @@ export function EditorV6ProjectBrowser({
 }: Props) {
   const [jsonBusy, setJsonBusy] = useState(false)
   const [jsonError, setJsonError] = useState('')
+  const [jsonStatus, setJsonStatus] = useState('')
   const exportJson = async (id: string) => {
-    setJsonBusy(true); setJsonError('')
-    try { await window.desktop.editorV6.exportEditorV6ProjectJson(id) }
+    setJsonBusy(true); setJsonError(''); setJsonStatus('')
+    try { const result = await window.desktop.editorV6.exportEditorV6ProjectJson(id); if (result) setJsonStatus(result.warnings.length ? `JSON salvo. Alguns dados não são suportados pelo formato e podem mudar na importação:\n${result.warnings.join('\n')}` : 'JSON do projeto exportado.') }
     catch (reason) { setJsonError(reason instanceof Error ? reason.message : String(reason)) }
     finally { setJsonBusy(false) }
   }
@@ -62,6 +63,7 @@ export function EditorV6ProjectBrowser({
       {importOpen && <EditorV6ReactImportDialog characters={characters} onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} />}
       {error && <p className="studio-error-message" role="alert">{error}</p>}
       {jsonError && <p className="studio-error-message" role="alert">{jsonError}</p>}
+      {jsonStatus && <p role="status" style={{ whiteSpace: 'pre-line' }}>{jsonStatus}</p>}
       {loading ? <section className="studio-empty-state"><strong>Carregando projetos…</strong></section> : projects.length ? (
         <section className="studio-grid" aria-label="Projetos do Editor V6">
           {projects.map((project) => <article className={`studio-card${selectedProjectId === project.id ? ' selected' : ''}`} key={project.id}>

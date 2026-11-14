@@ -17,9 +17,11 @@ it('exports and imports a new project with its local media and timeline', async 
   const root = await mkdtemp(join(tmpdir(), 'v6-json-test-')); folders.push(root)
   const id = randomUUID(), mediaId = randomUUID(), name = `${mediaId}.mp4`, archivePath = join(root, 'project.json')
   const now = new Date().toISOString()
+  const assetId = randomUUID()
+  const actor = { id: randomUUID(), assetId, kind: 'character' as const, characterId: randomUUID(), text: 'Personagem', x: 0, y: 0, width: 30, height: 50, rotation: 0, zIndex: 1 }
   const project: EditorV6Document = { schemaVersion: 1, id, title: 'Projeto', color: '#d7b5cd', createdAt: now, updatedAt: now,
     backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
-    assets: [], elements: [], timeline: createEditorV6Timeline(), media: [{ id: mediaId, name: 'Vídeo', fileName: name, kind: 'video', mimeType: 'video/mp4', sourceFrames: 30, hasAudio: false, sizeBytes: 3 }] }
+    assets: [{ id: assetId, name: 'Personagem', category: 'character', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }], elements: [actor], timeline: createEditorV6Timeline([actor]), media: [{ id: mediaId, name: 'Vídeo', fileName: name, kind: 'video', mimeType: 'video/mp4', sourceFrames: 30, hasAudio: false, sizeBytes: 3 }] }
   await mkdir(join(root, id, 'media'), { recursive: true }); await writeFile(join(root, id, 'media', name), Buffer.from('abc'))
   const handlers = new Map<string, (...args: any[]) => any>()
   let saved: EditorV6Document | undefined
@@ -29,7 +31,11 @@ it('exports and imports a new project with its local media and timeline', async 
   dialogs.save.mockResolvedValue({ canceled: false, filePath: archivePath })
   dialogs.open.mockResolvedValue({ canceled: false, filePaths: [archivePath] })
   await handlers.get(editorV6IpcChannels.exportEditorV6ProjectJson)!({}, id)
-  const archive = JSON.parse(await readFile(archivePath, 'utf8')) as { project: EditorV6Document; files: unknown[] }
+  const exported = JSON.parse(await readFile(archivePath, 'utf8')) as { format: string; cast: Array<{ character: string }>; files?: unknown }
+  expect(exported.format).toBe('NYMI_EDITOR_V6_REACT_V1')
+  expect(exported.cast[0].character).toBe(actor.characterId)
+  expect(exported.files).toBeUndefined()
+  const archive = { format: 'NYMI_EDITOR_V6_PROJECT_V1', project: structuredClone(project), files: [{ folder: 'media', name, base64: Buffer.from('abc').toString('base64') }] }
   archive.project.timeline.durationFrames = 900
   const imported = await handlers.get(editorV6IpcChannels.importEditorV6ProjectJson)!({}, archive) as EditorV6Document
   expect(imported.id).not.toBe(id)

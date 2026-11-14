@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { editorV6LibraryAssetUrl, type EditorV6Document } from '../../../src/shared/editorV6'
 import { editorV6DocumentSchema } from '../../../src/shared/editorV6Schema'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
+import { exportEditorV6React } from '../../../src/shared/editorV6ReactExport'
 
 const format = 'NYMI_EDITOR_V6_PROJECT_V1'
 const fileName = /^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i
@@ -36,15 +37,11 @@ export function registerEditorV6ProjectJsonHandlers(deps: {
     const id = z.string().uuid().parse(value)
     const project = await deps.read(id)
     if (!project) throw Error('Projeto não encontrado.')
+    const { data, warnings } = exportEditorV6React(project)
     const choice = await dialog.showSaveDialog({ title: 'Exportar projeto do Editor V6', defaultPath: `${project.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')}.json`, filters: [{ name: 'Projeto Editor V6', extensions: ['json'] }] })
     if (choice.canceled || !choice.filePath) return null
-    const files: FileEntry[] = []
-    for (const file of localFiles(project)) {
-      if (!fileName.test(file.name)) throw Error('Nome de mídia do projeto inválido.')
-      files.push({ ...file, base64: (await deps.files.readFile(join(deps.projectPath(id), file.folder, file.name))).toString('base64') })
-    }
-    await writeExternal(choice.filePath, JSON.stringify({ format, project, files }, null, 2), 'utf8')
-    return choice.filePath
+    await writeExternal(choice.filePath, JSON.stringify(data, null, 2), 'utf8')
+    return { path: choice.filePath, warnings }
   })
 
   deps.ipcMain.handle(editorV6IpcChannels.importEditorV6ProjectJson, async (event, value: unknown) => {

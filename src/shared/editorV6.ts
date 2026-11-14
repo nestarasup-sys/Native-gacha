@@ -372,7 +372,7 @@ export function editorV6ProjectSummary(document: EditorV6Document): EditorV6Proj
 }
 
 export type EditorV6DesktopApi = {
-  exportEditorV6ProjectJson: (id: string) => Promise<string | null>
+  exportEditorV6ProjectJson: (id: string) => Promise<{ path: string; warnings: string[] } | null>
   importEditorV6ProjectJson: (archive: unknown) => Promise<EditorV6Document>
   listEditorV6Projects: () => Promise<EditorV6ProjectSummary[]>
   loadEditorV6Project: (id: string) => Promise<EditorV6Document | null>
