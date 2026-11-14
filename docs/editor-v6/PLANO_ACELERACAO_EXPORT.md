@@ -525,3 +525,13 @@ O worker de export percorre as imagens SVG com um loop direto e mantém uma list
 **Microbenchmark isolado:** 10 imagens prontas × 5.700 frames, cinco rodadas; a mediana do caminho com arrays de Promises resolvidas foi 12,51 ms, contra 3,01 ms percorrendo os itens sem Promises pendentes. Isso mede somente o readiness JavaScript, não o round-trip de captura ou o MP4.
 
 **Verificação:** testes focados de prontidão e renderizador (8); suíte Editor V6 (179 arquivos, 803 aprovados e 1 ignorado); typecheck; auditoria de arquitetura; build e harness Electron integrado passaram. O harness cobriu 81 quadros e a fixture de boca de 301 quadros; RSS máximo do processo principal: 168.554.496 bytes.
+
+### Continuação 2026-11-14 — expor o perfil de captura no harness integrado
+
+O relatório de `tests/editor-v6/export.electron.ts` agora inclui, por parte, amostras, total, p50, p95 e máximo para round-trip de quadro, desenho IPC, captura da página, conversão do bitmap e escrita FFmpeg. O teste Full HD exige que `captureBitmapMs` seja medido; o caso com vídeo exige tempos separados do fundo e primeiro plano. Isso torna o relatório do harness útil para localizar custos, sem adicionar instrumentação ao fluxo normal do app.
+
+**Medição sintética desta rodada:** no Full HD foram capturados só dois quadros (um por parte): `capturePageMs` marcou 21,97 ms e 25,15 ms; conversão do bitmap, 3,90 ms e 3,73 ms. No turbo 320p, a captura da página variou entre 5,94 ms e 21,74 ms nas três amostras somadas, enquanto conversão do bitmap ficou entre 0,25 ms e 0,48 ms. No teste de camadas, a captura do primeiro plano teve picos de 28,02 ms. A fixture sintética da boca percorreu 301 quadros em 1,64 s e registrou pico de RSS do processo principal de 168.894.464 bytes.
+
+As amostras de Full HD são insuficientes para estimar p50/p95 reais e quadros repetidos reduzem a quantidade de capturas; os números indicam onde investigar, não provam aceleração do MP4. Na próxima rodada, gerar mais quadros visuais únicos e repetir o mesmo cenário algumas vezes para comparar custos de captura antes de alterar essa etapa. Preservar a espera de pintura e a captura atual até demonstrar paridade visual, pois as experiências anteriores com fonte de paint divergiram.
+
+**Verificação:** `npm run typecheck` e `npm run test:editor-v6:export` passaram nesta rodada; o harness recompilou o app e cobriu 81 quadros, 78 reaproveitados, fallback, cancelamento, emenda turbo, Full HD, vídeo em camadas e stress sintético de boca.

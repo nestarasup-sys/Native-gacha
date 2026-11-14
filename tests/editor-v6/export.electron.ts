@@ -11,6 +11,7 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 import { encodingArgs, probeExportMedia, runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
+import type { EditorV6ExportReport } from '../../electron/domains/editorV6/exportRunner'
 import { editorV6OutputColorFilter } from '../../electron/domains/editorV6/exportVideoComposition'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
@@ -408,7 +409,21 @@ async function main() {
   project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')
   factory.dispose()
+  const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
+    frames: part.frames,
+    frameRoundTripMs: part.frameTiming?.frameRoundTripMs,
+    ipcDrawMs: part.frameTiming?.ipcDrawMs,
+    captureMs: part.frameTiming?.captureMs,
+    capturePageMs: part.frameTiming?.capturePageMs,
+    captureBitmapMs: part.frameTiming?.captureBitmapMs,
+    backgroundCaptureMs: part.frameTiming?.backgroundCaptureMs,
+    foregroundCaptureMs: part.frameTiming?.foregroundCaptureMs,
+    ffmpegWriteMs: part.frameTiming?.ffmpegWriteMs
+  })))
+  assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
+  assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
   const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output,
+    captureProfile: { turbo320: captureProfile(report), fullHd1080: captureProfile(fullHd), layeredVideo320: captureProfile(videoMotion) },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))
   console.log(JSON.stringify(summary, null, 2))
