@@ -184,7 +184,18 @@ export function EditorV6Page() {
     poseSourceSnapshot: activePoseSourceSnapshot,
     faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION
   }), [activeEditorV6, availableCharacterById, activePoseSourceSnapshot])
-  const characterSourceRefreshRequired = !availableCharactersReady || faceAssetRefreshRequired
+  const characterSnapshotsRefreshing = useEditorV6CharacterSnapshotRefresh({
+    project: activeEditorV6,
+    availableCharacters,
+    availableCharactersReady,
+    poseSourceSnapshot: activePoseSourceSnapshot,
+    sceneRef,
+    updateProject: updateActiveEditorV6Project,
+    markUnsaved: markEditorV6Unsaved,
+    pausePlayback,
+    reportError: setError
+  })
+  const characterSourceRefreshRequired = !availableCharactersReady || faceAssetRefreshRequired || characterSnapshotsRefreshing
   useMotionPreparation(activeEditorV6, availableCharacters,
     saved && !isPlaying && !motionExportBusy && !characterSourceRefreshRequired
     && activePoseSourceSnapshot?.projectId === activeEditorV6Id)
@@ -265,17 +276,6 @@ export function EditorV6Page() {
       clearElementSelection: () => setSelectedElementId(null)
     })
   }, [activeEditorV6Id, resetPlayback])
-
-  useEditorV6CharacterSnapshotRefresh({
-    project: activeEditorV6,
-    availableCharacters,
-    poseSourceSnapshot: activePoseSourceSnapshot,
-    sceneRef,
-    updateProject: updateActiveEditorV6Project,
-    markUnsaved: markEditorV6Unsaved,
-    pausePlayback,
-    reportError: setError
-  })
 
   const { creatingProject, createStudio, duplicateStudio: duplicateEditorV6Project } = useEditorV6ProjectCreation({
     projects: () => editorV6Projects,

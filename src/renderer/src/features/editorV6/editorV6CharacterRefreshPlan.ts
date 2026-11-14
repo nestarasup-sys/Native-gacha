@@ -9,7 +9,7 @@ export type { EditorV6CharacterRefreshGroup, EditorV6CharacterRefreshPlan, Edito
 
 const poseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 
-/** Collect only the character snapshots that no longer match their sources. */
+/** Collect character snapshots that are stale, or all of them when opening a project. */
 export function planEditorV6CharacterRefresh(
   project: EditorV6Document,
   availableCharacters: CustomizerCharacter[],
@@ -18,7 +18,8 @@ export function planEditorV6CharacterRefresh(
   wardrobeRevisions: Record<string, string> = {},
   hairRevisions: Record<string, string> = {},
   headExtraRevisions: Record<string, string> = {},
-  eyeRevisions: Record<string, string> = {}
+  eyeRevisions: Record<string, string> = {},
+  forceRefresh = false
 ): EditorV6CharacterRefreshPlan {
   const characters = new Map(availableCharacters.map((character) => [character.id, character]))
   const groups = new Map<string, EditorV6CharacterRefreshGroup>()
@@ -27,7 +28,7 @@ export function planEditorV6CharacterRefresh(
     if (state.kind !== 'character' || !state.characterId || !state.assetId) return
     const character = characters.get(state.characterId)
     if (!character) {
-      if (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text)
+      if (forceRefresh || state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text)
       return
     }
     const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
@@ -46,7 +47,7 @@ export function planEditorV6CharacterRefresh(
     const headExtraChanged = headExtraRevision !== undefined && state.headExtraSourceRevision !== headExtraRevision
     const eyeRevision = editorV6CharacterEyeSourceRevision(character, eyeRevisions)
     const eyeChanged = eyeRevision !== undefined && state.eyeSourceRevision !== eyeRevision
-    if (!poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && editorV6CharacterSnapshotIsCurrent(state, character)) return
+    if (!forceRefresh && !poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && editorV6CharacterSnapshotIsCurrent(state, character)) return
     const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot,
       state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId,
       state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects, modelRevision ?? state.modelSourceRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null, eyeRevision ?? null])

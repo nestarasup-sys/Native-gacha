@@ -14,6 +14,7 @@ import { renderEditorV6CharacterRefresh } from './characterSnapshotRefresh'
 type EditorV6CharacterSnapshotRefreshOptions = {
   project: EditorV6Document | null
   availableCharacters: CustomizerCharacter[]
+  availableCharactersReady: boolean
   poseSourceSnapshot: PoseRevisionSnapshot | null
   sceneRef: { current: HTMLDivElement | null }
   updateProject: (update: (project: EditorV6Document) => EditorV6Document) => void
@@ -26,15 +27,32 @@ type EditorV6CharacterSnapshotRefreshOptions = {
 export function useEditorV6CharacterSnapshotRefresh({
   project,
   availableCharacters,
+  availableCharactersReady,
   poseSourceSnapshot,
   sceneRef,
   updateProject,
   markUnsaved,
   pausePlayback,
   reportError
-}: EditorV6CharacterSnapshotRefreshOptions): void {
+}: EditorV6CharacterSnapshotRefreshOptions): boolean {
   const normalizedProjectIdsRef = useRef(new Set<string>())
+  const activeProjectIdRef = useRef<string | null>(null)
+  const [refreshOnOpenProjectId, setRefreshOnOpenProjectId] = useState<string | null>(null)
   const [normalizedSourceVersion, setNormalizedSourceVersion] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+
+  useEffect(() => {
+    if (!project) {
+      activeProjectIdRef.current = null
+      setRefreshOnOpenProjectId(null)
+      setRefreshing(false)
+      return
+    }
+    if (activeProjectIdRef.current === project.id) return
+    activeProjectIdRef.current = project.id
+    setRefreshOnOpenProjectId(project.id)
+    setRefreshing(false)
+  }, [project?.id])
 
   useEffect(() => {
     if (!project || normalizedProjectIdsRef.current.has(project.id)) return
@@ -58,15 +76,22 @@ export function useEditorV6CharacterSnapshotRefresh({
   }, [project, markUnsaved, updateProject])
 
   useEffect(() => {
-    if (!project || !normalizedProjectIdsRef.current.has(project.id) || !availableCharacters.length
+    if (!project || !availableCharactersReady || !normalizedProjectIdsRef.current.has(project.id)
       || poseSourceSnapshot?.projectId !== project.id) return
 
-    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions, poseSourceSnapshot.headExtraRevisions, poseSourceSnapshot.eyeRevisions)
+    const forceRefresh = refreshOnOpenProjectId === project.id
+    if (!availableCharacters.length && !forceRefresh) return
+    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions, poseSourceSnapshot.headExtraRevisions, poseSourceSnapshot.eyeRevisions, forceRefresh)
     if (plan.missingCharacterNames.length) {
       reportError(`Não foi possível atualizar ${plan.missingCharacterNames.join(', ')} porque o personagem não está disponível no Customizador.`)
     }
-    if (!plan.groups.length) return
+    if (!plan.groups.length) {
+      if (forceRefresh) setRefreshOnOpenProjectId(null)
+      setRefreshing(false)
+      return
+    }
 
+    setRefreshing(true)
     pausePlayback()
     let cancelled = false
     const projectId = project.id
@@ -80,15 +105,23 @@ export function useEditorV6CharacterSnapshotRefresh({
         )
         if (cancelled || !result) return
 
+        if (forceRefresh) setRefreshOnOpenProjectId(null)
         updateProject((current) => current.id === projectId
           ? applyEditorV6CharacterRefreshResult(current, result, pruneEditorV6TimelineSnapshots)
           : current)
         markUnsaved()
       } catch (reason) {
-        if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
+        if (!cancelled) {
+          if (forceRefresh) setRefreshOnOpenProjectId(null)
+          reportError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
+        }
+      } finally {
+        if (!cancelled) setRefreshing(false)
       }
     })()
 
     return () => { cancelled = true }
-  }, [project, poseSourceSnapshot, availableCharacters, normalizedSourceVersion, sceneRef, pausePlayback, updateProject, markUnsaved, reportError])
+  }, [project, poseSourceSnapshot, availableCharacters, availableCharactersReady, normalizedSourceVersion, refreshOnOpenProjectId, sceneRef, pausePlayback, updateProject, markUnsaved, reportError])
+
+  return refreshing || refreshOnOpenProjectId === project?.id
 }

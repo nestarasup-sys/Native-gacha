@@ -35,7 +35,7 @@ export async function checkConcurrentSourceRefresh(character: CustomizerCharacte
   function Harness({ currentCharacter, sources }: { currentCharacter: CustomizerCharacter; sources: PoseRevisionSnapshot }) {
     const [document, setDocument] = useState(project)
     latestDocument = document
-    useEditorV6CharacterSnapshotRefresh({ project: document, availableCharacters: [currentCharacter], poseSourceSnapshot: sources,
+    useEditorV6CharacterSnapshotRefresh({ project: document, availableCharacters: [currentCharacter], availableCharactersReady: true, poseSourceSnapshot: sources,
       sceneRef: stageRef, updateProject: setDocument, markUnsaved: noop, pausePlayback: noop, reportError })
     return null
   }
