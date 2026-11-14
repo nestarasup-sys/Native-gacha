@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import { captureEditorV6FrameBitmap } from '../../electron/domains/editorV6/exportCaptureBitmap'
 
-function makeCapture(width: number, height: number, token: number, padding = 24) {
-  const stride = width + padding
-  const bytes = Buffer.alloc(stride * height * 4)
+function makeCapture(width: number, height: number, token: number, extraHeight = 24) {
+  const stride = width
+  const bytes = Buffer.alloc(stride * (height + extraHeight) * 4)
   for (let y = 0; y < height; y++) for (let x = 0; x < width; x++) {
     const offset = (y * stride + x) * 4
     bytes[offset] = (y * 17 + x) & 255
@@ -12,32 +12,30 @@ function makeCapture(width: number, height: number, token: number, padding = 24)
     bytes[offset + 3] = 255
   }
   for (let bit = 0; bit < 24; bit++) {
-    const x = width + (bit % 6) * 4 + 2
-    const y = Math.floor(bit / 6) * 4 + 2
+    const x = (bit % 6) * 4 + 2
+    const y = height + Math.floor(bit / 6) * 4 + 2
     const index = (y * stride + x) * 4
     bytes[index] = bytes[index + 1] = bytes[index + 2] = (token >>> bit) & 1 ? 255 : 0
     bytes[index + 3] = 255
   }
   const image = {
-    getSize: vi.fn(() => ({ width: stride, height })),
+    getSize: vi.fn(() => ({ width: stride, height: height + extraHeight })),
     toBitmap: vi.fn(() => bytes)
   }
   return { bytes, image, stride }
 }
 
 describe('Editor V6 single-readback frame capture', () => {
-  it('copies only the scene pixels, in BGRA row order, with exactly one toBitmap call', () => {
+  it('returns a zero-copy view of contiguous scene pixels and validates the bottom token', () => {
     const width = 32, height = 20
-    const { bytes, image, stride } = makeCapture(width, height, 0xa31f06, 28)
+    const { bytes, image } = makeCapture(width, height, 0xa31f06)
     const result = captureEditorV6FrameBitmap(image, width, height, 0xa31f06)
     expect(result).not.toBeNull()
     expect(result).toHaveLength(width * height * 4)
-    const expected = Buffer.alloc(width * height * 4)
-    for (let y = 0; y < height; y++) bytes.copy(expected, y * width * 4, y * stride * 4, y * stride * 4 + width * 4)
-    expect(result).toEqual(expected)
+    expect(result).toEqual(bytes.subarray(0, width * height * 4))
+    expect(result!.buffer).toBe(bytes.buffer)
+    expect(result!.byteOffset).toBe(bytes.byteOffset)
     expect(image.toBitmap).toHaveBeenCalledTimes(1)
-    bytes.fill(0)
-    expect(result).toEqual(expected)
   })
 
   it('rejects a stale token without modifying or cropping its scene data', () => {
@@ -48,7 +46,7 @@ describe('Editor V6 single-readback frame capture', () => {
 
   it('writes into a reusable output slice without changing the neighboring layer', () => {
     const width = 32, height = 20
-    const { bytes, image, stride } = makeCapture(width, height, 0xa31f06, 28)
+    const { bytes, image, stride } = makeCapture(width, height, 0xa31f06)
     const output = Buffer.alloc(width * height * 4 * 2, 0x7f)
     const secondLayerBefore = Buffer.from(output.subarray(width * height * 4))
     const result = captureEditorV6FrameBitmap(image, width, height, 0xa31f06, output, 0)
@@ -68,14 +66,19 @@ describe('Editor V6 single-readback frame capture', () => {
 
   it('rejects transparent or invalid compositor token cells', () => {
     const { image, bytes, stride } = makeCapture(24, 20, 1)
-    const firstCell = (2 * stride + 24 + 2) * 4
+    const firstCell = ((20 + 2) * stride + 2) * 4
     bytes[firstCell + 3] = 0
     expect(captureEditorV6FrameBitmap(image, 24, 20, 1)).toBeNull()
   })
 
   it('does not silently resize scale-factor mismatches or incomplete buffers', () => {
     const { image } = makeCapture(24, 20, 0xffffff)
-    image.getSize.mockReturnValue({ width: 49, height: 20 })
+    image.getSize.mockReturnValue({ width: 25, height: 44 })
+    expect(captureEditorV6FrameBitmap(image, 24, 20, 0xffffff)).toBeNull()
+    image.getSize.mockReturnValue({ width: 24, height: 43 })
+    expect(captureEditorV6FrameBitmap(image, 24, 20, 0xffffff)).toBeNull()
+    image.getSize.mockReturnValue({ width: 24, height: 44 })
+    image.toBitmap.mockReturnValue(Buffer.alloc(24 * 44 * 4 - 1))
     expect(captureEditorV6FrameBitmap(image, 24, 20, 0xffffff)).toBeNull()
     expect(captureEditorV6FrameBitmap(image, 0, 20, 0xffffff)).toBeNull()
   })

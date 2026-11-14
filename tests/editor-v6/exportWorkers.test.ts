@@ -6,15 +6,16 @@ import { editorV6WorkerChannels } from '../../src/shared/editorV6Export'
 
 const state = vi.hoisted(() => {
   const imageFor = (width: number, height: number, token: number, fill = 127) => {
-    const bitmap = Buffer.alloc(width * height * 4, fill)
+    const captureHeight = height + 24
+    const bitmap = Buffer.alloc(width * captureHeight * 4, fill)
     for (let bit = 0; bit < 24; bit++) {
-      const markerX = width - 24 + (bit % 6) * 4 + 2, markerY = Math.floor(bit / 6) * 4 + 2
+      const markerX = (bit % 6) * 4 + 2, markerY = height + Math.floor(bit / 6) * 4 + 2
       const offset = (markerY * width + markerX) * 4
       const color = ((token >>> bit) & 1) === 1 ? 255 : 0
       bitmap[offset] = color; bitmap[offset + 1] = color; bitmap[offset + 2] = color; bitmap[offset + 3] = 255
     }
     return {
-      getSize: () => ({ width, height }),
+      getSize: () => ({ width, height: captureHeight }),
       toBitmap: () => bitmap,
       crop: ({ x, y, width: cropWidth, height: cropHeight }: { x: number; y: number; width: number; height: number }) => {
         const cropped = Buffer.alloc(cropWidth * cropHeight * 4)
@@ -44,11 +45,11 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
         const token = script.match(/,\s*(\d+)\)\s*$/)
         if (token) {
           window.paintToken = Number(token[1])
-          ;(window.webContents as any).paintFrame?.(state.imageFor(320 + 24, 180, window.paintToken), { x: 0, y: 0, width: 344, height: 180 })
+          ;(window.webContents as any).paintFrame?.(state.imageFor(320, 180, window.paintToken), { x: 0, y: 0, width: 320, height: 204 })
         }
         return { reused: false, timings: {} }
       }),
-      capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height, window.paintToken)),
+      capturePage: vi.fn(async ({ width, height }: { width: number; height: number }) => state.imageFor(width, height - 24, window.paintToken)),
       session: { protocol: { handle: vi.fn(), unhandle: vi.fn() }, setPermissionCheckHandler: vi.fn(), setPermissionRequestHandler: vi.fn(), webRequest: { onBeforeRequest: vi.fn() } }
     })
     state.windows.push(this)
@@ -83,7 +84,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     const options = state.windowOptions[0] as any
 
-    expect(options).toMatchObject({ show: false, useContentSize: true, width: payload.width + 24, height: payload.height, transparent: true, backgroundColor: '#00000000' })
+    expect(options).toMatchObject({ show: false, useContentSize: true, width: payload.width, height: payload.height + 24, transparent: true, backgroundColor: '#00000000' })
     expect(options.webPreferences).toMatchObject({ contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, preload: 'preload.cjs' })
     expect(options.webPreferences.partition).toMatch(/^editor-v6-export-/)
     expect(window.webContents.session.protocol.handle).toHaveBeenCalledWith('gacha-editor-media', expect.any(Function))
@@ -120,7 +121,7 @@ describe('export worker lifecycle', () => {
     ready()
     const worker = await pending
     const window = state.windows[0]
-    expect(window.setContentSize).toHaveBeenCalledWith(payload.width + 24, payload.height)
+    expect(window.setContentSize).toHaveBeenCalledWith(payload.width, payload.height + 24)
     window.destroy()
     expect(window.webContents.session.protocol.unhandle).not.toHaveBeenCalled()
     expect(remove).toHaveBeenCalledWith('abort', expect.any(Function))
@@ -154,7 +155,7 @@ describe('export worker lifecycle', () => {
     let captureCount = 0
     contents.capturePage.mockImplementation(async () => {
       captureCount++
-      return state.imageFor(payload.width + 24, payload.height, captureCount === 1 ? 0xffffff : window.paintToken)
+      return state.imageFor(payload.width, payload.height, captureCount === 1 ? 0xffffff : window.paintToken)
     })
     const first = await worker.frame(10)
 
@@ -165,7 +166,7 @@ describe('export worker lifecycle', () => {
     expect(first.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 1 })
     expect(first.bitmap?.subarray(0, 32)).toEqual(output.subarray(0, 32))
     expect(first.bitmap?.some((byte) => byte !== 127)).toBe(false)
-    expect(contents.capturePage).toHaveBeenLastCalledWith({ x: 0, y: 0, width: payload.width + 24, height: payload.height })
+    expect(contents.capturePage).toHaveBeenLastCalledWith({ x: 0, y: 0, width: payload.width, height: payload.height + 24 })
     worker.close()
     factory.dispose()
   })
@@ -192,10 +193,10 @@ describe('export worker lifecycle', () => {
     contents.executeJavaScript.mockImplementation(async (script: string) => {
       const token = script.match(/,\s*(\d+)\)\s*$/)
       if (token) window.paintToken = Number(token[1])
-      contents.paintFrame(state.imageFor(payload.width + 24, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width + 24, height: payload.height })
+      contents.paintFrame(state.imageFor(payload.width, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
     })
-    contents.invalidate.mockImplementation(() => contents.paintFrame(state.imageFor(payload.width + 24, payload.height, window.paintToken), { x: 0, y: 0, width: payload.width + 24, height: payload.height }))
+    contents.invalidate.mockImplementation(() => contents.paintFrame(state.imageFor(payload.width, payload.height, window.paintToken), { x: 0, y: 0, width: payload.width, height: payload.height + 24 }))
     const frame = await worker.frame(17)
     expect(contents.beginFrameSubscription).toHaveBeenCalledWith(false, expect.any(Function))
     expect(contents.capturePage).not.toHaveBeenCalled()
@@ -226,7 +227,7 @@ describe('export worker lifecycle', () => {
     let captureCount = 0
     contents.capturePage.mockImplementation(async ({ width, height }: { width: number; height: number }) => {
       captureCount++
-      return state.imageFor(width, height, window.paintToken, captureCount === 1 ? 31 : 73)
+      return state.imageFor(width, height - 24, window.paintToken, captureCount === 1 ? 31 : 73)
     })
 
     const result = await worker.frame(12)
@@ -257,7 +258,7 @@ describe('export worker lifecycle', () => {
     contents.executeJavaScript.mockImplementation(async (script: string) => {
       const token = script.match(/,\s*(\d+)\)\s*$/)
       if (token) window.paintToken = Number(token[1])
-      contents.paintFrame(state.imageFor(payload.width + 24, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width + 24, height: payload.height })
+      contents.paintFrame(state.imageFor(payload.width, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
     })
 
@@ -278,7 +279,7 @@ describe('export worker lifecycle', () => {
     const worker = await pending
     const window = state.windows[0]
     const contents = window.webContents
-    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width + 24, payload.height, 0xffffff))
+    contents.capturePage.mockImplementation(async () => state.imageFor(payload.width, payload.height, 0xffffff))
 
     const frame = worker.frame(12)
     await vi.waitFor(() => expect(contents.invalidate.mock.calls.length).toBeGreaterThan(0))

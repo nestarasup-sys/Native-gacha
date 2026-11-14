@@ -49,7 +49,7 @@ export function createEditorV6ExportWorkerSurface(width: number, height: number)
   const paintTokenElement = document.createElement('div')
   paintTokenElement.setAttribute('aria-hidden', 'true')
   Object.assign(paintTokenElement.style, {
-    position: 'fixed', left: `${width}px`, top: '0', width: '24px', height: '16px',
+    position: 'fixed', left: '0', top: `${height}px`, width: '24px', height: '24px',
     pointerEvents: 'none', zIndex: '2147483647', opacity: '1', contain: 'strict'
   })
   const cells = Array.from({ length: 24 }, (_, bit) => {

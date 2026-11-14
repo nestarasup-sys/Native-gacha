@@ -22,7 +22,6 @@ export function createEditorV6WorkerFrameRenderer({
 }): EditorV6WorkerFrameRenderer {
   const { width, height, layeredVideo } = payload
   const layerBytes = width * height * 4
-  let frameBitmap: Buffer | undefined
   let layeredBitmap: Buffer | undefined
   let nextPaintToken = 0
   let closed = false
@@ -39,9 +38,7 @@ export function createEditorV6WorkerFrameRenderer({
   const capture = async (frame: number, outputOffset = 0) => {
     const started = performance.now()
     const token = nextPaintToken
-    const output = layeredVideo
-      ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2))
-      : (frameBitmap ??= Buffer.allocUnsafe(layerBytes))
+    const output = layeredVideo ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2)) : undefined
     const captured = await captureEditorV6PaintedFrame({ window, signal, width, height, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
     const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
     await inspectCapture?.({ window, frame, bitmap: layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap })
@@ -96,7 +93,6 @@ export function createEditorV6WorkerFrameRenderer({
     frame,
     close: () => {
       closed = true
-      frameBitmap = undefined
       layeredBitmap = undefined
     }
   }

@@ -15,14 +15,14 @@ export type EditorV6PaintCaptureResult = {
 }
 
 export type EditorV6PaintFrameCapture = {
-  capture: (token: number, output: Buffer, outputOffset?: number) => Promise<EditorV6PaintCaptureResult>
+  capture: (token: number, output?: Buffer, outputOffset?: number) => Promise<EditorV6PaintCaptureResult>
   close: () => void
 }
 
 /** Retain only the latest full frame of this export and return it only after its paint token matches. */
 export function createEditorV6PaintFrameCapture(window: BrowserWindow, width: number, height: number, signal: AbortSignal): EditorV6PaintFrameCapture {
   let latestImage: Electron.NativeImage | null = null
-  let pending: { token: number; output: Buffer; outputOffset: number; readbacks: number; bitmapMs: number; paintWaitStarted: number; resolve: (value: EditorV6PaintCaptureResult) => void; reject: (error: Error) => void } | null = null
+  let pending: { token: number; output?: Buffer; outputOffset: number; readbacks: number; bitmapMs: number; paintWaitStarted: number; resolve: (value: EditorV6PaintCaptureResult) => void; reject: (error: Error) => void } | null = null
   let closed = false
   const onFrame = (image: Electron.NativeImage) => {
     latestImage = image
@@ -86,7 +86,7 @@ export async function captureEditorV6PaintedFrame({
   width: number
   height: number
   token: number
-  output: Buffer
+  output?: Buffer
   outputOffset?: number
   retryMilliseconds?: number
   paintCapture?: EditorV6PaintFrameCapture
@@ -99,7 +99,7 @@ export async function captureEditorV6PaintedFrame({
     signal.throwIfAborted()
     readbacks++
     const capturePageStarted = performance.now()
-    const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width: width + EDITOR_V6_PAINT_TOKEN_SIZE, height }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
+    const image = await waitForExport(window.webContents.capturePage({ x: 0, y: 0, width, height: height + EDITOR_V6_PAINT_TOKEN_SIZE }), signal, FRAME_CAPTURE_TIMEOUT_MS, 'capturar quadro')
     capturePageMs += performance.now() - capturePageStarted
     const captureBitmapStarted = performance.now()
     const bitmap = captureEditorV6FrameBitmap(image, width, height, token, output, outputOffset)

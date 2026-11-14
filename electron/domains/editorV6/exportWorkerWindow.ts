@@ -17,7 +17,7 @@ export type EditorV6WorkerWindowDependencies = {
 /** Creates and locks down the isolated offscreen window used by one export worker. */
 export function createEditorV6WorkerWindow(payload: EditorV6WorkerPayload, deps: EditorV6WorkerWindowDependencies): BrowserWindow {
   const layeredVideo = payload.layeredVideo
-  const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width + EDITOR_V6_PAINT_TOKEN_SIZE, height: payload.height, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
+  const window = new BrowserWindow({ show: false, useContentSize: true, width: payload.width, height: payload.height + EDITOR_V6_PAINT_TOKEN_SIZE, enableLargerThanScreen: true, frame: false, transparent: layeredVideo, ...(layeredVideo ? { backgroundColor: '#00000000' } : {}),
     webPreferences: { preload: deps.preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false, offscreen: true, devTools: false, partition: `editor-v6-export-${crypto.randomUUID()}` } })
   const session = window.webContents.session
   const hasWorkerMedia = hasEditorV6WorkerMedia({ payload, mediaPath: deps.mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset })
@@ -37,7 +37,7 @@ export function createEditorV6WorkerWindow(payload: EditorV6WorkerPayload, deps:
   restrictRendererPermissions(window.webContents.session)
   window.removeMenu()
   // Initial native bounds can be clamped to the monitor work area on Windows.
-  window.setContentSize(payload.width + EDITOR_V6_PAINT_TOKEN_SIZE, payload.height)
+  window.setContentSize(payload.width, payload.height + EDITOR_V6_PAINT_TOKEN_SIZE)
   window.webContents.setFrameRate(60)
   restrictRendererResources(window.webContents.session, {
     html: deps.html,
