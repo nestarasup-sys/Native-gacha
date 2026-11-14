@@ -535,3 +535,13 @@ O relatório de `tests/editor-v6/export.electron.ts` agora inclui, por parte, am
 As amostras de Full HD são insuficientes para estimar p50/p95 reais e quadros repetidos reduzem a quantidade de capturas; os números indicam onde investigar, não provam aceleração do MP4. Na próxima rodada, gerar mais quadros visuais únicos e repetir o mesmo cenário algumas vezes para comparar custos de captura antes de alterar essa etapa. Preservar a espera de pintura e a captura atual até demonstrar paridade visual, pois as experiências anteriores com fonte de paint divergiram.
 
 **Verificação:** `npm run typecheck` e `npm run test:editor-v6:export` passaram nesta rodada; o harness recompilou o app e cobriu 81 quadros, 78 reaproveitados, fallback, cancelamento, emenda turbo, Full HD, vídeo em camadas e stress sintético de boca.
+
+### Continuação 2026-11-14 — capturas únicas e retry do modo paint
+
+O harness agora exporta 60 quadros visuais únicos em 320p e 1080p. Cada quadro tem cor de fundo diferente; `rendered=60`, `reused=0` é exigido, e a saída paint precisa produzir os mesmos 60 hashes BGRA do fixture. No `capturePage` 1080p, uma rodada mediu mediana de parede 3,00 s para 2 s de vídeo; `capturePageMs` p50 17,9 ms/p95 34,2 ms e `captureBitmapMs` p50 3,3 ms/p95 6,9 ms. É uma cena sintética simples, sem projeção para export real.
+
+Uma comparação independente do mesmo documento e sequência (workers diferentes) obteve hashes BGRA iguais nos 60/60 quadros para `paint-event`. O total foi 2,96 s, diferença de aproximadamente 1,4% nesta única dupla, sem evidência robusta de ganho. `paintWaitMs` p50 foi 17,3 ms e p95 89,4 ms, com cauda muito maior que `capturePage`; portanto, `capturePage` permanece o padrão e paint não foi promovido. Essa comparação não é uma captura pareada no mesmo worker e não cobre cabelo, personagem real ou vídeo em camadas.
+
+Na primeira execução do teste paint, um token antigo após a consulta imediata de `latestImage` deixava o modo esperando até o timeout de 60 s: a condição antiga contava leituras e não solicitava nova invalidação nesse caso. Foi corrigido o retry para invalidar novamente em intervalos de 16 ms enquanto a captura correta está pendente. O teste do worker reproduz imagem antiga seguida da imagem correta e valida que ela é aceita; o caminho normal `capturePage` não foi alterado.
+
+**Verificação:** `npm run test:editor-v6:export`, suíte Editor V6 (179 arquivos aprovados, 1 ignorado; 804 aprovados, 1 ignorado), `npm run typecheck`, `npm run audit:architecture` (878 arquivos) e os 15 testes de `exportWorkers.test.ts` passaram. Próximo passo de captura: comparar ambos os buffers no mesmo worker/estado/token e cobrir cena com cabelo/face e layered video; não adotar paint com o resultado atual.

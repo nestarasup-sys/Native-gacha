@@ -209,6 +209,62 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('re-invalidates paint frames when a stale token arrives before the requested frame', async () => {
+    const { factory, payload, ready } = fixture('paint-event')
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      window.paintToken = token
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token - 1), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+      return { reused: false, timings: {} }
+    })
+    let invalidations = 0
+    contents.invalidate.mockImplementation(() => {
+      invalidations++
+      const token = invalidations === 1 ? window.paintToken - 1 : window.paintToken
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+    })
+
+    const frame = await worker.frame(19)
+
+    expect(invalidations).toBe(2)
+    expect(frame.metrics).toMatchObject({ captureReadbacks: 3, captureStaleReadbacks: 2 })
+    expect(frame.bitmap).toHaveLength(payload.width * payload.height * 4)
+    worker.close()
+    factory.dispose()
+  })
+
+  it('rejects a pending paint capture when requesting another paint throws', async () => {
+    const { factory, payload, ready } = fixture('paint-event')
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      window.paintToken = token
+      contents.paintFrame(state.imageFor(payload.width, payload.height, token - 1), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+      return { reused: false, timings: {} }
+    })
+    let invalidations = 0
+    contents.invalidate.mockImplementation(() => {
+      invalidations++
+      if (invalidations === 2) throw Error('Falha sintética ao solicitar paint.')
+      contents.paintFrame(state.imageFor(payload.width, payload.height, window.paintToken - 1), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
+    })
+
+    await expect(worker.frame(20)).rejects.toThrow('Falha sintética ao solicitar paint.')
+
+    expect(invalidations).toBe(2)
+    worker.close()
+    factory.dispose()
+  })
+
   it('assembles layered frames into one reusable bitmap and aggregates both layer metrics', async () => {
     const inspected: Buffer[] = []
     const { factory, payload, ready } = fixture(undefined, { layeredVideo: true, inspectCapture: async ({ bitmap }) => { inspected.push(Buffer.from(bitmap)) } })

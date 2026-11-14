@@ -22,8 +22,26 @@ export type EditorV6PaintFrameCapture = {
 /** Retain only the latest full frame of this export and return it only after its paint token matches. */
 export function createEditorV6PaintFrameCapture(window: BrowserWindow, width: number, height: number, signal: AbortSignal): EditorV6PaintFrameCapture {
   let latestImage: Electron.NativeImage | null = null
-  let pending: { token: number; output?: Buffer; outputOffset: number; readbacks: number; bitmapMs: number; paintWaitStarted: number; resolve: (value: EditorV6PaintCaptureResult) => void; reject: (error: Error) => void } | null = null
+  let pending: { token: number; output?: Buffer; outputOffset: number; readbacks: number; bitmapMs: number; paintWaitStarted: number; retryTimer?: ReturnType<typeof setTimeout>; resolve: (value: EditorV6PaintCaptureResult) => void; reject: (error: Error) => void } | null = null
   let closed = false
+  const clearRetry = (request: NonNullable<typeof pending>) => {
+    if (request.retryTimer) clearTimeout(request.retryTimer)
+    request.retryTimer = undefined
+  }
+  const scheduleRetry = (request: NonNullable<typeof pending>) => {
+    if (request.retryTimer || closed || pending !== request) return
+    request.retryTimer = setTimeout(() => {
+      request.retryTimer = undefined
+      if (closed || pending !== request) return
+      try { window.webContents.invalidate() }
+      catch (error) {
+        pending = null
+        request.reject(error instanceof Error ? error : Error(String(error)))
+        return
+      }
+      scheduleRetry(request)
+    }, FRAME_CAPTURE_RETRY_MS)
+  }
   const onFrame = (image: Electron.NativeImage) => {
     latestImage = image
     const request = pending
@@ -35,10 +53,12 @@ export function createEditorV6PaintFrameCapture(window: BrowserWindow, width: nu
       const bitmap = captureEditorV6FrameBitmap(image, width, height, request.token, request.output, request.outputOffset)
       request.bitmapMs += performance.now() - started
       if (bitmap) {
+        clearRetry(request)
         pending = null
         request.resolve({ bitmap, readbacks: request.readbacks, paintWaitMs, capturePageMs: 0, captureBitmapMs: request.bitmapMs })
-      } else if (request.readbacks === 1) window.webContents.invalidate()
+      }
     } catch (error) {
+      clearRetry(request)
       pending = null
       request.reject(error instanceof Error ? error : Error(String(error)))
     }
@@ -62,14 +82,20 @@ export function createEditorV6PaintFrameCapture(window: BrowserWindow, width: nu
         if (pending) return reject(Error('O worker já aguarda outro quadro paint.'))
         pending = { token, output, outputOffset, readbacks, bitmapMs, paintWaitStarted: performance.now(), resolve, reject }
         window.webContents.invalidate()
+        scheduleRetry(pending)
       })
       try { return await waitForExport(waiting, signal, FRAME_CAPTURE_TIMEOUT_MS, 'aguardar quadro paint com token') }
-      finally { if (pending?.token === token) pending = null }
+      finally {
+        if (pending?.token === token) {
+          clearRetry(pending)
+          pending = null
+        }
+      }
     },
     close: () => {
       if (closed) return
       closed = true
-      if (pending) { pending.reject(Error('A captura paint foi encerrada.')); pending = null }
+      if (pending) { clearRetry(pending); pending.reject(Error('A captura paint foi encerrada.')); pending = null }
       latestImage = null
       if (!window.isDestroyed()) window.webContents.endFrameSubscription()
     }

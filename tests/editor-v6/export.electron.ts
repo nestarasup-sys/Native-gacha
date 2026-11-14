@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, protocol, type IpcMainInvokeEvent } from '
 import { execFileSync } from 'node:child_process'
 import { readFile, writeFile, readdir, mkdir, copyFile, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { editorV6MotionPlans, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
@@ -56,7 +56,10 @@ async function main() {
   project.exportAudio = [{ id: randomUUID(), fileName: `${randomUUID()}.wav`, name: 'Tone', sourceFrames: 120, sourceInFrame: 5, startFrame: 10, durationFrames: 80, gain: .75, muted: false }]
   const inspected = new Set<number>()
   const inspectEveryFrame = process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' && process.env.GACHA_EXPORT_CAPTURE_EVERY_FRAME === '1'
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), inspectCapture: process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' ? async ({ window, frame, bitmap }) => {
+  let capturePageHashes: string[] | null = null
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), inspectCapture: async ({ window, frame, bitmap }) => {
+    capturePageHashes?.push(createHash('sha256').update(bitmap).digest('hex'))
+    if (process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS !== '1') return
     if (!inspectEveryFrame && inspected.has(window.webContents.id)) return
     inspected.add(window.webContents.id)
     let yellowPixels = 0
@@ -66,16 +69,17 @@ async function main() {
     const probePixel = Array.from(bitmap.subarray(probeOffset, probeOffset + 4))
     const suffix = inspectEveryFrame ? `-${frame}` : ''
     await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
-  } : undefined })
+  } })
   let active = 0, peak = 0
-  const makeWorker = async (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => {
+  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal)
+      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
   }
+  const makeWorker = (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => makeWorkerWithFactory(factory, signal, width, height, renderProject, layeredVideo, mouthLoops)
   const options = { startFrame: 5, endFrame: 86, width: 320, height: 180, turbo: true, encoder: 'cpu' as const }
   const output = join(folder, 'turbo.mp4')
   const progressMessages: string[] = []
@@ -405,16 +409,68 @@ async function main() {
     }
     assert(characterPixels > 50, `O personagem sumiu durante a troca de pose no quadro ${index} (${characterPixels} pixels detectados).`)
   }
+  const uniqueCaptureFrameCount = 60
+  let uniqueCaptureProject = silent
+  for (let frame = 0; frame < uniqueCaptureFrameCount; frame++) {
+    const red = (frame * 47) % 256, green = (frame * 89 + 40) % 256, blue = (frame * 131 + 80) % 256
+    const backgroundColor = `#${[red, green, blue].map((value) => value.toString(16).padStart(2, '0')).join('')}`
+    uniqueCaptureProject = editEditorV6BackgroundAtFrame(uniqueCaptureProject, frame, { backgroundColor })
+  }
+  const uniqueCapture320Output = join(folder, 'capture-profile-unique-320.mp4')
+  const uniqueCapture320 = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: uniqueCapture320Output, reportPath: join(folder, 'capture-profile-unique-320.report.json')
+  })
+  const uniqueCapture1080Output = join(folder, 'capture-profile-unique-1080.mp4')
+  capturePageHashes = []
+  const uniqueCapture1080 = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: uniqueCapture1080Output, reportPath: join(folder, 'capture-profile-unique-1080.report.json'),
+    createWorker: (renderProject, _part, signal, layeredVideo) => makeWorker(signal, 1920, 1080, renderProject, layeredVideo)
+  })
+  const uniqueCapturePageHashes = capturePageHashes
+  capturePageHashes = null
+  const assertUniqueCaptureProfile = (profile: EditorV6ExportReport, resolution: string) => {
+    const parts = profile.attempts.flatMap((attempt) => attempt.parts)
+    assert(profile.state === 'completed' && !profile.fallback && profile.totalFrames === uniqueCaptureFrameCount, `Perfil ${resolution} não exportou os ${uniqueCaptureFrameCount} quadros únicos.`)
+    assert(parts.reduce((sum, part) => sum + part.rendered, 0) === uniqueCaptureFrameCount && parts.reduce((sum, part) => sum + part.reused, 0) === 0, `Perfil ${resolution} reutilizou quadros; a amostra de captura não ficou completa.`)
+    assert(parts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.samples ?? 0), 0) === uniqueCaptureFrameCount, `Perfil ${resolution} não mediu capturePage em todos os quadros.`)
+  }
+  assertUniqueCaptureProfile(uniqueCapture320, '320p')
+  assertUniqueCaptureProfile(uniqueCapture1080, '1080p')
+  assert(uniqueCapturePageHashes?.length === uniqueCaptureFrameCount && new Set(uniqueCapturePageHashes).size === uniqueCaptureFrameCount, 'capturePage não produziu 60 capturas únicas no perfil 1080p.')
   service.cancelAll(); await service.drain(); owner.destroy()
   project = staticProject
   assert(!(await readdir(folder)).some((name) => name.startsWith('editor-v6-export-') || name.startsWith('.editor-v6-')), 'Temporários de exportação não foram removidos.')
   factory.dispose()
+  const paintCaptureHashes: string[] = []
+  const paintFactory = createEditorV6WorkerFactory({
+    ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
+    mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), captureMode: 'paint-event',
+    inspectCapture: async ({ bitmap }) => { paintCaptureHashes.push(createHash('sha256').update(bitmap).digest('hex')) }
+  })
+  const uniquePaint1080Output = join(folder, 'capture-profile-paint-1080.mp4')
+  const uniquePaint1080 = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: uniquePaint1080Output, reportPath: join(folder, 'capture-profile-paint-1080.report.json'),
+    createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(paintFactory, signal, 1920, 1080, renderProject, layeredVideo)
+  })
+  paintFactory.dispose()
+  const paintCaptureParity = {
+    capturePageFrames: uniqueCapturePageHashes?.length ?? 0,
+    paintEventFrames: paintCaptureHashes.length,
+    exactFrameParity: uniqueCapturePageHashes?.length === uniqueCaptureFrameCount && paintCaptureHashes.length === uniqueCaptureFrameCount && uniqueCapturePageHashes.every((hash, index) => hash === paintCaptureHashes[index]),
+    firstDivergentFrame: uniqueCapturePageHashes?.findIndex((hash, index) => hash !== paintCaptureHashes[index]) ?? -1
+  }
+  assert(uniquePaint1080.totalFrames === uniqueCaptureFrameCount && !uniquePaint1080.fallback && active === 0, 'O perfil paint-event 1080p não concluiu os 60 quadros ou deixou renderizadores abertos.')
+  assert(paintCaptureHashes.length === uniqueCaptureFrameCount, `paint-event capturou ${paintCaptureHashes.length}/${uniqueCaptureFrameCount} quadros no perfil 1080p.`)
+  assert(paintCaptureParity.exactFrameParity, `As capturas independentes divergem no quadro ${paintCaptureParity.firstDivergentFrame}; não promover paint-event com esse fixture.`)
   const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
     frames: part.frames,
+    rendered: part.rendered,
+    reused: part.reused,
     frameRoundTripMs: part.frameTiming?.frameRoundTripMs,
     ipcDrawMs: part.frameTiming?.ipcDrawMs,
     captureMs: part.frameTiming?.captureMs,
     capturePageMs: part.frameTiming?.capturePageMs,
+    paintWaitMs: part.frameTiming?.paintWaitMs,
     captureBitmapMs: part.frameTiming?.captureBitmapMs,
     backgroundCaptureMs: part.frameTiming?.backgroundCaptureMs,
     foregroundCaptureMs: part.frameTiming?.foregroundCaptureMs,
@@ -423,7 +479,13 @@ async function main() {
   assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
   assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
   const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output,
-    captureProfile: { turbo320: captureProfile(report), fullHd1080: captureProfile(fullHd), layeredVideo320: captureProfile(videoMotion) },
+    captureProfile: {
+      turbo320: captureProfile(report), fullHd1080: captureProfile(fullHd), layeredVideo320: captureProfile(videoMotion),
+      unique320: { totalFrames: uniqueCapture320.totalFrames, milliseconds: uniqueCapture320.milliseconds, parts: captureProfile(uniqueCapture320) },
+      unique1080: { totalFrames: uniqueCapture1080.totalFrames, milliseconds: uniqueCapture1080.milliseconds, uniqueFrames: uniqueCapturePageHashes?.length, parts: captureProfile(uniqueCapture1080) },
+      paintEvent1080: { totalFrames: uniquePaint1080.totalFrames, milliseconds: uniquePaint1080.milliseconds, parts: captureProfile(uniquePaint1080) },
+      paintCaptureParity
+    },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))
   console.log(JSON.stringify(summary, null, 2))

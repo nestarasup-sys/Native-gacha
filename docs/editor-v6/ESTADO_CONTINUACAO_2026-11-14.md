@@ -54,3 +54,13 @@ Os seguintes itens não rastreados já existiam e foram deixados intactos, fora 
 - `src/renderer/public/codex-editor-v6-thumbnail-diagnostic.html`
 
 Nenhum conteúdo de `app-data` nem mídia pessoal foi usado ou modificado como fixture.
+
+## Complemento desta continuação — 14/11/2026
+
+Depois do checkpoint, aumentei a amostra de captura para 60 quadros visuais únicos em 320p e 1080p e executei uma comparação `capturePage`/`paint-event`. A cena é sintética e usa o mesmo documento/sequência em workers separados. Os 60 hashes BGRA coincidiram. Em 1080p, a mediana da captura de página foi 17,9 ms (p95 34,2 ms); conversão do bitmap, 3,3 ms (p95 6,9 ms). A exportação de 2 s levou 3,00 s com `capturePage` e 2,96 s com paint nesta única dupla. Paint teve `paintWaitMs` p50 17,3 ms/p95 89,4 ms. A variação pequena no tempo total e a cauda de espera não justificam trocar o caminho padrão; permanece `capturePage`.
+
+O primeiro teste do caminho paint encontrou um timeout reproduzível: depois de uma imagem com token obsoleto, não havia nova invalidação por causa de uma condição baseada no contador de leituras. A captura paint agora repete a invalidação, limitada a uma chamada por intervalo de 16 ms, até o token correto ou cancelamento/timeout. Um teste de worker cobre token antigo seguido pelo atual. Essa alteração atua apenas no modo experimental paint.
+
+Verificações executadas nesta continuação: worker (15/15), suíte Editor V6 (804 aprovados, 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos) e harness Electron de exportação com perfil e comparação paint; tudo passou. Ainda falta comparar captura de página e paint no mesmo worker/mesmo estado com cabelo/face, verificar layered video e repetir A/B em múltiplas rodadas. O projeto real de 12 min/473 transições e o erro `-36861` seguem pendentes.
+
+Na retomada, preservar a branch `Dev-V2`, `capturePage` como padrão e os quatro caminhos locais não rastreados listados acima. O próximo trabalho é localizar o estágio dominante no cenário atual e testar uma intervenção pequena com paridade, sem presumir que o resultado deste fixture sintético se aplica ao MP4 longo.
