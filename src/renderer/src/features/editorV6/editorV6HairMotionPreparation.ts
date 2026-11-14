@@ -132,8 +132,21 @@ export async function prepareEditorV6HairMotionBundle(
   })
   const totalDataUrlCharacters = [...surfaces, ...textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
   if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação. Desative o preset experimental ou reduza o número de transições no trecho.')
-  const preparationProfile = { totalMilliseconds: performance.now() - preparationStarted,
+  const sourceReuse = rawSources.stats()
+  const materialReuse = currentExportReuse.stats()
+  const preparationProfile = {
+    totalMilliseconds: performance.now() - preparationStarted,
     stages: stageProfiler.snapshot(),
-    counts: { surfaces: surfaces.length, textures: textures.length, rigs: rigs.length, motionTransitions: motionTransitions.length, encodedCharacters: totalDataUrlCharacters } }
+    counts: {
+      surfaces: surfaces.length, textures: textures.length, rigs: rigs.length,
+      motionTransitions: motionTransitions.length, encodedCharacters: totalDataUrlCharacters
+    },
+    reuse: {
+      modelLoads: sourceReuse.modelReads, modelReuses: sourceReuse.modelReuses,
+      poseLoads: sourceReuse.poseReads, poseReuses: sourceReuse.poseReuses,
+      hairStyleLoads: materialReuse.styleLoads, hairStyleReuses: materialReuse.styleReuses,
+      hairTextureBuilds: materialReuse.textureBuilds, hairTextureReuses: materialReuse.textureReuses
+    }
+  }
   return { presetSlot, preset, preparationProfile, ...(exportOptions.hairAnimationLoopFrames ? { loopFrames: exportOptions.hairAnimationLoopFrames } : {}), ...(exportOptions.hairPoseReactionOnly ? { poseReactionOnly: true } : {}), ...(exportOptions.hairPosteriorOnly ? { posteriorOnly: true } : {}), surfaces, textures, rigs, motionTransitions }
 }

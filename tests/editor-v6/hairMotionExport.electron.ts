@@ -779,7 +779,11 @@ async function main() {
     const samplePreparationProfile = {
       totalMilliseconds: 18.25,
       stages: [{ name: 'prepareCharacterRenderers', samples: 2, totalMilliseconds: 10, maxMilliseconds: 6 }],
-      counts: { surfaces: 6, textures: 2, rigs: 2, motionTransitions: 1, encodedCharacters: 512 }
+      counts: { surfaces: 6, textures: 2, rigs: 2, motionTransitions: 1, encodedCharacters: 512 },
+      reuse: {
+        modelLoads: 1, modelReuses: 1, poseLoads: 1, poseReuses: 1,
+        hairStyleLoads: 2, hairStyleReuses: 2, hairTextureBuilds: 2, hairTextureReuses: 2
+      }
     }
     const report = await exportHairMp4(320, 180, 0, 61, true, 'hair-motion.mp4',
       project, { ...hairAnimation, preparationProfile: samplePreparationProfile })
@@ -788,7 +792,8 @@ async function main() {
       'R27: o relatório principal perdeu o tempo medido antes de iniciar o MP4.')
     const exportedReport = JSON.parse(await readFile(join(folder, 'hair-motion.mp4.report.json'), 'utf8')) as typeof report
     assert(exportedReport.hairPreparation?.stages[0]?.name === 'prepareCharacterRenderers'
-      && exportedReport.hairPreparation.counts.encodedCharacters === 512,
+      && exportedReport.hairPreparation.counts.encodedCharacters === 512
+      && exportedReport.hairPreparation.reuse?.hairTextureReuses === 2,
       'R27: o arquivo JSON não persistiu corretamente os diagnósticos do preparo de cabelo.')
     assert(report.attempts[0].parts.every(part => (part.frameTiming?.hairCompositionMs?.samples ?? 0) > 0), 'O relatório do export não separou o tempo da composição experimental de cabelo.')
     assert(report.attempts[0].parts.reduce((total, part) => total + (part.frameTiming?.hairMotionPrewarmMs?.totalMs ?? 0), 0) > 0, 'O relatório não mediu o custo do pré-aquecimento da física do cabelo.')

@@ -70,6 +70,11 @@ export type EditorV6HairPreparationProfile = {
   totalMilliseconds: number
   stages: Array<{ name: string; samples: number; totalMilliseconds: number; maxMilliseconds: number }>
   counts: { surfaces: number; textures: number; rigs: number; motionTransitions: number; encodedCharacters: number }
+  /** Export-local source/material reuse; optional so older reports remain readable. */
+  reuse?: {
+    modelLoads: number; modelReuses: number; poseLoads: number; poseReuses: number
+    hairStyleLoads: number; hairStyleReuses: number; hairTextureBuilds: number; hairTextureReuses: number
+  }
 }
 
 export type EditorV6HairMotionBundle = {
@@ -293,7 +298,17 @@ const preparationProfile = z.object({
     rigs: z.number().int().min(0).max(10_000),
     motionTransitions: z.number().int().min(0).max(10_000),
     encodedCharacters: z.number().int().min(0).max(96_000_000)
-  }).strict()
+  }).strict(),
+  reuse: z.object({
+    modelLoads: z.number().int().min(0).max(100_000),
+    modelReuses: z.number().int().min(0).max(100_000),
+    poseLoads: z.number().int().min(0).max(100_000),
+    poseReuses: z.number().int().min(0).max(100_000),
+    hairStyleLoads: z.number().int().min(0).max(100_000),
+    hairStyleReuses: z.number().int().min(0).max(100_000),
+    hairTextureBuilds: z.number().int().min(0).max(100_000),
+    hairTextureReuses: z.number().int().min(0).max(100_000)
+  }).strict().optional()
 }).strict()
 
 const bundleSchema = z.object({

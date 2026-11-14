@@ -40,14 +40,30 @@ const validBundle = () => ({
 })
 
 test('validates export-only hair layers and their cross-references', () => {
-  const parsed = parseEditorV6HairMotionBundle(validBundle())
+  const bundle = validBundle()
+  bundle.preparationProfile = {
+    totalMilliseconds: 7,
+    stages: [],
+    counts: { surfaces: 3, textures: 1, rigs: 1, motionTransitions: 0, encodedCharacters: 128 },
+    reuse: {
+      modelLoads: 1, modelReuses: 2, poseLoads: 1, poseReuses: 2,
+      hairStyleLoads: 3, hairStyleReuses: 6, hairTextureBuilds: 4, hairTextureReuses: 5
+    }
+  }
+  const parsed = parseEditorV6HairMotionBundle(bundle)
   assert.equal(parsed.presetSlot, 2)
   assert.deepEqual(parsed.preset, FIRST_HAIR_MOTION_PRESET)
+  assert.deepEqual(parsed.preparationProfile.reuse, bundle.preparationProfile.reuse)
   assert.equal(parsed.rigs[0].layers[0].textureId, 'hair')
   assert.equal(parsed.rigs[0].eyesAboveRearHairSurfaceId, 'eyes')
   const legacyBundle = validBundle()
   delete legacyBundle.rigs[0].eyesAboveRearHairSurfaceId
-  assert.equal(parseEditorV6HairMotionBundle(legacyBundle).rigs[0].eyesAboveRearHairSurfaceId, undefined)
+  const legacyParsed = parseEditorV6HairMotionBundle(legacyBundle)
+  assert.equal(legacyParsed.rigs[0].eyesAboveRearHairSurfaceId, undefined)
+  assert.equal(legacyParsed.preparationProfile, undefined)
+  const invalidReuse = structuredClone(bundle)
+  invalidReuse.preparationProfile.reuse.hairTextureReuses = -1
+  assert.throws(() => parseEditorV6HairMotionBundle(invalidReuse))
   const invalid = validBundle()
   invalid.rigs[0].layers[0].textureId = 'missing'
   assert.throws(() => parseEditorV6HairMotionBundle(invalid), /imagem de cabelo preparada/i)

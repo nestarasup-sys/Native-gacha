@@ -1511,3 +1511,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Compatibilidade:** chamadas fora desse fluxo continuam sem cache. Testes cobrem deduplicação concorrente, isolamento por provedor/slot e recuperação após rejeição.
 
 **Verificação:** testes focados (6), suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Foi removida uma leitura duplicada por provedor/slot nesse preparo; não foi medido ganho em segundos nem em exportação real.
+
+### Continuação na `Dev-V2` — registrar taxas de reutilização no preparo de cabelo
+
+**Mudança:** o perfil numérico do pacote de animação agora inclui leituras e reutilizações de modelos e poses do Fabricador, estilos de cabelo e texturas. Os contadores já existiam nos caches locais; antes eram descartados ao fim do preparo. Eles seguem junto com os tempos e contagens no relatório da exportação para orientar a próxima análise de custo.
+
+**Compatibilidade:** o objeto novo é opcional no contrato validado, então pacotes e relatórios antigos continuam aceitos. O perfil contém apenas contadores numéricos; nenhum nome, caminho, identificador de personagem ou dado de imagem foi acrescentado.
+
+**Verificação:** suíte completa do Editor V6 (178 arquivos, 790 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), harness Electron de animação de cabelo, teste direto do validador de pacote (12 casos), build e `git diff --check` passaram. Os números permitem inspecionar reutilização futura; ainda não demonstram ganho de velocidade.
