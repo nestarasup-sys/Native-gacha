@@ -29,7 +29,7 @@ export async function prepareEditorV6HairMotionTransitions({
 }): Promise<void> {
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
   const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const exportMotionPlans = editorV6MotionPlans(project).filter(plan => motionBlocks.get(plan.blockId)?.incomingMotion?.key === plan.key)
+  const exportMotionPlans = editorV6MotionPlans(project, { includeSpeechMouth: exportOptions.mouthLoop !== false }).filter(plan => motionBlocks.get(plan.blockId)?.incomingMotion?.key === plan.key)
   const relevantPlans = selectEditorV6HairlessTransitionBakes(exportMotionPlans, exportOptions, plan => {
     if (editorV6MotionChangesHairGeometry(plan)) return true
     return !editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)

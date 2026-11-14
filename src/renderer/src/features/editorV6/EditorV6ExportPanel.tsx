@@ -39,8 +39,9 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           <p><strong>Destino do MP4</strong><br /><small>{exportFolder ?? 'Perguntar onde salvar a cada exportação'}</small></p>
           <button type="button" onClick={() => void chooseExportFolder()}>{exportFolder ? 'Mudar pasta fixa' : 'Escolher pasta fixa'}</button>
           {exportFolder && <button type="button" onClick={() => void clearExportFolder()}>Voltar a perguntar onde salvar</button>}
-          <p><strong>1080p · 1920 × 1080 · CPU H.264</strong></p>
+          <p><strong>{options.encoder === 'amf' ? '1080p · 1920 × 1080 · AMD AMF H.264' : '1080p · 1920 × 1080 · CPU H.264'}</strong></p>
           <p><strong>Turbo 2× obrigatório</strong><br /><small>Se o Turbo falhar, a exportação será interrompida e mostrará o erro.</small></p>
+          <label className="v6-export-check v6-export-amf-profile"><input type="checkbox" checked={options.encoder === 'amf'} onChange={(event) => setOptions({ ...options, encoder: event.target.checked ? 'amf' : 'cpu', mouthLoop: !event.target.checked })} /><span><strong>Forçar AMD AMF · sem fallback</strong><small>Usa somente h264_amf. Também desativa a animação automática da boca; as falas, piscadas e expressões salvas continuam.</small></span></label>
           <p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
           <label>Preset de cabelo<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
           {!selectedHairPreset && <small role="status">O preset selecionado está vazio. Crie ou selecione um preset para exportar.</small>}
@@ -50,8 +51,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
             onSave={saveHairPreset}
             onDiscard={() => { setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }} />}
           {hairPresetMessage && <small role="status">{hairPresetMessage}</small>}
-          <label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>
-          <small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem.</small>
+          {options.encoder === 'amf' ? <small className="v6-export-mouth-disabled">A boca permanece parada durante as falas neste perfil.</small> : <><label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label><small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem.</small></>}
         </fieldset>
         <EditorV6ExportAudioSettings
           clips={project.exportAudio ?? []}

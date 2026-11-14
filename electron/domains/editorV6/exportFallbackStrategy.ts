@@ -36,6 +36,7 @@ export async function renderEditorV6ExportWithFallback(dependencies: Dependencie
     signal.throwIfAborted()
     const attempt = report.attempts.at(-1)
     if (attempt) attempt.error = formatError(error)
+    if (options.encoder === 'amf') throw Error(`AMF obrigatório falhou; nenhum codificador alternativo foi tentado: ${formatError(error)}`)
     if (options.forceTurbo1080) throw Error(`Turbo obrigatório falhou: ${formatError(error)}`)
     if (!options.turbo || requestedPartCount < 2) throw error
 

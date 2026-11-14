@@ -223,7 +223,10 @@ describe('V6 motion scheduling and portable cache', () => {
     const doc = fixture(), speech = doc.timeline.tracks.find((track) => track.kind === 'speech')!
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a troca', characterId: 'alice', startFrame: 86, durationFrames: 2 }]
     const plan = editorV6MotionPlans(doc)[0]
+    const mouthlessPlan = editorV6MotionPlans(doc, { includeSpeechMouth: false })[0]
     expect(plan.samples.some((sample) => sample.faceMode === 'talk')).toBe(true)
+    expect(mouthlessPlan.samples.every((sample) => sample.faceMode !== 'talk' && sample.faceMode !== 'talk-blink')).toBe(true)
+    expect(mouthlessPlan.key).not.toBe(plan.key)
     for (const sample of plan.samples) {
       const frame = plan.endFrame + sample.offset, talking = frame >= 86 && frame < 88
       expect(sample.faceMode).toBe(talking ? 'talk' : undefined)

@@ -13,7 +13,7 @@ export type EditorV6PreparedExportMotions = Awaited<ReturnType<typeof prepareExp
 
 type Dependencies = {
   project: EditorV6Document
-  options: Pick<EditorV6ExportOptions, 'startFrame' | 'endFrame' | 'mouthLoopCycleFrames' | 'testMode'>
+  options: Pick<EditorV6ExportOptions, 'startFrame' | 'endFrame' | 'mouthLoop' | 'mouthLoopCycleFrames' | 'testMode'>
   testSettings: EditorV6ExportTestSettings
   characters: CustomizerCharacter[]
   signal: AbortSignal
@@ -38,7 +38,8 @@ export async function prepareEditorV6ExportMotions(dependencies: Dependencies): 
     concurrency: options.testMode && options.testMode !== 'controle'
       ? testSettings.motionConcurrency
       : motionPreparationConcurrency ?? 2,
-    mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 },
+    includeSpeechMouth: options.mouthLoop !== false,
+    ...(options.mouthLoop === false ? {} : { mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 } }),
     bake: (request, bakeSignal) => {
       if (inputSamples.length < 3 && !inputSamples.some((sample) => sample.characterId === request.character.id)) {
         inputSamples.push({

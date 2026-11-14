@@ -128,7 +128,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
       getElectronProcessMetrics: deps.getElectronProcessMetrics,
       createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
-        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation)
+        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, options.mouthLoop !== false)
         return workers.create({ ...workerData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal)
       },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress

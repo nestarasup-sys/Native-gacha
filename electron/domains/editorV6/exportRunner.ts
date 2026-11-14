@@ -155,6 +155,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     report.currentPhase = 'encoderProbe'
     await saveReport()
     const encoder = await selectEditorV6ExportEncoder(options.encoder, testEncoder)
+    if (!encoder && options.encoder === 'amf') throw Error('O codificador AMD AMF obrigatório (h264_amf) não está disponível neste FFmpeg ou não conseguiu iniciar. Nenhum outro codificador foi tentado.')
     if (!encoder) throw Error('Nenhum codificador H.264 pôde ser iniciado.')
     const finish = async (parts: EditorV6ExportPartReport[]) => {
       report.currentPhase = 'finalization'

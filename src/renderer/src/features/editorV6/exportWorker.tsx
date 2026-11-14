@@ -9,7 +9,7 @@ import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } fr
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
-  const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
+  const { project, width, height, layeredVideo, animateMouth = true, mouthLoops, hairAnimation } = await worker.payload()
   const surface = createEditorV6ExportWorkerSurface(width, height)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
@@ -21,7 +21,7 @@ async function initialize() {
   const assetsById = new Map(projectAssetIndex)
   const hairResources = await createEditorV6ExportWorkerHairResources(hairAnimation)
   window.addEventListener('pagehide', hairResources.dispose, { once: true })
-  const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops)
+  const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops, animateMouth)
   const renderFrame = createEditorV6ExportFrameRenderer({
     project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById, hairRuntime,
     prepareAssets: prepareFrameAssets,

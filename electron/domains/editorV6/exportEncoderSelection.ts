@@ -33,7 +33,7 @@ export function createEditorV6EncoderProbe({ ffmpeg, signal, report, runCommand 
 export async function selectEditorV6ExportEncoder(preference: EditorV6ExportOptions['encoder'], probe: EditorV6EncoderProbe): Promise<string> {
   const candidates = preference === 'auto'
     ? ['h264_nvenc', 'h264_qsv', 'h264_amf', 'h264_mf', 'libx264', 'libopenh264']
-    : ['libx264', 'libopenh264']
+    : preference === 'amf' ? ['h264_amf'] : ['libx264', 'libopenh264']
   for (const encoder of candidates) if (await probe(encoder)) return encoder
   return ''
 }

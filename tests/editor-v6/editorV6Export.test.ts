@@ -30,7 +30,7 @@ describe('planejamento de exportação do Editor V6', () => {
   })
 
   it('expõe apenas codificadores aceitos pelo contrato de exportação', () => {
-    expect(EDITOR_V6_ENCODER_CHOICES.map((choice) => choice.value)).toEqual(['auto', 'cpu'])
+    expect(EDITOR_V6_ENCODER_CHOICES.map((choice) => choice.value)).toEqual(['auto', 'cpu', 'amf'])
     for (const choice of EDITOR_V6_ENCODER_CHOICES) {
       expect(() => planEditorV6Export({ ...options, encoder: choice.value }, 100)).not.toThrow()
     }

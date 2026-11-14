@@ -70,6 +70,17 @@ describe('sondagem e seleção de codificador do Editor V6', () => {
     expect(unavailable).toHaveBeenCalledTimes(2)
   })
 
+  it('força somente h264_amf no perfil AMD e não procura outro codificador', async () => {
+    const probe = vi.fn(async (encoder: string) => encoder === 'h264_amf')
+
+    await expect(selectEditorV6ExportEncoder('amf', probe)).resolves.toBe('h264_amf')
+    expect(probe.mock.calls.map(([encoder]) => encoder)).toEqual(['h264_amf'])
+
+    const unavailable = vi.fn(async () => false)
+    await expect(selectEditorV6ExportEncoder('amf', unavailable)).resolves.toBe('')
+    expect(unavailable.mock.calls.map(([encoder]) => encoder)).toEqual(['h264_amf'])
+  })
+
   it('mantém CPU atual no fallback e só testa CPU quando a tentativa usou GPU', async () => {
     const probe = vi.fn(async (encoder: string) => encoder === 'libopenh264')
 

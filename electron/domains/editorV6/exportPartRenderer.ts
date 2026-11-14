@@ -72,7 +72,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   let renderProject = project
   let mouthLoops: EditorV6ExportMouthLoops | undefined
   try {
-    if (speechInRange) {
+    if (speechInRange && options.mouthLoop !== false) {
       const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
         signal,
         characters,

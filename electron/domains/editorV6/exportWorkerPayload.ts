@@ -8,6 +8,7 @@ type HairRigKey = `${string}:${string}`
 
 export type EditorV6ExportWorkerData = {
   project: EditorV6Document
+  animateMouth: boolean
   hairAnimation?: EditorV6HairMotionBundle
 }
 
@@ -56,7 +57,8 @@ export function createEditorV6ExportWorkerData(
   project: EditorV6Document,
   part: EditorV6ExportPart,
   mouthLoops?: EditorV6ExportMouthLoops,
-  hairAnimation?: EditorV6HairMotionBundle
+  hairAnimation?: EditorV6HairMotionBundle,
+  animateMouth = true
 ): EditorV6ExportWorkerData {
   const assetIds = new Set<string>()
   const elementById = new Map(project.elements.map(element => [element.id, element]))
@@ -109,7 +111,7 @@ export function createEditorV6ExportWorkerData(
 
   const blocksById = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
   const activeMotionStates: EditorV6Element[] = []
-  for (const plan of editorV6MotionPlans(project)) {
+  for (const plan of editorV6MotionPlans(project, { includeSpeechMouth: animateMouth })) {
     if (plan.startFrame >= part.endFrame || plan.endFrame <= part.startFrame) continue
     activeMotionStates.push(plan.from, plan.to)
     relevantCharacterElementIds.add(plan.elementId)
@@ -130,7 +132,7 @@ export function createEditorV6ExportWorkerData(
     ...project,
     assets: project.assets.filter(asset => assetIds.has(asset.id))
   }
-  if (!hairAnimation) return { project: workerProject }
+  if (!hairAnimation) return { project: workerProject, animateMouth }
 
   const requiredRigKeys = new Set<HairRigKey>()
   const requiredPoseKeys = new Set<string>()
@@ -154,6 +156,7 @@ export function createEditorV6ExportWorkerData(
 
   return {
     project: workerProject,
+    animateMouth,
     hairAnimation: {
       ...hairAnimation,
       rigs,

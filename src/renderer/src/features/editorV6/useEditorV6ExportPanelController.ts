@@ -137,7 +137,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
         project,
-        options: { ...options, ...DEFAULT_EXPORT_SETTINGS, ...(animateHair ? {} : { hairPoseReactionOnly: false, hairPosteriorOnly: false }), mouthLoopCycleFrames: options.mouthLoopCycleFrames },
+        options: { ...options, ...DEFAULT_EXPORT_SETTINGS, encoder: options.encoder, mouthLoop: options.encoder === 'amf' ? false : true, ...(animateHair ? {} : { hairPoseReactionOnly: false, hairPosteriorOnly: false }), mouthLoopCycleFrames: options.mouthLoopCycleFrames },
         hairPresetSlot,
         hairPreset: preparedHairPreset,
         prepareHair,

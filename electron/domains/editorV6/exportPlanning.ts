@@ -26,7 +26,10 @@ export function createEditorV6ExportExecutionPlan(
   environment: Readonly<Record<string, string | undefined>> = process.env,
   platform: NodeJS.Platform = process.platform
 ): EditorV6ExportExecutionPlan {
-  const options: EditorV6ExportOptions = { ...requestedOptions, mouthLoop: true }
+  const options: EditorV6ExportOptions = {
+    ...requestedOptions,
+    mouthLoop: requestedOptions.encoder === 'amf' ? false : true
+  }
   const testSettings = editorV6ExportTestSettings(options.testMode)
   const stressWorkerOverride = environment.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
     ? environment.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS
@@ -35,7 +38,7 @@ export function createEditorV6ExportExecutionPlan(
   // during short harness runs; authored timeline frames stay unchanged.
   const mouthLoopBatchFrames = stressWorkerOverride === '4' ? Math.floor(EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES / 2) : EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
-  const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
+  const speechInRange = options.mouthLoop !== false && hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const parts = speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
   if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
     throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')

@@ -132,6 +132,18 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(dependencies.progress).toHaveBeenCalledWith(expect.objectContaining({ state: 'preparing', frames: 7 }))
   })
 
+  it('pula toda preparação de boca quando o perfil a desativa', async () => {
+    const process = mockProcess()
+    vi.mocked(spawnExportProcess).mockReturnValue(process.value)
+    const dependencies = createDependencies({ speechInRange: true, options: { ...createDependencies().options, mouthLoop: false } })
+
+    await renderEditorV6ExportPart(dependencies)
+
+    expect(prepareExportMouthLoops).not.toHaveBeenCalled()
+    expect(dependencies.onMouthPrepared).not.toHaveBeenCalled()
+    expect(dependencies.createWorker).toHaveBeenCalledWith(dependencies.project, dependencies.part, dependencies.signal, false, undefined)
+  })
+
   it('aborta sem iniciar FFmpeg quando a preparação de fala falha', async () => {
     const failure = new Error('Falha sintética na preparação da fala')
     vi.mocked(prepareExportMouthLoops).mockRejectedValue(failure)

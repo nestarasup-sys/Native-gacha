@@ -9,7 +9,7 @@ export type EditorV6ExportAudio = {
   libraryAudioId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu' | 'amf'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Single source of truth for the Editor V6 Export panel's user-facing default profile. */
 export const EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT = 2
 export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
@@ -19,7 +19,8 @@ export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
 /** Keep the UI encoder selector aligned with the validated IPC contract. */
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
-  { value: 'cpu', label: 'CPU · H.264' }
+  { value: 'cpu', label: 'CPU · H.264' },
+  { value: 'amf', label: 'AMD AMF obrigatório · sem animação de boca' }
 ] as const satisfies ReadonlyArray<{ value: EditorV6ExportOptions['encoder']; label: string }>
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
@@ -55,7 +56,7 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 320 || options.height < 180 || options.width > 1920 || options.height > 1080 || options.width % 2 || options.height % 2 || options.width * 9 !== options.height * 16) throw Error('A resolução precisa ser 16:9, com dimensões pares, entre 320×180 e 1920×1080.')
   if (options.forceTurbo1080 !== undefined && typeof options.forceTurbo1080 !== 'boolean') throw Error('Configuração de Turbo obrigatório inválida.')
   if (options.forceTurbo1080 && (!options.turbo || options.width !== 1920 || options.height !== 1080 || options.endFrame - options.startFrame < 2)) throw Error('Turbo obrigatório exige 1080p e ao menos dois quadros.')
-  if (options.encoder !== 'auto' && options.encoder !== 'cpu') throw Error('Codificador inválido.')
+  if (options.encoder !== 'auto' && options.encoder !== 'cpu' && options.encoder !== 'amf') throw Error('Codificador inválido.')
   if (options.testMode !== undefined && !isEditorV6ExportTestMode(options.testMode)) throw Error('Modo de teste de exportação inválido.')
   if (options.mouthLoop !== undefined && typeof options.mouthLoop !== 'boolean') throw Error('Configuração de animação da boca inválida.')
   if (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
@@ -87,7 +88,7 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
   return result
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; animateMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
 export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels' | 'captureReadbacks' | 'captureStaleReadbacks', number>>

@@ -108,6 +108,24 @@ describe('política de fallback da exportação do Editor V6', () => {
     }
   })
 
+  it('interrompe o perfil AMF quando ele falha sem consultar ou usar fallback', async () => {
+    const failure = new Error('falha no AMF')
+    const dependencies = createDependencies({
+      options: { ...createDependencies().options, encoder: 'amf', mouthLoop: false },
+      encoder: 'h264_amf',
+      renderAttempt: vi.fn<EditorV6ExportAttempt>(async (parts, encoder, parallelism = 2) => {
+        dependencies.report.attempts.push({ parts: [], encoder, parallelism })
+        throw failure
+      })
+    })
+
+    await expect(renderEditorV6ExportWithFallback(dependencies)).rejects.toThrow('AMF obrigatório falhou; nenhum codificador alternativo foi tentado: falha no AMF')
+    expect(dependencies.renderAttempt).toHaveBeenCalledOnce()
+    expect(dependencies.renderAttempt).toHaveBeenCalledWith(dependencies.plannedParts, 'h264_amf', 2)
+    expect(dependencies.selectFallbackEncoder).not.toHaveBeenCalled()
+    expect(dependencies.report.fallback).toBe(false)
+  })
+
   it('propaga cancelamento antes de preparar fallback', async () => {
     const controller = new AbortController()
     const cancelled = new Error('exportação cancelada')
