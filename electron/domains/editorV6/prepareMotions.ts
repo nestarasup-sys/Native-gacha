@@ -12,6 +12,8 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   includeSpeechMouth?: boolean
   mouthLoop?: { startFrame: number; cycleFrames: number }
   concurrency?: 1 | 2 | 3
+  /** Export-only fresh render: ignore atlas snapshots attached by previous runs. */
+  ignoreExistingMotions?: boolean
 }) {
   const began = performance.now()
   const characters = new Map(deps.characters.map((character) => [character.id, character]))
@@ -30,9 +32,14 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
 
   const motionOptions = { includeSpeechMouth: deps.includeSpeechMouth !== false }
   const plans = editorV6MotionPlans(project, motionOptions)
-  const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame, motionOptions).map((plan) => plan.blockId))
+  // The editor can reuse attached atlases for interactive previews. The
+  // isolated export instead starts with fresh pixels so previous exports
+  // cannot affect measurements or visually stale motion samples.
+  const missingIds = deps.ignoreExistingMotions
+    ? undefined
+    : new Set(missingEditorV6Motions(project, startFrame, endFrame, motionOptions).map((plan) => plan.blockId))
   const missing = plans.filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
-    && missingIds.has(plan.blockId))
+    && (!missingIds || missingIds.has(plan.blockId)))
   const groups = new Map<string, typeof missing>()
   for (const plan of missing) {
     const group = groups.get(plan.key)
@@ -41,7 +48,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   }
   const assets = new Map(project.assets.map((asset) => [asset.id, asset]))
   const knownMotions = new Map<string, NonNullable<EditorV6Document['timeline']['tracks'][number]['blocks'][number]['incomingMotion']>>()
-  for (const track of project.timeline.tracks) for (const block of track.blocks) {
+  if (!deps.ignoreExistingMotions) for (const track of project.timeline.tracks) for (const block of track.blocks) {
     const motion = block.incomingMotion
     if (!motion || !editorV6MotionHasAvailableAssets(motion, assets)) continue
     if (!knownMotions.has(motion.key)) knownMotions.set(motion.key, motion)

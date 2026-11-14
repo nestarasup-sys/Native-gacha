@@ -374,6 +374,34 @@ describe('transition preparation reuse', () => {
     expect(ready.project.assets).toHaveLength(3)
     expect(ready.project.timeline.tracks.find((track) => track.kind === 'character')!.blocks).toHaveLength(4)
   })
+  it('forces fresh per-export bakes while sharing identical transitions inside that same run', async () => {
+    const { project, character } = fixture()
+    const previous = await prepareExportMotions(project, 0, 300, {
+      signal: new AbortController().signal, characters: [character],
+      bake: async request => resultFor(request), progress: () => {}
+    })
+    const previousIds = previous.project.timeline.tracks.find(track => track.kind === 'character')!.blocks
+      .map(block => block.incomingMotion?.assetId).filter(Boolean)
+    let bakes = 0
+    const current = await prepareExportMotions(previous.project, 0, 300, {
+      signal: new AbortController().signal, characters: [character],
+      ignoreExistingMotions: true,
+      bake: async request => { bakes++; return resultFor(request) }, progress: () => {}
+    })
+    const currentIds = current.project.timeline.tracks.find(track => track.kind === 'character')!.blocks
+      .map(block => block.incomingMotion?.assetId).filter(Boolean)
+
+    expect(previousIds).toHaveLength(3)
+    expect(currentIds).toHaveLength(3)
+    expect(bakes).toBe(2)
+    expect(current.stats).toMatchObject({ total: 3, unique: 2, requested: 2, reused: 1 })
+    expect(currentIds.every(id => !previousIds.includes(id))).toBe(true)
+    expect(new Set(currentIds).size).toBe(2)
+    expect(previous.project.timeline.tracks.find(track => track.kind === 'character')!.blocks
+      .map(block => block.incomingMotion?.assetId).filter(Boolean)).toEqual(previousIds)
+    expect(missingEditorV6Motions(current.project)).toHaveLength(0)
+  })
+
   it('keeps character sequences on stable lanes and runs different characters concurrently', async () => {
     const { project, character } = fixture()
     const secondCharacter = addSecondCharacter(project, character)
