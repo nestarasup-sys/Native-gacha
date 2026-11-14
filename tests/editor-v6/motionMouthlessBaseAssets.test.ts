@@ -51,6 +51,32 @@ describe('Editor V6 mouthless base assets', () => {
     expect(createId).toHaveBeenCalledTimes(2)
   })
 
+  it('expands mouthless base crops to cover enlarged mouth pixels while keeping the reference frame', async () => {
+    const talkCanvas = canvas(80, 80), blinkCanvas = canvas(80, 80)
+    const renderer = { renderToCanvas: vi.fn()
+      .mockResolvedValueOnce({ canvas: talkCanvas })
+      .mockResolvedValueOnce({ canvas: blinkCanvas }) } as unknown as Renderer
+    const baseline = frame(renderer), isolated = frame(renderer)
+    const cropCalls: Array<{ left: number; top: number; width: number; height: number }> = []
+    const cropCanvas = vi.fn((_source: HTMLCanvasElement, bounds: { left: number; top: number; width: number; height: number }) => {
+      cropCalls.push(bounds)
+      return canvas(bounds.width, bounds.height)
+    })
+    const render = vi.fn(async () => { throw Error('A imagem de referência não deve ser renderizada duas vezes.') })
+    const result = await prepareEditorV6MouthlessBaseAssets({
+      from, baseline, render, isolatedBaseline: isolated,
+      requiredCrop: { left: 14, top: 15, width: 12, height: 9 },
+      readCrop: () => ({ left: 2, top: 3, width: 20, height: 24 }),
+      cropCanvas
+    })
+    expect(result.sourceCrop).toEqual({ left: 2, top: 3, width: 24, height: 24 })
+    expect(cropCalls).toEqual([result.sourceCrop, result.sourceCrop])
+    expect(result.isolatedBaseline).toBe(isolated)
+    expect(render).not.toHaveBeenCalled()
+    expect(isolated.dispose).not.toHaveBeenCalled()
+    expect(baseline.dispose).not.toHaveBeenCalled()
+  })
+
   it('reuses the talk base when talk-blink assets are unavailable', async () => {
     const renderToCanvas = vi.fn().mockResolvedValueOnce({ canvas: canvas(30, 40) }).mockRejectedValueOnce(Error('Blink precisa de olhos fechados correspondentes'))
     const renderer = { renderToCanvas } as unknown as Renderer

@@ -34,6 +34,10 @@ type PrepareMotionMouthlessBaseAssetsOptions = {
   from: EditorV6Element
   baseline: MotionMouthlessBaseFrame
   render: RenderMotionFaceFrame
+  /** Expands the native crop to include the widest rendered mouth sample. */
+  requiredCrop?: MotionPixelCrop
+  /** Caller-owned frame: avoids rerendering the reference mouth during base preparation. */
+  isolatedBaseline?: MotionMouthlessBaseFrame
   isBlinkUnavailable?: (error: unknown) => boolean
   readCrop?: typeof readMotionCanvasCrop
   cropCanvas?: typeof cropMotionCanvas
@@ -48,7 +52,7 @@ function isBlinkUnavailable(error: unknown): boolean {
 export async function prepareEditorV6MouthlessBaseAssets(options: PrepareMotionMouthlessBaseAssetsOptions): Promise<MotionMouthlessBaseAssets> {
   try { return await buildMotionMouthlessBaseAssets(options) }
   catch (error) {
-    options.baseline.dispose()
+    if (!options.isolatedBaseline) options.baseline.dispose()
     throw error
   }
 }
@@ -57,11 +61,15 @@ async function buildMotionMouthlessBaseAssets({
   from,
   baseline,
   render,
+  requiredCrop,
+  isolatedBaseline: suppliedIsolatedBaseline,
   isBlinkUnavailable: isBlinkUnavailableError = isBlinkUnavailable,
   readCrop = readMotionCanvasCrop,
   cropCanvas = cropMotionCanvas,
   createId = () => crypto.randomUUID()
 }: PrepareMotionMouthlessBaseAssetsOptions): Promise<MotionMouthlessBaseAssets> {
+  let isolatedBaseline = suppliedIsolatedBaseline
+  try {
   const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
   let sourceCrop: MotionPixelCrop
   try { sourceCrop = readCrop(fullTalk.canvas, false, 0) }
@@ -72,8 +80,8 @@ async function buildMotionMouthlessBaseAssets({
     finally { fullTalkBlink.canvas.width = fullTalkBlink.canvas.height = 1 }
   } catch (error) { if (!isBlinkUnavailableError(error)) throw error }
 
-  const isolatedBaseline = await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
-  try {
+  if (requiredCrop) sourceCrop = unionMotionCrops(sourceCrop, requiredCrop)
+  isolatedBaseline ??= await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
     const baseTalkId = createId()
     const baseTalkCanvas = cropCanvas(isolatedBaseline.canvas, sourceCrop)
     let baseTalkDataUrl: string
@@ -100,7 +108,7 @@ async function buildMotionMouthlessBaseAssets({
     }
     return { sourceCrop, isolatedBaseline, assets }
   } catch (error) {
-    isolatedBaseline.dispose()
+    if (!suppliedIsolatedBaseline) isolatedBaseline?.dispose()
     throw error
   }
 }

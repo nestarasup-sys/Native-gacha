@@ -43,7 +43,7 @@ describe('pipeline de boca em pose estática', () => {
     const baseline = frame()
     const isolatedBaseline = frame({ mouthCrop: { left: 8, top: 9, width: 7, height: 6, fingerprint: 4 } })
     const comparisons = [frame({ mouthCrop: { left: 9, top: 10, width: 6, height: 5, fingerprint: 5 } }), frame({ mouthCrop: { left: 10, top: 11, width: 5, height: 4, fingerprint: 6 } })]
-    const renderedFrames = [baseline, ...comparisons]
+    const renderedFrames = [baseline, isolatedBaseline, ...comparisons]
     let renderedFrameIndex = 0
     const render = vi.fn(async (_progress: number, _mode?: 'talk', _scale?: number, _fingerprint?: boolean, _prepared?: unknown) =>
       renderedFrames[renderedFrameIndex++]) as unknown as EditorV6MotionFrameRenderer
@@ -68,8 +68,8 @@ describe('pipeline de boca em pose estática', () => {
 
     expect(result).toMatchObject({ asset, assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', facePatchSourceCrop: sourceCrop, mouthlessBaseAssets: baseAssets, motion: packed.motion,
       metrics: { milliseconds: 25, ...rigMetrics, samples: 3, atlasPixels: 96 } })
-    expect(prepareMouthlessBaseAssets).toHaveBeenCalledWith({ from: pose, baseline, render })
-    expect(render).toHaveBeenCalledTimes(3)
+    expect(prepareMouthlessBaseAssets).toHaveBeenCalledWith({ from: pose, baseline, render, isolatedBaseline, requiredCrop: { left: 8, top: 9, width: 7, height: 6 } })
+    expect(render).toHaveBeenCalledTimes(4)
     expect(comparisons.every((item) => item.dispose.mock.calls.length === 1)).toBe(true)
     expect(buildIsolatedMouthAtlas).toHaveBeenCalledWith(expect.objectContaining({ sourceCrop, key: 'static-mouth', rotation: 0, flipX: false }))
     expect(createPatch).toHaveBeenCalledTimes(3)

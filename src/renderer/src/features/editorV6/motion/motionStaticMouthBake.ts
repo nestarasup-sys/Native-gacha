@@ -51,12 +51,18 @@ export async function bakeEditorV6StaticMouthLoop({
 
   const baseline = await render(0, from.activeFaceMode, 1, true)
   if (baseline.mouthCanvas && baseline.mouthCrop) {
-    const { sourceCrop, isolatedBaseline, assets: mouthlessBaseAssets } = await prepareMouthlessBaseAssets({ from, baseline, render })
     const isolatedPatches: Array<{ canvas: HTMLCanvasElement; crop: Crop }> = []
+    let isolatedBaseline: Awaited<ReturnType<EditorV6MotionFrameRenderer>> | undefined
     let mouthAtlas: HTMLCanvasElement | undefined
     try {
-      const baselineMouthCrop = isolatedBaseline.mouthCrop!
-      isolatedPatches.push({ canvas: createTransparentPatch(isolatedBaseline.mouthCanvas!, baselineMouthCrop), crop: baselineMouthCrop })
+      // Sample the actual enlarged mouth geometry before deciding the crop of
+      // the character's mouthless bases; static talk alone may be too small.
+      isolatedBaseline = await render(0, from.activeFaceMode, 1, true, baseline.renderer, true)
+      if (!isolatedBaseline.mouthCanvas || !isolatedBaseline.mouthCrop) {
+        throw Error('Não foi possível isolar a peça da boca para o ciclo de fala.')
+      }
+      const baselineMouthCrop = isolatedBaseline.mouthCrop
+      isolatedPatches.push({ canvas: createTransparentPatch(isolatedBaseline.mouthCanvas, baselineMouthCrop), crop: baselineMouthCrop })
       for (let index = 1; index < scales.length; index++) {
         const comparison = await render(0, from.activeFaceMode, scales[index], index === scales.length - 1, baseline.renderer)
         try {
@@ -68,15 +74,26 @@ export async function bakeEditorV6StaticMouthLoop({
       const mouthUnion = isolatedPatches.reduce((bounds, patch) => unionCrop(bounds, patch.crop), isolatedPatches[0].crop)
       for (const patch of isolatedPatches) {
         const normalized = createCanvas()
-        normalized.width = mouthUnion.width + 4
-        normalized.height = mouthUnion.height + 4
-        const normalizedContext = normalized.getContext('2d')!
-        normalizedContext.drawImage(patch.canvas, 2, 2, patch.crop.width, patch.crop.height,
-          2 + patch.crop.left - mouthUnion.left, 2 + patch.crop.top - mouthUnion.top, patch.crop.width, patch.crop.height)
+        try {
+          normalized.width = mouthUnion.width + 4
+          normalized.height = mouthUnion.height + 4
+          const context = normalized.getContext('2d')
+          if (!context) throw Error('Não foi possível normalizar a região da boca.')
+          context.drawImage(patch.canvas, 2, 2, patch.crop.width, patch.crop.height,
+            2 + patch.crop.left - mouthUnion.left, 2 + patch.crop.top - mouthUnion.top, patch.crop.width, patch.crop.height)
+        } catch (error) {
+          normalized.width = normalized.height = 1
+          throw error
+        }
         patch.canvas.width = patch.canvas.height = 1
         patch.canvas = normalized
         patch.crop = mouthUnion
       }
+      // Both base images and mouth atlas must reference this same expanded
+      // crop; keep the strict atlas bounds validation in place.
+      const { sourceCrop, assets: mouthlessBaseAssets } = await prepareMouthlessBaseAssets({
+        from, baseline, render, isolatedBaseline, requiredCrop: mouthUnion
+      })
       const packed = buildIsolatedMouthAtlas({
         patches: isolatedPatches,
         sampleOffsets: request.plan.samples.map((sample) => sample.offset),
@@ -87,18 +104,17 @@ export async function bakeEditorV6StaticMouthLoop({
         maxAtlasPixels: request.maxAtlasPixels
       })
       mouthAtlas = packed.atlas
-      const count = request.plan.samples.length
       return {
         asset: packed.asset, facePatchSourceCrop: sourceCrop,
         assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', mouthlessBaseAssets,
         motion: packed.motion,
-        metrics: { milliseconds: elapsedMilliseconds(), ...rigMetrics(), samples: count, atlasPixels: packed.atlasPixels }
+        metrics: { milliseconds: elapsedMilliseconds(), ...rigMetrics(), samples: request.plan.samples.length, atlasPixels: packed.atlasPixels }
       }
     } finally {
       isolatedPatches.forEach(({ canvas }) => { canvas.width = canvas.height = 1 })
       if (mouthAtlas) mouthAtlas.width = mouthAtlas.height = 1
       baseline.dispose()
-      isolatedBaseline.dispose()
+      isolatedBaseline?.dispose()
     }
   }
 
