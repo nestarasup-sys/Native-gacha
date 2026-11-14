@@ -4,9 +4,10 @@ Data do checkpoint: 13/11/2026, BRT
 
 - **Repositório:** `C:\TRABALHO 2\OUTROS\GACHA EM C++`
 - **Branch:** `Dev-V2`
-- **Base desta retomada:** `b16faabf Fix Editor V6 checkpoint formatting`
-- **Estado Git antes desta continuação:** branch local estava 67 commits à frente de `origin/Dev-V2`; este trabalho será commitado localmente depois das verificações, deixando-a 68 commits à frente. Nada será enviado ao GitHub.
-- **Continuação mais recente:** evitar Promises e suspensão de frame quando todas as imagens SVG já estão carregadas.
+- **Base desta etapa:** `93ffcd04 docs: checkpoint Editor V6 continuation`.
+- **Commit de código desta etapa:** `c4b98add perf: avoid per-row copies in Editor V6 capture`.
+- **Branch após o commit:** `Dev-V2`, 70 commits à frente de `origin/Dev-V2`. Sem push.
+- **Continuação mais recente:** eliminar as cópias de pixels por linha na captura do compositor, mantendo a cerca de token por quadro.
 
 ## O que estava sendo feito
 
@@ -20,6 +21,10 @@ Na continuação seguinte, também eliminei a criação de um novo objeto para o
 
 Na última etapa, o readiness SVG não cria mais uma Promise resolvida por imagem nem suspende o renderizador quando `onLoad` já confirmou todas as fontes atuais. O worker percorre o `NodeList` diretamente e aguarda somente imagens ainda pendentes. Um microbenchmark com dez imagens prontas em cada um dos 5.700 quadros ficou em mediana **12,51 ms no caminho com Promises** contra **3,01 ms sem Promises pendentes**. É o custo isolado do readiness; não estima o tempo do MP4.
 
+Nesta etapa, movi o marcador de pintura de uma faixa de 24 px à direita para uma faixa de 24 px abaixo da cena. O worker passa a capturar exatamente `largura × (altura + 24)`, valida o token na faixa inferior e envia ao FFmpeg somente os primeiros `largura × altura` pixels BGRA. No caminho sem vídeo em camadas, isso é uma view do buffer de `toBitmap()` sem cópia; em camadas, cada imagem validada é copiada em uma operação contínua para o buffer reutilizável, em vez de copiar linha por linha. A fila serial do FFmpeg, o token de mesmo quadro, os limites de dimensões, alpha e os retries permanecem ativos.
+
+O microbenchmark sintético em 1920×1080 e 120 capturas mediu mediana **142,03 ms** no caminho anterior (cópia por linha), **0,10 ms** no novo caminho sem camadas (view sem cópia) e **78,86 ms** com uma cópia contínua para o fluxo em camadas. O fixture reutilizou o mesmo buffer e não mediu o custo real de `capturePage()`, da alocação de `toBitmap()` ou do MP4 completo; os números servem apenas para comparar o trabalho de recorte/cópia.
+
 ## O que melhorou nesta linha de trabalho
 
 As otimizações de cabelo e exportação documentadas em `PLANO_ACELERACAO_EXPORT.md` e `REESTRUTURACAO.md` reduzem trabalho repetido por quadro: preparo da física do cabelo, correspondência e interpolação das mechas, trajetória da cabeça, mapas de personagens, cópias da cena, consultas a assets, leituras faciais e geração das chaves visuais. A resolução dos frames, a composição e as regras visuais foram preservadas.
@@ -32,9 +37,11 @@ Benchmarks anteriores também mostraram ganhos isolados nas operações medidas:
 - `npm run test:editor-v6`: **179 arquivos aprovados, 1 ignorado; 803 testes aprovados, 1 ignorado**. O perfil sintético incluído também passou (23 verificações).
 - `npm run typecheck`: passou.
 - `npm run audit:architecture`: passou; 878 arquivos TS/TSX, sem erros de sintaxe, imports ausentes ou violações de fronteira.
-- `npm run test:editor-v6:export`: build e harness Electron integrado passaram. Cobriu 81 quadros (78 reutilizados), áudio contínuo na emenda, fallback, cancelamento preservando o destino anterior, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros; o pico de RSS reportado do processo principal foi **168.554.496 bytes**. O harness removeu os próprios temporários.
+- `npm run test:editor-v6:export`: build e harness Electron integrado passaram após a troca de geometria; cobriu 81 quadros (78 reutilizados), áudio contínuo na emenda, fallback, cancelamento preservando o destino anterior, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros; o pico de RSS reportado do processo principal foi **169.488.384 bytes**. O harness removeu os próprios temporários.
+- `npm run test:editor-v6:export-overlay`: build e teste de paridade com MP4 real passaram em 60 quadros, duas partes Turbo, três entradas de mídia e emenda nos quadros 29/30; cobre o caminho em camadas.
+- Testes focados de bitmap, workers e superfície: **23 aprovados**, incluindo token inferior, view zero-copy, buffer combinado, dimensões, alpha, imagem stale e cancelamento.
 - Microbenchmarks das chaves visuais: a rodada anterior teve mediana 55,35 ms sem cache e 7,31 ms com cache; a rodada após incluir os fundos, 54,33 ms e 6,66 ms. Ambos são isolados da exportação MP4.
-- `git diff --check`: passou antes do commit local.
+- `git diff --check`: passou antes do commit local de código `c4b98add`.
 
 ## O que permanece sem comprovação
 
@@ -47,27 +54,26 @@ Benchmarks anteriores também mostraram ganhos isolados nas operações medidas:
 
 ## Estado de uso
 
-**O app permanece utilizável para continuar editando e desenvolvendo** segundo os gates automatizados desta retomada: suíte, typecheck, auditoria, build e harness Electron passaram. Não há evidência de regressão causada por esta alteração.
+**O app permanece utilizável para continuar editando e desenvolvendo** segundo os gates automatizados desta retomada: suíte, typecheck, auditoria, build e harnesses Electron de exportação e sobreposição passaram depois da alteração. Não há evidência de regressão na captura ou composição.
 
 Isso não garante o cenário do projeto longo, a duração total do export, a ausência do `-36861` nem a experiência visual manual, pois esses pontos não foram reproduzidos nesta rodada.
 
 ## Próximos passos ao retomar
 
 1. Permanecer na `Dev-V2`; não trocar para a branch Lab nem sincronizar com GitHub sem pedido.
-2. **Ponto exato da pausa:** estava mapeando o round-trip de cada frame entre `exportWorkers.ts`, `exportWorkerFrameRenderer.ts` e o renderer. O worker chama `executeJavaScript` para desenhar, captura o bitmap reutilizável e, em modo de camadas, desenha/captura fundo e primeiro plano sequencialmente. Não houve alteração de código depois de `e945e2b9`; o worktree versionado está limpo.
-3. **Leitura seguinte:** examinar individualmente `exportPartRenderer.ts`, `exportAttemptRenderer.ts`, `exportFrameCapture.ts` e `exportFramePipeline.ts`, seus chamadores e testes. Localizar o custo evitável sem remover sincronização de pintura, captura validada, paridade visual ou proteção de cancelamento. Experimentos anteriores de captura antecipada e remoção de espera causaram divergência e não devem ser repetidos sem teste de paridade apropriado.
-4. **Escolha da próxima mudança:** só depois desse mapa implementar uma otimização pequena e mensurável. Primeiro adicionar/ajustar teste de regressão e, se a mudança tiver efeito isolável, microbenchmark; não inferir ganho no MP4 a partir de microbenchmark.
-5. Priorizar o caminho de renderização por quadro: o perfil histórico aponta 88,9 s acumulados de round-trip, 57,4 s de escrita FFmpeg, 48,1 s de desenho IPC, 39,4 s de captura e 24,7 s de espera RAF em um export aquecido; são contadores sobrepostos, não somáveis.
-6. Quando houver condição de medir sem interferência, comparar a mesma exportação longa com parâmetros e máquina iguais, registrando duração, RSS dos processos e logs do Electron/FFmpeg. Usar projeto pessoal somente quando necessário e sem modificar seus dados.
-7. Investigar o `-36861` a partir de logs e perfis de processo; o harness curto não é evidência suficiente para atribuir causa.
-8. Repetir o teste específico de transições/flip e fazer inspeção visual no app quando a sessão permitir.
-9. Para cada alteração: revisar o diff, rodar o teste focado, suíte V6, typecheck, auditoria e build conforme o escopo, atualizar este checkpoint e criar commit local. Não fazer push sem solicitação.
+2. **Ponto exato da pausa:** o código sem cópia por linha foi commitado em `c4b98add`; os testes funcionais e a paridade de vídeo passaram. A leitura de `exportPartRenderer.ts`, `exportAttemptRenderer.ts`, `exportFrameCapture.ts`, `exportFramePipeline.ts` e dos workers já foi feita nesta etapa.
+3. **Próxima investigação:** obter `captureBitmapMs` e tempo de parede em comparações equivalentes para descobrir quanto do microbenchmark aparece no export completo; em paralelo, continuar pelo maior estágio de caminho crítico entre IPC/desenho, espera de pintura e escrita FFmpeg. Os tempos históricos dessas fases são acumulados e se sobrepõem, portanto não somá-los como parede.
+4. Manter a sincronização de pintura, token do mesmo quadro, fila de escrita limitada, cancelamento e validação das emendas. As tentativas antigas de usar evento paint como fonte direta e remover a espera de pintura tiveram divergência visual.
+5. Comparar o mesmo projeto longo, resolução e encoder sob cache comparável quando essa medição puder ocorrer sem interferência. Não modificar os dados do projeto nem `app-data`; ainda falta A/B específico para 12 min/473 transições.
+6. Investigar o `-36861` por logs e perfis de processo: os harnesses aprovados não reproduzem o encerramento longo e não identificam por que o handler do Crashpad se desconectou.
+7. Repetir o teste específico de transições/flip e fazer inspeção visual no app quando a sessão permitir.
+8. Para cada alteração: teste focado, suíte V6, typecheck, auditoria, build e revisão do diff conforme o escopo; atualizar este checkpoint e criar commit local. Não fazer push sem solicitação.
 
 ## Registro da pausa solicitada
 
-- O código otimizado e a documentação da retomada anterior já estão salvos no commit local `e945e2b9`; não havia edição de código pendente quando este checkpoint foi escrito.
-- Esta atualização registra a leitura técnica em andamento e uma sequência concreta de investigação para a próxima retomada. Ela não interrompe o objetivo contínuo de melhorar confiabilidade e desempenho do Editor V6.
-- A branch permanece `Dev-V2`, 68 commits à frente de `origin/Dev-V2`. Nenhum push foi feito.
+- O checkpoint anterior foi salvo em `93ffcd04`; a melhoria da captura foi salva em `c4b98add`.
+- O plano e este relatório registram o estado posterior à implementação, as verificações e a investigação seguinte. O objetivo contínuo de melhorar confiabilidade e desempenho do Editor V6 permanece ativo.
+- A branch permanece `Dev-V2`; os commits desta etapa são locais e nenhum push foi feito.
 - Os quatro caminhos não rastreados listados abaixo já existiam e foram preservados; eles não fazem parte deste checkpoint nem devem ser removidos como limpeza.
 
 ## Arquivos locais preservados
