@@ -1,4 +1,5 @@
 import type { BrowserWindow, IpcMain } from 'electron'
+import { env as nodeEnv } from 'node:process'
 import { type EditorV6RenderFrameResult, type EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { waitForExport } from './exportProcess'
 import { editorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
@@ -62,7 +63,8 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
         window, payload, signal: workerController.signal, captureRetryMilliseconds,
         paintCapture: deps.captureMode === 'paint-event' ? paintCapture : undefined,
         comparePaintCapture: deps.captureMode === 'compare-paint' ? paintCapture : undefined,
-        inspectCapture: deps.inspectCapture
+        inspectCapture: deps.inspectCapture,
+        doubleBufferLayers: payload.layeredVideo && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
       })
       return { close, frame: frameRenderer.frame }
     } catch (error) { close(); throw error }

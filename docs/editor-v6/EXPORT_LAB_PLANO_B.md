@@ -23,7 +23,7 @@ O primeiro comando baixa uma build LGPL do FFmpeg 9.0.2 para `out/editor-v6-stre
 
 ## Experimento de throughput do pipeline de quadros (branch Plano B)
 
-A exportação normal agora pode preparar **um único quadro independente** enquanto o FFmpeg ainda recebe o anterior, reduzindo a serialização entre Chromium e encoder. O processamento de vídeo **em camadas** continua sequencial porque reutiliza o bitmap combinado, e a próxima gravação só começa depois da confirmação do pipe. A otimização beneficia a alimentação dos encoders CPU/Turbo e AMD AMF, **sem alterar parâmetros, bitrate, cor ou presets**. O efeito sobre o tempo final ainda não foi medido.
+A exportação agora pode preparar **um único quadro** enquanto o FFmpeg ainda recebe o anterior, reduzindo a serialização entre Chromium e encoder. Isso inclui **vídeo em camadas**, com dois buffers BGRA alternados: o quadro anterior não é sobrescrito durante a montagem do próximo; cada camada reaproveitada é copiada apenas para o buffer seguinte. A próxima gravação só começa depois da confirmação do pipe. O modo serial desativa também o buffer duplo. A otimização beneficia a alimentação dos encoders CPU/Turbo e AMD AMF, **sem alterar parâmetros, bitrate, cor ou presets**. O custo extra por worker em 1920×1080 no vídeo em camadas é um segundo buffer de cerca de 15,8 MiB. O efeito sobre o tempo final ainda não foi medido.
 
 Para comparar a versão serial com a versão com sobreposição, usando o mesmo commit, projeto, GPU e FFmpeg, executar no PowerShell após o build e a preparação de ferramentas:
 

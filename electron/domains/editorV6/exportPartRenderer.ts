@@ -95,7 +95,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
 
   const beganPart = performance.now()
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
-  const framePipelineOverlap = !layeredVideo && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+  const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
   // All part jobs use this process's monotonic clock, so offsets expose actual overlap.
   const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap }
   const timingAccumulators = createEditorV6TimingAccumulators()
@@ -130,7 +130,8 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       counters: result,
       timingAccumulators,
       frameMetrics,
-      // CapturePage/toBitmap owns its BGRA buffer; layered exports reuse one.
+      // Ordinary captures own BGRA views; layered workers alternate two
+      // buffers so FFmpeg never observes pixels from the subsequent frame.
       // Set GACHA_EDITOR_V6_FRAME_OVERLAP=0 for a comparable serial A/B run.
       overlapEncoding: framePipelineOverlap,
       writeFrame: (bitmap) => waitForExport(

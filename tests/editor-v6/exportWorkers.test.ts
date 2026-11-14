@@ -464,6 +464,65 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('alternates layered BGRA buffers without overwriting in-flight frames or losing reused layers', async () => {
+    const { factory, payload, ready } = fixture(undefined, { layeredVideo: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    let lastFrame = 0, lastLayer = ''
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const request = script.match(/renderEditorV6ExportFrame\((\d+),\s*'([^']+)',\s*(\d+)\)/)
+      if (!request) throw Error('Requisição de quadro inválida.')
+      lastFrame = Number(request[1])
+      lastLayer = request[2]
+      window.paintToken = Number(request[3])
+      return { reused: false, layerReused: (lastFrame === 2 && lastLayer === 'background')
+        || (lastFrame === 3 && lastLayer === 'foreground'), timings: {} }
+    })
+    contents.capturePage.mockImplementation(async ({ width, height }: { width: number; height: number }) => {
+      const fill = lastFrame === 1 ? (lastLayer === 'background' ? 20 : 40)
+        : lastFrame === 2 ? 90 : 33
+      return state.imageFor(width, height - 24, window.paintToken, fill)
+    })
+    const bytes = payload.width * payload.height * 4
+    const first = await worker.frame(1)
+    const savedFirst = Buffer.from(first.bitmap!)
+    const second = await worker.frame(2)
+
+    expect(second.bitmap).not.toBe(first.bitmap)
+    expect(first.bitmap).toEqual(savedFirst)
+    expect(second.bitmap!.subarray(0, bytes).every(value => value === 20)).toBe(true)
+    expect(second.bitmap!.subarray(bytes).every(value => value === 90)).toBe(true)
+    expect(contents.capturePage).toHaveBeenCalledTimes(3)
+
+    // The caller has acknowledged the first pipe write before requesting the
+    // third frame; its original slot can now be recycled safely.
+    const third = await worker.frame(3)
+    expect(third.bitmap).toBe(first.bitmap)
+    expect(third.bitmap).not.toBe(second.bitmap)
+    expect(third.bitmap!.subarray(0, bytes).every(value => value === 33)).toBe(true)
+    expect(third.bitmap!.subarray(bytes).every(value => value === 90)).toBe(true)
+    expect(contents.capturePage).toHaveBeenCalledTimes(4)
+    worker.close()
+    factory.dispose()
+  })
+
+  it('keeps the old single layered bitmap for the explicit serial A/B mode', async () => {
+    vi.stubEnv('GACHA_EDITOR_V6_FRAME_OVERLAP', '0')
+    const { factory, payload, ready } = fixture(undefined, { layeredVideo: true })
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const first = await worker.frame(1)
+    const second = await worker.frame(2)
+    expect(first.bitmap).toBe(second.bitmap)
+    worker.close()
+    factory.dispose()
+    vi.unstubAllEnvs()
+  })
+
   it('rejects a paint-token capture and ends the subscription when its worker closes', async () => {
     const { factory, payload, ready } = fixture('paint-event')
     const pending = factory.create(payload, new AbortController().signal)

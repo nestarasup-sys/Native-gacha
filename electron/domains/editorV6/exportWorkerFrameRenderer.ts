@@ -12,12 +12,14 @@ export type EditorV6WorkerFrameRenderer = {
 
 /** Owns frame requests, paint-token capture, and layered bitmap assembly for one worker window. */
 export function createEditorV6WorkerFrameRenderer({
-  window, payload, signal, captureRetryMilliseconds, paintCapture, comparePaintCapture, inspectCapture
+  window, payload, signal, captureRetryMilliseconds, paintCapture, comparePaintCapture, inspectCapture, doubleBufferLayers = false
 }: {
   window: BrowserWindow
   payload: EditorV6WorkerPayload
   signal: AbortSignal
   captureRetryMilliseconds: number
+  /** Preserve the preceding layered BGRA buffer until FFmpeg confirms its write. */
+  doubleBufferLayers?: boolean
   paintCapture?: EditorV6PaintFrameCapture
   comparePaintCapture?: EditorV6PaintFrameCapture
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
@@ -25,6 +27,8 @@ export function createEditorV6WorkerFrameRenderer({
   const { width, height, layeredVideo } = payload
   const layerBytes = width * height * 4
   let layeredBitmap: Buffer | undefined
+  let spareLayeredBitmap: Buffer | undefined
+  let currentLayeredBitmap: Buffer | undefined
   let nextPaintToken = 0
   let closed = false
 
@@ -45,7 +49,7 @@ export function createEditorV6WorkerFrameRenderer({
   const capture = async (frame: number, outputOffset = 0, layer?: 'background' | 'foreground') => {
     const started = performance.now()
     const token = nextPaintToken
-    const output = layeredVideo ? (layeredBitmap ??= Buffer.allocUnsafe(layerBytes * 2)) : undefined
+    const output = layeredVideo ? currentLayeredBitmap : undefined
     const captured = await captureEditorV6PaintedFrame({ window, signal, width, height, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
     const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
     const sceneBitmap = layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap
@@ -73,6 +77,12 @@ export function createEditorV6WorkerFrameRenderer({
       } }
     }
 
+    // A normal layered frame uses the last assembled buffer. When lookahead
+    // is enabled, assemble into the other one: FFmpeg may still be reading the
+    // previous frame, including when only one layer changes.
+    currentLayeredBitmap = doubleBufferLayers && layeredBitmap
+      ? (spareLayeredBitmap ?? Buffer.allocUnsafe(layerBytes * 2))
+      : (layeredBitmap ?? Buffer.allocUnsafe(layerBytes * 2))
     const timings: EditorV6FrameTimings = { ...result.timings }
     const metrics: EditorV6FrameMetrics = { ...result.metrics }
     const collect = (drawn: EditorV6RenderFrameResult) => {
@@ -80,7 +90,15 @@ export function createEditorV6WorkerFrameRenderer({
       addEditorV6FrameMetrics(metrics, drawn.metrics)
     }
     const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
-      if (drawn.layerReused) return
+      if (drawn.layerReused) {
+        // The previous composite still owns the unchanged layer. Copy only
+        // that half into the new buffer; never expose uninitialized pixels.
+        if (!layeredBitmap || !currentLayeredBitmap) throw Error('Uma camada foi reutilizada antes de existir um quadro válido.')
+        if (layeredBitmap !== currentLayeredBitmap) {
+          layeredBitmap.copy(currentLayeredBitmap, offset, offset, offset + layerBytes)
+        }
+        return
+      }
       const captured = await capture(frameNumber, offset, layer)
       timings.captureMs = (timings.captureMs ?? 0) + captured.elapsedMs
       timings.paintWaitMs = (timings.paintWaitMs ?? 0) + captured.paintWaitMs
@@ -99,9 +117,12 @@ export function createEditorV6WorkerFrameRenderer({
     if (foreground.reused) throw Error('O estado visual mudou entre a captura das camadas.')
     collect(foreground)
     await copyLayer(layerBytes, 'foreground', foreground)
-    if (!layeredBitmap) throw Error('O renderizador não produziu nenhuma camada para o quadro.')
-    const bitmap = layeredBitmap
+    if (!currentLayeredBitmap) throw Error('O renderizador não produziu nenhuma camada para o quadro.')
+    const bitmap = currentLayeredBitmap
     if (bitmap.length !== layerBytes * 2) throw Error('Dimensões inesperadas do bitmap exportado.')
+    if (doubleBufferLayers) spareLayeredBitmap = layeredBitmap
+    layeredBitmap = bitmap
+    currentLayeredBitmap = undefined
     return { reused: false, bitmap, timings, ...(hasEditorV6FrameMetrics(metrics) ? { metrics } : {}) }
   }
 
@@ -110,6 +131,8 @@ export function createEditorV6WorkerFrameRenderer({
     close: () => {
       closed = true
       layeredBitmap = undefined
+      spareLayeredBitmap = undefined
+      currentLayeredBitmap = undefined
     }
   }
 }
