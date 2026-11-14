@@ -25,5 +25,5 @@ export type BaseVideosDesktopApi = {
   deleteDetails: (videoId: string) => Promise<void>
   deleteVideo: (videoId: string) => Promise<void>
   publish: (videoId: string) => Promise<number>
-  exportSimpleData: (content: string, purpose?: 'simple' | 'ai-package') => Promise<boolean>
+  exportSimpleData: (content: string, purpose?: 'simple' | 'ai-package' | 'editor-v6-json') => Promise<boolean>
 }

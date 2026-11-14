@@ -56,14 +56,15 @@ export function registerBaseVideoHandlers(
     if (typeof content !== 'string' || content.trim().length === 0 || Buffer.byteLength(content, 'utf8') > 25 * 1024 * 1024 || content.includes('\0')) {
       throw new Error('Os dados simples para exportação são inválidos ou excedem 25 MB.')
     }
-    if (purpose !== undefined && purpose !== 'simple' && purpose !== 'ai-package') throw new Error('Tipo de exportação inválido.')
+    if (purpose !== undefined && purpose !== 'simple' && purpose !== 'ai-package' && purpose !== 'editor-v6-json') throw new Error('Tipo de exportação inválido.')
     const result = await exportDependencies.showSaveDialog(event.sender, {
-      title: purpose === 'ai-package' ? 'Exportar pacote completo para IA' : 'Exportar dados simples dos vídeos',
-      defaultPath: purpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : 'dados-simples-dos-videos.txt',
-      filters: [{ name: 'Arquivo de texto', extensions: ['txt'] }]
+      title: purpose === 'ai-package' ? 'Exportar pacote completo para IA' : purpose === 'editor-v6-json' ? 'Exportar JSON V6 original' : 'Exportar dados simples dos vídeos',
+      defaultPath: purpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : purpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'dados-simples-dos-videos.txt',
+      filters: [purpose === 'editor-v6-json' ? { name: 'JSON', extensions: ['json'] } : { name: 'Arquivo de texto', extensions: ['txt'] }]
     })
     if (result.canceled || !result.filePath) return false
-    const destination = result.filePath.toLowerCase().endsWith('.txt') ? result.filePath : `${result.filePath}.txt`
+    const extension = purpose === 'editor-v6-json' ? '.json' : '.txt'
+    const destination = result.filePath.toLowerCase().endsWith(extension) ? result.filePath : `${result.filePath}${extension}`
     await exportDependencies.writeFile(destination, content, 'utf8')
     return true
   })

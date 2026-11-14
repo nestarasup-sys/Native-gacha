@@ -51,7 +51,7 @@ export type RoteiroDocument = {
   previewDetailsCollapsed?: boolean
   opening?: RoteiroSectionContent
   tiktoks: RoteiroTikTok[]
-  importOrigin?: { kind: 'ai-json'; importId: string; importedAt: string; createdCharacterIds: string[]; sourceTitle: string }
+  importOrigin?: { kind: 'ai-json'; importId: string; importedAt: string; createdCharacterIds: string[]; sourceTitle: string; sourceFormat?: 'NYMI_EDITOR_V6_REACT_V1'; sourceDocument?: import('./editorV6ReactImport').EditorV6ReactImportSource }
 }
 
 export type RoteiroExportCharacterInfo = {

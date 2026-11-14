@@ -152,8 +152,8 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
     if (event.allowed !== true) throw new Error('Origem não autorizada')
   }, service, {
     showSaveDialog: async (_sender, options) => {
-      assert.equal(options.defaultPath, exportPurpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : 'dados-simples-dos-videos.txt')
-      return canceled ? { canceled: true } : { canceled: false, filePath: '/exports/dados.txt' }
+      assert.equal(options.defaultPath, exportPurpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : exportPurpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'dados-simples-dos-videos.txt')
+      return canceled ? { canceled: true } : { canceled: false, filePath: exportPurpose === 'editor-v6-json' ? '/exports/roteiro.json' : '/exports/dados.txt' }
     },
     writeFile: async (...args) => { writes.push(args) }
   })
@@ -176,6 +176,10 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
   exportPurpose = 'ai-package'
   canceled = true
   assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, 'PACOTE COMPLETO', exportPurpose), false)
+  exportPurpose = 'editor-v6-json'
+  canceled = false
+  assert.equal(await handlers.get('base-videos:export-simple-data')({ allowed: true }, '{"format":"NYMI_EDITOR_V6_REACT_V1"}', exportPurpose), true)
+  assert.deepEqual(writes.at(-1), ['/exports/roteiro.json', '{"format":"NYMI_EDITOR_V6_REACT_V1"}', 'utf8'])
   exportPurpose = 'unknown'
   await assert.rejects(handlers.get('base-videos:export-simple-data')({ allowed: true }, 'texto', exportPurpose), /Tipo de exportação inválido/)
   await assert.rejects(handlers.get('base-videos:export-simple-data')({ allowed: true }, ''), /inválidos/)

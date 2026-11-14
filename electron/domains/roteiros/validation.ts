@@ -1,5 +1,6 @@
 /** Validação de documentos Roteiros; independente do processo Electron. */
 import type { RoteiroDocument, RoteiroExportLog, RoteiroReactionBlock, RoteiroSectionContent, RoteiroTikTok, RoteiroVideoReference } from '../../../src/shared/roteiros'
+import { EDITOR_V6_REACT_IMPORT_FORMAT, editorV6ReactImportSchema } from '../../../src/shared/editorV6ReactImport.ts'
 
 const ROTEIRO_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -37,7 +38,8 @@ export function isRoteiroDocument(value: unknown): value is RoteiroDocument {
     && (roteiro.backgroundAssetId === undefined || roteiro.backgroundAssetId === null || isRoteiroId(roteiro.backgroundAssetId))
     && (roteiro.uiGifAssetId === undefined || roteiro.uiGifAssetId === null || isRoteiroId(roteiro.uiGifAssetId))
     && (roteiro.previewDetailsCollapsed === undefined || typeof roteiro.previewDetailsCollapsed === 'boolean')
-    && (roteiro.importOrigin === undefined || Boolean(roteiro.importOrigin && roteiro.importOrigin.kind === 'ai-json' && isRoteiroId(roteiro.importOrigin.importId) && typeof roteiro.importOrigin.importedAt === 'string' && Number.isFinite(Date.parse(roteiro.importOrigin.importedAt)) && Array.isArray(roteiro.importOrigin.createdCharacterIds) && roteiro.importOrigin.createdCharacterIds.length <= 500 && roteiro.importOrigin.createdCharacterIds.every(isRoteiroId) && isText(roteiro.importOrigin.sourceTitle, 100)))
+    && (roteiro.importOrigin === undefined || Boolean(roteiro.importOrigin && roteiro.importOrigin.kind === 'ai-json' && isRoteiroId(roteiro.importOrigin.importId) && typeof roteiro.importOrigin.importedAt === 'string' && Number.isFinite(Date.parse(roteiro.importOrigin.importedAt)) && Array.isArray(roteiro.importOrigin.createdCharacterIds) && roteiro.importOrigin.createdCharacterIds.length <= 500 && roteiro.importOrigin.createdCharacterIds.every(isRoteiroId) && isText(roteiro.importOrigin.sourceTitle, 100)
+      && (roteiro.importOrigin.sourceFormat === undefined && roteiro.importOrigin.sourceDocument === undefined || roteiro.importOrigin.sourceFormat === EDITOR_V6_REACT_IMPORT_FORMAT && roteiro.importOrigin.sourceDocument !== undefined && editorV6ReactImportSchema.safeParse(roteiro.importOrigin.sourceDocument).success && new TextEncoder().encode(JSON.stringify(roteiro.importOrigin.sourceDocument)).byteLength <= 2 * 1024 * 1024)))
     && Array.isArray(roteiro.tiktoks) && roteiro.tiktoks.length <= 500
     && isContent(roteiro.opening, roteiro.characterIds ?? [])
     && roteiro.tiktoks.every((item: RoteiroTikTok) => Boolean(item && isRoteiroId(item.id) && isText(item.title, 100) && isText(item.videoTitle, 100)

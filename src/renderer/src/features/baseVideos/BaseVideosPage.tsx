@@ -15,6 +15,7 @@ import { loadBaseVideosSnapshot } from './loadBaseVideosSnapshot'
 import { importBaseVideoDraft } from './importBaseVideoDraft'
 import { BaseVideosExportModal } from './BaseVideosExportModal'
 import { BaseVideosAiPackageModal } from './BaseVideosAiPackageModal'
+import { BaseVideosV6GuideModal } from './BaseVideosV6GuideModal'
 import { createRoteiroFromAiImport, validateAiImport, type AiImportValidation } from './baseVideosAiImport'
 import '../../ui/components/videoEditorialFields.css'
 import './baseVideos.css'
@@ -68,6 +69,7 @@ export function BaseVideosPage() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false)
   const [exportModalOpen, setExportModalOpen] = useState(false)
   const [aiPackageOpen, setAiPackageOpen] = useState(false)
+  const [v6GuideOpen, setV6GuideOpen] = useState(false)
   const [aiImportPreview, setAiImportPreview] = useState<AiImportValidation | null>(null)
   const [aiImportBusy, setAiImportBusy] = useState(false)
   const [importNotice, setImportNotice] = useState('')
@@ -121,13 +123,14 @@ export function BaseVideosPage() {
       if (aiImportPreview) { setAiImportPreview(null); return }
       if (importedManagerOpen) { setImportedManagerOpen(false); return }
       if (aiPackageOpen) { setAiPackageOpen(false); return }
+      if (v6GuideOpen) { setV6GuideOpen(false); return }
       if (renameTarget) { setRenameTarget(null); return }
       if (categoryVideoId) { setCategoryVideoId(null); setCategoryError(null); return }
       if (deleteMode) { setDeleteMode(false); setSelectedIds([]) }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [deleteConfirmOpen, exportModalOpen, aiImportBusy, aiImportPreview, importedManagerOpen, aiPackageOpen, renameTarget, categoryVideoId, deleteMode])
+  }, [deleteConfirmOpen, exportModalOpen, aiImportBusy, aiImportPreview, importedManagerOpen, aiPackageOpen, v6GuideOpen, renameTarget, categoryVideoId, deleteMode])
 
   useEffect(() => registerPendingWriteFlusher(saveQueue.flushPendingSaves), [saveQueue])
 
@@ -138,7 +141,7 @@ export function BaseVideosPage() {
       if (file.size > 10 * 1024 * 1024) throw new Error('O JSON excede o limite de 10 MB.')
       const raw: unknown = JSON.parse(await file.text())
       const characters = await window.desktop.customizer.listCustomizerCharacters()
-      setAiImportPreview(validateAiImport(raw, items, characters))
+      setAiImportPreview(validateAiImport(raw, items, characters, detailsById))
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível ler o JSON do roteiro.') }
     finally { setAiImportBusy(false); if (importAiRef.current) importAiRef.current.value = '' }
   }
@@ -151,7 +154,7 @@ export function BaseVideosPage() {
     try {
       const [latestItems, latestDetails, characters, roteiros] = await Promise.all([window.desktop.mediaLibrary.list(), window.desktop.baseVideos.listDetails(), window.desktop.customizer.listCustomizerCharacters(), window.desktop.roteiros.listRoteiros()])
       const latestDetailsById = Object.fromEntries(latestDetails.map((entry) => [entry.videoId, entry]))
-      const revalidated = validateAiImport(document, latestItems, characters)
+      const revalidated = validateAiImport(document, latestItems, characters, latestDetailsById)
       if (!revalidated.data) throw new Error(revalidated.errors.join('\n'))
       const characterBySourceId = new Map(characters.map((character) => [character.id, character.id]))
       for (const choice of revalidated.data.characters) {
@@ -207,6 +210,18 @@ export function BaseVideosPage() {
         setImportManagerNotice(`Roteiro excluído. ${removed} personagem(ns) novo(s) removido(s); ${preserved} preservado(s) por uso ou edição.`)
       } else setImportManagerNotice('Roteiro excluído. Os personagens foram preservados.')
     } catch (reason) { setImportManagerError(reason instanceof Error ? reason.message : 'Não foi possível excluir o roteiro importado.') }
+    finally { setAiImportBusy(false) }
+  }
+
+  const exportOriginalEditorV6Json = async (roteiroId: string) => {
+    const roteiro = importedRoteiros.find((item) => item.id === roteiroId)
+    const source = roteiro?.importOrigin?.sourceDocument
+    if (!source || aiImportBusy) return
+    setAiImportBusy(true); setImportManagerError('')
+    try {
+      const saved = await window.desktop.baseVideos.exportSimpleData(JSON.stringify(source, null, 2), 'editor-v6-json')
+      if (saved) setImportManagerNotice('JSON V6 original exportado.')
+    } catch (reason) { setImportManagerError(reason instanceof Error ? reason.message : 'Não foi possível exportar o JSON original.') }
     finally { setAiImportBusy(false) }
   }
 
@@ -400,6 +415,7 @@ export function BaseVideosPage() {
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
         <button className="base-videos-ai-package" type="button" onClick={() => setAiPackageOpen(true)} disabled={!loaded || Boolean(loadError) || !items.length || busy}>✦ Pacote completo para IA</button>
+        <button className="base-videos-ai-package" type="button" onClick={() => setV6GuideOpen(true)} disabled={busy}>Guia V6 · V14.1</button>
         <button className="base-videos-ai-import" type="button" onClick={() => importAiRef.current?.click()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>{aiImportBusy ? 'Importando…' : '↑ Importar roteiro da IA'}</button>
         <button className="base-videos-ai-imported" type="button" onClick={() => void openImportedRoteiros()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>♙ Roteiros importados</button>
         <button className="base-videos-exports" type="button" onClick={() => setExportModalOpen(true)} disabled={!loaded || Boolean(loadError) || busy}>Exports</button>
@@ -440,8 +456,9 @@ export function BaseVideosPage() {
       })}</div>{visibleItems.length > visibleCount && <button className="base-videos-load-more" type="button" onClick={() => setVisibleCount((current) => current + 18)}>Carregar mais vídeos ({visibleItems.length - visibleCount} restantes)</button>}</> : <div className="base-videos-empty"><span className="base-videos-empty-icon"><Icon name={activeView === 'main' ? 'frame' : 'edit'} /></span><strong>{items.length === 0 ? activeView === 'main' ? 'A Base de vídeos está vazia' : 'Nenhum rascunho' : 'Nenhum vídeo encontrado'}</strong><span>{items.length === 0 ? activeView === 'main' ? 'Envie vídeos a partir da área Rascunhos para gerar a numeração permanente.' : 'Adicione um vídeo para começar a organizar os rascunhos.' : 'Tente outro termo ou remova filtros para ver mais resultados.'}</span></div>}
     </div>
     {aiPackageOpen && <BaseVideosAiPackageModal items={items} detailsById={detailsById} categories={categories} onClose={() => setAiPackageOpen(false)} onExport={async (content) => { await saveQueue.flushPendingSaves(); return window.desktop.baseVideos.exportSimpleData(content, 'ai-package') }} />}
-    {aiImportPreview && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !aiImportBusy) setAiImportPreview(null) }}><section className="base-videos-ai-modal" role="dialog" aria-modal="true" aria-labelledby="base-videos-ai-import-title"><header><div><span>IMPORTAÇÃO VALIDADA</span><h2 id="base-videos-ai-import-title">Revisar roteiro da IA</h2><p>{aiImportPreview.data ? `“${aiImportPreview.data.title}”` : 'O arquivo ainda contém problemas.'}</p></div><button type="button" aria-label="Fechar" disabled={aiImportBusy} onClick={() => setAiImportPreview(null)}>×</button></header><div className="base-videos-ai-body">{aiImportPreview.data && <div className="base-videos-ai-summary"><span><b>{aiImportPreview.data.videos.length}</b> vídeos</span><span><b>{aiImportPreview.data.characters.length}</b> personagens</span><span><b>{aiImportPreview.data.blocks.length + (aiImportPreview.data.opening?.blocks.length ?? 0)}</b> falas/pensamentos</span></div>}{aiImportPreview.warnings.map((warning, index) => <p className="base-videos-ai-warning" key={index}>Atenção: {warning}</p>)}{aiImportPreview.errors.map((issue, index) => <p className="base-videos-ai-error" key={index}>{issue}</p>)}{aiImportPreview.data && <p>Os vídeos serão vinculados pelos IDs da biblioteca atual. Personagens novos serão criados no Customizador. Nenhuma ficha será copiada do aplicativo legado.</p>}</div><footer><button type="button" disabled={aiImportBusy} onClick={() => setAiImportPreview(null)}>Cancelar</button><button type="button" className="primary" disabled={aiImportBusy || !aiImportPreview.data} onClick={() => void confirmAiScriptImport()}>{aiImportBusy ? 'Importando…' : 'Importar roteiro'}</button></footer></section></div>}
-    {importedManagerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !aiImportBusy) setImportedManagerOpen(false) }}><section className="base-videos-imported-modal" role="dialog" aria-modal="true" aria-labelledby="base-videos-imported-title"><header><div><span>BIBLIOTECA DE ROTEIROS</span><h2 id="base-videos-imported-title">Roteiros importados</h2><p>Roteiros criados a partir de arquivos JSON de IA.</p></div><button type="button" aria-label="Fechar" disabled={aiImportBusy} onClick={() => setImportedManagerOpen(false)}>×</button></header>{importManagerError && <p className="base-videos-ai-error" role="alert">{importManagerError}</p>}{importManagerNotice && <p className="base-videos-ai-warning" role="status">{importManagerNotice}</p>}<div className="base-videos-imported-list">{importManagerLoading ? <p>Carregando roteiros importados…</p> : importedRoteiros.map((roteiro) => <article key={roteiro.id}><div><strong>{roteiro.title}</strong><small>{roteiro.tiktoks.length} vídeo(s) · {roteiro.characterIds.length} personagem(ns) · importado em {new Date(roteiro.importOrigin!.importedAt).toLocaleDateString('pt-BR')}</small><span>{roteiro.characterIds.map((id) => roteiro.importOrigin!.createdCharacterIds.includes(id) ? 'personagem novo' : 'personagem existente').join(' · ')}</span></div><div className="base-videos-imported-actions"><button type="button" disabled={aiImportBusy} onClick={() => { setImportedManagerOpen(false); navigate(`${APPLICATION_ROUTES.roteiro}?imported=${encodeURIComponent(roteiro.id)}`) }}>Abrir roteiro</button><button type="button" disabled={aiImportBusy} onClick={() => void deleteImportedRoteiro(roteiro.id)}>Excluir</button><button type="button" disabled={aiImportBusy || !roteiro.importOrigin?.createdCharacterIds.length} title="Remove somente personagens novos que não foram editados e não são usados por outros roteiros" onClick={() => void deleteImportedRoteiro(roteiro.id, true)}>Excluir + personagens novos</button></div></article>)}{!importManagerLoading && !importedRoteiros.length && !importManagerError && <p>Nenhum roteiro importado ainda.</p>}</div><footer><span>Personagens alterados ou usados em outros roteiros são preservados.</span><button type="button" className="primary" onClick={() => setImportedManagerOpen(false)}>Fechar</button></footer></section></div>}
+    {v6GuideOpen && <BaseVideosV6GuideModal onClose={() => setV6GuideOpen(false)} />}
+    {aiImportPreview && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !aiImportBusy) setAiImportPreview(null) }}><section className="base-videos-ai-modal" role="dialog" aria-modal="true" aria-labelledby="base-videos-ai-import-title"><header><div><span>IMPORTAÇÃO VALIDADA</span><h2 id="base-videos-ai-import-title">Revisar roteiro da IA</h2><p>{aiImportPreview.data ? `“${aiImportPreview.data.title}”` : 'O arquivo ainda contém problemas.'}</p></div><button type="button" aria-label="Fechar" disabled={aiImportBusy} onClick={() => setAiImportPreview(null)}>×</button></header><div className="base-videos-ai-body">{aiImportPreview.data && <div className="base-videos-ai-summary"><span><b>{aiImportPreview.data.videos.length}</b> vídeos</span><span><b>{aiImportPreview.data.characters.length}</b> personagens</span><span><b>{aiImportPreview.data.blocks.length + (aiImportPreview.data.opening?.blocks.length ?? 0)}</b> falas/pensamentos</span></div>}{aiImportPreview.warnings.map((warning, index) => <p className="base-videos-ai-warning" key={index}>Atenção: {warning}</p>)}{aiImportPreview.errors.map((issue, index) => <p className="base-videos-ai-error" key={index}>{issue}</p>)}{aiImportPreview.data && <p>{aiImportPreview.data.sourceDocument ? 'O formato V6 exige personagens existentes no Customizador. O roteiro nativo será criado com falas e vídeos vinculados; o JSON V6 completo ficará preservado na origem da importação.' : 'Os vídeos serão vinculados pelos IDs da biblioteca atual. Personagens novos serão criados no Customizador. Nenhuma ficha será copiada do aplicativo legado.'}</p>}</div><footer><button type="button" disabled={aiImportBusy} onClick={() => setAiImportPreview(null)}>Cancelar</button><button type="button" className="primary" disabled={aiImportBusy || !aiImportPreview.data} onClick={() => void confirmAiScriptImport()}>{aiImportBusy ? 'Importando…' : 'Importar roteiro'}</button></footer></section></div>}
+    {importedManagerOpen && <div className="roteiro-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !aiImportBusy) setImportedManagerOpen(false) }}><section className="base-videos-imported-modal" role="dialog" aria-modal="true" aria-labelledby="base-videos-imported-title"><header><div><span>BIBLIOTECA DE ROTEIROS</span><h2 id="base-videos-imported-title">Roteiros importados</h2><p>Roteiros criados a partir de arquivos JSON de IA.</p></div><button type="button" aria-label="Fechar" disabled={aiImportBusy} onClick={() => setImportedManagerOpen(false)}>×</button></header>{importManagerError && <p className="base-videos-ai-error" role="alert">{importManagerError}</p>}{importManagerNotice && <p className="base-videos-ai-warning" role="status">{importManagerNotice}</p>}<div className="base-videos-imported-list">{importManagerLoading ? <p>Carregando roteiros importados…</p> : importedRoteiros.map((roteiro) => <article key={roteiro.id}><div><strong>{roteiro.title}</strong><small>{roteiro.tiktoks.length} vídeo(s) · {roteiro.characterIds.length} personagem(ns) · importado em {new Date(roteiro.importOrigin!.importedAt).toLocaleDateString('pt-BR')}</small><span>{roteiro.characterIds.map((id) => roteiro.importOrigin!.createdCharacterIds.includes(id) ? 'personagem novo' : 'personagem existente').join(' · ')}</span></div><div className="base-videos-imported-actions"><button type="button" disabled={aiImportBusy} onClick={() => { setImportedManagerOpen(false); navigate(`${APPLICATION_ROUTES.roteiro}?imported=${encodeURIComponent(roteiro.id)}`) }}>Abrir roteiro</button><button type="button" disabled={aiImportBusy} onClick={() => void deleteImportedRoteiro(roteiro.id)}>Excluir</button>{roteiro.importOrigin?.sourceDocument && <button type="button" disabled={aiImportBusy} onClick={() => void exportOriginalEditorV6Json(roteiro.id)}>Exportar JSON V6 original</button>}<button type="button" disabled={aiImportBusy || !roteiro.importOrigin?.createdCharacterIds.length} title="Remove somente personagens novos que não foram editados e não são usados por outros roteiros" onClick={() => void deleteImportedRoteiro(roteiro.id, true)}>Excluir + personagens novos</button></div></article>)}{!importManagerLoading && !importedRoteiros.length && !importManagerError && <p>Nenhum roteiro importado ainda.</p>}</div><footer><span>Personagens alterados ou usados em outros roteiros são preservados.</span><button type="button" className="primary" onClick={() => setImportedManagerOpen(false)}>Fechar</button></footer></section></div>}
     {exportModalOpen && <BaseVideosExportModal items={items} detailsById={detailsById} categories={categories} onClose={() => setExportModalOpen(false)} onExport={async (text) => {
       const saved = await window.desktop.baseVideos.exportSimpleData(text)
       if (saved) setExportModalOpen(false)

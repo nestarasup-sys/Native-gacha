@@ -68,6 +68,7 @@ export const editorV6ReactImportSchema = z.object({
 }).strict()
 
 export type EditorV6ReactImport = z.infer<typeof editorV6ReactImportSchema>
+export type EditorV6ReactImportSource = z.input<typeof editorV6ReactImportSchema>
 export type ReactImportCast = EditorV6ReactImport['cast'][number] & { characterId: string; name: string; modelSlot: number }
 export type ReactImportLine = EditorV6ReactImport['lines'][number] & { characterId: string; startFrame: number; durationFrames: number }
 export type ReactImportBeat = { characterId: string; startFrame: number; poseSlot?: number | null; expression?: string; gaze?: 'left' | 'right' }

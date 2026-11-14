@@ -1,7 +1,7 @@
 const { sha256 } = require('./storageFiles.cjs')
 const { nextCategoryColor } = require('../../categoryColors.cjs')
 
-const CATALOG_SCHEMA_VERSION = 18
+const CATALOG_SCHEMA_VERSION = 19
 const BUILTIN_DOMAINS = [
   'fabricator.models', 'fabricator.poses', 'fabricator.animations', 'fabricator.wardrobe', 'fabricator.design-settings',
   'fabricator.face-sets', 'fabricator.face-catalog', 'fabricator.face-components',
@@ -160,7 +160,9 @@ function initializeCatalogSchema(database, currentSchema) {
       import_id TEXT NOT NULL,
       imported_at TEXT NOT NULL,
       created_character_ids_json TEXT NOT NULL DEFAULT '[]',
-      source_title TEXT NOT NULL
+      source_title TEXT NOT NULL,
+      source_format TEXT,
+      source_document_json TEXT
     ) WITHOUT ROWID;
     CREATE INDEX IF NOT EXISTS roteiro_export_logs_by_parent ON roteiro_export_logs(roteiro_id, created_at DESC, id DESC);
     CREATE TABLE IF NOT EXISTS base_video_sequence (
@@ -296,6 +298,11 @@ function initializeCatalogSchema(database, currentSchema) {
     .run(sha256('gacha-roteiro-character-sheets-schema-v17'), now)
   database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (18, 'roteiro-ai-import-origin', ?, ?)")
     .run(sha256('gacha-roteiro-ai-import-origin-schema-v18'), now)
+  const importOriginColumns = new Set(database.prepare('PRAGMA table_info(roteiro_import_origins)').all().map((column) => column.name))
+  if (!importOriginColumns.has('source_format')) database.exec('ALTER TABLE roteiro_import_origins ADD COLUMN source_format TEXT')
+  if (!importOriginColumns.has('source_document_json')) database.exec('ALTER TABLE roteiro_import_origins ADD COLUMN source_document_json TEXT')
+  database.prepare("INSERT OR IGNORE INTO schema_migrations(version, name, checksum, applied_at) VALUES (19, 'roteiro-editor-v6-react-source-preservation', ?, ?)")
+    .run(sha256('gacha-roteiro-editor-v6-react-source-preservation-schema-v19'), now)
   if (currentSchema < CATALOG_SCHEMA_VERSION) database.pragma(`user_version = ${CATALOG_SCHEMA_VERSION}`)
   const insertDomain = database.prepare(`INSERT OR IGNORE INTO domains(domain_id, schema_version, manifest_json, updated_at) VALUES (?, 1, '{}', ?)`)
   const registerBuiltins = database.transaction(() => BUILTIN_DOMAINS.forEach((id) => insertDomain.run(id, now)))
