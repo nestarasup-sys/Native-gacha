@@ -1,4 +1,5 @@
 import { availableParallelism } from 'node:os'
+import { env as nodeEnv } from 'node:process'
 import { join } from 'node:path'
 import { mkdir, writeFile } from 'node:fs/promises'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
@@ -94,7 +95,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
 
   const beganPart = performance.now()
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
-  const framePipelineOverlap = !layeredVideo && process.env.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+  const framePipelineOverlap = !layeredVideo && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
   // All part jobs use this process's monotonic clock, so offsets expose actual overlap.
   const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap }
   const timingAccumulators = createEditorV6TimingAccumulators()
