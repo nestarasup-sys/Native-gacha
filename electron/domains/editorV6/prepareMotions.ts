@@ -10,7 +10,6 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   signal: AbortSignal; characters: CustomizerCharacter[]
   bake: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   progress: (completed: number, total: number, name: string) => void
-  includeSpeechMouth?: boolean
   mouthLoop?: { startFrame: number; cycleFrames: number }
   concurrency?: 1 | 2 | 3
 }) {
@@ -29,9 +28,8 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     throw Error(`A aparência salva de ${state.text || character.name} está desatualizada em relação ao Customizador. Aguarde a atualização automática no Editor V6 antes de exportar novamente.`)
   }
 
-  const motionOptions = { includeSpeechMouth: deps.includeSpeechMouth !== false }
-  const plans = editorV6MotionPlans(project, motionOptions)
-  const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame, motionOptions).map((plan) => plan.blockId))
+  const plans = editorV6MotionPlans(project)
+  const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame).map((plan) => plan.blockId))
   const missing = plans.filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
     && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
   const groups = new Map<string, typeof missing>()

@@ -20,7 +20,7 @@ export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
   { value: 'cpu', label: 'CPU · H.264' },
-  { value: 'amf', label: 'AMD AMF obrigatório · sem animação de boca' }
+  { value: 'amf', label: 'AMD AMF obrigatório · sem fallback' }
 ] as const satisfies ReadonlyArray<{ value: EditorV6ExportOptions['encoder']; label: string }>
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
@@ -88,7 +88,7 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
   return result
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; animateMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
 export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels' | 'captureReadbacks' | 'captureStaleReadbacks', number>>

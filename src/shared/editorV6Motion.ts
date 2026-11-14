@@ -114,10 +114,9 @@ export function editorV6MotionHasCompleteFaceAtlas(
   return Boolean(motion?.faceAssetId && plan.samples.every(sample => motion.frames.some(frame => frame.offset === sample.offset && frame.facePatch)))
 }
 
-const plansCache = new WeakMap<EditorV6Document['timeline'], Map<boolean, EditorV6MotionPlan[]>>()
-export function editorV6MotionPlans(document: EditorV6Document, options: { includeSpeechMouth?: boolean } = {}): EditorV6MotionPlan[] {
-  const includeSpeechMouth = options.includeSpeechMouth !== false
-  const cached = plansCache.get(document.timeline)?.get(includeSpeechMouth)
+const plansCache = new WeakMap<EditorV6Document['timeline'], EditorV6MotionPlan[]>()
+export function editorV6MotionPlans(document: EditorV6Document): EditorV6MotionPlan[] {
+  const cached = plansCache.get(document.timeline)
   if (cached) return cached
   const plans: EditorV6MotionPlan[] = []
   for (const track of document.timeline.tracks) {
@@ -128,22 +127,20 @@ export function editorV6MotionPlans(document: EditorV6Document, options: { inclu
       if (plan) {
         const samples = plan.samples.map((sample) => {
           const frame = plan.endFrame + sample.offset
-          const faceMode = editorV6FaceModeDuringMotion(editorV6FaceModeAtFrame(document.id, document.timeline, plan.characterId, frame, { includeSpeechMouth }))
+          const faceMode = editorV6FaceModeDuringMotion(editorV6FaceModeAtFrame(document.id, document.timeline, plan.characterId, frame))
           return { ...sample, ...(faceMode ? { faceMode } : {}) }
         })
         plans.push({ ...plan, samples, key: motionKey(plan.from, plan.to, samples) })
       }
     }
   }
-  const variants = plansCache.get(document.timeline) ?? new Map<boolean, EditorV6MotionPlan[]>()
-  variants.set(includeSpeechMouth, plans)
-  plansCache.set(document.timeline, variants)
+  plansCache.set(document.timeline, plans)
   return plans
 }
-export function missingEditorV6Motions(document: EditorV6Document, startFrame = 0, endFrame = document.timeline.durationFrames, options: { includeSpeechMouth?: boolean } = {}): EditorV6MotionPlan[] {
+export function missingEditorV6Motions(document: EditorV6Document, startFrame = 0, endFrame = document.timeline.durationFrames): EditorV6MotionPlan[] {
   const assets = new Map(document.assets.map((asset) => [asset.id, asset]))
   const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
-  return editorV6MotionPlans(document, options).filter((plan) => {
+  return editorV6MotionPlans(document).filter((plan) => {
     if (plan.startFrame >= endFrame || plan.endFrame <= startFrame) return false
     const motion = blocks.get(plan.blockId)?.incomingMotion
     return motion?.key !== plan.key || !editorV6MotionHasAvailableAssets(motion, assets)

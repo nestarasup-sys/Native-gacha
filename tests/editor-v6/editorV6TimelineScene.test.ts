@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { EditorV6Document, EditorV6Element } from '../../src/shared/editorV6'
 import { isEditorV6BlinkFrame } from '../../src/shared/editorV6FaceSchedule'
+import { createEditorV6ExportExecutionPlan } from '../../electron/domains/editorV6/exportPlanning'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 
 function project(): EditorV6Document {
@@ -33,18 +34,22 @@ function project(): EditorV6Document {
   } as EditorV6Document
 }
 
-describe('resolução de cena sem animação automática da boca', () => {
-  it('mantém a fala e as piscadas, mas troca talk pela expressão base durante a fala', () => {
+describe('resolução de cena com ciclo da boca desligado', () => {
+  it('mantém o modo Talk durante a fala e desliga somente o ciclo de três quadros', () => {
     const document = project()
     const speakingFrame = Array.from({ length: 120 }, (_, frame) => frame).find(frame => !isEditorV6BlinkFrame(document.id, 'alice', frame))!
     const blinkingFrame = Array.from({ length: 120 }, (_, frame) => frame).find(frame => isEditorV6BlinkFrame(document.id, 'alice', frame))!
-    const normalScene = resolveEditorV6SceneAtFrame(document, speakingFrame)
-    const stillMouthScene = resolveEditorV6SceneAtFrame(document, speakingFrame, { includeSpeechMouth: false })
-    const stillBlinkScene = resolveEditorV6SceneAtFrame(document, blinkingFrame, { includeSpeechMouth: false })
+    const plan = createEditorV6ExportExecutionPlan(document, {
+      startFrame: 0, endFrame: 120, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: false
+    }, {}, 'win32')
+    const talkScene = resolveEditorV6SceneAtFrame(document, speakingFrame)
+    const talkBlinkScene = resolveEditorV6SceneAtFrame(document, blinkingFrame)
 
-    expect(normalScene.elements.find(element => element.id === 'actor')?.assetId).toBe('talk-face')
-    expect(stillMouthScene.elements.find(element => element.id === 'actor')?.assetId).toBe('idle-face')
-    expect(stillBlinkScene.elements.find(element => element.id === 'actor')?.assetId).toBe('blink-face')
-    expect(stillMouthScene.elements.some(element => element.id === 'speech-element')).toBe(true)
+    expect(plan.options.mouthLoop).toBe(false)
+    expect(plan.speechInRange).toBe(true)
+    expect(plan.parts).toEqual(plan.requestedParts)
+    expect(talkScene.elements.find(element => element.id === 'actor')?.assetId).toBe('talk-face')
+    expect(talkBlinkScene.elements.find(element => element.id === 'actor')?.assetId).toBe('talk-blink-face')
+    expect(talkScene.elements.some(element => element.id === 'speech-element')).toBe(true)
   })
 })

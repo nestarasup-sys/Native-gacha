@@ -77,13 +77,12 @@ describe('preparação de movimentos da exportação do Editor V6', () => {
     expect(result).toMatchObject({ project: preparedProject, stats })
   })
 
-  it('não prepara loop nem inclui modos de fala no perfil sem boca', async () => {
+  it('não prepara o ciclo da boca quando ele está desligado', async () => {
     const dependencies = createDependencies({ options: { startFrame: 10, endFrame: 40, mouthLoop: false } })
     vi.mocked(prepareExportMotions).mockResolvedValue({ project: dependencies.project, stats } as never)
 
     await prepareEditorV6ExportMotions(dependencies)
 
-    expect(prepareExportMotions).toHaveBeenCalledWith(dependencies.project, 10, 40, expect.objectContaining({ includeSpeechMouth: false }))
     const preparation = vi.mocked(prepareExportMotions).mock.calls[0]?.[3]
     expect(preparation).not.toHaveProperty('mouthLoop')
   })

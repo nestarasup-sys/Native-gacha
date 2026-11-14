@@ -33,7 +33,7 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('força o perfil AMF a desligar a boca e não cria subdivisões para fala', () => {
+  it('força o perfil AMF a desligar apenas o ciclo e mantém Talk durante a fala', () => {
     const result = createEditorV6ExportExecutionPlan(
       createProject(1000, [speechTrack()]),
       createOptions({ encoder: 'amf', mouthLoop: true, turbo: false }),
@@ -42,14 +42,16 @@ describe('planejamento da exportação do Editor V6', () => {
     )
 
     expect(result.options.mouthLoop).toBe(false)
-    expect(result.speechInRange).toBe(false)
+    expect(result.speechInRange).toBe(true)
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('mantém o loop de boca obrigatório dos perfis anteriores, mesmo com um valor legado false', () => {
-    const result = createEditorV6ExportExecutionPlan(createProject(900), createOptions({ mouthLoop: false }), {}, 'win32')
+  it('permite desligar o ciclo no perfil CPU e mantém o planejamento da fala', () => {
+    const result = createEditorV6ExportExecutionPlan(createProject(1000, [speechTrack()]), createOptions({ mouthLoop: false }), {}, 'win32')
 
-    expect(result.options.mouthLoop).toBe(true)
+    expect(result.options.mouthLoop).toBe(false)
+    expect(result.speechInRange).toBe(true)
+    expect(result.parts).toEqual(result.requestedParts)
   })
 
   it('divide apenas o intervalo com fala vinculada e mantém a cobertura dos quadros', () => {

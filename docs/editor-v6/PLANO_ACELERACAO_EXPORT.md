@@ -583,3 +583,9 @@ O painel de exportação ganhou a opção **Forçar AMD AMF · sem fallback**. E
 Os perfis existentes continuam usando CPU H.264 e animação de boca. Até chamadas antigas que enviem `mouthLoop: false` fora do perfil AMF continuam recebendo o comportamento padrão com boca ligada. A disponibilidade real de `h264_amf` depende da build do FFmpeg e do hardware; o perfil não converte essa ausência em fallback.
 
 **Verificação desta alteração:** 75 testes V6 focados, 2 testes do painel, `npm run typecheck` e o build de produção passaram. `npm run test:editor-v6:export` executou os casos de exportação sintética e chegou às verificações de captura paint, mas terminou duas vezes por timeout aguardando token de paint; não alterei esse fluxo experimental. Não foi feito export de AMF em GPU real.
+
+#### Ajuste do modo Talk e controle independente do ciclo — 14/11/2026
+
+O perfil AMF e o controle de ciclo agora afetam apenas a animação cíclica que alterna os três quadros da boca. A resolução facial por fala continua aplicando o modo **Talk** (e `talk-blink` quando houver piscada). No export padrão CPU, o ciclo de três quadros pode ser desligado separadamente; por padrão ele continua ligado. O perfil AMF força o ciclo desligado e mantém o modo Talk.
+
+**Verificação da correção:** 70 testes V6 focados, 2 testes do painel, `npm run typecheck`, build e `npm run test:editor-v6:export` passaram. O harness verificou o MP4 sintético com o ciclo desligado e confirmou Talk durante a fala. Não foi feito export em GPU AMF real.

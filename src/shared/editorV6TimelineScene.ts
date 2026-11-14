@@ -49,7 +49,7 @@ export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, fra
   defaultBackgroundsCache.set(document, resolvedDefault)
   return resolvedDefault
 }
-export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean; includeVideo?: boolean; includeSpeechMouth?: boolean } = {}): EditorV6ResolvedScene {
+export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean; includeVideo?: boolean } = {}): EditorV6ResolvedScene {
   const normalizedFrame = Math.min(Math.max(0, document.timeline.durationFrames - 1), Math.max(0, Math.round(frame)))
   let mediaVideo: EditorV6ResolvedScene['mediaVideo']
   if (options.includeVideo !== false) {
@@ -75,7 +75,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(mediaVideo ? { mediaVideo } : {}) }
 }
 
-const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>>()
+const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
 type BaseCharacterIndex = { byElementId: Map<string, EditorV6Element>; byCharacterId: Map<string | undefined, EditorV6Element> }
 const baseCharacterIndexCache = new WeakMap<EditorV6Document['elements'], BaseCharacterIndex>()
 
@@ -144,14 +144,14 @@ function attachLinkedBalloons(document: EditorV6Document, elements: EditorV6Elem
   })
 }
 
-export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean; includeSpeechMouth?: boolean } = {}): EditorV6SceneElement[] {
+export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame: number, options: { includeMotion?: boolean } = {}): EditorV6SceneElement[] {
   const resolved = resolveEditorV6StaticElementsAtFrame(document, frame)
   const applyAutomaticFace = (source: EditorV6Element) => {
     let element = source
     if (element.kind === 'character' && element.characterId) {
       const faceModeAssetIds = element.faceModeAssetIds
       if (faceModeAssetIds?.blink || faceModeAssetIds?.talk || faceModeAssetIds?.['talk-blink']) {
-        const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame, { includeSpeechMouth: options.includeSpeechMouth })
+        const autoMode = editorV6FaceModeAtFrame(document.id, document.timeline, element.characterId, frame)
         const autoAssetId = autoMode === 'talk-blink'
           ? faceModeAssetIds['talk-blink'] ?? faceModeAssetIds.talk
           : autoMode ? faceModeAssetIds[autoMode] : undefined
@@ -161,19 +161,16 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     return element
   }
   if (options.includeMotion === false) return attachLinkedBalloons(document, resolved.map(applyAutomaticFace), frame)
-  const includeSpeechMouth = options.includeSpeechMouth !== false
-  const indexes = motionIndex.get(document.timeline) ?? new Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
-  let index = indexes.get(includeSpeechMouth)
+  let index = motionIndex.get(document.timeline)
   if (!index) {
     index = new Map()
     const blocks = new Map(document.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
-    for (const plan of editorV6MotionPlans(document, { includeSpeechMouth })) {
+    for (const plan of editorV6MotionPlans(document)) {
       const entries = index.get(plan.elementId) ?? []
       entries.push({ plan, block: blocks.get(plan.blockId)! }); index.set(plan.elementId, entries)
     }
     for (const entries of index.values()) entries.sort((a, b) => a.plan.endFrame - b.plan.endFrame)
-    indexes.set(includeSpeechMouth, index)
-    motionIndex.set(document.timeline, indexes)
+    motionIndex.set(document.timeline, index)
   }
   return attachLinkedBalloons(document, resolved.map((source) => {
     let element = applyAutomaticFace(source)

@@ -17,21 +17,20 @@ export function createEditorV6ExportWorkerHairRuntime(
   project: EditorV6Document,
   hairAnimation: EditorV6WorkerPayload['hairAnimation'],
   resources: HairResources,
-  mouthLoops?: EditorV6WorkerPayload['mouthLoops'],
-  animateMouth = true
+  mouthLoops?: EditorV6WorkerPayload['mouthLoops']
 ) {
   const {
     hairSurfaces, hairSurfaceDataById, hairTextures, hairMotionStates, hairMotionLoops, hairMotionInstancePhases,
     hairFrameCanvases, motionHairFrameSurfaces, animatedElementIds, warpHairTexture
   } = resources
-  const planIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation, animateMouth)
+  const planIndex = createEditorV6ExportHairMotionPlanIndex(project, hairAnimation)
   const { hairTransitionIndex, hairPoseReactionEnds } = planIndex
   const { hairRigAtFrame } = createEditorV6ExportHairRigAtFrame(planIndex)
   let resolvedFrame = -1
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const resolveRawSceneAtFrame = (frame: number) => {
     if (resolvedFrame !== frame || !resolvedRawScene) {
-      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false, includeSpeechMouth: animateMouth })
+      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false })
       resolvedFrame = frame
     }
     return resolvedRawScene
@@ -42,7 +41,7 @@ export function createEditorV6ExportWorkerHairRuntime(
     resolveScene: frame => frame === resolvedFrame && resolvedRawScene
       // Mouth overlays must not change the physical rig used by head-path inertia.
       ? resolvedRawScene
-      : resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false, includeSpeechMouth: animateMouth }),
+      : resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false }),
     getTransitionSample: (elementId, frame) => {
       const indexed = hairTransitionIndex.get(elementId, frame)
       return indexed ? { transition: indexed.transition, poseSample: indexed.poseSample } : undefined

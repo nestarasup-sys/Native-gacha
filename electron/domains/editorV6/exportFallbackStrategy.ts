@@ -45,7 +45,7 @@ export async function renderEditorV6ExportWithFallback(dependencies: Dependencie
     const safeEncoder = await selectFallbackEncoder(encoder)
     if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
     const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
-    const safeParts = speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
+    const safeParts = options.mouthLoop && speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
     return await finishMeasured(await renderAttempt(safeParts, safeEncoder, 1))
   }
 }

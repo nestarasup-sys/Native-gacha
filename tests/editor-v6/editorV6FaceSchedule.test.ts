@@ -40,14 +40,12 @@ describe('speech interval index', () => {
     expect(hasEditorV6CharacterSpeechOverlap(source, 'bob', 0, 300)).toBe(false)
   })
 
-  it('desativa o modo de fala sem desligar piscadas automáticas', () => {
+  it('mantém Talk e Talk-Blink durante as falas', () => {
     const source = timeline()
     const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => isEditorV6BlinkFrame('project', 'alice', frame))!
     const nonBlinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => !isEditorV6BlinkFrame('project', 'alice', frame))!
 
     expect(editorV6FaceModeAtFrame('project', source, 'alice', nonBlinkFrame)).toBe('talk')
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', nonBlinkFrame, { includeSpeechMouth: false })).toBeUndefined()
     expect(editorV6FaceModeAtFrame('project', source, 'alice', blinkFrame)).toBe('talk-blink')
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', blinkFrame, { includeSpeechMouth: false })).toBe('blink')
   })
 })
