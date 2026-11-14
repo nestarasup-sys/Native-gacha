@@ -2,6 +2,7 @@ import type { CharacterColorOverrides, CustomizerCharacter, HairPartId } from '.
 import type { HairStyle } from '../../../../shared/fabricator'
 import type { EditorV6HairMotionLayer } from '../../../../shared/editorV6HairMotion'
 import type { hairAppearanceStyleIds } from '../../../../shared/hairCategories'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 
 export type EditorV6HairMotionLayerReference = ReturnType<typeof hairAppearanceStyleIds>[number]
 
@@ -27,14 +28,16 @@ export async function prepareEditorV6HairMotionLayers({
   prepareTexture: (request: EditorV6HairMotionTextureRequest) => Promise<string>
   addTexture: (key: string, dataUrl: string) => string
 }): Promise<EditorV6HairMotionLayer[]> {
-  const descriptors: EditorV6HairMotionLayer[] = []
-  for (const [index, reference] of references.entries()) {
+  // PNG recoloring waits for image decoding. Parallelize up to two independent
+  // textures without multiplying the canvases/encoders kept alive per export.
+  // The ordered mapper returns by reference index, regardless of completion order.
+  const prepared = await mapConcurrentItems(references, async (reference, index) => {
     const style = styles.get(reference.id)
     const original = style?.[reference.side]
     const baseTransform = style?.transforms[reference.side]
     if (!original || !baseTransform) throw Error(`Não foi possível carregar a peça ${reference.part} do cabelo de ${character.name}.`)
     const override = character.customization.partOverrides?.[`head:${reference.part}`]
-    if (override?.hidden) continue
+    if (override?.hidden) return null
     const transform = override ? {
       ...baseTransform, x: baseTransform.x + (override.x ?? 0), y: baseTransform.y + (override.y ?? 0),
       scaleX: baseTransform.scaleX * (override.scaleX ?? 1), scaleY: baseTransform.scaleY * (override.scaleY ?? 1),
@@ -48,6 +51,15 @@ export async function prepareEditorV6HairMotionLayers({
       colors: resolveColors(reference.part),
       dataUrl: original.dataUrl
     })
+    return { index, reference, original, transform, dataUrl }
+  }, () => false, 2)
+
+  // Asset IDs and layer order must not depend on completion timing. Only the
+  // lightweight descriptor/registry writes remain sequential.
+  const descriptors: EditorV6HairMotionLayer[] = []
+  for (const layer of prepared) {
+    if (!layer) continue
+    const { index, reference, original, transform, dataUrl } = layer
     descriptors.push({
       id: `${reference.part}:${index}`,
       textureId: addTexture(`${character.id}:${reference.id}:${reference.side}:${reference.part}`, dataUrl),
