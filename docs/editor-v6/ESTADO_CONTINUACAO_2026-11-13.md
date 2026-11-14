@@ -1,10 +1,11 @@
 # Editor V6 — estado da continuação
 
-Data do checkpoint: 13/11/2026 23:00 BRT  
-Repositório: `C:\TRABALHO 2\OUTROS\GACHA EM C++`  
-Branch: `Dev-V2`  
-Commit atual: `0c0fa988 Memoize duplicate asset guard in Editor V6`  
-Distância local/remoto: 63 commits à frente de `origin/Dev-V2`. Nada foi enviado ao GitHub.
+Data do checkpoint: 13/11/2026, BRT
+
+- **Repositório:** `C:\TRABALHO 2\OUTROS\GACHA EM C++`
+- **Branch:** `Dev-V2`
+- **Último commit de código:** `0c0fa988 Memoize duplicate asset guard in Editor V6`
+- **Distância local/remoto antes do commit do checkpoint:** 63 commits à frente de `origin/Dev-V2`. Nada foi enviado ao GitHub.
 
 ## O que estava sendo feito
 
