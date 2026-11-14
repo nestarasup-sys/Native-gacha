@@ -1,7 +1,7 @@
 import { createEditorV6Paths } from './domains/editorV6/paths'
 import { registerMediaProtocols } from './mediaProtocols'
 import { app, BrowserWindow, dialog, ipcMain as rawIpcMain, Menu, protocol, session, shell, type IpcMainInvokeEvent } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, lstatSync, realpathSync } from 'node:fs'
 import { mkdir as nativeMkdir, readFile as nativeReadFile, writeFile as nativeWriteFile, readdir as nativeReaddir, unlink as nativeUnlink, rename as nativeRename, stat as nativeStat, access as nativeAccess, rm as nativeRm, copyFile as nativeCopyFile } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { createHash, randomUUID } from 'node:crypto'
@@ -192,6 +192,7 @@ let fabricatorWardrobeIpc: ReturnType<typeof registerFabricatorWardrobeHandlers>
 let fabricatorAnimatorIpc: ReturnType<typeof registerFabricatorAnimatorHandlers> | null = null
 let editorV6ExportService: ReturnType<typeof registerEditorV6ExportHandlers> | null = null
 const stressCapturePixelHashes = new Map<number, string[]>()
+const stressCapturedRawFrames = new Set<number>()
 const stressFfmpegPids = new Set<number>()
 let editorV7ExportService: ReturnType<typeof registerEditorV7ExportHandlers> | null = null
 let editorV6MotionService: ReturnType<typeof createEditorV6MotionService> | null = null
@@ -1107,9 +1108,24 @@ app.whenReady().then(async () => {
   await registerFabricatorHandlers()
   const motionServiceConcurrency = process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && process.env.GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY === '3' ? 3 : 2
   editorV6MotionService = createEditorV6MotionService({ ipcMain, assertTrustedSender, html: rendererHtmlPath, preload: join(__dirname, '../preload/editorV6MotionPreload.cjs'), devUrl: devRendererUrl, concurrency: motionServiceConcurrency })
+  const bundledEditorV6VideoTools = app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools')
+  let editorV6VideoTools = bundledEditorV6VideoTools
+  const requestedStressVideoTools = process.env.GACHA_EDITOR_V6_STRESS_VIDEO_TOOLS
+  if (process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && requestedStressVideoTools) {
+    const allowedToolsRoot = realpathSync(resolve(__dirname, '../../out/editor-v6-stress/tools'))
+    const requestedToolsPath = resolve(requestedStressVideoTools)
+    const canonicalToolsPath = realpathSync(requestedToolsPath)
+    const relativeToolsPath = require('node:path').relative(allowedToolsRoot, canonicalToolsPath) as string
+    if (!relativeToolsPath || relativeToolsPath === '..' || relativeToolsPath.startsWith(`..${require('node:path').sep}`)
+      || lstatSync(requestedToolsPath).isSymbolicLink()
+      || !existsSync(join(canonicalToolsPath, 'ffmpeg.exe')) || !existsSync(join(canonicalToolsPath, 'ffprobe.exe'))) {
+      throw Error('A build FFmpeg alternativa só pode ser selecionada no diretório local validado do laboratório.')
+    }
+    editorV6VideoTools = canonicalToolsPath
+  }
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
     recordDiagnostic: diagnosticsLog.recordMain,
-    toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools'),
+    toolsDirectory: editorV6VideoTools,
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },
@@ -1127,11 +1143,19 @@ app.whenReady().then(async () => {
     captureMode: process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
       ? (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage')
       : process.env.GACHA_EDITOR_V6_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage',
-    ...(process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' ? { inspectCapture: async ({ frame, bitmap }: { window: BrowserWindow; frame: number; bitmap: Buffer }) => {
-      if (![0, 29, 30, 149, 300, 599, 1199, 2393].includes(frame)) return
-      const hashes = stressCapturePixelHashes.get(frame) ?? []
-      hashes.push(createHash('sha256').update(bitmap).digest('hex'))
-      stressCapturePixelHashes.set(frame, hashes)
+    ...(process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1' || process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_RAW_FRAMES === '1') ? { inspectCapture: async ({ frame, bitmap }: { window: BrowserWindow; frame: number; bitmap: Buffer }) => {
+      if (![0, 29, 30, 149, 259, 300, 518, 599, 1199, 2393].includes(frame)) return
+      if (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES === '1') {
+        const hashes = stressCapturePixelHashes.get(frame) ?? []
+        hashes.push(createHash('sha256').update(bitmap).digest('hex'))
+        stressCapturePixelHashes.set(frame, hashes)
+      }
+      if (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_RAW_FRAMES === '1' && !stressCapturedRawFrames.has(frame)) {
+        const referenceFolder = join(resolve(process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT ?? ''), 'quality-reference')
+        await nativeMkdir(referenceFolder, { recursive: true })
+        await nativeWriteFile(join(referenceFolder, `${frame}.bgra`), bitmap, { flag: 'wx' })
+        stressCapturedRawFrames.add(frame)
+      }
     } } : {}) })
   editorV7ExportService = registerEditorV7ExportHandlers({ ipcMain, assertTrustedSender, toolsDirectory: app.isPackaged ? join(process.resourcesPath, 'video-tools') : resolve(__dirname, '../../resources/video-tools') })
   if (process.env.GACHA_EDITOR_V6_STRESS_AUTORUN === '1') {
@@ -1149,7 +1173,7 @@ app.whenReady().then(async () => {
         ?? (uiExportProfile && process.env.GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL !== '1' ? String(EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT) : undefined)
       const hairPresetSlot = hairPresetSlotValue === undefined ? null : Number(hairPresetSlotValue)
       const stressEncoder = process.env.GACHA_EDITOR_V6_STRESS_ENCODER ?? (uiExportProfile ? EDITOR_V6_DEFAULT_EXPORT_PROFILE.encoder : 'auto')
-      if (stressEncoder !== 'cpu' && stressEncoder !== 'auto') throw Error('Encoder do benchmark deve ser cpu ou auto.')
+      if (stressEncoder !== 'cpu' && stressEncoder !== 'auto' && stressEncoder !== 'amf') throw Error('Encoder do benchmark deve ser cpu, auto ou amf.')
       const uiPresetValue = process.env.GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON
       const uiPreset = uiPresetValue === undefined ? null : normalizeHairMotionPreset(JSON.parse(uiPresetValue))
       if (uiExportProfile && hairPresetSlot !== null && !uiPreset) throw Error('O perfil de exportação UI exige uma cópia validada do preset salvo na interface.')
@@ -1186,14 +1210,14 @@ app.whenReady().then(async () => {
       let hairStressCompleted = false
       const ffmpegPids = new Set<number>()
       const hairRuns: Array<{
-        run: number; cacheState: string; workers: number; totalFrames: number; width: number; height: number; fps: string
+        run: number; cacheState: string; workers: number; totalFrames: number; width: number; height: number; fps: string; mouthLoopDisabled: boolean
         requestedEncoder: string; selectedEncoder: string; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean; hairPresetSlot: number; hairPresetFingerprint: string
         hairPreparationRendererMs: number; hairPreparationWallMs: number; hairPreparationStages: unknown; hairBundleSerializationMs: number; hairBundleBytes: number
         mainExportWallMs: number; clickToValidatedWallMs: number; exportMilliseconds: number
         phaseMilliseconds: unknown; audioClips: number; audioOutput: boolean; videoInputs: number
         mouthAnimation: { characters: number; stateAtlases: number; skippedStates: number; staleStates: number; preparationMilliseconds: number } | null
         motionTransitionsPrepared: number; motionCache: unknown; motionCacheDelta: EditorV6MotionCacheStats
-        motionPreparation: unknown
+        motionPreparation: unknown; ffprobeValidation: unknown
         mainProcessMemory: unknown; partTiming: unknown[]; processSampleCount: number; processPeaks: unknown[]
       }> = []
       let hairPreparationProfile: Record<string, unknown> | null = null
@@ -1276,6 +1300,7 @@ app.whenReady().then(async () => {
           } else if (noHairControl) {
             Object.assign(options, EDITOR_V6_DEFAULT_EXPORT_PROFILE, { encoder: stressEncoder, hairPoseReactionOnly: false, hairPosteriorOnly: false })
           }
+          if (process.env.GACHA_EDITOR_V6_STRESS_MOUTH_LOOP === '0') options.mouthLoop = false
           const cacheBeforeExport = editorV6MotionService!.getCacheStats()
           stressFfmpegPids.clear()
           let hairAnimation: import('../src/shared/editorV6HairMotion').EditorV6HairMotionBundle | undefined
@@ -1407,7 +1432,7 @@ app.whenReady().then(async () => {
           if (hairPresetSlot !== null) {
             const timing = report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming)
             const runNumber = index + 1
-            hairRuns.push({ run: runNumber, cacheState: index === 0 ? 'cold-motion-cache' : 'warm-motion-cache', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', requestedEncoder: options.encoder, selectedEncoder: report.attempts[0]?.encoder ?? 'unknown', hairPoseReactionOnly: options.hairPoseReactionOnly, hairPosteriorOnly: options.hairPosteriorOnly, hairPresetSlot, hairPresetFingerprint, hairPreparationRendererMs, hairPreparationWallMs, hairPreparationStages, hairBundleSerializationMs, hairBundleBytes, mainExportWallMs: exportWallMs, clickToValidatedWallMs, exportMilliseconds: report.milliseconds ?? exportWallMs, phaseMilliseconds: report.phaseMilliseconds, audioClips: report.audioClips, audioOutput: audio, videoInputs: report.videoInputs, mouthAnimation: report.mouthAnimation ? { characters: report.mouthAnimation.characters, stateAtlases: report.mouthAnimation.stateAtlases, skippedStates: report.mouthAnimation.skippedStates, staleStates: report.mouthAnimation.staleStates, preparationMilliseconds: report.mouthAnimation.preparationMilliseconds } : null, motionTransitionsPrepared: report.motionTransitionsPrepared, motionPreparation: report.motionPreparation, motionCache: report.motionCache ?? null, motionCacheDelta: motionCacheTotal, mainProcessMemory: report.mainProcessMemory ?? null, partTiming: timing, processSampleCount: processSampleCountByRun.get(runNumber) ?? 0, processPeaks: [...processPeakByRunRole.values()].filter(sample => sample.run === runNumber) })
+            hairRuns.push({ run: runNumber, cacheState: index === 0 ? 'cold-motion-cache' : 'warm-motion-cache', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', mouthLoopDisabled: report.options.mouthLoop === false, requestedEncoder: options.encoder, selectedEncoder: report.attempts[0]?.encoder ?? 'unknown', hairPoseReactionOnly: options.hairPoseReactionOnly, hairPosteriorOnly: options.hairPosteriorOnly, hairPresetSlot, hairPresetFingerprint, hairPreparationRendererMs, hairPreparationWallMs, hairPreparationStages, hairBundleSerializationMs, hairBundleBytes, mainExportWallMs: exportWallMs, clickToValidatedWallMs, exportMilliseconds: report.milliseconds ?? exportWallMs, phaseMilliseconds: report.phaseMilliseconds, audioClips: report.audioClips, audioOutput: audio, videoInputs: report.videoInputs, mouthAnimation: report.mouthAnimation ? { characters: report.mouthAnimation.characters, stateAtlases: report.mouthAnimation.stateAtlases, skippedStates: report.mouthAnimation.skippedStates, staleStates: report.mouthAnimation.staleStates, preparationMilliseconds: report.mouthAnimation.preparationMilliseconds } : null, motionTransitionsPrepared: report.motionTransitionsPrepared, motionPreparation: report.motionPreparation, ffprobeValidation: report.validation, motionCache: report.motionCache ?? null, motionCacheDelta: motionCacheTotal, mainProcessMemory: report.mainProcessMemory ?? null, partTiming: timing, processSampleCount: processSampleCountByRun.get(runNumber) ?? 0, processPeaks: [...processPeakByRunRole.values()].filter(sample => sample.run === runNumber) })
           } else {
             runs.push({ run: index + 1, totalFrames: report.totalFrames, width: options.width, height: options.height, fps: '30/1', workers: report.attempts[0]?.parallelism ?? expectedExportWorkers, motionConcurrency, motionConcurrentPeak: report.motionPreparation?.maxConcurrentBakes ?? 0, milliseconds: report.milliseconds!, exportWallMs, clickToValidatedWallMs, renderingMilliseconds: report.phaseMilliseconds.rendering, finalizationMilliseconds: report.phaseMilliseconds.finalization, rssPeakBytes: report.mainProcessMemory!.peakRssBytes, motionTransitions: report.motionTransitionsPrepared, motionPreparation: report.motionPreparation, motionCache: report.motionCache, motionCacheTotal, mouthStates: report.mouthAnimation?.stateAtlases ?? 0, audioClips: report.audioClips, videoInputs: report.videoInputs, audioOutput: audio, phaseMilliseconds: report.phaseMilliseconds, partTiming: report.attempts.flatMap(attempt => attempt.parts).map(part => part.frameTiming) })
           }

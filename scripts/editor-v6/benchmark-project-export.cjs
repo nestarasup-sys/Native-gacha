@@ -30,14 +30,18 @@ const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
 const captureModeValue = argument('--capture-mode=')
 const uiExportProfile = process.argv.includes('--ui-export-profile')
+const disableMouthAnimation = process.argv.includes('--disable-mouth-animation')
 const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument('--hair-preset-file='))
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
+const videoToolsDirectory = argument('--video-tools=') && path.resolve(argument('--video-tools='))
 const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
 const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
+const retainQualityArtifacts = process.argv.includes('--retain-quality-artifacts')
 const MAX_RUN_OUTPUT_BYTES = 2 * 1024 ** 3
 const MIN_FREE_SPACE_BYTES = 3 * 1024 ** 3
 const reuseRendererServer = process.argv.includes('--reuse-renderer-server')
+const runStartedAt = new Date().toISOString()
 const verifiedBackupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups')
 const inside = (parent, child) => {
   const relative = path.relative(parent, child)
@@ -130,11 +134,40 @@ async function cleanupGeneratedRun(outputFolder, { retainMp4 = false } = {}) {
       const target = path.join(directory, entry.name)
       if (entry.isSymbolicLink()) throw Error('Recusa de limpeza: link simbólico em saída gerada.')
       if (entry.isDirectory()) await removeHeavyOutputs(target)
-      else if (entry.isFile() && !['.json', '.txt'].includes(path.extname(entry.name).toLowerCase()) && !(retainMp4 && path.extname(entry.name).toLowerCase() === '.mp4')) await fs.rm(target, { force: false })
+      else if (entry.isFile() && !['.json', '.txt'].includes(path.extname(entry.name).toLowerCase())
+        && !(retainMp4 && path.extname(entry.name).toLowerCase() === '.mp4')
+        && !(retainQualityArtifacts && ['.mp4', '.bgra', '.csv'].includes(path.extname(entry.name).toLowerCase()))) await fs.rm(target, { force: false })
       else if (!entry.isFile()) throw Error('Recusa de limpeza: tipo de entrada não regular em saída gerada.')
     }
   }
   await removeHeavyOutputs(realOutput)
+}
+
+async function preserveFailureReports(outputFolder, runStartedAt) {
+  const isolatedRoot = path.join(outputFolder, 'isolated-app-data')
+  const profileRoot = path.join(isolatedRoot, 'runtime', 'profile')
+  const destinationRoot = path.join(outputFolder, 'failure-reports')
+  let projects
+  try { projects = await fs.readdir(path.join(profileRoot, 'studios', 'Editor V6'), { withFileTypes: true }) }
+  catch (error) { if (error?.code === 'ENOENT') return; throw error }
+  let copied = 0
+  for (const project of projects) {
+    if (!project.isDirectory() || project.isSymbolicLink()) continue
+    const exportsFolder = path.join(profileRoot, 'studios', 'Editor V6', project.name, 'exports')
+    let entries
+    try { entries = await fs.readdir(exportsFolder, { withFileTypes: true }) }
+    catch (error) { if (error?.code === 'ENOENT') continue; throw error }
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith('.report.json')) continue
+      const source = path.join(exportsFolder, entry.name)
+      const report = await fs.readFile(source, 'utf8').then(JSON.parse).catch(() => null)
+      if (!report || !Number.isFinite(Date.parse(report.startedAt))
+        || Date.parse(report.startedAt) < Date.parse(runStartedAt) - 3000) continue
+      await fs.mkdir(destinationRoot, { recursive: true })
+      await fs.copyFile(source, path.join(destinationRoot, `${copied + 1}.report.json`))
+      copied++
+    }
+  }
 }
 
 async function main() {
@@ -158,15 +191,24 @@ async function main() {
     throw Error('--export-test-mode aceita somente controle ou captura-8 no benchmark isolado do projeto autorizado.')
   }
   if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
-  if (!['auto', 'cpu'].includes(encoder)) throw Error('--encoder aceita auto ou cpu.')
+  if (!['auto', 'cpu', 'amf'].includes(encoder)) throw Error('--encoder aceita auto, cpu ou amf.')
+  if (videoToolsDirectory) {
+    const allowedToolsRoot = path.resolve(root, 'out', 'editor-v6-stress', 'tools')
+    const canonicalToolsRoot = await fs.realpath(allowedToolsRoot)
+    const canonicalToolsDirectory = await fs.realpath(videoToolsDirectory)
+    if (!inside(canonicalToolsRoot, canonicalToolsDirectory) || canonicalToolsRoot === canonicalToolsDirectory
+      || (await fs.lstat(videoToolsDirectory)).isSymbolicLink()) throw Error('--video-tools precisa apontar para uma build extraída dentro da pasta isolada de ferramentas.')
+    for (const executable of ['ffmpeg.exe', 'ffprobe.exe']) await fs.access(path.join(canonicalToolsDirectory, executable))
+  }
   if (!['1', '2', '3'].includes(motionConcurrency)) throw Error('--motion-bake-concurrency aceita 1, 2 ou 3.')
   if (renderWorkers && !['2', '4'].includes(renderWorkers)) throw Error('--render-workers aceita 2 ou 4 no harness Turbo.')
   if (renderWorkers && process.argv.includes('--compare-workers')) throw Error('--render-workers não se combina com --compare-workers.')
   if (!['ultrafast', 'superfast', 'veryfast', 'faster', 'fast', 'medium'].includes(x264Preset)) throw Error('--x264-preset aceita ultrafast, superfast, veryfast, faster, fast ou medium.')
-  if (retainMp4ForQuality && (!uiExportProfile || !(hairPresetSlot || noHairControl) || hairPreparationOnly || repeatValue && repeatValue !== '1')) throw Error('--retain-mp4-for-quality exige uma única exportação completa do perfil UI.')
+  if ((retainMp4ForQuality || retainQualityArtifacts) && (!uiExportProfile || !(hairPresetSlot || noHairControl) || hairPreparationOnly || repeatValue && repeatValue !== '1')) throw Error('--retain-quality-artifacts exige uma única exportação completa do perfil UI.')
   if (uiExportProfile && (hairPreparationOnly || hairPresetSlot && (Number(hairPresetSlot) !== 2 || !hairPresetFile) || !hairPresetSlot && !noHairControl)) {
     throw Error('--ui-export-profile exige Preset 2 salvo para cabelo ativo ou --no-hair-control para o controle sem cabelo.')
   }
+  if (disableMouthAnimation && !uiExportProfile) throw Error('--disable-mouth-animation exige --ui-export-profile.')
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
     || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
@@ -197,8 +239,9 @@ async function main() {
   }
 
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
-  if ((hairPresetSlot || noHairControl) && (manifest.title?.trim() !== authorizedProjectTitle || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
-    throw Error(`O benchmark com cabelo exige uma cópia verificada do projeto autorizado "${authorizedProjectTitle}" com duração válida; nenhum projeto foi modificado.`)
+  const acceptedProjectTitles = [authorizedProjectTitle, 'Editor V6 01', 'FYN & RONAN — UM CASAL PERIGOSO — Plano B · 6 min']
+  if ((hairPresetSlot || noHairControl) && (!acceptedProjectTitles.includes(manifest.title?.trim()) || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
+    throw Error('O benchmark exige uma cópia verificada de um projeto Plano B autorizado com duração válida; nenhum projeto foi modificado.')
   }
   const segmentFrameCount = segmentDurationSeconds === null ? manifest.timeline?.durationFrames : segmentDurationSeconds * 30
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentFrameCount) || segmentStartFrame + segmentFrameCount > manifest.timeline.durationFrames)) {
@@ -251,11 +294,14 @@ async function main() {
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
     ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
+    ...(disableMouthAnimation ? { GACHA_EDITOR_V6_STRESS_MOUTH_LOOP: '0' } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
     GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
+    ...(retainQualityArtifacts ? { GACHA_EDITOR_V6_STRESS_CAPTURE_RAW_FRAMES: '1' } : {}),
+    ...(videoToolsDirectory ? { GACHA_EDITOR_V6_STRESS_VIDEO_TOOLS: videoToolsDirectory } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),
     ...(hairPreparationOnly ? { GACHA_EDITOR_V6_STRESS_HAIR_PREPARATION_ONLY: '1' } : {}),
@@ -297,11 +343,11 @@ async function main() {
   const summaryPath = path.join(outputFolder, 'stress-export-validation.json')
   const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8'))
   const invalidSummary = hairPreparationOnly
-    ? summary.benchmarkKind !== 'real-project-hair-preparation' || summary.projectTitle !== authorizedProjectTitle
+    ? summary.benchmarkKind !== 'real-project-hair-preparation' || summary.projectTitle !== manifest.title
       || summary.durationFrames !== manifest.timeline.durationFrames || summary.hairPresetSlot !== Number(hairPresetSlot)
       || summary.rigCount < 1 || summary.preparedTransitions < 1 || !Number.isFinite(summary.preparationWallMs)
     : noHairControl
-    ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== authorizedProjectTitle
+    ? summary.benchmarkKind !== 'real-project-no-hair-control' || summary.projectTitle !== manifest.title
       || uiExportProfile && summary.profile !== 'editor-v6-ui-default-no-hair'
       || uiExportProfile && summary.x264Preset !== x264Preset
       || summary.motionConcurrency !== Number(motionConcurrency)
@@ -314,7 +360,7 @@ async function main() {
         || !Number.isFinite(run.clickToValidatedWallMs) || (uiExportProfile ? run.clickToValidatedWallMs < run.exportWallMs : run.clickToValidatedWallMs !== run.exportWallMs)
         || run.audioOutput !== (run.audioClips > 0))
     : hairPresetSlot
-    ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== authorizedProjectTitle
+    ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== manifest.title
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
       || summary.requestedEncoder !== encoder
@@ -323,7 +369,8 @@ async function main() {
       || uiExportProfile && (summary.profile !== 'editor-v6-ui-default' || summary.hairPoseReactionOnly !== true || summary.hairPosteriorOnly !== true)
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || run.requestedEncoder !== encoder || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
-        || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder)
+        || run.audioClips !== summary.runs[0].audioClips || !run.selectedEncoder
+        || disableMouthAnimation && run.mouthLoopDisabled !== true)
     : singleMotionRun
     ? summary.benchmarkKind !== 'motion-concurrency-single' || summary.runs?.length !== 1
       || summary.motionBakeConcurrency !== Number(motionConcurrency)
@@ -334,21 +381,24 @@ async function main() {
     : cacheProbe
     ? summary.benchmarkKind !== 'motion-cache-repeat' || summary.runs?.length !== 3 || summary.runs.some((run) => !run.motionCache || !run.motionCacheTotal)
     : summary.benchmarkKind !== 'worker-comparison' || summary.runs?.length !== 6 || summary.variants?.some((variant) => variant.runs !== 3)
-  if (!summary.passed || invalidSummary) {
+    if (!summary.passed || invalidSummary) {
     throw Error(`O processo terminou sem as rodadas completas e validadas esperadas. Revise ${summaryPath}.`)
   }
   if (hairPreparationOnly && (await fs.readdir(outputFolder)).some((name) => name.toLowerCase().endsWith('.mp4'))) {
     throw Error(`O perfil de preparação não deveria gerar MP4. Revise ${outputFolder}.`)
   }
   // Retain only a small run marker and JSON/text evidence after validation.
-  await cleanupGeneratedRun(outputFolder, { retainMp4: retainMp4ForQuality })
+  await cleanupGeneratedRun(outputFolder, { retainMp4: retainMp4ForQuality || retainQualityArtifacts })
   if (retainMp4ForQuality) console.log('MP4 temporário para comparação visual: ' + path.join(outputFolder, (await fs.readdir(outputFolder)).find((name) => name.toLowerCase().endsWith('.mp4')) ?? '(não encontrado)'))
   console.log('Comparação completa: ' + summaryPath)
 }
 
 main().catch(async (error) => {
   console.error('[V6 project benchmark] Falha:', error)
-  try { await cleanupGeneratedRun(outputFolder) }
+  try {
+    await preserveFailureReports(outputFolder, runStartedAt)
+    await cleanupGeneratedRun(outputFolder, { retainMp4: retainMp4ForQuality || retainQualityArtifacts })
+  }
   catch (cleanupError) { console.error('[V6 project benchmark] Falha ao limpar temporários próprios:', cleanupError) }
   process.exitCode = 1
 })
