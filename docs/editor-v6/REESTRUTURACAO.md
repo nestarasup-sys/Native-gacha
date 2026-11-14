@@ -1549,3 +1549,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** 20 camadas e 20.000 interpolações aquecidas em cinco rodadas: mediana de 44,79 ms no algoritmo que repetia as buscas e 25,72 ms com os pares compilados (42,6% menos nessa operação sintética). Não mede o desenho das mechas, o quadro inteiro ou a exportação completa.
 
 **Verificação:** comparação determinística em cinco progressos, incluindo rotação que atravessa 360° e uma camada sem par; teste Node específico (13), suíte Editor V6 (178 arquivos, 793 aprovados e 1 ignorado), typecheck, auditoria, build e harness de cabelo passaram. A primeira rodada integrada falhou numa asserção preexistente de `flipX` individual para uma fixture estática sem transições; a repetição passou, sem mudança de tolerância. Nenhum projeto real foi exportado.
+
+### Continuação na `Dev-V2` — compilar extremos da trajetória física da cabeça
+
+**Mudança:** em transições de pose, os pontos físicos de origem/destino agora são calculados uma vez por transição e guardados em `WeakMap`. Cada quadro interpola apenas centro, deslocamento local, giro e espelhamento. A construção do índice de personagens da timeline também passou de `filter` + `map` para um único percurso, mantendo a regra anterior de prevalência do último elemento com o mesmo ID.
+
+**Medição isolada:** 100.000 interpolações aquecidas, cinco rodadas com geometrias sintéticas: mediana de 17,38 ms no cálculo completo dos extremos por chamada e 2,42 ms com extremos compilados (86,1% menos nessa operação). Não inclui a resolução da cena, a física completa ou o desenho/export.
+
+**Verificação:** equivalência da trajetória em seis progressos, com giro e mudança de `flipX`; cobertura de IDs duplicados; 11 testes focados, teste Node específico (14), suíte Editor V6 (178 arquivos, 794 aprovados e 1 ignorado), typecheck, auditoria, build e harness integrado de cabelo passaram. Nenhum projeto real foi exportado.

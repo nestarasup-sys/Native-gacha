@@ -54,6 +54,19 @@ describe('createEditorV6HairHeadPathTimeline', () => {
     expect(resolveScene).toHaveBeenCalledTimes(3)
   })
 
+  it('keeps the last character instance for duplicate element IDs while indexing in one pass', () => {
+    const character = (x: number) => ({ id: 'actor', kind: 'character', x, y: 0, width: 100, height: 100, rotation: 0, flipX: false } as SceneElement)
+    const timeline = createEditorV6HairHeadPathTimeline({
+      animatedElementIds: ['actor'],
+      hasHairAnimation: true,
+      resolveScene: frame => ({ elements: frame === 0 ? [character(1), character(10)] : [character(2), character(20)] } as Scene),
+      getTransitionSample: () => undefined,
+      hairRigAtFrame: () => undefined
+    })
+
+    expect(timeline.headXAtFrame('actor', 1)).toBeCloseTo(.1)
+  })
+
   it('keeps the last path while the actor is absent and resumes from its last physical point', () => {
     const frames = [sceneAt(0), sceneAt(10, false), sceneAt(20)]
     const timeline = createEditorV6HairHeadPathTimeline({
@@ -72,17 +85,17 @@ describe('createEditorV6HairHeadPathTimeline', () => {
     const fromElement = { id: 'actor', kind: 'character', x: 0, y: 0, width: 100, height: 100, rotation: 0, flipX: false } as EditorV6Element
     const toElement = { ...fromElement, x: 20 }
     const physicsRig = rigWithFlip(false)
+    const transition = { fromElement, toElement, physicsFrom: physicsRig, physicsTo: physicsRig }
     const timeline = createEditorV6HairHeadPathTimeline({
       animatedElementIds: ['actor'],
       hasHairAnimation: true,
       resolveScene: () => sceneAt(0),
-      getTransitionSample: (_elementId, frame) => frame === 1
-        ? { transition: { fromElement, toElement, physicsFrom: physicsRig, physicsTo: physicsRig }, poseSample: { progress: 1 } }
-        : undefined,
+      getTransitionSample: (_elementId, frame) => ({ transition, poseSample: { progress: frame / 4 } }),
       hairRigAtFrame: () => undefined
     })
 
-    expect(timeline.headXAtFrame('actor', 1)).toBeCloseTo(0.2)
+    expect(timeline.headXAtFrame('actor', 4)).toBeCloseTo(0.2)
+    expect(timeline.headXAtFrame('actor', 2)).toBeCloseTo(0.1)
   })
 
   it('indexes per-layer flip changes and preserves fallback before the first indexed frame', () => {

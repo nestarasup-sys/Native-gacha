@@ -1,5 +1,5 @@
 import type { EditorV6Element } from '../../../../shared/editorV6'
-import { editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionHeadPathPoint, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
+import { createEditorV6HairMotionHeadPathInterpolator, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, type EditorV6HairMotionHeadPathPoint, type EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 
@@ -29,6 +29,7 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
   const paths = new Map(animatedElementIds.map((id) => [id, new Float32Array(0)]))
   const previousPoints = new Map<string, EditorV6HairMotionHeadPathPoint>()
   const flipChanges = new Map<string, Array<{ frame: number; flipX: boolean }>>()
+  const transitionPathInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionHeadPathPoint>()
 
   const ensure = (targetFrame: number) => {
     if (!hasHairAnimation || targetFrame <= latestFrame) return
@@ -44,7 +45,8 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
 
     for (let frame = latestFrame + 1; frame <= targetFrame; frame += 1) {
       const resolved = resolveScene(frame)
-      const elements = new Map(resolved.elements.filter((element) => element.kind === 'character').map((element) => [element.id, element]))
+      const elements = new Map<string, SceneElement>()
+      for (const element of resolved.elements) if (element.kind === 'character') elements.set(element.id, element)
       for (const elementId of animatedElementIds) {
         const path = paths.get(elementId)!
         const element = elements.get(elementId)
@@ -57,18 +59,24 @@ export function createEditorV6HairHeadPathTimeline({ animatedElementIds, hasHair
         const transition = indexed?.transition
         const transitionSample = indexed?.poseSample
         const resolvedRig = hairRigAtFrame(element, frame)
-        const pathPoint = transition && transitionSample && transition.physicsFrom && transition.physicsTo
-          ? interpolateEditorV6HairMotionHeadPathPoint(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo, motionEase(transitionSample.progress))
-          : resolvedRig
-            ? editorV6HairMotionHeadPathPoint(resolvedRig.element, resolvedRig.rig)
-            : { centerX: (50 + element.x) / 100, centerY: (50 + element.y) / 100, localX: 0, rotation: element.rotation, flipX: Boolean(element.flipX) }
+        let pathPoint: EditorV6HairMotionHeadPathPoint
+        if (transition && transitionSample && transition.physicsFrom && transition.physicsTo) {
+          let interpolatePath = transitionPathInterpolators.get(transition)
+          if (!interpolatePath) {
+            interpolatePath = createEditorV6HairMotionHeadPathInterpolator(transition.fromElement, transition.toElement, transition.physicsFrom, transition.physicsTo)
+            transitionPathInterpolators.set(transition, interpolatePath)
+          }
+          pathPoint = interpolatePath(motionEase(transitionSample.progress))
+        } else if (resolvedRig) pathPoint = editorV6HairMotionHeadPathPoint(resolvedRig.element, resolvedRig.rig)
+        else pathPoint = { centerX: (50 + element.x) / 100, centerY: (50 + element.y) / 100, localX: 0, rotation: element.rotation, flipX: Boolean(element.flipX) }
         path[frame] = !previous || frame === 0
           ? 0
           // Transition atlas crops are visual-only; physics follows authored transforms and pose geometry.
           : path[frame - 1] + editorV6HairMotionHeadPathDelta(previous, pathPoint)
         previousPoints.set(elementId, pathPoint)
 
-        for (const layer of resolvedRig?.rig.layers ?? []) {
+        const layers = resolvedRig?.rig.layers
+        if (layers) for (const layer of layers) {
           const key = `${elementId}:${layer.id}`
           const changes = flipChanges.get(key) ?? []
           if (changes.length === 0 || changes[changes.length - 1].flipX !== layer.flipX) changes.push({ frame, flipX: layer.flipX })

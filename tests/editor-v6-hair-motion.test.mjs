@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { FIRST_HAIR_MOTION_PRESET } from '../src/shared/hairMotionEngine.ts'
-import { createEditorV6HairMotionRigInterpolator, editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
+import { createEditorV6HairMotionHeadPathInterpolator, createEditorV6HairMotionRigInterpolator, editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
 import { planEditorV6Export } from '../src/shared/editorV6Export.ts'
 import { expandEditorV6HairCrop } from '../src/renderer/src/features/editorV6/editorV6HairMotionGeometry.ts'
 
@@ -184,11 +184,68 @@ test('interpolador compilado mantém o resultado direto em todos os quadros amos
     ]
   }
   const interpolate = createEditorV6HairMotionRigInterpolator(from, to)
+  const reference = (progress) => {
+    const mix = (left, right) => left + (right - left) * progress
+    const angle = (left, right) => left + ((((right - left) % 360 + 540) % 360) - 180) * progress
+    return {
+      ...from,
+      artworkWidth: mix(from.artworkWidth, to.artworkWidth), artworkHeight: mix(from.artworkHeight, to.artworkHeight),
+      outputWidth: mix(from.outputWidth, to.outputWidth), outputHeight: mix(from.outputHeight, to.outputHeight),
+      shapeScaleX: mix(from.shapeScaleX, to.shapeScaleX), shapeScaleY: mix(from.shapeScaleY, to.shapeScaleY),
+      sourceCrop: {
+        left: mix(from.sourceCrop.left, to.sourceCrop.left), top: mix(from.sourceCrop.top, to.sourceCrop.top),
+        width: mix(from.sourceCrop.width, to.sourceCrop.width), height: mix(from.sourceCrop.height, to.sourceCrop.height)
+      },
+      targetHead: {
+        x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
+        width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
+        rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
+      },
+      layers: from.layers.map(layer => {
+        const matching = to.layers.find(candidate => candidate.id === layer.id && candidate.side === layer.side)
+        if (!matching) return layer
+        return {
+          ...layer,
+          width: mix(layer.width, matching.width), height: mix(layer.height, matching.height),
+          x: mix(layer.x, matching.x), y: mix(layer.y, matching.y),
+          scaleX: mix(layer.scaleX, matching.scaleX), scaleY: mix(layer.scaleY, matching.scaleY),
+          rotation: angle(layer.rotation, matching.rotation),
+          flipX: progress < .5 ? layer.flipX : matching.flipX
+        }
+      })
+    }
+  }
 
   for (const progress of [0, .1, .5, .9, 1]) {
-    assert.deepEqual(interpolate(progress), interpolateEditorV6HairMotionRig(from, to, progress))
+    assert.deepEqual(interpolate(progress), reference(progress))
   }
   assert.throws(() => interpolate(1.1), /progresso da geometria/i)
+})
+
+test('interpolador compilado de trajetória mantém os pontos e a troca de espelhamento', () => {
+  const fromRig = validBundle().rigs[0]
+  const toRig = { ...fromRig, targetHead: { ...fromRig.targetHead, x: 42, y: 12, rotation: 350 }, sourceCrop: { ...fromRig.sourceCrop, left: 10 } }
+  const from = { x: -25, y: 4, width: 40, height: 60, rotation: 15, flipX: false, characterScale: 125, characterWidthScale: 95, characterHeightScale: 110 }
+  const to = { ...from, x: -12, y: -4, rotation: 40, flipX: true, width: 55, height: 70 }
+  const interpolate = createEditorV6HairMotionHeadPathInterpolator(from, to, fromRig, toRig)
+  const fromPoint = editorV6HairMotionHeadPathPoint(from, fromRig)
+  const toPoint = editorV6HairMotionHeadPathPoint(to, toRig)
+  const rotationDelta = ((((toPoint.rotation - fromPoint.rotation) % 360 + 540) % 360) - 180)
+  const reference = (progress) => {
+    const mix = (left, right) => left + (right - left) * progress
+    return {
+      centerX: mix(fromPoint.centerX, toPoint.centerX),
+      centerY: mix(fromPoint.centerY, toPoint.centerY),
+      localX: mix(fromPoint.localX, toPoint.localX),
+      rotation: fromPoint.rotation + rotationDelta * progress,
+      flipX: progress < .5 ? fromPoint.flipX : toPoint.flipX
+    }
+  }
+
+  for (const progress of [0, .1, .49, .5, .9, 1]) {
+    assert.deepEqual(interpolate(progress), reference(progress))
+  }
+  assert.throws(() => interpolate(-.1), /progresso da geometria da cabeça/i)
 })
 
 test('trocas só de expressão não transformam variações do recorte em velocidade física da cabeça', () => {

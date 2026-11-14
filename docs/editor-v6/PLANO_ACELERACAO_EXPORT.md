@@ -455,3 +455,9 @@ Teste focado determinístico (6), suíte Editor V6 (178 arquivos, 793 testes apr
 O worker agora resolve uma vez, por transição, quais camadas de origem encontram correspondência por ID e lado no rig de destino. A interpolação de cada quadro ainda atualiza todos os campos móveis e preserva as camadas sem correspondência; a API direta continua disponível.
 
 Em microteste sintético com 20 camadas e 20.000 chamadas, a mediana caiu de 44,79 ms para 25,72 ms (42,6% apenas na interpolação). O harness de cabelo integrado passou na repetição; a rodada anterior falhou numa checagem de `flipX` individual de fixture sem transições, portanto fora deste caminho. Teste Node (13), suíte completa (178 arquivos, 793 aprovados e 1 ignorado), typecheck, auditoria e build passaram. Ainda é necessário baseline equivalente do projeto real para saber o efeito no tempo do MP4.
+
+### Continuação 2026-11-13 — compilar trajetória da cabeça e indexar personagens em uma passagem
+
+Cada transição armazena em `WeakMap` os pontos físicos fixos dos dois extremos, evitando recalcular âncoras, escala, seno/cosseno e geometria de pose em cada amostra. O loop que indexa personagens por quadro também preenche o `Map` diretamente e conserva o último item por ID, removendo os arrays temporários de `filter` e `map`.
+
+Microteste de 100.000 pontos de trajetória: mediana 17,38 ms com os extremos recalculados em cada ponto e 2,42 ms com os extremos compilados (86,1% nessa operação isolada). Testes focados (11), teste Node de cabelo (14), suíte (178 arquivos, 794 aprovados e 1 ignorado), typecheck, auditoria, build e harness Electron de cabelo passaram. A medição não representa o export inteiro; falta comparação A/B do mesmo projeto de estresse.

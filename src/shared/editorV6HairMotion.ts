@@ -142,6 +142,36 @@ export function editorV6HairMotionHeadPathPoint(
   }
 }
 
+function mixHairMotionNumber(left: number, right: number, progress: number): number {
+  return left + (right - left) * progress
+}
+
+function mixHairMotionAngle(left: number, right: number, progress: number): number {
+  return left + ((((right - left) % 360 + 540) % 360) - 180) * progress
+}
+
+/** Compile fixed endpoint geometry once; only the transition progress changes per frame. */
+export function createEditorV6HairMotionHeadPathInterpolator(
+  from: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
+  to: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
+  fromRig: EditorV6HairMotionRig,
+  toRig: EditorV6HairMotionRig
+) {
+  const fromPoint = editorV6HairMotionHeadPathPoint(from, fromRig)
+  const toPoint = editorV6HairMotionHeadPathPoint(to, toRig)
+  const rotationDelta = ((((toPoint.rotation - fromPoint.rotation) % 360 + 540) % 360) - 180)
+  return (progress: number): EditorV6HairMotionHeadPathPoint => {
+    if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria da cabeça inválido.')
+    return {
+      centerX: mixHairMotionNumber(fromPoint.centerX, toPoint.centerX, progress),
+      centerY: mixHairMotionNumber(fromPoint.centerY, toPoint.centerY, progress),
+      localX: mixHairMotionNumber(fromPoint.localX, toPoint.localX, progress),
+      rotation: fromPoint.rotation + rotationDelta * progress,
+      flipX: progress < .5 ? fromPoint.flipX : toPoint.flipX
+    }
+  }
+}
+
 /** Interpolate physical head geometry independently of the transition's raster crop. */
 export function interpolateEditorV6HairMotionHeadPathPoint(
   from: Pick<EditorV6Element, 'x' | 'y' | 'width' | 'height' | 'rotation' | 'flipX' | 'characterScale' | 'characterWidthScale' | 'characterHeightScale'>,
@@ -150,18 +180,7 @@ export function interpolateEditorV6HairMotionHeadPathPoint(
   toRig: EditorV6HairMotionRig,
   progress: number
 ): EditorV6HairMotionHeadPathPoint {
-  if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria da cabeça inválido.')
-  const fromPoint = editorV6HairMotionHeadPathPoint(from, fromRig)
-  const toPoint = editorV6HairMotionHeadPathPoint(to, toRig)
-  const mix = (left: number, right: number) => left + (right - left) * progress
-  const rotationDelta = ((((toPoint.rotation - fromPoint.rotation) % 360 + 540) % 360) - 180)
-  return {
-    centerX: mix(fromPoint.centerX, toPoint.centerX),
-    centerY: mix(fromPoint.centerY, toPoint.centerY),
-    localX: mix(fromPoint.localX, toPoint.localX),
-    rotation: fromPoint.rotation + rotationDelta * progress,
-    flipX: progress < .5 ? fromPoint.flipX : toPoint.flipX
-  }
+  return createEditorV6HairMotionHeadPathInterpolator(from, to, fromRig, toRig)(progress)
 }
 
 /** Translate actor-local head movement to the coordinate direction of one flipped hair piece. */
@@ -209,30 +228,28 @@ export function createEditorV6HairMotionRigInterpolator(from: EditorV6HairMotion
 
   return (progress: number): EditorV6HairMotionRig => {
     if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria do cabelo inválido.')
-    const mix = (left: number, right: number) => left + (right - left) * progress
-    const angle = (left: number, right: number) => left + ((((right - left) % 360 + 540) % 360) - 180) * progress
     return {
       ...from,
-      artworkWidth: mix(from.artworkWidth, to.artworkWidth), artworkHeight: mix(from.artworkHeight, to.artworkHeight),
-      outputWidth: mix(from.outputWidth, to.outputWidth), outputHeight: mix(from.outputHeight, to.outputHeight),
-      shapeScaleX: mix(from.shapeScaleX, to.shapeScaleX), shapeScaleY: mix(from.shapeScaleY, to.shapeScaleY),
+      artworkWidth: mixHairMotionNumber(from.artworkWidth, to.artworkWidth, progress), artworkHeight: mixHairMotionNumber(from.artworkHeight, to.artworkHeight, progress),
+      outputWidth: mixHairMotionNumber(from.outputWidth, to.outputWidth, progress), outputHeight: mixHairMotionNumber(from.outputHeight, to.outputHeight, progress),
+      shapeScaleX: mixHairMotionNumber(from.shapeScaleX, to.shapeScaleX, progress), shapeScaleY: mixHairMotionNumber(from.shapeScaleY, to.shapeScaleY, progress),
       sourceCrop: {
-        left: mix(from.sourceCrop.left, to.sourceCrop.left), top: mix(from.sourceCrop.top, to.sourceCrop.top),
-        width: mix(from.sourceCrop.width, to.sourceCrop.width), height: mix(from.sourceCrop.height, to.sourceCrop.height)
+        left: mixHairMotionNumber(from.sourceCrop.left, to.sourceCrop.left, progress), top: mixHairMotionNumber(from.sourceCrop.top, to.sourceCrop.top, progress),
+        width: mixHairMotionNumber(from.sourceCrop.width, to.sourceCrop.width, progress), height: mixHairMotionNumber(from.sourceCrop.height, to.sourceCrop.height, progress)
       },
       targetHead: {
-        x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
-        width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
-        rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
+        x: mixHairMotionNumber(from.targetHead.x, to.targetHead.x, progress), y: mixHairMotionNumber(from.targetHead.y, to.targetHead.y, progress),
+        width: mixHairMotionNumber(from.targetHead.width, to.targetHead.width, progress), height: mixHairMotionNumber(from.targetHead.height, to.targetHead.height, progress),
+        rotation: mixHairMotionAngle(from.targetHead.rotation, to.targetHead.rotation, progress)
       },
       layers: layerPairs.map(({ layer, matching }) => {
         if (!matching) return layer
         return {
           ...layer,
-          width: mix(layer.width, matching.width), height: mix(layer.height, matching.height),
-          x: mix(layer.x, matching.x), y: mix(layer.y, matching.y),
-          scaleX: mix(layer.scaleX, matching.scaleX), scaleY: mix(layer.scaleY, matching.scaleY),
-          rotation: angle(layer.rotation, matching.rotation),
+          width: mixHairMotionNumber(layer.width, matching.width, progress), height: mixHairMotionNumber(layer.height, matching.height, progress),
+          x: mixHairMotionNumber(layer.x, matching.x, progress), y: mixHairMotionNumber(layer.y, matching.y, progress),
+          scaleX: mixHairMotionNumber(layer.scaleX, matching.scaleX, progress), scaleY: mixHairMotionNumber(layer.scaleY, matching.scaleY, progress),
+          rotation: mixHairMotionAngle(layer.rotation, matching.rotation, progress),
           flipX: progress < .5 ? layer.flipX : matching.flipX
         }
       })
