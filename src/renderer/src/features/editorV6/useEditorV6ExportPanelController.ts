@@ -28,6 +28,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
   const [options, setOptions] = useState<EditorV6ExportOptions>({ startFrame: 0, endFrame: defaultEndFrame, ...DEFAULT_EXPORT_SETTINGS })
   const previousProjectRange = useRef({ projectId: project.id, endFrame: defaultEndFrame })
   const [hairPresetSlot, setHairPresetSlot] = useState(EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT)
+  const [disableHairAnimation, setDisableHairAnimation] = useState(false)
   const [hairPresets, setHairPresets] = useState<Array<ReturnType<typeof parseHairMotionPresets>[number]>>([structuredClone(FIRST_HAIR_MOTION_PRESET), null, null, null, null])
   const [presetDraft, setPresetDraft] = useState<{ slot: number; value: HairMotionPreset } | null>(null)
   const [editingHairPreset, setEditingHairPreset] = useState(false)
@@ -128,7 +129,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     }
   }
 
-  const start = async (animateHair = true) => {
+  const start = async (animateHair = !disableHairAnimation) => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
     if (animateHair && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
     const preparedHairPreset = animateHair && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
@@ -137,7 +138,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
         project,
-        options: { ...options, ...DEFAULT_EXPORT_SETTINGS, encoder: options.encoder, mouthLoop: options.encoder === 'amf' ? false : options.mouthLoop !== false, ...(animateHair ? {} : { hairPoseReactionOnly: false, hairPosteriorOnly: false }), mouthLoopCycleFrames: options.mouthLoopCycleFrames },
+        options: { ...options, ...DEFAULT_EXPORT_SETTINGS, encoder: options.encoder, mouthLoop: options.encoder === 'amf' ? false : options.mouthLoop, ...(animateHair ? {} : { hairPoseReactionOnly: false, hairPosteriorOnly: false }), mouthLoopCycleFrames: options.mouthLoopCycleFrames },
         hairPresetSlot,
         hairPreset: preparedHairPreset,
         prepareHair,
@@ -164,7 +165,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
   }
 
   return {
-    job, exportFolder, options, setOptions, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
+    job, exportFolder, options, setOptions, disableHairAnimation, setDisableHairAnimation, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
     editingHairPreset, setEditingHairPreset, hairPresetMessage, setHairPresetMessage, preparingHair, startingExport,
     exportStartedAt, busy, audioPickerOpen, setAudioPickerOpen, error, setError, active, updateAudio, linkAudio,
     chooseExportFolder, clearExportFolder, selectedHairPreset, beginEditingHairPreset, saveHairPreset, start, cancel

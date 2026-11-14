@@ -65,6 +65,12 @@ let closePanelTest: () => void
     assert(button, `Painel de exportação não mostrou o botão: ${text}. Conteúdo: ${mount.textContent?.slice(-900)}`)
     return button
   }
+  const hairAnimationCheckbox = () => {
+    const label = Array.from(document.querySelectorAll('label.v6-export-check')).find((item) => item.textContent?.includes('Exportar sem animação de cabelo'))
+    const checkbox = label?.querySelector('input[type="checkbox"]')
+    assert(checkbox, 'Painel não mostrou a opção de exportar sem animação de cabelo.')
+    return checkbox
+  }
   function Demo() {
     const [project, setProject] = useState(panelProject)
     return <EditorV6ExportPanel project={project} open onClose={() => {}} onChange={setProject} trackOperation={async (operation) => operation()} prepareHair={async (_project, slot, preset) => { assert(slot === 2 && preset.enabled.front && !preset.enabled.back && !preset.enabled.fringe, 'Preset padrão não isolou o cabelo posterior.'); prepared++; return {} as EditorV6HairMotionBundle }} />
@@ -80,10 +86,12 @@ let closePanelTest: () => void
   findButton(libraryAudio.name).click()
   await new Promise((resolve) => requestAnimationFrame(resolve))
   assert(linked === 1 && mount.textContent?.includes(libraryAudio.name), 'A seleção da biblioteca não vinculou o áudio ao projeto.')
-  findButton('EXPORTAR SEM ANIMAÇÃO DE CABELO').click()
+  hairAnimationCheckbox().click()
+  findButton('EXPORTAR MP4 · SEM ANIMAÇÃO DE CABELO').click()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(startedWithoutHair && prepared === 0 && started === 1, 'A opção sem cabelo preparou animação ou não iniciou a exportação.')
-  findButton('COM ANIMAÇÃO DE CABELO').click()
+  hairAnimationCheckbox().click()
+  findButton('EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO').click()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(prepared === 1 && started === 2 && mount.textContent?.includes('MP4 exportado e validado.'), 'Exportação padrão não preservou a animação ou não mostrou o resultado.')
   closePanelTest = () => { root.unmount(); mount.remove() }
