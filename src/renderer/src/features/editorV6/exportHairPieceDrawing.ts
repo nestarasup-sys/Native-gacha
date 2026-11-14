@@ -7,12 +7,12 @@ import { createEditorV6ExportHairPieceMotionPreparer, prepareEditorV6ExportHairP
 
 type SceneElement = ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]
 type AnimationSettings = Pick<EditorV6HairMotionBundle, 'preset' | 'posteriorOnly' | 'poseReactionOnly' | 'loopFrames'>
-type WarpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: ReturnType<typeof prepareEditorV6ExportHairPieceMotion>['settings'], intensity: number, phase: number, timings: EditorV6FrameTimings) => HTMLCanvasElement
+type WarpHairTexture = (textureId: string, image: ImageBitmap, state: HairMotionState, settings: ReturnType<typeof prepareEditorV6ExportHairPieceMotion>['settings'], intensity: number, phase: number, timings: EditorV6FrameTimings) => HTMLCanvasElement
 type PreparePieceMotion = typeof prepareEditorV6ExportHairPieceMotion
 
 type Options = {
   animation: AnimationSettings
-  textures: ReadonlyMap<string, HTMLImageElement>
+  textures: ReadonlyMap<string, ImageBitmap>
   states: Map<string, HairMotionState>
   loops: Map<string, HairMotionLoop>
   instancePhases: ReadonlyMap<string, number>

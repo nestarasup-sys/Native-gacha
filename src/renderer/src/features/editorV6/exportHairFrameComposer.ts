@@ -7,7 +7,7 @@ type CanvasSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContex
 type HairTransitionPlan = { atlas: EditorV6HairMotionTransition }
 
 type Options = {
-  hairSurfaces: Map<string, HTMLImageElement>
+  hairSurfaces: Map<string, ImageBitmap>
   hairFrameCanvases: Map<string, CanvasSurface>
   motionHairFrameSurfaces: Map<string, CanvasSurface>
   drawHairPiece: (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: SceneElement, frame: number, timings: EditorV6FrameTimings) => void

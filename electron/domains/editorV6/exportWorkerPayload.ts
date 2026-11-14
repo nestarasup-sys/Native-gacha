@@ -3,12 +3,26 @@ import type { EditorV6ExportMouthLoops, EditorV6ExportPart } from '../../../src/
 import type { EditorV6HairMotionBundle, EditorV6HairMotionRig } from '../../../src/shared/editorV6HairMotion'
 import { editorV6MotionPlans } from '../../../src/shared/editorV6Motion'
 import { compareEditorV6TimelineBlocks } from '../../../src/shared/editorV6TimelineCore'
+import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 
 type HairRigKey = `${string}:${string}`
 
 export type EditorV6ExportWorkerData = {
   project: EditorV6Document
+  includeSpeechMouth: boolean
+  /** Main-process-only image bytes; never returned through worker IPC. */
+  assetSources: EditorV6WorkerAssetSources
   hairAnimation?: EditorV6HairMotionBundle
+}
+
+function snapshotImageUrl(projectId: string, dataUrl: string, mimeType: string | undefined, sources: Map<string, { dataUrl: string; mimeType: string }>): string {
+  if (!dataUrl.startsWith('data:')) return dataUrl
+  const embeddedMimeType = /^data:(image\/(?:png|jpeg|webp));base64,/i.exec(dataUrl)?.[1].toLowerCase()
+  const resolvedMimeType = mimeType?.toLowerCase() ?? embeddedMimeType
+  if (!embeddedMimeType || !resolvedMimeType || embeddedMimeType !== resolvedMimeType) throw Error('Imagem de exportação inválida no snapshot do worker.')
+  const token = `asset-${sources.size}`
+  sources.set(token, { dataUrl, mimeType: resolvedMimeType })
+  return `gacha-editor-media://snapshot/${projectId}/${token}`
 }
 
 function activeBlocks(track: EditorV6TimelineTrack, part: EditorV6ExportPart): EditorV6TimelineBlock[] {
@@ -56,7 +70,8 @@ export function createEditorV6ExportWorkerData(
   project: EditorV6Document,
   part: EditorV6ExportPart,
   mouthLoops?: EditorV6ExportMouthLoops,
-  hairAnimation?: EditorV6HairMotionBundle
+  hairAnimation?: EditorV6HairMotionBundle,
+  includeSpeechMouth = true
 ): EditorV6ExportWorkerData {
   const assetIds = new Set<string>()
   const elementById = new Map(project.elements.map(element => [element.id, element]))
@@ -109,7 +124,7 @@ export function createEditorV6ExportWorkerData(
 
   const blocksById = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
   const activeMotionStates: EditorV6Element[] = []
-  for (const plan of editorV6MotionPlans(project)) {
+  for (const plan of editorV6MotionPlans(project, { includeSpeechMouth })) {
     if (plan.startFrame >= part.endFrame || plan.endFrame <= part.startFrame) continue
     activeMotionStates.push(plan.from, plan.to)
     relevantCharacterElementIds.add(plan.elementId)
@@ -126,11 +141,15 @@ export function createEditorV6ExportWorkerData(
     for (const assetId of Object.values(state.baseAssetIds ?? {})) if (assetId) assetIds.add(assetId)
   }
 
+  const assetSources = new Map<string, { dataUrl: string; mimeType: string }>()
   const workerProject: EditorV6Document = {
     ...project,
-    assets: project.assets.filter(asset => assetIds.has(asset.id))
+    assets: project.assets.filter(asset => assetIds.has(asset.id)).map(asset => ({
+      ...asset,
+      dataUrl: asset.libraryAssetId ? asset.dataUrl : snapshotImageUrl(project.id, asset.dataUrl, asset.mimeType, assetSources)
+    }))
   }
-  if (!hairAnimation) return { project: workerProject }
+  if (!hairAnimation) return { project: workerProject, includeSpeechMouth, assetSources }
 
   const requiredRigKeys = new Set<HairRigKey>()
   const requiredPoseKeys = new Set<string>()
@@ -154,11 +173,17 @@ export function createEditorV6ExportWorkerData(
 
   return {
     project: workerProject,
+    includeSpeechMouth,
+    assetSources,
     hairAnimation: {
       ...hairAnimation,
       rigs,
-      surfaces: hairAnimation.surfaces.filter(surface => surfaceIds.has(surface.id)),
-      textures: hairAnimation.textures.filter(texture => textureIds.has(texture.id)),
+      surfaces: hairAnimation.surfaces.filter(surface => surfaceIds.has(surface.id)).map(surface => ({
+        ...surface, dataUrl: snapshotImageUrl(project.id, surface.dataUrl, undefined, assetSources)
+      })),
+      textures: hairAnimation.textures.filter(texture => textureIds.has(texture.id)).map(texture => ({
+        ...texture, dataUrl: snapshotImageUrl(project.id, texture.dataUrl, undefined, assetSources)
+      })),
       ...(hairAnimation.motionTransitions
         ? { motionTransitions: hairAnimation.motionTransitions.filter(transition => relevantCharacterElementIds.has(transition.elementId)) }
         : {})

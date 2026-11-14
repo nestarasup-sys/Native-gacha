@@ -38,6 +38,7 @@ export async function prepareEditorV6ExportMotions(dependencies: Dependencies): 
     concurrency: options.testMode && options.testMode !== 'controle'
       ? testSettings.motionConcurrency
       : motionPreparationConcurrency ?? 2,
+    includeSpeechMouth: true,
     ...(options.mouthLoop === false ? {} : { mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 } }),
     bake: (request, bakeSignal) => {
       if (inputSamples.length < 3 && !inputSamples.some((sample) => sample.characterId === request.character.id)) {

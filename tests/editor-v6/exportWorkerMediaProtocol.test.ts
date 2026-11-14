@@ -5,6 +5,9 @@ import { createEditorV6WorkerMediaProtocolHandler, hasEditorV6WorkerMedia } from
 const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
 const mediaFile = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.mp4'
 const assetId = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc'
+const snapshotToken = 'asset-0'
+const snapshotUrl = `gacha-editor-media://snapshot/${projectId}/${snapshotToken}`
+const snapshotDataUrl = `data:image/png;base64,${Buffer.from('snapshot-png').toString('base64')}`
 
 function payload(overrides: Record<string, unknown> = {}): EditorV6WorkerPayload {
   return {
@@ -28,6 +31,10 @@ describe('Editor V6 worker media protocol', () => {
     expect(hasEditorV6WorkerMedia({ payload: payload(), mediaPath: () => 'unused' })).toBe(true)
     expect(hasEditorV6WorkerMedia({ payload: payload({ project: { ...payload().project, media: [], assets: [] } }), resolveLibraryAsset: async () => ({ path: 'unused', mimeType: 'image/png' }) })).toBe(false)
     expect(hasEditorV6WorkerMedia({ payload: payload(), resolveLibraryAsset: async () => ({ path: 'unused', mimeType: 'image/png' }) })).toBe(true)
+    expect(hasEditorV6WorkerMedia({
+      payload: payload({ project: { id: projectId, media: [], assets: [] } }),
+      assetSources: new Map([[snapshotToken, { dataUrl: snapshotDataUrl, mimeType: 'image/png' }]])
+    })).toBe(true)
   })
 
   it('serves project, library and referenced asset files through their owning resolvers', async () => {
@@ -47,6 +54,26 @@ describe('Editor V6 worker media protocol', () => {
     expect(resolveLibraryAsset).toHaveBeenCalledWith(assetId)
   })
 
+  it('serves an allowlisted image snapshot without serializing its bytes through worker IPC', async () => {
+    const assetSources = new Map([[snapshotToken, { dataUrl: snapshotDataUrl, mimeType: 'image/png' }]])
+    const imagePayload = payload({
+      project: {
+        id: projectId, media: [],
+        assets: [{ id: assetId, category: 'character', mimeType: 'image/png', dataUrl: snapshotUrl }]
+      }
+    })
+    const createFileResponse = vi.fn()
+    const handle = createEditorV6WorkerMediaProtocolHandler({ payload: imagePayload, assetSources, createFileResponse })
+
+    const response = await handle(request(snapshotUrl))
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-type')).toBe('image/png')
+    expect(response.headers.get('access-control-allow-origin')).toBe('*')
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(Buffer.from('snapshot-png'))
+    expect(createFileResponse).not.toHaveBeenCalled()
+  })
+
   it('returns not found for unknown hosts, foreign projects, unreferenced files and unsafe filenames', async () => {
     const mediaPath = vi.fn(() => 'must-not-resolve')
     const resolveLibraryAsset = vi.fn(async () => ({ path: 'must-not-resolve', mimeType: 'image/png' }))
@@ -56,10 +83,11 @@ describe('Editor V6 worker media protocol', () => {
       handle(request(`gacha-editor-media://project/ffffffff-ffff-4fff-8fff-ffffffffffff/${mediaFile}`)),
       handle(request(`gacha-editor-media://project/${projectId}/../../secret.mp4`)),
       handle(request(`gacha-editor-media://library/${projectId}/unknown-id`)),
-      handle(request(`gacha-editor-media://asset/${projectId}/dddddddd-dddd-4ddd-8ddd-dddddddddddd`))
+      handle(request(`gacha-editor-media://asset/${projectId}/dddddddd-dddd-4ddd-8ddd-dddddddddddd`)),
+      handle(request(`gacha-editor-media://snapshot/${projectId}/asset-404`))
     ])
 
-    expect(blocked.map(response => response.status)).toEqual([404, 404, 404, 404, 404])
+    expect(blocked.map(response => response.status)).toEqual([404, 404, 404, 404, 404, 404])
     expect(mediaPath).not.toHaveBeenCalled()
     expect(resolveLibraryAsset).not.toHaveBeenCalled()
   })

@@ -12,14 +12,14 @@ type Options = {
 
 /** Selects the original-pixel static surface or a reusable WebGL-deformed hair surface. */
 export function createEditorV6ExportHairTextureWarper({ hairWarpCanvases, staticHairWarpCanvases, hairMeshRenderer }: Options) {
-  const warpHairTexture = (textureId: string, image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number, timings: EditorV6FrameTimings): HTMLCanvasElement => {
+  const warpHairTexture = (textureId: string, image: ImageBitmap, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number, timings: EditorV6FrameTimings): HTMLCanvasElement => {
     const clearCanvas = (context: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
       const started = performance.now()
       context.clearRect(0, 0, canvas.width, canvas.height)
       timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - started
     }
-    const imageWidth = image.naturalWidth
-    const imageHeight = image.naturalHeight
+    const imageWidth = image.width
+    const imageHeight = image.height
     const outputWidth = Math.max(1, Math.ceil(imageWidth * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(imageHeight * HAIR_MOTION_MESH_HEIGHT))
     if (!hairMotionNeedsWarp(state, settings, intensity)) {
       const ready = staticHairWarpCanvases.get(textureId)

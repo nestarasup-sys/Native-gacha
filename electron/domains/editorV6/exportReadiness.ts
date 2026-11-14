@@ -74,7 +74,7 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
   report.motionTransitionsPrepared = prepared.stats.total
   report.motionPreparation = prepared.stats
   if (prepared.motionCache) report.motionCache = prepared.motionCache
-  if (missingEditorV6Motions(prepared.project, options.startFrame, options.endFrame).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
+  if (missingEditorV6Motions(prepared.project, options.startFrame, options.endFrame, { includeSpeechMouth: true }).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
   await saveReport()
   return { project: prepared.project, characters }
 }

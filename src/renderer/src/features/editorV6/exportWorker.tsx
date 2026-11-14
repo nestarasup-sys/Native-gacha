@@ -1,6 +1,7 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
 import { type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
+import { formatEditorV6Error } from '../../../../shared/editorV6Error'
 import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResources'
 import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime'
 import { createEditorV6ExportFrameAssetImageLoader } from './exportFrameAssetImageLoader'
@@ -9,7 +10,7 @@ import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } fr
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
-  const { project, width, height, layeredVideo, mouthLoops, hairAnimation } = await worker.payload()
+  const { project, width, height, layeredVideo, includeSpeechMouth = true, mouthLoops, hairAnimation } = await worker.payload()
   const surface = createEditorV6ExportWorkerSurface(width, height)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
@@ -21,7 +22,7 @@ async function initialize() {
   const assetsById = new Map(projectAssetIndex)
   const hairResources = await createEditorV6ExportWorkerHairResources(hairAnimation)
   window.addEventListener('pagehide', hairResources.dispose, { once: true })
-  const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops)
+  const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops, includeSpeechMouth)
   const renderFrame = createEditorV6ExportFrameRenderer({
     project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById, hairRuntime,
     prepareAssets: prepareFrameAssets,
@@ -45,4 +46,4 @@ async function initialize() {
   ;(window as unknown as { renderEditorV6ExportFrame: typeof renderFrame }).renderEditorV6ExportFrame = renderFrame
   await worker.ready()
 }
-void initialize().catch((error: unknown) => worker.ready(error instanceof Error ? error.message : String(error)))
+void initialize().catch((error: unknown) => worker.ready(formatEditorV6Error(error)))

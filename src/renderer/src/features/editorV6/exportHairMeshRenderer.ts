@@ -10,7 +10,7 @@ type Resources = {
   indexBuffer: WebGLBuffer
   positions: Float32Array
   indices: number
-  textures: WeakMap<HTMLImageElement, WebGLTexture>
+  textures: WeakMap<ImageBitmap, WebGLTexture>
   allocatedTextures: WebGLTexture[]
   maxTextureSize: number
   maxViewportWidth: number
@@ -61,7 +61,10 @@ function createResources(): Resources {
   for (let row = 0; row <= rows; row += 1) for (let column = 0; column <= columns; column += 1) {
     const index = row * (columns + 1) + column
     uvs[index * 2] = column / columns
-    uvs[index * 2 + 1] = 1 - row / rows
+    // ImageBitmap uploads ignore UNPACK_FLIP_Y_WEBGL. Its first source row is
+    // the image's visual top, so WebGL's bottom-left texture origin needs the
+    // top mesh row to sample v=0 rather than v=1.
+    uvs[index * 2 + 1] = row / rows
     if (row < rows && column < columns) {
       const next = index + columns + 1
       indices.push(index, next, index + 1, index + 1, next, next + 1)
@@ -82,7 +85,7 @@ function createResources(): Resources {
   gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0)
   gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indexBuffer)
   gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW)
-  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1)
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 0)
   gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1)
   gl.disable(gl.BLEND)
   gl.disable(gl.DEPTH_TEST)
@@ -103,7 +106,7 @@ function createResources(): Resources {
 export function createExportHairMeshRenderer() {
   let resources: Resources | undefined
 
-  const render = (image: HTMLImageElement, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number): HTMLCanvasElement => {
+  const render = (image: ImageBitmap, state: HairMotionState, settings: HairMotionSettings, intensity: number, phase: number): HTMLCanvasElement => {
     resources ??= createResources()
     const { canvas, gl } = resources
     const contextCheckStarted = performance.now()
@@ -111,7 +114,7 @@ export function createExportHairMeshRenderer() {
     resources.contextCheckMs += performance.now() - contextCheckStarted
     if (contextLostBeforeDraw) throw Error('A aceleração gráfica foi interrompida durante a animação de cabelo; a exportação não foi publicada.')
     const stateSetupStarted = performance.now()
-    const width = image.naturalWidth, height = image.naturalHeight
+    const width = image.width, height = image.height
     const outputWidth = Math.max(1, Math.ceil(width * HAIR_MOTION_MESH_WIDTH)), outputHeight = Math.max(1, Math.ceil(height * HAIR_MOTION_MESH_HEIGHT))
     if (width > resources.maxTextureSize || height > resources.maxTextureSize
       || outputWidth > resources.maxViewportWidth || outputHeight > resources.maxViewportHeight) {

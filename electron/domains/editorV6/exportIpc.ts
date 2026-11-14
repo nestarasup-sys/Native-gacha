@@ -42,6 +42,7 @@ type EditorV6ExportIpcDependencies = {
   captureMode?: 'capturePage' | 'paint-event'
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void
+  qualityReferenceFolder?: string
   resolveLibraryVideo: (id: string) => Promise<{ path: string; name: string; mimeType: EditorV6MediaAsset['mimeType']; extension: string; size: number; durationFrames: number | null }>
   resolveLibraryAudio: (id: string) => Promise<{ path: string; name: string; mimeType: string; extension: string; size: number }>
   resolveLibraryAsset: (id: string) => Promise<{ path: string; mimeType: string }>
@@ -123,13 +124,15 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       motionPreparationConcurrency,
       ...(hairAnimation?.preparationProfile ? { hairPreparation: hairAnimation.preparationProfile } : {}),
       onFfmpegProcessStarted,
+      qualityReferenceFolder: deps.qualityReferenceFolder,
       getMotionCacheStats: deps.getMotionCacheStats,
       releaseMotionCacheScope: deps.releaseMotionCacheScope,
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
       getElectronProcessMetrics: deps.getElectronProcessMetrics,
       createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
-        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation)
-        return workers.create({ ...workerData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal)
+        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, true)
+        const { assetSources, ...payloadData } = workerData
+        return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)
       },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })

@@ -33,21 +33,13 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('força o perfil AMF a desligar apenas o ciclo e mantém Talk durante a fala', () => {
+  it('mantém a boca em talk no perfil AMF e não cria subdivisões sem ciclo de boca', () => {
     const result = createEditorV6ExportExecutionPlan(
       createProject(1000, [speechTrack()]),
       createOptions({ encoder: 'amf', mouthLoop: true, turbo: false }),
       {},
       'win32'
     )
-
-    expect(result.options.mouthLoop).toBe(false)
-    expect(result.speechInRange).toBe(true)
-    expect(result.parts).toEqual(result.requestedParts)
-  })
-
-  it('permite desligar o ciclo no perfil CPU e mantém o planejamento da fala', () => {
-    const result = createEditorV6ExportExecutionPlan(createProject(1000, [speechTrack()]), createOptions({ mouthLoop: false }), {}, 'win32')
 
     expect(result.options.mouthLoop).toBe(false)
     expect(result.speechInRange).toBe(true)

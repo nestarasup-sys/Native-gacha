@@ -24,7 +24,12 @@ function fakeRenderer() {
 describe('createEditorV6ExportWorkerHairResources', () => {
   it('loads each image once and releases every worker-owned map and canvas on disposal', async () => {
     const renderer = fakeRenderer()
-    const loadImage = vi.fn(async (source: string) => ({ src: source } as HTMLImageElement))
+    const loaded = new Map<string, ImageBitmap>()
+    const loadImage = vi.fn(async (source: string) => {
+      const image = { width: 32, height: 16, close: vi.fn() } as unknown as ImageBitmap
+      loaded.set(source, image)
+      return image
+    })
     const resources = await createEditorV6ExportWorkerHairResources(animation(), {
       loadImage,
       createMeshRenderer: () => renderer
@@ -56,6 +61,7 @@ describe('createEditorV6ExportWorkerHairResources', () => {
     expect(resources.hairTextures.size).toBe(0)
     expect(resources.hairMotionStates.size).toBe(0)
     expect(resources.hairMotionInstancePhases.size).toBe(0)
+    expect([...loaded.values()].every(image => vi.mocked(image.close).mock.calls.length === 1)).toBe(true)
   })
 
   it('disposes the renderer if loading either atlas rejects', async () => {
@@ -65,7 +71,7 @@ describe('createEditorV6ExportWorkerHairResources', () => {
     await expect(createEditorV6ExportWorkerHairResources(animation(), {
       loadImage: async source => {
         if (source === 'data:strand') throw failure
-        return { src: source } as HTMLImageElement
+        return { width: 32, height: 16, close: vi.fn() } as unknown as ImageBitmap
       },
       createMeshRenderer: () => renderer
     })).rejects.toBe(failure)
