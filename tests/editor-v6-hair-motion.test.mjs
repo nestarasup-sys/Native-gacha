@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { FIRST_HAIR_MOTION_PRESET } from '../src/shared/hairMotionEngine.ts'
-import { editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
+import { createEditorV6HairMotionRigInterpolator, editorV6HairMotionHeadAnchor, editorV6HairMotionHeadAnchorX, editorV6HairMotionHeadPathDelta, editorV6HairMotionHeadPathPoint, editorV6HairMotionInstancePhase, editorV6HairMotionLayerHeadPosition, editorV6HairMotionLocalHeadDelta, interpolateEditorV6HairMotionHeadPathPoint, interpolateEditorV6HairMotionRig, parseEditorV6HairMotionBundle } from '../src/shared/editorV6HairMotion.ts'
 import { planEditorV6Export } from '../src/shared/editorV6Export.ts'
 import { expandEditorV6HairCrop } from '../src/renderer/src/features/editorV6/editorV6HairMotionGeometry.ts'
 
@@ -170,6 +170,25 @@ test('a âncora interpolada usa a geometria local da cabeça entre duas poses', 
   const element = { x: -25, y: 0, width: 40, height: 60, rotation: 0, flipX: false }
   assert.equal(editorV6HairMotionHeadAnchorX(element, halfway), .325)
   assert.throws(() => interpolateEditorV6HairMotionRig(from, to, 1.1), /progresso da geometria/i)
+})
+
+test('interpolador compilado mantém o resultado direto em todos os quadros amostrados', () => {
+  const from = validBundle().rigs[0]
+  const to = {
+    ...from,
+    targetHead: { ...from.targetHead, x: 50, rotation: 350 },
+    sourceCrop: { ...from.sourceCrop, left: 10 },
+    layers: [
+      { ...from.layers[0], x: 8, y: 6, width: 30, height: 42, scaleX: 1.5, rotation: 20, flipX: true },
+      { ...from.layers[0], id: 'unmatched', side: 'back' }
+    ]
+  }
+  const interpolate = createEditorV6HairMotionRigInterpolator(from, to)
+
+  for (const progress of [0, .1, .5, .9, 1]) {
+    assert.deepEqual(interpolate(progress), interpolateEditorV6HairMotionRig(from, to, progress))
+  }
+  assert.throws(() => interpolate(1.1), /progresso da geometria/i)
 })
 
 test('trocas só de expressão não transformam variações do recorte em velocidade física da cabeça', () => {

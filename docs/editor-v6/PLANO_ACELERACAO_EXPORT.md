@@ -449,3 +449,9 @@ Testes focados (8), suíte Editor V6 (178 arquivos, 792 testes aprovados e 1 ign
 A contabilidade de `hairCompositionOtherMs` agora soma as mesmas 12 chaves com um percurso direto, sem montar `Object.fromEntries` e o array que o alimentava a cada quadro. O resultado continua descontando apenas os tempos adicionados pela composição atual, mesmo quando o objeto de timings já contém dados de quadros anteriores.
 
 Teste focado determinístico (6), suíte Editor V6 (178 arquivos, 793 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A alteração remove alocações no caminho quente, mas não foi cronometrada isoladamente e não há dado de ganho no MP4 completo.
+
+### Continuação 2026-11-13 — pré-compilar pares de mechas da transição
+
+O worker agora resolve uma vez, por transição, quais camadas de origem encontram correspondência por ID e lado no rig de destino. A interpolação de cada quadro ainda atualiza todos os campos móveis e preserva as camadas sem correspondência; a API direta continua disponível.
+
+Em microteste sintético com 20 camadas e 20.000 chamadas, a mediana caiu de 44,79 ms para 25,72 ms (42,6% apenas na interpolação). O harness de cabelo integrado passou na repetição; a rodada anterior falhou numa checagem de `flipX` individual de fixture sem transições, portanto fora deste caminho. Teste Node (13), suíte completa (178 arquivos, 793 aprovados e 1 ignorado), typecheck, auditoria e build passaram. Ainda é necessário baseline equivalente do projeto real para saber o efeito no tempo do MP4.

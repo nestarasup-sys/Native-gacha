@@ -200,38 +200,49 @@ export function editorV6HairMotionHeadAnchorX(element: Pick<EditorV6Element, 'x'
   return editorV6HairMotionHeadAnchor(element, rig).x
 }
 
+/** Compile immutable layer pairing once; geometry is still interpolated per frame. */
+export function createEditorV6HairMotionRigInterpolator(from: EditorV6HairMotionRig, to: EditorV6HairMotionRig) {
+  const layerPairs = from.layers.map(layer => ({
+    layer,
+    matching: to.layers.find(candidate => candidate.id === layer.id && candidate.side === layer.side)
+  }))
+
+  return (progress: number): EditorV6HairMotionRig => {
+    if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria do cabelo inválido.')
+    const mix = (left: number, right: number) => left + (right - left) * progress
+    const angle = (left: number, right: number) => left + ((((right - left) % 360 + 540) % 360) - 180) * progress
+    return {
+      ...from,
+      artworkWidth: mix(from.artworkWidth, to.artworkWidth), artworkHeight: mix(from.artworkHeight, to.artworkHeight),
+      outputWidth: mix(from.outputWidth, to.outputWidth), outputHeight: mix(from.outputHeight, to.outputHeight),
+      shapeScaleX: mix(from.shapeScaleX, to.shapeScaleX), shapeScaleY: mix(from.shapeScaleY, to.shapeScaleY),
+      sourceCrop: {
+        left: mix(from.sourceCrop.left, to.sourceCrop.left), top: mix(from.sourceCrop.top, to.sourceCrop.top),
+        width: mix(from.sourceCrop.width, to.sourceCrop.width), height: mix(from.sourceCrop.height, to.sourceCrop.height)
+      },
+      targetHead: {
+        x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
+        width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
+        rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
+      },
+      layers: layerPairs.map(({ layer, matching }) => {
+        if (!matching) return layer
+        return {
+          ...layer,
+          width: mix(layer.width, matching.width), height: mix(layer.height, matching.height),
+          x: mix(layer.x, matching.x), y: mix(layer.y, matching.y),
+          scaleX: mix(layer.scaleX, matching.scaleX), scaleY: mix(layer.scaleY, matching.scaleY),
+          rotation: angle(layer.rotation, matching.rotation),
+          flipX: progress < .5 ? layer.flipX : matching.flipX
+        }
+      })
+    }
+  }
+}
+
 /** Interpolate only the per-pose head geometry used to drive export hair inertia. */
 export function interpolateEditorV6HairMotionRig(from: EditorV6HairMotionRig, to: EditorV6HairMotionRig, progress: number): EditorV6HairMotionRig {
-  if (!Number.isFinite(progress) || progress < 0 || progress > 1) throw Error('Progresso da geometria do cabelo inválido.')
-  const mix = (left: number, right: number) => left + (right - left) * progress
-  const angle = (left: number, right: number) => left + ((((right - left) % 360 + 540) % 360) - 180) * progress
-  return {
-    ...from,
-    artworkWidth: mix(from.artworkWidth, to.artworkWidth), artworkHeight: mix(from.artworkHeight, to.artworkHeight),
-    outputWidth: mix(from.outputWidth, to.outputWidth), outputHeight: mix(from.outputHeight, to.outputHeight),
-    shapeScaleX: mix(from.shapeScaleX, to.shapeScaleX), shapeScaleY: mix(from.shapeScaleY, to.shapeScaleY),
-    sourceCrop: {
-      left: mix(from.sourceCrop.left, to.sourceCrop.left), top: mix(from.sourceCrop.top, to.sourceCrop.top),
-      width: mix(from.sourceCrop.width, to.sourceCrop.width), height: mix(from.sourceCrop.height, to.sourceCrop.height)
-    },
-    targetHead: {
-      x: mix(from.targetHead.x, to.targetHead.x), y: mix(from.targetHead.y, to.targetHead.y),
-      width: mix(from.targetHead.width, to.targetHead.width), height: mix(from.targetHead.height, to.targetHead.height),
-      rotation: angle(from.targetHead.rotation, to.targetHead.rotation)
-    },
-    layers: from.layers.map(layer => {
-      const matching = to.layers.find(candidate => candidate.id === layer.id && candidate.side === layer.side)
-      if (!matching) return layer
-      return {
-        ...layer,
-        width: mix(layer.width, matching.width), height: mix(layer.height, matching.height),
-        x: mix(layer.x, matching.x), y: mix(layer.y, matching.y),
-        scaleX: mix(layer.scaleX, matching.scaleX), scaleY: mix(layer.scaleY, matching.scaleY),
-        rotation: angle(layer.rotation, matching.rotation),
-        flipX: progress < .5 ? layer.flipX : matching.flipX
-      }
-    })
-  }
+  return createEditorV6HairMotionRigInterpolator(from, to)(progress)
 }
 
 const finite = z.number().finite()

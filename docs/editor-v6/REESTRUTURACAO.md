@@ -1541,3 +1541,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Mudança:** a composição do cabelo deixou de criar um array de pares e um objeto por quadro para guardar os tempos detalhados já acumulados. Um somador percorre as mesmas 12 chaves antes e depois da composição; `hairCompositionOtherMs` continua subtraindo somente a diferença desta chamada, preservando valores anteriores no relatório.
 
 **Verificação:** teste determinístico valida a diferença de tempos com valores iniciais preexistentes. Teste focado (6), suíte completa do Editor V6 (178 arquivos, 793 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem medição do tempo total de exportação.
+
+### Continuação na `Dev-V2` — pré-compilar correspondência de mechas entre poses
+
+**Mudança:** a interpolação mantém a API existente e ganhou um compilador por transição que resolve uma vez os pares de camadas por `(id, lado)`. O compositor mantém essa função em `WeakMap` durante a exportação; cada quadro ainda calcula posições, dimensões, escala, rotação e `flipX` a partir do progresso atual. Uma camada sem par continua usando o objeto de origem sem interpolação, como antes.
+
+**Medição isolada:** 20 camadas e 20.000 interpolações aquecidas em cinco rodadas: mediana de 44,79 ms no algoritmo que repetia as buscas e 25,72 ms com os pares compilados (42,6% menos nessa operação sintética). Não mede o desenho das mechas, o quadro inteiro ou a exportação completa.
+
+**Verificação:** comparação determinística em cinco progressos, incluindo rotação que atravessa 360° e uma camada sem par; teste Node específico (13), suíte Editor V6 (178 arquivos, 793 aprovados e 1 ignorado), typecheck, auditoria, build e harness de cabelo passaram. A primeira rodada integrada falhou numa asserção preexistente de `flipX` individual para uma fixture estática sem transições; a repetição passou, sem mudança de tolerância. Nenhum projeto real foi exportado.

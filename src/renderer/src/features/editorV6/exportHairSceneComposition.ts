@@ -1,6 +1,6 @@
 import type { EditorV6Asset } from '../../../../shared/editorV6'
 import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6WorkerPayload } from '../../../../shared/editorV6Export'
-import { interpolateEditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
+import { createEditorV6HairMotionRigInterpolator, type EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { motionEase } from '../../../../shared/editorV6MotionInterpolation'
 import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
@@ -52,6 +52,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
   const { animation, planIndex, hairRigAtFrame, hairSourceAssetId } = options
   const patchSourceCrop = options.facePatchSourceCrop ?? (() => undefined)
   const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
+  const rigInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionRig>()
 
   const hasAnimatedHair = (element: SceneElement, frame: number): boolean => {
     if (element.kind !== 'character') return false
@@ -108,8 +109,13 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
           continue
         }
 
+        let interpolateRig = rigInterpolators.get(transition)
+        if (!interpolateRig) {
+          interpolateRig = createEditorV6HairMotionRigInterpolator(transition.from, transition.to)
+          rigInterpolators.set(transition, interpolateRig)
+        }
         const rigInterpolationStarted = performance.now()
-        const rig = interpolateEditorV6HairMotionRig(transition.from, transition.to, motionEase(poseSample.progress))
+        const rig = interpolateRig(motionEase(poseSample.progress))
         timings.hairRigInterpolationMs = (timings.hairRigInterpolationMs ?? 0) + performance.now() - rigInterpolationStarted
         rasterCanvases.set(element.id, options.composeMotionHairFrame(element.id, rig, original, frame, { atlas: transition.atlas }, transitionFrame, timings, metrics))
         let mouthPatch: typeof element.mouthPatch = undefined
