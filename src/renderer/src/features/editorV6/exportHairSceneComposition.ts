@@ -41,6 +41,12 @@ type ComposeInput = {
 const HAIR_DETAIL_KEYS = ['hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs'] as const
 const EMPTY_RASTER_CANVASES: ReadonlyMap<string, HTMLCanvasElement> = new Map()
 
+function sumHairDetailTimings(timings: EditorV6FrameTimings): number {
+  let total = 0
+  for (const key of HAIR_DETAIL_KEYS) total += timings[key] ?? 0
+  return total
+}
+
 /** Resolves which characters need raster hair and composes their export-frame surfaces. */
 export function createEditorV6ExportHairSceneComposer(options: Options) {
   const { animation, planIndex, hairRigAtFrame, hairSourceAssetId } = options
@@ -70,7 +76,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
     const rasterCanvases = new Map<string, HTMLCanvasElement>()
 
     const started = performance.now()
-    const detailBefore = Object.fromEntries(HAIR_DETAIL_KEYS.map(key => [key, timings[key] ?? 0])) as Record<typeof HAIR_DETAIL_KEYS[number], number>
+    const detailBefore = sumHairDetailTimings(timings)
     const animatedElements: typeof composedScene.elements = []
 
     for (const element of composedScene.elements) {
@@ -148,7 +154,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
 
     renderScene = { ...composedScene, elements: animatedElements }
     timings.hairCompositionMs = performance.now() - started
-    const instrumented = HAIR_DETAIL_KEYS.reduce((total, key) => total + (timings[key] ?? 0) - detailBefore[key], 0)
+    const instrumented = sumHairDetailTimings(timings) - detailBefore
     timings.hairCompositionOtherMs = Math.max(0, timings.hairCompositionMs - instrumented)
     return { renderScene, rasterCanvases }
   }

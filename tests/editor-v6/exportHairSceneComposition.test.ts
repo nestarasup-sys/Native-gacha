@@ -85,6 +85,27 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     expect(timings.hairCompositionOtherMs).toBeGreaterThanOrEqual(0)
   })
 
+  it('accounts for per-frame hair details without counting their prior values', () => {
+    const composeHairFrame = vi.fn((_rig, _element, _frame, timings: EditorV6FrameTimings) => {
+      timings.hairLayerDrawMs = (timings.hairLayerDrawMs ?? 0) + 5
+      timings.hairMeshDrawMs = (timings.hairMeshDrawMs ?? 0) + 7
+      return { width: 100, height: 80 } as HTMLCanvasElement
+    }) as unknown as HairFrameComposer['composeHairFrame']
+    const factory = makeComposer({ composeHairFrame })
+    const original = element()
+    const timings: EditorV6FrameTimings = { hairLayerDrawMs: 2, hairMeshDrawMs: 3 }
+    const now = vi.spyOn(performance, 'now').mockReturnValueOnce(100).mockReturnValueOnce(150)
+
+    try {
+      factory.compose({ composedScene: scene([original]), originalElements: new Map([['actor', original]]), frame: 12, activeHair: true, riggedElementIds: new Set(['actor']), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings, metrics: {} })
+    } finally {
+      now.mockRestore()
+    }
+
+    expect(timings.hairCompositionMs).toBe(50)
+    expect(timings.hairCompositionOtherMs).toBe(38)
+  })
+
   it('uses the mouth atlas crop instead of the broader hair crop for speaking frames', () => {
     const factory = makeComposer({ facePatchSourceCrop: () => ({ left: 30, top: 5, width: 20, height: 10 }) })
     const original = element({ mouthPatch: { ...element().mouthPatch!, assetId: 'mouth-atlas' } })

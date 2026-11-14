@@ -1535,3 +1535,9 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Medição isolada:** 50.000 desenhos sem custo de canvas, cinco rodadas aquecidas: mediana de 47,16 ms com preparação completa repetida e 18,63 ms com preparação compilada (60,5% menos nesse loop sintético). Esse resultado não estima o ganho do export completo.
 
 **Verificação:** testes focados do estado e drawer de cabelo (8), suíte completa do Editor V6 (178 arquivos, 792 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura, build e harness Electron de cabelo passaram. Nenhum projeto real foi exportado para medir velocidade.
+
+### Continuação na `Dev-V2` — somar tempos detalhados de cabelo sem objetos temporários
+
+**Mudança:** a composição do cabelo deixou de criar um array de pares e um objeto por quadro para guardar os tempos detalhados já acumulados. Um somador percorre as mesmas 12 chaves antes e depois da composição; `hairCompositionOtherMs` continua subtraindo somente a diferença desta chamada, preservando valores anteriores no relatório.
+
+**Verificação:** teste determinístico valida a diferença de tempos com valores iniciais preexistentes. Teste focado (6), suíte completa do Editor V6 (178 arquivos, 793 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram. Sem medição do tempo total de exportação.

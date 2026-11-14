@@ -443,3 +443,9 @@ O drawer de cada exportação mantém uma preparação compilada por mecha e per
 No microbenchmark sintético, 50.000 desenhos sem canvas tiveram mediana de 47,16 ms no caminho que refazia a preparação contra 18,63 ms com a configuração compilada (60,5% menos naquele loop). O cálculo isola preparação JavaScript e não inclui warp, composição, codificação ou outros custos do app, então não é um ganho de 60,5% no MP4 final.
 
 Testes focados (8), suíte Editor V6 (178 arquivos, 792 testes aprovados e 1 ignorado), typecheck, auditoria, build e harness Electron de cabelo passaram. A exportação do projeto de estresse ainda precisa ser medida com baseline equivalente para estimar efeito no tempo total.
+
+### Continuação 2026-11-13 — remover temporários da contabilidade de composição de cabelo
+
+A contabilidade de `hairCompositionOtherMs` agora soma as mesmas 12 chaves com um percurso direto, sem montar `Object.fromEntries` e o array que o alimentava a cada quadro. O resultado continua descontando apenas os tempos adicionados pela composição atual, mesmo quando o objeto de timings já contém dados de quadros anteriores.
+
+Teste focado determinístico (6), suíte Editor V6 (178 arquivos, 793 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura, build e `git diff --check` passaram. A alteração remove alocações no caminho quente, mas não foi cronometrada isoladamente e não há dado de ganho no MP4 completo.
