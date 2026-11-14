@@ -24,6 +24,26 @@ export function recordEditorV6Timing(accumulators: EditorV6TimingAccumulators, p
   stats.histogram[bucket]++
 }
 
+export function recordEditorV6Timings(accumulators: EditorV6TimingAccumulators, values: EditorV6FrameTimings | undefined): void {
+  if (!values) return
+  for (const key in values) {
+    if (!Object.prototype.hasOwnProperty.call(values, key)) continue
+    const phase = key as keyof EditorV6FrameTimings
+    const milliseconds = values[phase]
+    if (milliseconds !== undefined) recordEditorV6Timing(accumulators, phase, milliseconds)
+  }
+}
+
+export function addEditorV6FrameTimings(target: EditorV6FrameTimings, values: EditorV6FrameTimings | undefined): void {
+  if (!values) return
+  for (const key in values) {
+    if (!Object.prototype.hasOwnProperty.call(values, key)) continue
+    const phase = key as keyof EditorV6FrameTimings
+    const milliseconds = values[phase]
+    if (milliseconds !== undefined) target[phase] = (target[phase] ?? 0) + milliseconds
+  }
+}
+
 export function summarizeEditorV6Timings(accumulators: EditorV6TimingAccumulators): EditorV6FrameTimingReport {
   const report: EditorV6FrameTimingReport = {}
   for (const [phase, stats] of Object.entries(accumulators) as Array<[EditorV6TimingPhase, EditorV6TimingAccumulator]>) {
@@ -44,10 +64,20 @@ export function summarizeEditorV6Timings(accumulators: EditorV6TimingAccumulator
 
 export function addEditorV6FrameMetrics(target: EditorV6FrameMetrics, values: EditorV6FrameMetrics | undefined): void {
   if (!values) return
-  for (const [metric, value] of Object.entries(values) as Array<[keyof EditorV6FrameMetrics, number]>) {
-    if (!Number.isSafeInteger(value) || value < 0) continue
+  for (const key in values) {
+    if (!Object.prototype.hasOwnProperty.call(values, key)) continue
+    const metric = key as keyof EditorV6FrameMetrics
+    const value = values[metric]
+    if (value === undefined || !Number.isSafeInteger(value) || value < 0) continue
     target[metric] = (target[metric] ?? 0) + value
   }
+}
+
+export function hasEditorV6FrameMetrics(values: EditorV6FrameMetrics): boolean {
+  for (const key in values) {
+    if (Object.prototype.hasOwnProperty.call(values, key)) return true
+  }
+  return false
 }
 
 export function addEditorV6PhaseTime(

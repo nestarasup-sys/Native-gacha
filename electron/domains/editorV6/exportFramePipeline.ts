@@ -1,6 +1,6 @@
 import type { EditorV6ExportPart, EditorV6FrameMetrics } from '../../../src/shared/editorV6Export'
 import type { EditorV6FrameWorker } from './exportWorkers'
-import { addEditorV6FrameMetrics, recordEditorV6Timing, type EditorV6TimingAccumulators, type EditorV6TimingPhase } from './exportMetrics'
+import { addEditorV6FrameMetrics, recordEditorV6Timing, recordEditorV6Timings, type EditorV6TimingAccumulators } from './exportMetrics'
 
 type FrameCounters = { rendered: number; reused: number; frames: number }
 
@@ -27,9 +27,7 @@ export async function renderAndWriteEditorV6Frames(dependencies: Dependencies): 
     const frameStarted = now()
     const rendered = await worker.frame(frame)
     recordEditorV6Timing(timingAccumulators, 'frameRoundTripMs', now() - frameStarted)
-    for (const [phase, milliseconds] of Object.entries(rendered.timings ?? {}) as Array<[EditorV6TimingPhase, number]>) {
-      recordEditorV6Timing(timingAccumulators, phase, milliseconds)
-    }
+    recordEditorV6Timings(timingAccumulators, rendered.timings)
     addEditorV6FrameMetrics(frameMetrics, rendered.metrics)
 
     if (rendered.reused && previousBitmap) counters.reused++

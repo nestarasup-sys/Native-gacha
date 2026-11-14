@@ -424,3 +424,7 @@ Cada entrega deve conter diff pequeno, verificação focada, comparação antes/
 **Verificação:** 12 testes focados, incluindo alteração de `characterCanvasWidth` em repouso, suíte completa do Editor V6 (177 arquivos, 782 testes aprovados e 1 ignorado), typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check` passaram.
 
 O plano termina quando os custos dominantes foram tratados ou possuem limite técnico medido, e novas tentativas não apresentam ganho repetível sem comprometer qualidade ou estabilidade. “Aceleração máxima” é uma busca orientada por essas medições, não uma promessa de velocidade ilimitada.
+
+### Continuação 2026-11-13 — reduzir alocações na coleta de métricas por quadro
+
+Os caminhos de coleta de tempos e contadores não criam mais arrays de pares/keys para cada quadro ou camada. O loop direto preserva somente campos próprios dos objetos e as validações de valores. Um microbenchmark sintético de 14 campos e 1.500.000 iterações levou 1.104,9 ms com `Object.entries` e 306,9 ms com `for...in`/checagem de propriedade; essa redução aplica-se somente à iteração e não representa ganho no export completo. Testes, typecheck, auditoria de arquitetura e build passaram.

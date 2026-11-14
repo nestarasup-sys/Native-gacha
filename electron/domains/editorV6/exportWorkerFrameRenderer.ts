@@ -1,5 +1,6 @@
 import type { BrowserWindow } from 'electron'
 import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameResult, EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
+import { addEditorV6FrameMetrics, addEditorV6FrameTimings, hasEditorV6FrameMetrics } from './exportMetrics'
 import { waitForExport } from './exportProcess'
 import { captureEditorV6PaintedFrame, type EditorV6PaintFrameCapture } from './exportFrameCapture'
 
@@ -62,8 +63,8 @@ export function createEditorV6WorkerFrameRenderer({
     const timings: EditorV6FrameTimings = { ...result.timings }
     const metrics: EditorV6FrameMetrics = { ...result.metrics }
     const collect = (drawn: EditorV6RenderFrameResult) => {
-      for (const [key, value] of Object.entries(drawn.timings ?? {}) as Array<[keyof EditorV6FrameTimings, number]>) timings[key] = (timings[key] ?? 0) + value
-      for (const [key, value] of Object.entries(drawn.metrics ?? {}) as Array<[keyof EditorV6FrameMetrics, number]>) metrics[key] = (metrics[key] ?? 0) + value
+      addEditorV6FrameTimings(timings, drawn.timings)
+      addEditorV6FrameMetrics(metrics, drawn.metrics)
     }
     const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
       if (drawn.layerReused) return
@@ -88,7 +89,7 @@ export function createEditorV6WorkerFrameRenderer({
     if (!layeredBitmap) throw Error('O renderizador não produziu nenhuma camada para o quadro.')
     const bitmap = layeredBitmap
     if (bitmap.length !== layerBytes * 2) throw Error('Dimensões inesperadas do bitmap exportado.')
-    return { reused: false, bitmap, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
+    return { reused: false, bitmap, timings, ...(hasEditorV6FrameMetrics(metrics) ? { metrics } : {}) }
   }
 
   return {

@@ -1489,3 +1489,11 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 **Falhas e cancelamento:** uma falha de renderização ou de gravação do relatório interrompe novas atribuições, aborta os trechos ativos e aguarda sua liberação antes de propagar o erro. O listener de cancelamento externo permanece removido no `finally`.
 
 **Verificação:** testes sintéticos confirmam preenchimento da vaga livre enquanto outro trecho permanece lento, limite de concorrência, ordenação, lotes de relatório e interrupção em falhas de renderização/gravação. A suíte completa do Editor V6 passou (177 arquivos, 785 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Ainda não foi feita comparação de tempo no projeto de estresse; portanto, o ganho total de exportação permanece sem medição.
+
+### Continuação na `Dev-V2` — reduzir alocações na coleta de métricas por quadro
+
+**Mudança:** os loops quentes de agregação de tempos e contadores deixaram de materializar arrays de `Object.entries`/`Object.keys` por quadro. A iteração direta confere propriedades próprias, mantendo a exclusão de valores herdados e as validações de números inteiros/tempos finitos. O cálculo de tempo do quadro e a forma final do relatório permanecem iguais.
+
+**Medição isolada:** em Node, com 14 campos sintéticos e 1.500.000 iterações aquecidas, a forma anterior com `Object.entries` levou 1.104,9 ms e a iteração direta com `for...in`/verificação de propriedade própria levou 306,9 ms (72,2% menos apenas nesse loop). Isso não mede o tempo de exportação.
+
+**Verificação:** testes focados do pipeline e captura de workers passaram (23), incluindo exclusão de propriedades herdadas; a suíte completa do Editor V6 passou (177 arquivos, 786 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`.

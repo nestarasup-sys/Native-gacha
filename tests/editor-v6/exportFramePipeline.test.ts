@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6FrameWorker } from '../../electron/domains/editorV6/exportWorkers'
 import { createEditorV6TimingAccumulators, summarizeEditorV6Timings } from '../../electron/domains/editorV6/exportMetrics'
 import { renderAndWriteEditorV6Frames } from '../../electron/domains/editorV6/exportFramePipeline'
+import type { EditorV6FrameMetrics, EditorV6FrameTimings } from '../../src/shared/editorV6Export'
 
 function worker(frames: Array<Awaited<ReturnType<EditorV6FrameWorker['frame']>>>) {
   return { frame: vi.fn(async (index: number) => frames[index]!) }
@@ -44,6 +45,28 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
     expect(completedFrames).toBe(3)
     expect(state.frameMetrics).toEqual({ hairRasterFrames: 4 })
     expect(summarizeEditorV6Timings(state.timingAccumulators).sceneResolutionMs).toMatchObject({ samples: 2, totalMs: 3 })
+  })
+
+  it('agrega somente campos próprios das métricas por quadro', async () => {
+    const timings = Object.assign(Object.create({ sceneResolutionMs: 99 }), { assetPreparationMs: 0.35 }) as EditorV6FrameTimings
+    const metrics = Object.assign(Object.create({ hairRasterFrames: 99 }), { captureReadbacks: 1 }) as EditorV6FrameMetrics
+    const renderer = worker([{ reused: false, bitmap: Buffer.from([1]), timings, metrics }])
+    const state = accounting()
+
+    await renderAndWriteEditorV6Frames({
+      worker: renderer,
+      part: { startFrame: 0, endFrame: 1 },
+      signal: new AbortController().signal,
+      ...state,
+      writeFrame: vi.fn(async () => undefined),
+      onFrameWritten: vi.fn(),
+      now: () => 10
+    })
+
+    expect(state.frameMetrics).toEqual({ captureReadbacks: 1 })
+    const summary = summarizeEditorV6Timings(state.timingAccumulators)
+    expect(summary.assetPreparationMs).toMatchObject({ samples: 1, totalMs: 0.35, p50Ms: 0.3 })
+    expect(summary.sceneResolutionMs).toBeUndefined()
   })
 
   it('rejeita bitmap ausente e mantém contadores anteriores se o write falha', async () => {
