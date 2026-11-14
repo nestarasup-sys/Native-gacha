@@ -127,12 +127,37 @@ Além das quatro entradas não rastreadas já listadas acima, esta rodada não a
 - `npm run test:editor-v6`: 179 arquivos passaram, 1 ignorado; 808 testes passaram, 1 ignorado.
 - `npm run typecheck`: passou.
 - `npm run audit:architecture`: passou em 878 arquivos TS/TSX, sem violações ou imports locais ausentes.
-- Branch `Dev-V2`; não houve push. Os arquivos modificados desta rodada ainda serão gravados em commit local após revisão final.
+- Branch `Dev-V2`; commit local `fb0cae25 test: verify layered Editor V6 paint parity`; não houve push.
 
 ### Próximos passos
 
-1. Revisar o diff e registrar o comparador, a fixture, os testes e este estado em commit local.
-2. Repetir o A/B de desempenho com carga controlada e várias rodadas; a diferença anterior entre `capturePage` e paint não justifica trocar produção.
-3. Aumentar a diversidade das cenas sintéticas mantendo os perfis menores e seguros; usar os relatórios para separar IPC, composição e captura.
-4. Retomar a investigação do erro `-36861` e da exportação de 12 minutos/473 transições apenas num teste controlado. Os harnesses sintéticos não reproduzem esse crash.
-5. Preservar os caminhos locais não rastreados e não abrir `app-data` ou projetos reais como fixtures.
+1. Repetir o A/B de desempenho com carga controlada e várias rodadas; a diferença anterior entre `capturePage` e paint não justifica trocar produção.
+2. Aumentar a diversidade das cenas sintéticas mantendo os perfis menores e seguros; usar os relatórios para separar IPC, composição e captura.
+3. Retomar a investigação do erro `-36861` e da exportação de 12 minutos/473 transições apenas num teste controlado. Os harnesses sintéticos não reproduzem esse crash.
+4. Preservar os caminhos locais não rastreados e não abrir `app-data` ou projetos reais como fixtures.
+
+## Ponto salvo a pedido do usuário — 14/11/2026
+
+### Situação do repositório
+
+- Raiz: `C:\TRABALHO 2\OUTROS\GACHA EM C++`.
+- Branch: `Dev-V2`, 75 commits locais à frente de `origin/Dev-V2`.
+- Commit mais recente: `fb0cae25 test: verify layered Editor V6 paint parity`.
+- Todo o código e os testes desta etapa estão commitados. Não existe diff rastreado pendente; quatro entradas não rastreadas que já existiam foram preservadas e não devem ser apagadas nem incluídas por engano.
+- Nenhum push foi feito.
+
+### O que estava sendo feito
+
+Estava investigando gargalos e estabilidade da exportação do Editor V6 sem usar o projeto real como fixture. A etapa concluída compara `capturePage` e o evento de pintura no mesmo worker, token e camada, numa cena Electron sintética com vídeo em camadas, cabelo animado por malha e mudanças de expressão. As 41 comparações passaram byte a byte. O fluxo de produção continua em `capturePage`; o modo paint é apenas diagnóstico, pois não há prova de ganho de velocidade e as esperas têm picos altos.
+
+### O que fazer ao retomar
+
+1. Ler este checkpoint e `PLANO_ACELERACAO_EXPORT.md`; confirmar `git status` antes de editar e manter a branch `Dev-V2`.
+2. Repetir perfis A/B em várias rodadas com o PC em carga controlada e ampliar gradualmente as fixtures sintéticas. Medir p50/p95 por estágio antes de escolher uma otimização.
+3. Investigar `-36861` com telemetria útil de processo principal, renderer, GPU e FFmpeg; a mensagem de Crashpad e o código isolados não identificaram a causa.
+4. Só numa janela de exportação controlada, repetir o projeto de 12 minutos/473 transições para verificar estabilidade, duração e qualidade. Preservar o projeto e seus dados; não fazer limpeza destrutiva.
+5. Para cada alteração, executar as verificações pertinentes, revisar o diff e salvar um commit local pequeno. Não fazer push sem pedido explícito.
+
+### Estado de uso
+
+O app segue utilizável nos fluxos cobertos pelas verificações automatizadas. O exportador de produção não foi trocado nesta etapa. A estabilidade do export longo de 12 minutos ainda é uma pendência real: o harness sintético não reproduziu o encerramento `-36861`, então não se deve afirmar que esse caso foi corrigido ou validado.
