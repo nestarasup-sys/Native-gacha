@@ -1486,7 +1486,7 @@ Os ciclos são independentes; a ordem pode mudar quando o código ou uma regress
 
 **Mudança:** a tentativa de exportação passa a atribuir um novo trecho assim que qualquer worker termina, respeitando o mesmo limite de concorrência. Isso evita que um trecho longo deixe o outro worker ocioso enquanto ainda há trabalho na fila. Resultados continuam ordenados por índice e os relatórios são salvos a cada lote completo de conclusões, incluindo o lote final menor.
 
-**Falhas e cancelamento:** uma falha de renderização ou de gravação do relatório interrompe novas atribuições, aborta os trechos ativos e aguarda sua liberação antes de propagar o erro. O listener de cancelamento externo permanece removido no `finally`.
+**Falhas e cancelamento:** uma falha de renderização ou de gravação do relatório interrompe novas atribuições, aborta os trechos ativos e aguarda sua liberação antes de propagar o erro. O cancelamento externo também impede atribuições pendentes e aguarda os ativos. O listener permanece removido no `finally`.
 
 **Verificação:** testes sintéticos confirmam preenchimento da vaga livre enquanto outro trecho permanece lento, limite de concorrência, ordenação, lotes de relatório e interrupção em falhas de renderização/gravação. A suíte completa do Editor V6 passou (177 arquivos, 785 testes aprovados e 1 ignorado), assim como typecheck, auditoria de arquitetura (877 arquivos), build e `git diff --check`. Ainda não foi feita comparação de tempo no projeto de estresse; portanto, o ganho total de exportação permanece sem medição.
 

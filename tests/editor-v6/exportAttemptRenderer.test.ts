@@ -160,6 +160,35 @@ describe('agendamento de tentativas do Editor V6', () => {
     expect(dependencies.report.attempts[0]).toMatchObject({ error: failure.message })
   })
 
+  it('honra cancelamento externo sem atribuir trechos que ainda estavam na fila', async () => {
+    const cancellation = new Error('cancelamento sintético do usuário')
+    const controller = new AbortController()
+    let markWorkersStarted: (() => void) | undefined
+    const workersStarted = new Promise<void>((resolve) => { markWorkersStarted = resolve })
+    const started: number[] = []
+    const dependencies = createDependencies({
+      signal: controller.signal,
+      parts: [createPart(0), createPart(1), createPart(2)],
+      maxParallelism: 2,
+      renderPart: vi.fn<EditorV6ExportPartRenderer>(async (partDependencies) => {
+        started.push(partDependencies.part.index)
+        if (started.length === 2) markWorkersStarted?.()
+        await new Promise<void>((_resolve, reject) => {
+          partDependencies.signal.addEventListener('abort', () => reject(partDependencies.signal.reason), { once: true })
+        })
+        throw new Error('esperava cancelamento externo')
+      })
+    })
+
+    const rendering = renderEditorV6ExportAttempt(dependencies)
+    await workersStarted
+    controller.abort(cancellation)
+
+    await expect(rendering).rejects.toBe(cancellation)
+    expect(started).toEqual([0, 1])
+    expect(dependencies.saveReport).not.toHaveBeenCalled()
+  })
+
   it('interrompe workers ativos se não conseguir salvar o relatório', async () => {
     const failure = new Error('falha sintética ao salvar relatório')
     const started: number[] = []

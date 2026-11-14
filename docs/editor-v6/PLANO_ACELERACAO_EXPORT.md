@@ -367,7 +367,7 @@ Validar contagem de quadros, 30 FPS, resolução, duração, áudio e emendas co
 
 ### Continuação 2026-11-13 — fila dinâmica de trechos
 
-O scheduler deixou de aguardar todos os trechos de um grupo fixo. Cada worker agora puxa o próximo trecho assim que termina o atual, sem elevar o limite de concorrência configurado. Isso reduz ociosidade quando há trechos com custos diferentes; testes sintéticos confirmam que um worker pode começar o terceiro trecho enquanto o primeiro ainda está ativo.
+O scheduler deixou de aguardar todos os trechos de um grupo fixo. Cada worker agora puxa o próximo trecho assim que termina o atual, sem elevar o limite de concorrência configurado. Isso reduz ociosidade quando há trechos com custos diferentes; testes sintéticos confirmam que um worker pode começar o terceiro trecho enquanto o primeiro ainda está ativo e que o cancelamento externo não inicia trechos restantes e espera os ativos encerrarem.
 
 Os relatórios continuam sendo gravados após cada lote equivalente ao número de workers e no lote final. Falhas de renderização ou de gravação param novas atribuições, abortam os trechos ativos e aguardam sua saída. A mudança foi verificada com a suíte do Editor V6, typecheck, auditoria e build. Ainda não há medição A/B no projeto de estresse, então não atribuo ganho de duração total à alteração.
 
