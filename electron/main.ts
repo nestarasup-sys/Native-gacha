@@ -658,7 +658,6 @@ async function registerFabricatorHandlers(): Promise<void> {
     getPendingWrites: () => editorV6SaveQueue,
     setPendingWrites: (pending) => { editorV6SaveQueue = pending }
   })
-
   registerEditorV6ProjectJsonHandlers({ ipcMain, assertTrustedSender, read: readEditorV6, write: writeEditorV6,
     assertPoseReferencesAvailable: assertEditorV6PoseReferencesAvailable, coordinatePoseReferenceChange, projectPath: editorV6Path, files: { readFile, mkdir, writeFile } })
 
@@ -1144,6 +1143,9 @@ app.whenReady().then(async () => {
     releaseIdleMotionWorkers: () => editorV6MotionService!.releaseIdle(),
     getElectronProcessMetrics: () => readElectronAppMetrics().metrics,
     ...(process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' ? { onFfmpegProcessStarted: (pid: number) => stressFfmpegPids.add(pid) } : {}),
+    ...(process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1' && process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_ENCODER_INPUT === '1'
+      ? { qualityReferenceFolder: join(resolve(process.env.GACHA_EDITOR_V6_STRESS_OUTPUT_ROOT!), 'encoder-reference') }
+      : {}),
     captureMode: process.env.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
       ? (process.env.GACHA_EDITOR_V6_STRESS_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage')
       : process.env.GACHA_EDITOR_V6_CAPTURE_MODE === 'paint-event' ? 'paint-event' : 'capturePage',

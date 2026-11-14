@@ -1,6 +1,7 @@
 import type { EditorV6VideoOverlay } from '../../../src/shared/editorV6VideoComposition'
 
 export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
+export const EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES = [0, 29, 30, 149, 259, 300, 518, 599, 1199, 2393] as const
 
 export type EditorV6VideoCompositionInput = {
   clips: readonly EditorV6VideoOverlay[]
@@ -9,16 +10,18 @@ export type EditorV6VideoCompositionInput = {
   width: number
   height: number
   layeredVideo: boolean
+  qualityReference?: { frames: readonly number[]; outputPath: string }
 }
 
 export type EditorV6VideoComposition = {
   videoInputs: string[]
   filterArgs: string[]
+  qualityOutputArgs?: string[]
   rawHeight: number
 }
 
 /** Builds FFmpeg inputs and filters in the same z-order as the timeline video plan. */
-export function buildEditorV6VideoComposition({ clips, mediaPaths, partStartFrame, width, height, layeredVideo }: EditorV6VideoCompositionInput): EditorV6VideoComposition {
+export function buildEditorV6VideoComposition({ clips, mediaPaths, partStartFrame, width, height, layeredVideo, qualityReference }: EditorV6VideoCompositionInput): EditorV6VideoComposition {
   const videoInputs = clips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', mediaPaths[index]])
   const filters = layeredVideo
     ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]']
@@ -43,11 +46,21 @@ export function buildEditorV6VideoComposition({ clips, mediaPaths, partStartFram
     filters.push(`[${lastVideo}][fg]overlay=0:0:format=auto:eof_action=pass:repeatlast=1[mixed]`)
     lastVideo = 'mixed'
   }
-  filters.push(`[${lastVideo}]${editorV6OutputColorFilter}[vout]`)
+  const qualitySelect = qualityReference?.frames.length
+    ? `select=${qualityReference.frames.map(frame => `eq(n\\,${frame})`).join('+')}`
+    : undefined
+  filters.push(qualitySelect
+    ? `[${lastVideo}]${editorV6OutputColorFilter},split=2[vout][qualitysource];[qualitysource]${qualitySelect}[quality]`
+    : `[${lastVideo}]${editorV6OutputColorFilter}[vout]`)
 
   return {
     videoInputs,
     filterArgs: ['-filter_complex', filters.join(';'), '-map', '[vout]'],
+    ...(qualityReference?.frames.length ? { qualityOutputArgs: [
+      '-map', '[quality]',
+      '-fps_mode', 'passthrough', '-pix_fmt', 'bgra',
+      '-f', 'rawvideo', qualityReference.outputPath
+    ] } : {}),
     rawHeight: height * (layeredVideo ? 2 : 1)
   }
 }

@@ -1,5 +1,6 @@
 import { availableParallelism } from 'node:os'
 import { join } from 'node:path'
+import { mkdir, writeFile } from 'node:fs/promises'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6ExportMouthLoops, EditorV6ExportOptions, EditorV6ExportPart, EditorV6ExportStatus, EditorV6FrameMetrics } from '../../../src/shared/editorV6Export'
@@ -11,7 +12,7 @@ import { spawnExportProcess, waitForExport } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6FrameWorker } from './exportWorkers'
-import { buildEditorV6VideoComposition } from './exportVideoComposition'
+import { buildEditorV6VideoComposition, EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES } from './exportVideoComposition'
 import { createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6FrameTimingReport } from './exportMetrics'
 import { renderAndWriteEditorV6Frames } from './exportFramePipeline'
 import type { EditorV6ExportFinalizationPart } from './exportFinalization'
@@ -45,6 +46,7 @@ type Dependencies = {
   folder: string
   ffmpeg: string
   ffprobe: string
+  qualityReferenceFolder?: string
   motionCacheScope: string
   signal: AbortSignal
   abort: (reason: unknown) => void
@@ -64,7 +66,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   const {
     project, part, attemptNumber, attemptPartCount, exportStartedAt, encoder, parallelism,
     options, layeredVideo, speechInRange, characters, testSettings, folder, ffmpeg, ffprobe,
-    motionCacheScope, signal, abort, completedFrames, createWorker, bakeMotion, mediaPath,
+    motionCacheScope, qualityReferenceFolder, signal, abort, completedFrames, createWorker, bakeMotion, mediaPath,
     onFfmpegProcessStarted, progress, onMouthPrepared, onPartCreated, onFrameWritten
   } = dependencies
 
@@ -101,8 +103,17 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   try {
     const videoClips = planEditorV6VideoOverlays(project, part.startFrame, part.endFrame)
     const videoPaths = await Promise.all(videoClips.map((clip) => mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
-    const videoComposition = buildEditorV6VideoComposition({ clips: videoClips, mediaPaths: videoPaths, partStartFrame: part.startFrame, width: options.width, height: options.height, layeredVideo })
-    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path], signal)
+    const qualityFrames = qualityReferenceFolder
+      ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.filter(frame => frame >= part.startFrame && frame < part.endFrame).map(frame => frame - part.startFrame)
+      : []
+    const absoluteQualityFrames = qualityFrames.map(frame => frame + part.startFrame)
+    const qualityReferencePath = qualityFrames.length ? join(qualityReferenceFolder!, `part-${part.index}.bgra`) : undefined
+    if (qualityReferencePath) await mkdir(qualityReferenceFolder!, { recursive: true })
+    const videoComposition = buildEditorV6VideoComposition({
+      clips: videoClips, mediaPaths: videoPaths, partStartFrame: part.startFrame, width: options.width, height: options.height, layeredVideo,
+      ...(qualityReferencePath ? { qualityReference: { frames: qualityFrames, outputPath: qualityReferencePath } } : {})
+    })
+    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
     if (process.child.pid) onFfmpegProcessStarted?.(process.child.pid)
     const workerStarted = performance.now()
     worker = await createWorker(renderProject, part, signal, layeredVideo, mouthLoops)
@@ -116,7 +127,10 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       timingAccumulators,
       frameMetrics,
       writeFrame: (bitmap) => waitForExport(
-        new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap, (error) => error ? reject(error) : resolve())),
+        new Promise<void>((resolve, reject) => process!.child.stdin.write(bitmap, (error) => {
+          if (!error) { resolve(); return }
+          void process!.done.then(() => reject(error), reject)
+        })),
         signal,
         60000,
         'enviar quadro ao FFmpeg'
@@ -127,6 +141,10 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     const finalizeStarted = performance.now()
     process.child.stdin.end()
     await waitForExport(process.done, signal, 120000, 'finalizar parte')
+    if (qualityReferencePath) await writeFile(join(qualityReferenceFolder!, `part-${part.index}.json`), JSON.stringify({
+      partIndex: part.index, startFrame: part.startFrame, exportStartFrame: options.startFrame, width: options.width, height: options.height,
+      frames: absoluteQualityFrames, dataFile: `part-${part.index}.bgra`
+    }), { flag: 'wx' })
     recordEditorV6Timing(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
     result.probe = await probeExportMedia(ffprobe, path, signal)
     if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')

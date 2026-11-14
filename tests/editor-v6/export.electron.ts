@@ -168,7 +168,7 @@ async function main() {
     return { asset: { id: assetId, category: 'character', name: 'Mouth loop', mimeType: 'image/png', dataUrl: mouthAtlasData }, mouthIsolationMode: 'legacy-patch', motion: { version: 1, key: request.plan.key, assetId, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 48 * 16 } }
   }
   const mouthOutput = join(folder, 'many-mouth-loop-states.mp4')
-  const mouthReport = await runEditorV6Export(mouthProject, { startFrame: 5, endFrame: 306, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: true, mouthLoopCycleFrames: 37 }, {
+  const mouthReport = await runEditorV6Export(mouthProject, { startFrame: 5, endFrame: 306, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: false, mouthLoopCycleFrames: 37 }, {
     ...base, id: randomUUID(), outputPath: mouthOutput, reportPath: join(folder, 'many-mouth-loop-states.report.json'),
     getCharacters: async () => [mouthCharacter], bakeMotion: (request, signal) => { assert(Boolean(request.cacheScope), 'O bake de boca não recebeu escopo frio da exportação.'); mouthExportScopes.add(request.cacheScope!); return bakeMouthLoop(request, signal) },
     releaseMotionCacheScope: (scope) => { releasedMouthExportScopes.add(scope) },
@@ -177,18 +177,12 @@ async function main() {
       return makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops)
     }
   })
-  assert(mouthReport.state === 'completed' && mouthReport.mouthAnimation?.stateAtlases === 16 && mouthReport.mouthAnimation.preparationMilliseconds > 0, 'O export não preparou todos os estados da boca divididos entre os trechos ou não registrou o tempo de preparação.')
-  assert(mouthReport.mouthAnimation.legacyPatchStates === 16 && mouthReport.mouthAnimation.isolatedStates === 0, 'O relatório não registrou os 16 estados de boca pelo caminho legado do fixture.')
-  assert(mouthReport.options.mouthLoop === true, 'A exportação padrão deixou de forçar o loop de boca histórico.')
-  assert(mouthExportScopes.size === 1 && releasedMouthExportScopes.has([...mouthExportScopes][0]), 'O cache de boca não permaneceu isolado numa exportação ou não foi liberado no fim.')
-  assert(mouthWorkerPayloads.map((item) => item.stateCount).join(',') === '15,1', 'Cada trecho recebeu estados de boca fora do seu próprio intervalo.')
-  assert(mouthWorkerPayloads.map((item) => item.assetCount).join(',') === '17,3', 'O worker recebeu atlas de boca de outros trechos do export.')
-  assert(mouthWorkerPayloads.every((item) => item.startFrame === 5 && item.cycleFrames === 37), 'O ciclo da boca reiniciou numa emenda do export.')
-  assert(mouthWorkerPayloads[1].partStart === 305 && ((mouthWorkerPayloads[1].partStart - mouthWorkerPayloads[1].startFrame) % 37) === 4, 'A fase global da boca não foi preservada no trecho seguinte.')
-  assert(mouthReport.attempts[0].parallelism === 1 && mouthReport.attempts[0].parts.map((part) => part.frames).join(',') === '300,1', 'O export não limitou a preparação e renderização aos trechos configurados.')
+  assert(mouthReport.state === 'completed' && mouthReport.options.mouthLoop === false && mouthReport.mouthAnimation === undefined, 'O perfil sem boca não concluiu ou registrou ciclos faciais.')
+  assert(mouthExportScopes.size === 0, 'O perfil sem boca iniciou bakes faciais.')
+  assert(mouthWorkerPayloads.length === 1 && mouthWorkerPayloads[0].stateCount === 0 && mouthWorkerPayloads[0].startFrame === -1, 'O worker recebeu atlas ou estado da boca no perfil desativado.')
+  assert(mouthReport.attempts[0].parallelism === 1 && mouthReport.attempts[0].parts.map((part) => part.frames).join(',') === '301', 'O perfil sem boca dividiu a fala em trechos desnecessariamente.')
   const faceOutput = join(folder, 'face-state.mp4')
-  const faceReport = await runEditorV6Export(faceProject, { ...options, startFrame: 0, endFrame: 40, mouthLoop: false }, { ...base, id: randomUUID(), outputPath: faceOutput, reportPath: join(folder, 'face-state.report.json'), getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop })
-  assert(faceReport.options.mouthLoop === false && !faceReport.mouthAnimation, 'Desligar o ciclo da boca ainda preparou atlas ou alterou a opção salva.')
+  const faceReport = await runEditorV6Export(faceProject, { ...options, startFrame: 0, endFrame: 40 }, { ...base, id: randomUUID(), outputPath: faceOutput, reportPath: join(folder, 'face-state.report.json'), getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop })
   assert(!faceReport.fallback, 'Trocas de talk/pensamento não concluíram com a captura normal.')
   const faceFrames = run(['-i', faceOutput, '-frames:v', '40', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const faceFrameBytes = 320 * 180 * 3

@@ -575,17 +575,3 @@ Um primeiro passe calculou hash numa região vazia e acusou ausência de movimen
 O perfil 1080p de 60 quadros levou 3,017 s: captura `capturePage` total 1,281 s (p50 18,2 ms, p95 34,6 ms), bitmap 0,246 s (p50 3,5 ms, p95 7,1 ms) e escrita FFmpeg 0,324 s. Foram observados 7 readbacks obsoletos. `paint-event` levou 4,319 s, mais que `capturePage`, e teve cauda de espera maior; fica fora do fluxo padrão. A fixture complexa em camadas levou 2,690 s.
 
 O PC não estava sob carga controlada. Estes dados justificam investigar captura/recomposição e readbacks obsoletos, mas não permitem alegar ganho nem projetar o tempo do MP4 longo. O harness deixou `export-check.mp4` (~67 KB) e `mouth-stress.mp4` (~11 KB) em `out/editor-v6-export-check`; o restante da fixture temporária foi removido pelo script.
-
-### Perfil AMF estrito sem animação automática da boca — 14/11/2026
-
-O painel de exportação ganhou a opção **Forçar AMD AMF · sem fallback**. Ela seleciona somente `h264_amf`; a ausência do encoder ou uma falha no render encerra a exportação com erro, sem tentar codificador de CPU. O perfil também fixa `mouthLoop: false`: não gera atlas/ciclos faciais, não subdivide a fala em janelas para o loop e resolve o rosto sem o modo automático `talk`. Piscadas, expressões já gravadas, balões, áudio, transições e cabelo permanecem ativos.
-
-Os perfis existentes continuam usando CPU H.264 e animação de boca. Até chamadas antigas que enviem `mouthLoop: false` fora do perfil AMF continuam recebendo o comportamento padrão com boca ligada. A disponibilidade real de `h264_amf` depende da build do FFmpeg e do hardware; o perfil não converte essa ausência em fallback.
-
-**Verificação desta alteração:** 75 testes V6 focados, 2 testes do painel, `npm run typecheck` e o build de produção passaram. `npm run test:editor-v6:export` executou os casos de exportação sintética e chegou às verificações de captura paint, mas terminou duas vezes por timeout aguardando token de paint; não alterei esse fluxo experimental. Não foi feito export de AMF em GPU real.
-
-#### Ajuste do modo Talk e controle independente do ciclo — 14/11/2026
-
-O perfil AMF e o controle de ciclo agora afetam apenas a animação cíclica que alterna os três quadros da boca. A resolução facial por fala continua aplicando o modo **Talk** (e `talk-blink` quando houver piscada). No export padrão CPU, o ciclo de três quadros pode ser desligado separadamente; por padrão ele continua ligado. O perfil AMF força o ciclo desligado e mantém o modo Talk.
-
-**Verificação da correção:** 70 testes V6 focados, 2 testes do painel, `npm run typecheck`, build e `npm run test:editor-v6:export` passaram. O harness verificou o MP4 sintético com o ciclo desligado e confirmou Talk durante a fala. Não foi feito export em GPU AMF real.

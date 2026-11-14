@@ -65,3 +65,19 @@ test('duplica a entrada base e sobrepõe a camada frontal no modo de vídeo em c
   ])
   assert.equal(result.rawHeight, 360)
 })
+
+test('coleta amostras do vídeo final composto sem limitar a saída principal', () => {
+  const result = buildEditorV6VideoComposition({
+    clips: [clip()], mediaPaths: ['scene.mp4'], partStartFrame: 90,
+    width: 1920, height: 1080, layeredVideo: false,
+    qualityReference: { frames: [0, 30, 149], outputPath: 'encoder-reference.bgra' }
+  })
+
+  assert.match(result.filterArgs[1], /split=2\[vout\]\[qualitysource\];\[qualitysource\]select=eq\(n\\,0\)\+eq\(n\\,30\)\+eq\(n\\,149\)\[quality\]/)
+  assert.deepEqual(result.filterArgs.slice(-2), ['-map', '[vout]'])
+  assert.deepEqual(result.qualityOutputArgs, [
+    '-map', '[quality]',
+    '-fps_mode', 'passthrough', '-pix_fmt', 'bgra', '-f', 'rawvideo', 'encoder-reference.bgra'
+  ])
+  assert.equal(result.qualityOutputArgs.includes('-frames:v'), false)
+})

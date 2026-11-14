@@ -11,6 +11,7 @@ import { runExportCommand } from './exportProcess'
 import { encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6MotionCacheStats } from './motionCache'
+import { formatEditorV6Error } from '../../../src/shared/editorV6Error'
 import { createEditorV6ExportExecutionPlan } from './exportPlanning'
 import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import { renderEditorV6ExportAttempt, type EditorV6ExportPartWorkerFactory } from './exportAttemptRenderer'
@@ -44,10 +45,11 @@ type Dependencies = {
   mediaPath: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   /** Test/diagnostic hook for measuring the external encoder without exposing it over IPC. */
   onFfmpegProcessStarted?: (pid: number) => void
+  qualityReferenceFolder?: string
   signal: AbortSignal; progress: (patch: Partial<EditorV6ExportStatus>) => void
 }
 
-const message = (error: unknown) => error instanceof Error ? error.message : String(error)
+const message = formatEditorV6Error
 
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const { options, testSettings, requestedParts, parts: planned, speechInRange, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
@@ -101,6 +103,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       bakeMotion: deps.bakeMotion,
       mediaPath: deps.mediaPath,
       onFfmpegProcessStarted: deps.onFfmpegProcessStarted,
+      qualityReferenceFolder: deps.qualityReferenceFolder,
       progress: deps.progress,
       saveReport,
       formatError: message

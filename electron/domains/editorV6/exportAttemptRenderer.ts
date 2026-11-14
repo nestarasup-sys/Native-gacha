@@ -31,6 +31,7 @@ type Dependencies = {
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   mediaPath: (projectId: string, fileName: string, libraryVideoId?: string) => string | Promise<string>
   onFfmpegProcessStarted?: (pid: number) => void
+  qualityReferenceFolder?: string
   progress: (patch: Partial<EditorV6ExportStatus>) => void
   saveReport: () => Promise<void>
   formatError: (error: unknown) => string
@@ -42,7 +43,7 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
   const {
     project, parts, encoder, maxParallelism = 2, exportStartedAt, options, layeredVideo, speechInRange,
     characters, testSettings, folder, ffmpeg, ffprobe, motionCacheScope, signal, report,
-    createWorker, bakeMotion, mediaPath, onFfmpegProcessStarted, progress, saveReport, formatError
+    createWorker, bakeMotion, mediaPath, onFfmpegProcessStarted, qualityReferenceFolder, progress, saveReport, formatError
   } = dependencies
   const renderPartDependency = dependencies.renderPart ?? renderEditorV6ExportPart
   const began = performance.now()
@@ -99,6 +100,7 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
     ffmpeg,
     ffprobe,
     motionCacheScope,
+    qualityReferenceFolder,
     signal: controller.signal,
     abort: (reason) => controller.abort(reason),
     completedFrames: () => done,

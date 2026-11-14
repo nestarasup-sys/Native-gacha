@@ -78,8 +78,8 @@ export function isEditorV6BlinkFrame(projectId: string, characterId: string, fra
   return cycleFrame < schedule.length || schedule.secondBlink && cycleFrame >= schedule.period - 3
 }
 
-export function editorV6FaceModeAtFrame(projectId: string, timeline: EditorV6Timeline, characterId: string, frame: number): EditorV6FaceRenderMode | undefined {
-  const talking = isEditorV6CharacterSpeakingAtFrame(timeline, characterId, frame)
+export function editorV6FaceModeAtFrame(projectId: string, timeline: EditorV6Timeline, characterId: string, frame: number, options: { includeSpeechMouth?: boolean } = {}): EditorV6FaceRenderMode | undefined {
+  const talking = options.includeSpeechMouth !== false && isEditorV6CharacterSpeakingAtFrame(timeline, characterId, frame)
   const blinking = isEditorV6BlinkFrame(projectId, characterId, frame)
   return talking ? blinking ? 'talk-blink' : 'talk' : blinking ? 'blink' : undefined
 }

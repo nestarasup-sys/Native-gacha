@@ -42,7 +42,7 @@ vi.mock('electron', () => ({ BrowserWindow: class extends EventEmitter {
       beginFrameSubscription: vi.fn((_onlyDirty: boolean, callback: (image: any) => void) => { (window.webContents as any).paintFrame = callback }),
       endFrameSubscription: vi.fn(),
       executeJavaScript: vi.fn(async (script: string) => {
-        const token = script.match(/,\s*(\d+)\)\s*$/)
+        const token = script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)
         if (token) {
           window.paintToken = Number(token[1])
           ;(window.webContents as any).paintFrame?.(state.imageFor(320, 180, window.paintToken), { x: 0, y: 0, width: 320, height: 204 })
@@ -98,6 +98,47 @@ describe('export worker lifecycle', () => {
     expect(window.webContents.listenerCount('render-process-gone')).toBe(0)
     expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledOnce()
     expect(window.webContents.session.protocol.unhandle).toHaveBeenCalledWith('gacha-editor-media')
+    factory.dispose()
+  })
+
+  it('serves a worker-local snapshot image through the isolated session protocol', async () => {
+    const { factory, ready } = fixture()
+    const projectId = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+    const assetId = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'
+    const token = 'asset-0'
+    const url = `gacha-editor-media://snapshot/${projectId}/${token}`
+    const payload = {
+      project: { id: projectId, media: [], assets: [{ id: assetId, category: 'character', mimeType: 'image/png', dataUrl: url }] },
+      width: 320, height: 180, layeredVideo: false
+    } as unknown as EditorV6WorkerPayload
+    const bytes = Buffer.from('worker-image')
+    const assetSources = new Map([[token, { dataUrl: `data:image/png;base64,${bytes.toString('base64')}`, mimeType: 'image/png' }]])
+    const pending = factory.create(payload, new AbortController().signal, assetSources)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const handler = window.webContents.session.protocol.handle.mock.calls[0][1]
+
+    const response = await handler(new Request(url))
+
+    expect(response.status).toBe(200)
+    expect(Buffer.from(await response.arrayBuffer())).toEqual(bytes)
+    worker.close()
+    factory.dispose()
+  })
+
+  it('preserves renderer exceptions across the Electron frame boundary', async () => {
+    const { factory, payload, ready } = fixture()
+    const pending = factory.create(payload, new AbortController().signal)
+    ready()
+    const worker = await pending
+    state.windows[0].webContents.executeJavaScript.mockResolvedValue({
+      ok: false,
+      error: { name: 'InvalidStateError', message: 'O contexto WebGL foi perdido.', stack: 'renderEditorV6ExportFrame at frame 259' }
+    })
+
+    await expect(worker.frame(259)).rejects.toThrow('Falha no quadro 259: InvalidStateError: O contexto WebGL foi perdido.')
+    worker.close()
     factory.dispose()
   })
 
@@ -193,7 +234,7 @@ describe('export worker lifecycle', () => {
     const contents = state.windows[0].webContents
     const window = state.windows[0]
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = script.match(/,\s*(\d+)\)\s*$/)
+      const token = script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)
       if (token) window.paintToken = Number(token[1])
       contents.paintFrame(state.imageFor(payload.width, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
@@ -221,7 +262,7 @@ describe('export worker lifecycle', () => {
     const paintedTokens: number[] = []
     let layerFill = 0
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)?.[1] ?? 0)
       window.paintToken = token
       layerFill = script.includes("'background'") ? 31 : 73
       paintedTokens.push(token)
@@ -253,7 +294,7 @@ describe('export worker lifecycle', () => {
     const contents = window.webContents
     let layerFill = 0
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)?.[1] ?? 0)
       window.paintToken = token
       layerFill = script.includes("'background'") ? 31 : 73
       contents.paintFrame(state.imageFor(payload.width, payload.height, token, layerFill), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
@@ -276,7 +317,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     const contents = window.webContents
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)?.[1] ?? 0)
       window.paintToken = token
       contents.paintFrame(state.imageFor(payload.width, payload.height, token, 39), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
@@ -302,7 +343,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     const contents = window.webContents
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)?.[1] ?? 0)
       window.paintToken = token
       contents.paintFrame(state.imageFor(payload.width, payload.height, token - 1), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
@@ -331,7 +372,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     const contents = window.webContents
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = Number(script.match(/,\s*(\d+)\)\s*$/)?.[1] ?? 0)
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)?.[1] ?? 0)
       window.paintToken = token
       contents.paintFrame(state.imageFor(payload.width, payload.height, token - 1), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }
@@ -360,7 +401,7 @@ describe('export worker lifecycle', () => {
     const contents = window.webContents
     let drawCount = 0
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = script.match(/,\s*(\d+)\)\s*$/)
+      const token = script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)
       if (token) window.paintToken = Number(token[1])
       drawCount++
       return { reused: false, timings: { sceneResolutionMs: drawCount }, metrics: { captureReadbacks: drawCount } }
@@ -397,7 +438,7 @@ describe('export worker lifecycle', () => {
     const window = state.windows[0]
     const contents = window.webContents
     contents.executeJavaScript.mockImplementation(async (script: string) => {
-      const token = script.match(/,\s*(\d+)\)\s*$/)
+      const token = script.match(/renderEditorV6ExportFrame\(\d+,\s*(?:'[^']+'|undefined),\s*(\d+)\)/)
       if (token) window.paintToken = Number(token[1])
       contents.paintFrame(state.imageFor(payload.width, payload.height, 0xffffff), { x: 0, y: 0, width: payload.width, height: payload.height + 24 })
       return { reused: false, timings: {} }

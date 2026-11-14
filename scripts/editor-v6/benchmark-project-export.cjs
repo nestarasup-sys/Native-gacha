@@ -300,7 +300,7 @@ async function main() {
     GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
-    ...(retainQualityArtifacts ? { GACHA_EDITOR_V6_STRESS_CAPTURE_RAW_FRAMES: '1' } : {}),
+    ...(retainQualityArtifacts ? { GACHA_EDITOR_V6_STRESS_CAPTURE_ENCODER_INPUT: '1' } : {}),
     ...(videoToolsDirectory ? { GACHA_EDITOR_V6_STRESS_VIDEO_TOOLS: videoToolsDirectory } : {}),
     ...(hairPresetSlot ? { GACHA_EDITOR_V6_STRESS_HAIR_PRESET_SLOT: hairPresetSlot } : {}),
     ...(noHairControl ? { GACHA_EDITOR_V6_STRESS_NO_HAIR_CONTROL: '1' } : {}),

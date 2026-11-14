@@ -17,6 +17,8 @@ npm run lab:editor-v6:plan-b
 npm run summary:editor-v6:plan-b-lab -- out/editor-v6-stress/runs/<run-id>
 ```
 
+Para validar uma correção antes da matriz completa, `npm run lab:editor-v6:plan-b -- --smoke` roda uma vez o projeto curto com CPU e AMF na build empacotada; a matriz completa continua sendo o padrão.
+
 O primeiro comando baixa uma build LGPL do FFmpeg 9.0.2 para `out/editor-v6-stress/tools`, verifica o SHA-256 pinado e confere `ffmpeg.exe`, `ffprobe.exe`, `libopenh264` e `h264_amf`. A cópia empacotada do app permanece intacta.
 
 ## Matriz e controles

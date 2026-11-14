@@ -29,7 +29,7 @@ function createDependencies(overrides: Partial<Parameters<typeof renderEditorV6E
   })
   const finishMeasured = vi.fn(async () => ({ valid: true }))
   const options: EditorV6ExportOptions = {
-    startFrame: 0, endFrame: 650, width: 320, height: 180, turbo: true, encoder: 'auto', mouthLoop: true
+    startFrame: 0, endFrame: 650, width: 320, height: 180, turbo: true, encoder: 'auto'
   }
   return {
     options,

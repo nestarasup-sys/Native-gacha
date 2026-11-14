@@ -10,21 +10,24 @@ function run(binary, args, { maxBytes = 128 * 1024 * 1024 } = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] })
     const chunks = []
-    let size = 0, stderr = ''
+    let size = 0, stderr = '', rejected = false
     child.stdout.on('data', chunk => {
       size += chunk.length
-      if (size > maxBytes) { child.kill(); reject(new Error('O decoder excedeu o limite de saída.')); return }
+      if (size > maxBytes && !rejected) { rejected = true; child.kill(); reject(new Error('O decoder excedeu o limite de saída.')); return }
       chunks.push(chunk)
     })
     child.stderr.on('data', chunk => { stderr = (stderr + chunk.toString()).slice(-8000) })
     child.once('error', reject)
-    child.once('close', code => code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`Ferramenta de mídia encerrou com código ${code}: ${stderr.trim()}`)))
+    child.once('close', code => {
+      if (rejected) return
+      code === 0 ? resolve(Buffer.concat(chunks)) : reject(new Error(`Ferramenta de mídia encerrou com código ${code}: ${stderr.trim()}`))
+    })
   })
 }
 
 function compareBgra(reference, rendered, width, height) {
   if (reference.length !== rendered.length || reference.length !== width * height * BYTES_PER_PIXEL) {
-    throw new Error('Tamanho BGRA incompatível entre a captura de referência e o quadro exportado.')
+    throw new Error('Tamanho BGRA incompatível entre o quadro de referência pré-encoder e o MP4.')
   }
   let squaredError = 0, samples = 0
   const blockSize = 8, c1 = (0.01 * 255) ** 2, c2 = (0.03 * 255) ** 2
@@ -59,28 +62,40 @@ function compareBgra(reference, rendered, width, height) {
     psnrRgbDb: mse === 0 ? null : Number((10 * Math.log10((255 * 255) / mse)).toFixed(5)),
     ssimLuma8x8: Number((ssimSum / ssimBlocks).toFixed(7)),
     samplePixels: width * height,
-    method: 'PSNR RGB plus SSIM luma, 8x8 non-overlapping blocks, source is raw BGRA capture immediately before encoder.'
+    method: 'PSNR RGB plus SSIM luma, 8x8 non-overlapping blocks; reference is sampled from the final composited FFmpeg filter output before encoding.'
   }
 }
 
 async function compareRun({ runFolder, videoPath, ffmpegPath, width, height }) {
-  const referenceFolder = path.join(runFolder, 'quality-reference')
+  const referenceFolder = path.join(runFolder, 'encoder-reference')
   const names = (await fs.readdir(referenceFolder).catch(() => []))
-    .filter(name => /^\d+\.bgra$/.test(name)).sort((a, b) => Number.parseInt(a) - Number.parseInt(b))
-  if (!names.length) throw new Error('Não há quadros BGRA de referência; a comparação de qualidade não foi executada.')
-  const frameNumbers = names.map(name => Number.parseInt(name, 10))
-  const expression = frameNumbers.length ? `select=${frameNumbers.map(frame => `eq(n\\,${frame})`).join('+')}` : null
-  const frameBytes = width * height * BYTES_PER_PIXEL
-  const renderedFrames = expression
-    ? await run(ffmpegPath, ['-v', 'error', '-i', videoPath, '-vf', expression, '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'bgra', 'pipe:1'], { maxBytes: frameBytes * names.length + frameBytes })
-    : Buffer.alloc(0)
-  const frames = []
-  for (const [index, name] of names.entries()) {
-    const frameNumber = frameNumbers[index]
-    const reference = await fs.readFile(path.join(referenceFolder, name))
-    const rendered = renderedFrames.subarray(index * frameBytes, (index + 1) * frameBytes)
-    frames.push({ frame: frameNumber, ...(rendered.length === frameBytes ? compareBgra(reference, rendered, width, height) : { error: 'Quadro ausente no MP4.' }) })
+    .filter(name => /^part-\d+\.json$/.test(name)).sort((a, b) => Number.parseInt(a.match(/\d+/)[0]) - Number.parseInt(b.match(/\d+/)[0]))
+  if (!names.length) throw new Error('Não há manifestos de quadros pré-encoder; comparação indisponível.')
+  const entries = []
+  for (const name of names) {
+    const manifest = JSON.parse(await fs.readFile(path.join(referenceFolder, name), 'utf8'))
+    if (manifest.width !== width || manifest.height !== height || !Array.isArray(manifest.frames) || typeof manifest.dataFile !== 'string' || path.basename(manifest.dataFile) !== manifest.dataFile) {
+      throw new Error(`Manifesto de qualidade inválido: ${name}`)
+    }
+    const data = await fs.readFile(path.join(referenceFolder, manifest.dataFile))
+    const frameBytes = width * height * BYTES_PER_PIXEL
+    if (data.length !== manifest.frames.length * frameBytes) throw new Error(`Quadros pré-encoder truncados: ${name}`)
+    for (let i = 0; i < manifest.frames.length; i++) {
+      const frame = manifest.frames[i]
+      const localFrame = frame - manifest.exportStartFrame
+      if (!Number.isInteger(localFrame) || localFrame < 0) throw new Error(`Índice de quadro inválido em ${name}`)
+      entries.push({ frame, localFrame, data: data.subarray(i * frameBytes, (i + 1) * frameBytes) })
+    }
   }
+  entries.sort((a, b) => a.localFrame - b.localFrame)
+  if (new Set(entries.map(item => item.localFrame)).size !== entries.length) throw new Error('Quadros duplicados nos manifestos de referência.')
+  const frameBytes = width * height * BYTES_PER_PIXEL
+  const expression = `select=${entries.map(item => `eq(n\\,${item.localFrame})`).join('+')}`
+  const renderedFrames = await run(ffmpegPath, ['-v', 'error', '-i', videoPath, '-vf', expression, '-fps_mode', 'passthrough', '-f', 'rawvideo', '-pix_fmt', 'bgra', 'pipe:1'], { maxBytes: frameBytes * entries.length + frameBytes })
+  const frames = entries.map((entry, index) => {
+    const rendered = renderedFrames.subarray(index * frameBytes, (index + 1) * frameBytes)
+    return { frame: entry.frame, ...(rendered.length === frameBytes ? compareBgra(entry.data, rendered, width, height) : { error: 'Quadro correspondente ausente no MP4.' }) }
+  })
   return { frames, compared: frames.filter(frame => !frame.error).length, missing: frames.filter(frame => frame.error).length }
 }
 

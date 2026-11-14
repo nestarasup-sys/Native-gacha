@@ -21,7 +21,7 @@ type IndexedHairTransition = {
 }
 
 /** Pre-indexes motion plans and prepared hair assets once for an export worker. */
-export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Document, hairAnimation?: EditorV6HairMotionBundle) {
+export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Document, hairAnimation?: EditorV6HairMotionBundle, includeSpeechMouth = true) {
   const hairRigs = new Map((hairAnimation?.rigs ?? []).map((rig) => [`${rig.elementId}:${rig.assetId}`, rig]))
   const hairPoseRigs = new Map<string, EditorV6HairMotionRig>()
   for (const rig of hairAnimation?.rigs ?? []) {
@@ -35,7 +35,7 @@ export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Documen
   }
 
   const motionBlocks = new Map(project.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
-  const motionPlans = editorV6MotionPlans(project)
+  const motionPlans = editorV6MotionPlans(project, { includeSpeechMouth })
   const transitions: IndexedHairTransition[] = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map((transition) => [`${transition.elementId}:${transition.key}`, transition]))
   const expressionOnlyPlansByElement = new Map<string, typeof motionPlans>()

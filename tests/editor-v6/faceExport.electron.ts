@@ -236,7 +236,7 @@ async function main() {
   const reloadedProject = JSON.parse(JSON.stringify(hiProject)) as EditorV6Document
   for (const [label, width, height] of [['720p', 1280, 720], ['1080p', 1920, 1080]] as const) {
     const hiOutput = join(folder, `mouth-local-composition-${label}.mp4`)
-    const hiReport = await runEditorV6Export(reloadedProject, { startFrame: 0, endFrame: 40, width, height, turbo: true, encoder: 'cpu', mouthLoop: false }, {
+    const hiReport = await runEditorV6Export(reloadedProject, { startFrame: 0, endFrame: 40, width, height, turbo: true, encoder: 'cpu', mouthLoop: true }, {
       ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: hiOutput, reportPath: join(folder, `mouth-local-composition-${label}.report.json`), signal: new AbortController().signal,
       getCharacters: async () => hiCharacters, bakeMotion: hiBake,
       createWorker: async (renderProject, part, signal, layeredVideo, mouthLoops) => {

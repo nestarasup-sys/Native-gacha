@@ -28,8 +28,8 @@ function hairTransition(elementId: string, key: string, startFrame: number, endF
   }
 }
 
-function surface(id: string) { return { id, dataUrl: `data:image/png;base64,${id}` } }
-function asset(id: string) { return { id, category: 'character' as const, name: id, mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${id}` } }
+function surface(id: string) { return { id, dataUrl: `data:image/png;base64,${Buffer.from(id).toString('base64')}` } }
+function asset(id: string) { return { id, category: 'character' as const, name: id, mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${Buffer.from(id).toString('base64')}` } }
 
 function fixture() {
   const first = characterState('actor', 'character-1', 'asset-a', 0)
@@ -103,7 +103,7 @@ function fixture() {
 describe('dados isolados por trecho para workers do Editor V6', () => {
   it('envia somente assets de cena e imagens de cabelo usados pelo trecho, mantendo geometria histórica', () => {
     const { project, hairAnimation } = fixture()
-    const { project: workerProject, hairAnimation: workerHair } = createEditorV6ExportWorkerData(project, { index: 0, startFrame: 100, endFrame: 205 }, undefined, hairAnimation)
+    const { project: workerProject, hairAnimation: workerHair, assetSources } = createEditorV6ExportWorkerData(project, { index: 0, startFrame: 100, endFrame: 205 }, undefined, hairAnimation)
 
     expect(workerProject.assets.map(item => item.id)).toEqual(expect.arrayContaining([
       'background-base', 'background-old', 'background-active', 'asset-a', 'asset-b', 'asset-c', 'motion-b', 'motion-c', 'object-active'
@@ -122,6 +122,16 @@ describe('dados isolados por trecho para workers do Editor V6', () => {
     ]))
     expect(workerHair?.textures.map(item => item.id)).toEqual(expect.arrayContaining(['texture-rig-a0', 'texture-rig-b1', 'texture-rig-c2']))
     expect(workerHair?.textures.map(item => item.id)).not.toContain('texture-rig-other0')
+
+    const workerImageUrls = [
+      ...workerProject.assets.map(item => item.dataUrl),
+      ...(workerHair?.surfaces ?? []).map(item => item.dataUrl),
+      ...(workerHair?.textures ?? []).map(item => item.dataUrl)
+    ]
+    expect(workerImageUrls.every(url => url.startsWith(`gacha-editor-media://snapshot/${project.id}/asset-`))).toBe(true)
+    expect(JSON.stringify({ workerProject, workerHair })).not.toContain('data:image/png;base64,')
+    expect(assetSources.size).toBe(workerImageUrls.length)
+    expect([...assetSources.values()].every(source => source.mimeType === 'image/png' && source.dataUrl.startsWith('data:image/png;base64,'))).toBe(true)
   })
 
   it('preserves mouth-loop assets added to the per-part snapshot', () => {
@@ -132,5 +142,26 @@ describe('dados isolados por trecho para workers do Editor V6', () => {
       states: [{ elementId: 'actor', characterId: 'character-1', blockIds: [], assetId: 'mouth-loop', sourceAssetId: 'mouth-source', baseAssetIds: { talk: 'mouth-talk' }, frames: [] }]
     })
     expect(data.project.assets.map(item => item.id)).toEqual(expect.arrayContaining(['mouth-loop', 'mouth-source', 'mouth-talk']))
+    expect(data.project.assets.filter(item => ['mouth-loop', 'mouth-source', 'mouth-talk'].includes(item.id)).every(item => item.dataUrl.startsWith(`gacha-editor-media://snapshot/${project.id}/`))).toBe(true)
+  })
+
+  it('reduces serialized worker payload size by moving image bytes to the private media route', () => {
+    const { project, hairAnimation } = fixture()
+    const image = `data:image/png;base64,${Buffer.alloc(128 * 1024, 7).toString('base64')}`
+    project.assets = project.assets.map(item => ({ ...item, dataUrl: image }))
+    hairAnimation.surfaces = hairAnimation.surfaces.map(item => ({ ...item, dataUrl: image }))
+    hairAnimation.textures = hairAnimation.textures.map(item => ({ ...item, dataUrl: image }))
+
+    const { project: workerProject, hairAnimation: workerHair, assetSources } = createEditorV6ExportWorkerData(project, { index: 0, startFrame: 100, endFrame: 205 }, undefined, hairAnimation)
+    const serializedPayload = JSON.stringify({ project: workerProject, hairAnimation: workerHair })
+    const inlineImageBytes = [...assetSources].reduce((bytes, [token, source]) => {
+      const route = `gacha-editor-media://snapshot/${project.id}/${token}`
+      return bytes + Buffer.byteLength(source.dataUrl) - Buffer.byteLength(route)
+    }, 0)
+    const currentBytes = Buffer.byteLength(serializedPayload)
+    const previousEquivalentBytes = currentBytes + inlineImageBytes
+
+    expect(assetSources.size).toBeGreaterThan(0)
+    expect(currentBytes / previousEquivalentBytes).toBeLessThan(0.05)
   })
 })

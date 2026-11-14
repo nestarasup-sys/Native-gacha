@@ -3,6 +3,7 @@ import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameRes
 import { addEditorV6FrameMetrics, addEditorV6FrameTimings, hasEditorV6FrameMetrics } from './exportMetrics'
 import { waitForExport } from './exportProcess'
 import { captureEditorV6PaintedFrame, type EditorV6PaintFrameCapture } from './exportFrameCapture'
+import { formatEditorV6Error } from '../../../src/shared/editorV6Error'
 
 export type EditorV6WorkerFrameRenderer = {
   frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>
@@ -32,7 +33,12 @@ export function createEditorV6WorkerFrameRenderer({
     nextPaintToken = nextPaintToken % 0xfffffe + 1
     const token = nextPaintToken
     const layerArgument = layer ? `'${layer}'` : 'undefined'
-    const result = await waitForExport(window.webContents.executeJavaScript(`window.renderEditorV6ExportFrame(${Math.round(frame)}, ${layerArgument}, ${token})`) as Promise<EditorV6RenderFrameResult>, signal, 60000, 'desenhar quadro')
+    const script = `Promise.resolve().then(() => window.renderEditorV6ExportFrame(${Math.round(frame)}, ${layerArgument}, ${token})).then(value => ({ ok: true, value }), error => ({ ok: false, error: { name: error?.name, message: error?.message, stack: error?.stack, code: error?.code, cause: error?.cause, value: String(error) } }))`
+    const response = await waitForExport(window.webContents.executeJavaScript(script) as Promise<EditorV6RenderFrameResult | { ok: boolean; value?: EditorV6RenderFrameResult; error?: unknown }>, signal, 60000, 'desenhar quadro')
+    const envelope = response && typeof response === 'object' && 'ok' in response ? response : undefined
+    if (envelope && (!envelope.ok || !envelope.value)) throw Error(`Falha no quadro ${frame}${layer ? ` (${layer})` : ''}: ${formatEditorV6Error(envelope.error)}`)
+    const result = (envelope?.value ?? response) as EditorV6RenderFrameResult | undefined
+    if (!result) throw Error(`O worker não retornou o resultado do quadro ${frame}${layer ? ` (${layer})` : ''}.`)
     return { ...result, timings: { ...result.timings, ipcDrawMs: performance.now() - started } }
   }
 

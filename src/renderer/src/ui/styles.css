@@ -250,9 +250,6 @@ button:focus-visible,input:focus-visible { outline: 3px solid #ed8caf; outline-o
 .v6-export-panel .v6-export-amf-profile { align-items:flex-start;margin:10px 0;padding:10px;border:1px solid #ead8e7;border-radius:10px;background:linear-gradient(100deg,#fff5fa,#faf7ff); }
 .v6-export-amf-profile>span { display:grid;gap:3px; }
 .v6-export-amf-profile strong { color:#62485f;font-size:10px; }
-.v6-export-panel .v6-export-mouth-toggle { align-items:flex-start;margin:10px 0;padding:10px;border:1px solid #ead8e7;border-radius:10px;background:#fff; }
-.v6-export-mouth-toggle>span { display:grid;gap:3px; }
-.v6-export-mouth-toggle strong { color:#62485f;font-size:10px; }
 .v6-export-panel .v6-export-mouth-disabled { display:block;margin-top:12px;padding:8px 9px;border-radius:8px;background:#f8f3fa;color:#745e78; }
 .v6-export-mouth-cycle { margin-top:12px; }
 .v6-export-hair-settings { display:grid;align-content:start;gap:10px; }

@@ -234,6 +234,7 @@ async function readFailureReports(runFolder) {
 
 async function runSuite() {
   const git = assertBranch()
+  const smoke = process.argv.includes('--smoke')
   const tools = await verifyTools()
   const runId = `plan-b-export-lab-${nowId()}`
   const backupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups', runId)
@@ -246,14 +247,19 @@ async function runSuite() {
   const snapshotInfo = JSON.parse(await fs.readFile(path.join(backupRoot, 'snapshot-manifest.json'), 'utf8'))
   const traces = []
   const results = []
-  const projectRuns = [
+  const projectRuns = smoke ? [
+    { key: 'failureReproduction', id: projectIds.failureReproduction, folder: path.join(backupRoot, 'failureReproductionProject'), frames: 519, rounds: 1 }
+  ] : [
     { key: 'failureReproduction', id: projectIds.failureReproduction, folder: path.join(backupRoot, 'failureReproductionProject'), frames: 519, rounds: 3 },
     { key: 'planB', id: projectIds.planB, folder: path.join(backupRoot, 'planBProject'), frames: 600, rounds: 1 }
   ]
-  const modes = [
+  const modes = smoke ? [
+    { id: 'bundled-8.1', toolsPath: null }
+  ] : [
     { id: 'bundled-8.1', toolsPath: null },
     { id: 'comparison-9.0.2-pinned', toolsPath: path.join(root, 'out', 'editor-v6-stress', 'tools', 'ffmpeg-n9.0.2-lgpl', 'unpacked', 'ffmpeg-n9.0.2-57-gd838f9f9ae-win64-lgpl-9.0', 'bin') }
   ]
+  const comparisonToolsPath = modes[1]?.toolsPath ?? modes[0].toolsPath ?? path.join(root, 'resources', 'video-tools')
   for (const project of projectRuns) {
     for (const tool of modes) {
       for (const encoder of ['cpu', 'amf']) {
@@ -278,13 +284,15 @@ async function runSuite() {
           run.failures = run.exitCode === 0 ? [] : await readFailureReports(outputFolder)
           if (run.videoPath) {
             const selectedProbe = await probe(tool.toolsPath ? path.join(tool.toolsPath, 'ffprobe.exe') : path.join(root, 'resources', 'video-tools', 'ffprobe.exe'), run.videoPath).catch(error => ({ error: error.message }))
-            const independentProbe = await probe(path.join(modes[1].toolsPath, 'ffprobe.exe'), run.videoPath).catch(error => ({ error: error.message }))
+            const independentProbe = await probe(path.join(comparisonToolsPath, 'ffprobe.exe'), run.videoPath).catch(error => ({ error: error.message }))
             run.ffprobe = { selectedBuild: selectedProbe, independent9_0Build: independentProbe }
-            const quality = await runCapture(process.execPath, [path.join(root, 'scripts', 'editor-v6', 'compare-planb-quality.cjs'), outputFolder, run.videoPath, path.join(modes[1].toolsPath, 'ffmpeg.exe'), '1920', '1080'], { maxBytes: 1024 * 1024 })
+            const quality = await runCapture(process.execPath, [path.join(root, 'scripts', 'editor-v6', 'compare-planb-quality.cjs'), outputFolder, run.videoPath, path.join(comparisonToolsPath, 'ffmpeg.exe'), '1920', '1080'], { maxBytes: 1024 * 1024 })
             run.quality = quality.code === 0 ? JSON.parse(quality.stdout.toString('utf8')) : { error: quality.stderr.trim() }
           }
           results.push(run)
-          process.stdout.write(`[Plano B lab] ${label}: ${run.exitCode === 0 ? 'completo' : 'falhou'}${run.validation?.runs?.[0] ? ` · ${(run.validation.runs[0].exportWallMs / 1000).toFixed(1)}s` : ''}\n`)
+          const validationRun = run.validation?.runs?.[0]
+          const exportWallMs = validationRun?.mainExportWallMs ?? validationRun?.clickToValidatedWallMs ?? validationRun?.exportWallMs
+          process.stdout.write(`[Plano B lab] ${label}: ${run.exitCode === 0 ? 'completo' : 'falhou'}${Number.isFinite(exportWallMs) ? ` · ${(exportWallMs / 1000).toFixed(1)}s` : ''}\n`)
         }
         if (traceStart.ok) {
           const traceStop = await runWpr(['-stop', tracePath, `Editor V6 Plano B ${project.key} ${tool.id} ${encoder}`, '-compress'])
@@ -299,11 +307,14 @@ async function runSuite() {
     project: snapshot.projectTitles,
     snapshot: { path: backupRoot, projects: snapshotInfo.projects, inventory: snapshotInfo.inventory, hairPreset: 'FIRST_HAIR_MOTION_PRESET shipped by the app, assigned to slot 2; same preset snapshot for every encoder/build.' },
     machine: collectMachineInfo(), toolchains: tools, wpr: { executable: spawnSync('where.exe', ['wpr.exe'], { encoding: 'utf8', windowsHide: true }).stdout?.trim() ?? null, traces },
-    methodology: { failureProjectRounds: 3, encoders: ['cpu', 'amf'], ffmpegBuilds: ['bundled-8.1', 'comparison-9.0'], profile: '1920x1080, Turbo strict, mouth animation disabled, hair preset slot 2, 30fps', fullFailureProjectFrames: 519, planBSampleFrames: 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
+    methodology: { mode: smoke ? 'smoke' : 'full', failureProjectRounds: smoke ? 1 : 3, encoders: ['cpu', 'amf'], ffmpegBuilds: modes.map(tool => tool.id), profile: '1920x1080, Turbo strict, mouth animation disabled, hair preset slot 2, 30fps', fullFailureProjectFrames: 519, planBSampleFrames: smoke ? null : 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
     groups: [...new Set(results.map(item => JSON.stringify([item.project, item.toolchain, item.encoder])))].map(key => {
       const [project, toolchain, encoder] = JSON.parse(key)
       const selected = results.filter(item => item.project === project && item.toolchain === toolchain && item.encoder === encoder)
-      const times = selected.map(item => item.validation?.runs?.[0]?.exportWallMs)
+      const times = selected.map(item => {
+        const run = item.validation?.runs?.[0]
+        return run?.mainExportWallMs ?? run?.clickToValidatedWallMs ?? run?.exportWallMs
+      })
       const workingSetPeaks = selected.flatMap(item => item.validation?.runs?.[0]?.processPeaks ?? []).map(item => item.peakWorkingSetBytes)
       const privatePeaks = selected.flatMap(item => item.validation?.runs?.[0]?.processPeaks ?? []).map(item => item.peakPrivateBytes)
       const psnr = selected.flatMap(item => item.quality?.frames ?? []).map(item => item.psnrRgbDb)
