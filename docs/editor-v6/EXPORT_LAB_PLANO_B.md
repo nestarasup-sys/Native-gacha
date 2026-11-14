@@ -124,3 +124,20 @@ npm run dev
 ```
 
 Executar o mesmo trecho longo (idealmente os seis minutos) com as mesmas opções CPU/AMF. Verificar nos relatórios `attempts[].parts[].frameRafGate`, `frameRestHairReuse`, `frameTiming.rafWaitMs`, `capturePageMs`, `captureStaleReadbacks`, `frameMetrics.hairRasterFrames`, `hairCompositeReuseFrames`, `phaseMilliseconds.motionPreparation`, `phaseMilliseconds.rendering`, além do tempo total. Uma redução apenas em `rafWaitMs` **não garante** exportação mais rápida se `capturePageMs` ou FFmpeg compensarem a diferença. O teste ainda precisa validar conteúdo e número de quadros, especialmente na saída/entrada de poses e após a reação do cabelo. A implementação foi publicada sem medição do hardware Windows.
+
+
+### Descobrir o gargalo de um vídeo de seis minutos
+
+Os relatórios de exportação `*.report.json` já contêm tempos por fase e por parte. Um analisador de leitura local agora mostra tempo completo, preparação de cabelo, preparação de movimento, renderização, taxa efetiva de quadros, `frameRoundTripMs`, `rafWaitMs`, leitura do Chromium, escrita FFmpeg e recomposições de cabelo evitadas. Ele **não altera arquivos** e não depende de cache anterior.
+
+```powershell
+npm run diagnose:editor-v6:export -- "C:\caminho\do\video.report.json"
+```
+
+Para comparar o mesmo intervalo/encoder, forneça o relatório **novo primeiro e o antigo depois**:
+
+```powershell
+npm run diagnose:editor-v6:export -- "C:\novo.report.json" "C:\antigo.report.json"
+```
+
+A comparação recusa projetos com quantidade de quadros diferente ou encoder diferente. Valores negativos de variação significam redução de tempo. Se o exportador ainda falhar antes da codificação, nenhuma conclusão sobre FPS efetivo ou velocidade do MP4 é válida. O analisador não substitui validação de paridade de pixels e áudio.
