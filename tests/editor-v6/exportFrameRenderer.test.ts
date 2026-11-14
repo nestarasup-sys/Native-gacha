@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import { createEditorV6Timeline, type EditorV6Document } from '../../src/shared/editorV6'
+import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import type { EditorV6WorkerPayload } from '../../src/shared/editorV6Export'
+import type { EditorV6ResolvedScene } from '../../src/shared/editorV6TimelineScene'
 import { createEditorV6ExportWorkerHairRuntime } from '../../src/renderer/src/features/editorV6/exportWorkerHairRuntime'
 import { createEditorV6ExportFrameRenderer } from '../../src/renderer/src/features/editorV6/exportFrameRenderer'
 
@@ -34,6 +36,38 @@ function resources(): Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2
   } as unknown as Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2]
 }
 
+function activeHairRenderer(scene: EditorV6ResolvedScene) {
+  const composedScenes: EditorV6ResolvedScene[] = []
+  const hairRuntime = {
+    hairPoseReactionEnds: new Map<string, readonly number[]>(),
+    hairSurfaceDataById: new Map<string, string>(),
+    resolveRawSceneAtFrame: () => scene,
+    applyMouthLoop: (raw: EditorV6ResolvedScene) => raw,
+    hasAnimatedHair: () => true,
+    composeHairScene: ({ composedScene }: { composedScene: EditorV6ResolvedScene }) => {
+      composedScenes.push(composedScene)
+      return { renderScene: composedScene, rasterCanvases: new Map() }
+    }
+  } as unknown as Parameters<typeof createEditorV6ExportFrameRenderer>[0]['hairRuntime']
+  const renderFrame = createEditorV6ExportFrameRenderer({
+    project: { ...project(), elements: scene.elements as EditorV6Element[] },
+    width: 1280,
+    height: 720,
+    layeredVideo: false,
+    hairAnimation: { poseReactionOnly: false } as EditorV6WorkerPayload['hairAnimation'],
+    projectAssetIndex: new Map(),
+    assetsById: new Map(),
+    hairRuntime,
+    prepareAssets: vi.fn(async () => {}),
+    commitSurface: vi.fn(),
+    onImageLoad: () => {},
+    waitForSvgImages: vi.fn(async () => {}),
+    setPaintToken: vi.fn(),
+    waitForPaintFrame: vi.fn(async () => {})
+  })
+  return { renderFrame, composedScenes }
+}
+
 describe('createEditorV6ExportFrameRenderer', () => {
   it('mantém a ordem de preparação, commit, decode e paint e reutiliza o quadro idêntico', async () => {
     const doc = project()
@@ -66,5 +100,30 @@ describe('createEditorV6ExportFrameRenderer', () => {
     expect(reused).toMatchObject({ reused: true })
     expect(operations).toEqual([])
     expect(commitSurface).toHaveBeenCalledOnce()
+  })
+
+  it('reaproveita o array da cena de cabelo quando não há mouth patch para remover', async () => {
+    const actor: EditorV6Element = { id: 'actor', kind: 'character', characterId: 'alice', assetId: 'hair', text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1 }
+    const scene = { frame: 10, background: '#fff', elements: [actor] } as EditorV6ResolvedScene
+    const { renderFrame, composedScenes } = activeHairRenderer(scene)
+
+    await renderFrame(10, undefined, 42)
+
+    expect(composedScenes[0].elements).toBe(scene.elements)
+  })
+
+  it('ainda remove mouth patches dos personagens com cabelo antes da composição facial', async () => {
+    const actor: EditorV6Element = {
+      id: 'actor', kind: 'character', characterId: 'alice', assetId: 'hair', text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1,
+      mouthPatch: { assetId: 'mouth', sprite: { x: 0, y: 0, width: 2, height: 2, atlasWidth: 2, atlasHeight: 2 }, x: 0, y: 0, width: 0.1, height: 0.1 }
+    }
+    const scene = { frame: 10, background: '#fff', elements: [actor] } as EditorV6ResolvedScene
+    const { renderFrame, composedScenes } = activeHairRenderer(scene)
+
+    await renderFrame(10, undefined, 42)
+
+    expect(composedScenes[0].elements).not.toBe(scene.elements)
+    expect(composedScenes[0].elements[0].mouthPatch).toBeUndefined()
+    expect(scene.elements[0].mouthPatch).toBeDefined()
   })
 })

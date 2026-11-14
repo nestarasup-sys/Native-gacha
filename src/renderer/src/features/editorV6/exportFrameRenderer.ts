@@ -75,14 +75,18 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
 
     const faceCompositionStarted = now()
     let originalElements = EMPTY_ORIGINAL_ELEMENTS
+    let hasRiggedMouthPatch = false
     if (activeHair) {
       const indexedElements = new Map<string, ExportSceneElement>()
-      for (const element of scene.elements) indexedElements.set(element.id, element)
+      for (const element of scene.elements) {
+        indexedElements.set(element.id, element)
+        if (riggedElementIds.has(element.id) && element.mouthPatch) hasRiggedMouthPatch = true
+      }
       originalElements = indexedElements
     }
     const riggedIds = riggedElementIds
     const faceCompositionInput = riggedIds.size
-      ? { ...scene, mediaVideo: undefined, elements: scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) }
+      ? { ...scene, mediaVideo: undefined, elements: hasRiggedMouthPatch ? scene.elements.map(element => riggedIds.has(element.id) ? { ...element, mouthPatch: undefined } : element) : scene.elements }
       : { ...scene, mediaVideo: undefined }
     const composed = activeLayer === 'background'
       ? { scene: { ...scene, mediaVideo: undefined }, assets: [] }

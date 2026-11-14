@@ -485,3 +485,9 @@ Para transições com rigs visuais e físicos, os flips são compilados por cama
 O índice por quadro agora é reaproveitado e limitado aos IDs com cabelo animado. A passagem ainda conserva o último personagem de IDs repetidos, mas deixa de construir um novo `Map` e de guardar personagens irrelevantes a cada amostra.
 
 Teste focado (6), suíte (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. A redução é estrutural, sem benchmark de MP4.
+
+### Continuação 2026-11-13 — evitar cópia da cena sem patch facial de cabelo
+
+A composição de cada quadro só percorre e copia a lista de elementos para remover `mouthPatch` quando um personagem rigged realmente tem um. O mesmo percurso que prepara o índice original detecta essa necessidade; a cópia e a remoção continuam iguais quando o patch existe.
+
+3 testes do renderer, suíte (179 arquivos, 799 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Redução estrutural de alocações; sem benchmark do export completo.

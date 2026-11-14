@@ -1581,3 +1581,9 @@ Quando uma transição tem rigs visuais e físicos completos, a trajetória fís
 O pré-cálculo da trajetória do cabelo agora limpa e reaproveita o mesmo `Map` entre quadros e indexa somente os IDs que participam da animação. O percurso continua mantendo a última instância de personagem com ID duplicado, como antes; isso reduz um objeto de mapa por quadro e evita entradas de personagens que não serão consultados.
 
 **Verificação:** teste focado da trajetória (6), suíte Editor V6 (179 arquivos, 797 aprovados e 1 ignorado), typecheck, auditoria de arquitetura (878 arquivos), build e `git diff --check` passaram. É uma redução estrutural de alocações; não foi medida uma exportação completa.
+
+### Continuação na `Dev-V2` — evitar cópia da cena sem patch facial de cabelo
+
+O renderer do export detecta no mesmo percurso da cena se algum personagem com cabelo animado tem `mouthPatch`. Só então cria o array que remove esses patches antes da composição facial. Sem patches nos personagens rigged, entrega a lista existente; quando há patch, a remoção continua limitada aos personagens rigged e o estado de origem não é mutado.
+
+**Verificação:** testes focados do renderer (3) cobrem a lista compartilhada sem patch e a remoção preservada com patch; suíte Editor V6 (179 arquivos, 799 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não foi medido o tempo completo do MP4.
