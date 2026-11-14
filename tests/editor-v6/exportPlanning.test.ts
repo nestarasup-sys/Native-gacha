@@ -33,7 +33,7 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('mantém a boca em talk no perfil AMF e não cria subdivisões sem ciclo de boca', () => {
+  it('respeita o ciclo da boca no perfil AMF e divide o trecho falado', () => {
     const result = createEditorV6ExportExecutionPlan(
       createProject(1000, [speechTrack()]),
       createOptions({ encoder: 'amf', mouthLoop: true, turbo: false }),
@@ -41,9 +41,12 @@ describe('planejamento da exportação do Editor V6', () => {
       'win32'
     )
 
-    expect(result.options.mouthLoop).toBe(false)
+    expect(result.options.mouthLoop).toBe(true)
     expect(result.speechInRange).toBe(true)
-    expect(result.parts).toEqual(result.requestedParts)
+    expect(result.parts).toEqual([
+      { index: 0, startFrame: 0, endFrame: 300 },
+      { index: 1, startFrame: 300, endFrame: 600 }
+    ])
   })
 
   it('divide apenas o intervalo com fala vinculada e mantém a cobertura dos quadros', () => {

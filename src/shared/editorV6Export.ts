@@ -20,7 +20,7 @@ export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
 export const EDITOR_V6_ENCODER_CHOICES = [
   { value: 'auto', label: 'Automática · GPU se disponível' },
   { value: 'cpu', label: 'CPU · H.264' },
-  { value: 'amf', label: 'AMD AMF obrigatório · sem animação de boca' }
+  { value: 'amf', label: 'AMD AMF obrigatório · H.264' }
 ] as const satisfies ReadonlyArray<{ value: EditorV6ExportOptions['encoder']; label: string }>
 export type EditorV6ExportStatus = {
   id: string; state: 'preparing' | 'rendering' | 'joining' | 'validating' | 'completed' | 'cancelled' | 'failed'
