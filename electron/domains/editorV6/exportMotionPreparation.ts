@@ -39,6 +39,9 @@ export async function prepareEditorV6ExportMotions(dependencies: Dependencies): 
       ? testSettings.motionConcurrency
       : motionPreparationConcurrency ?? 2,
     includeSpeechMouth: true,
+    // Each export reconstructs motion atlases from current timeline/character
+    // inputs. Only equal transitions within THIS run share a result.
+    ignoreExistingMotions: true,
     ...(options.mouthLoop === false ? {} : { mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 } }),
     bake: (request, bakeSignal) => {
       if (inputSamples.length < 3 && !inputSamples.some((sample) => sample.characterId === request.character.id)) {

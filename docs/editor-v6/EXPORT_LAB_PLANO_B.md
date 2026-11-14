@@ -90,3 +90,10 @@ O Plano B mantém **pose e preset facial na mesma transição de 250 ms**. Se o 
 No perfil padrão, a reação do cabelo posterior é uma animação única depois de cada troca de pose, em `end+1` até `end+29` (30 FPS). Enquanto ela ocorre, a exportação seleciona o primeiro recorte da boca (`1×`) e ignora piscadas automáticas. Fora desses momentos, **a boca volta ao ciclo completo e as piscadas voltam ao normal**. A exportação com cabelo em loop contínuo não congela a boca indefinidamente.
 
 As versões das chaves de transição e do cache de bake foram aumentadas para impedir mistura com antigos atlas de mouth-patches. Os projetos salvos e presets de expressão não são regravados por essa otimização. Repetir a exportação real para medir preparação de movimentos e verificar continuidade no início e fim das reações.
+
+## Política de cache na exportação (preparação sempre nova)
+
+Cada exportação do Plano B **reconstrói as transições de pose/expressão do intervalo solicitado**, mesmo se a timeline vier com atlases `incomingMotion` de uma preparação anterior. O perfil não consulta esses atlases para decidir se deve pular um bake. Essa política deixa os tempos de preparação comparáveis entre execuções e impede reutilização silenciosa de pixels antigos após alterações no motor.
+
+**A reutilização de trabalho idêntico dentro da mesma execução continua**: grupos com a mesma chave de transição compartilham o atlas recém-preparado, rigs/materiais permanecem na sessão temporária e o cache de memória de bake é separado por um escopo aleatório de cada exportação, liberado no encerramento. Isso não exclui arquivos de cache do disco nem modifica a timeline persistida pelo usuário. Preparar tudo do zero pode **aumentar a duração de exportações repetidas**; a intenção é previsibilidade e isolamento, não prometer uma aceleração automática.
+

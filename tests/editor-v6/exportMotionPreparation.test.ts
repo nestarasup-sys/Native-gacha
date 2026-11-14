@@ -71,6 +71,7 @@ describe('preparação de movimentos da exportação do Editor V6', () => {
       signal: dependencies.signal,
       characters: [],
       concurrency: 1,
+      ignoreExistingMotions: true,
       mouthLoop: { startFrame: 10, cycleFrames: 24 }
     }))
     expect(dependencies.onProgress).toHaveBeenCalledWith(1, 3, 'personagem sintético')
