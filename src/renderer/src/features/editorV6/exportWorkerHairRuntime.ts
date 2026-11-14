@@ -55,7 +55,8 @@ export function createEditorV6ExportWorkerHairRuntime(
     headXAtFrame, pieceFlipXAtFrame, warpHairTexture
   })
   const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
-    hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece
+    hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece,
+    reuseRestHair: Boolean(hairAnimation?.poseReactionOnly), poseReactionEnds: hairPoseReactionEnds
   })
   const { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop } = createEditorV6ExportMouthLoopResolver(project, mouthLoops, hairPoseReactionEnds)
   // Background and foreground captures of one frame share the exact same
