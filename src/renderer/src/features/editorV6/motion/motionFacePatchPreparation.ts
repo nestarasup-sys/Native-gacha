@@ -64,6 +64,21 @@ export async function prepareEditorV6MotionFacePatch<Renderer>({
   if (!mouthScaleSamples || (faceMode !== 'talk' && faceMode !== 'talk-blink')) return undefined
   if (mouthScale <= 1.000001 && !frame.mouthCanvas) return undefined
 
+  // The body sample already extracted its isolated mouth when rendered at
+  // native scale. Do not repaint the entire character just to crop those
+  // exact same pixels a second time. Enlarged samples still need a new render.
+  if (mouthScale === 1 && frame.mouthCanvas && frame.mouthCrop) {
+    return {
+      index,
+      canvas: createTransparentPatch(frame.mouthCanvas, frame.mouthCrop),
+      left: frame.mouthCrop.left,
+      top: frame.mouthCrop.top,
+      width: frame.mouthCrop.width,
+      height: frame.mouthCrop.height,
+      crop: frame.crop
+    }
+  }
+
   const scaled = await render(progress, faceMode, mouthScale, false, frame.renderer)
   if (scaled.mouthCanvas && scaled.mouthCrop) {
     try {

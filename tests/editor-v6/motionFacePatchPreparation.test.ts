@@ -34,6 +34,25 @@ describe('Editor V6 motion face patch preparation', () => {
     expect(render).not.toHaveBeenCalled()
   })
 
+  it('reuses the already isolated native-size mouth instead of rendering the character twice', async () => {
+    const mouthCanvas = canvas(7, 4), patchCanvas = canvas(11, 8)
+    const crop = { left: 8, top: 9, width: 7, height: 4 }
+    const current = frame({ mouthCanvas, mouthCrop: crop })
+    const render = vi.fn(async () => { throw Error('Deveria reutilizar a boca nativa.') })
+    const createTransparentPatch = vi.fn(() => patchCanvas)
+
+    const result = await prepareEditorV6MotionFacePatch({
+      index: 3, faceMode: 'talk', progress: 0.6, mouthScale: 1,
+      mouthScaleSamples: [1, 1.4], frame: current, render, createTransparentPatch
+    })
+
+    expect(render).not.toHaveBeenCalled()
+    expect(createTransparentPatch).toHaveBeenCalledOnce()
+    expect(createTransparentPatch).toHaveBeenCalledWith(mouthCanvas, crop)
+    expect(result).toEqual({ index: 3, canvas: patchCanvas, left: 8, top: 9, width: 7, height: 4, crop: current.crop })
+    expect(current.dispose).not.toHaveBeenCalled()
+  })
+
   it('uses the isolated mouth renderer and retains its local source rectangle', async () => {
     const baseline = frame(), mouthCanvas = canvas(4, 3), patchCanvas = canvas(8, 7)
     const scaled = frame({ mouthCanvas, mouthCrop: { left: 3, top: 4, width: 4, height: 3 } })

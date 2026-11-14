@@ -1,6 +1,6 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
-import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame, type EditorV6ExportOptions } from '../../../../shared/editorV6Export'
+import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult } from '../../../../shared/editorV6Motion'
 import type { EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
@@ -47,15 +47,9 @@ export async function prepareEditorV6HairMotionTransitions({
     const fromRig = plan.from.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const toRig = plan.to.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     if (!fromRig || !toRig) throw Error(`Não foi possível preparar o cabelo durante a troca de pose de ${plan.from.text || character.name}.`)
-    const mouthScaleSamples = exportOptions.mouthLoop && plan.samples.some(sample => sample.faceMode === 'talk')
-      ? plan.samples.map(sample => sample.faceMode === 'talk'
-        ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, exportOptions.startFrame, exportOptions.mouthLoopCycleFrames ?? 30)
-        : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0])
-      : undefined
-    const facialMotion = mouthScaleSamples?.some(scale => scale > 1) ? mouthScaleSamples : undefined
-    // Same visual transition may occur several times in a single timeline.
-    // Share only within THIS export's batch; mouth scales depend on absolute
-    // frame and are part of the key. No cross-export reuse is introduced.
+    // Pose and facial preset interpolate together. The static talk face is
+    // baked at native scale; the cyclic mouth overlay resumes after motion.
+    // Identical hairless transitions share results only within this export.
     const bakeKey = editorV6HairBakeContentKey({
       planKey: plan.key,
       characterId: character.id,
@@ -64,8 +58,7 @@ export async function prepareEditorV6HairMotionTransitions({
       fromCrop: fromRig.sourceCrop,
       toCrop: toRig.sourceCrop,
       fromDimensions: [fromRig.outputWidth, fromRig.outputHeight],
-      toDimensions: [toRig.outputWidth, toRig.outputHeight],
-      mouthScaleSamples: facialMotion
+      toDimensions: [toRig.outputWidth, toRig.outputHeight]
     })
     const prepared = await hairBakeBatch.run(bakeKey, async () => {
       // Build this snapshot only for a real bake; reused transitions share
@@ -74,8 +67,7 @@ export async function prepareEditorV6HairMotionTransitions({
       let layerCapture: EditorV6SerializedMotionLayerAtlas | undefined
       const bakeStarted = performance.now()
       const result = await bakeEditorV6Motion({
-        id: crypto.randomUUID(), plan, character: hairlessCharacter,
-        ...(facialMotion ? { mouthScaleSamples: facialMotion } : {})
+        id: crypto.randomUUID(), plan, character: hairlessCharacter
       }, fabricator, transitionSession, capture => {
         // The baker releases its canvases after callback return. Serialize
         // synchronously before crossing the await boundary.

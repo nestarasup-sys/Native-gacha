@@ -6,6 +6,26 @@ export function encodeEditorV6PaintToken(token: number): string[] {
   return Array.from({ length: 24 }, (_, bit) => ((token >>> bit) & 1) === 1 ? '#fff' : '#000')
 }
 
+/** Only repaint paint-token bits that changed; the 24 cells initially start black.
+ * A monotonically advancing token usually flips one or two bits, not all 24.
+ * This preserves the exact token encoded in Chromium's captured BGRA strip.
+ */
+export function updateEditorV6PaintTokenCells(
+  cells: readonly { style: { backgroundColor: string } }[],
+  token: number,
+  previousToken: number
+): number {
+  if (!Number.isInteger(token) || token < 1 || token > 0xffffff) throw Error('Identificador de quadro inválido na exportação.')
+  if (!Number.isInteger(previousToken) || previousToken < 0 || previousToken > 0xffffff) throw Error('Identificador anterior de quadro inválido na exportação.')
+  if (cells.length !== 24) throw Error('Marcador de captura incompleto na exportação.')
+  const changed = token ^ previousToken
+  for (let bit = 0; bit < 24; bit++) {
+    if (((changed >>> bit) & 1) === 0) continue
+    cells[bit].style.backgroundColor = ((token >>> bit) & 1) === 1 ? '#fff' : '#000'
+  }
+  return token
+}
+
 export function createEditorV6SvgImageReadiness() {
   const loadedSources = new WeakMap<SVGImageElement, string>()
   const onLoad = (event: SyntheticEvent<SVGImageElement>) => {
@@ -63,10 +83,11 @@ export function createEditorV6ExportWorkerSurface(width: number, height: number)
   })
   document.body.append(paintTokenElement)
 
+  let previousPaintToken = 0
   return {
     root: createRoot(rootElement),
     setPaintToken(token: number) {
-      encodeEditorV6PaintToken(token).forEach((color, bit) => { cells[bit].style.backgroundColor = color })
+      previousPaintToken = updateEditorV6PaintTokenCells(cells, token, previousPaintToken)
     }
   }
 }

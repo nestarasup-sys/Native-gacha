@@ -118,6 +118,7 @@ describe('preparação de transições sem cabelo do Editor V6', () => {
     })
 
     expect(state.bake).toHaveBeenCalledTimes(2)
+    for (const [request] of vi.mocked(state.bake!).mock.calls) expect(request.mouthScaleSamples).toBeUndefined()
     expect(assets.motionTransitions.map(transition => transition.key)).toEqual(['geometry-key', 'missing-face-key'])
     expect(assets.motionTransitions.every(transition => transition.eyesAboveRearHairSurfaceId !== null)).toBe(true)
     expect(assets.surfaces.map(surface => surface.dataUrl)).toContain('data:behind')

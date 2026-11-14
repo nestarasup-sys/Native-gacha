@@ -57,7 +57,20 @@ export function createEditorV6ExportWorkerHairRuntime(
   const { composeHairFrame, composeMotionHairFrame } = createEditorV6ExportHairFrameComposer({
     hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece
   })
-  const { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop } = createEditorV6ExportMouthLoopResolver(project, mouthLoops)
+  const { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop } = createEditorV6ExportMouthLoopResolver(project, mouthLoops, hairPoseReactionEnds)
+  // Background and foreground captures of one frame share the exact same
+  // speech timeline state. Do not resolve face schedules/patches twice.
+  let mouthSceneInput: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
+  let mouthSceneFrame = -1
+  let mouthSceneResult: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
+  const resolveMouthScene = (scene: ReturnType<typeof resolveEditorV6SceneAtFrame>, frame: number) => {
+    if (mouthSceneInput === scene && mouthSceneFrame === frame && mouthSceneResult) return mouthSceneResult
+    const resolved = applyMouthLoop(scene, frame)
+    mouthSceneInput = scene
+    mouthSceneFrame = frame
+    mouthSceneResult = resolved
+    return resolved
+  }
   const hairScene = createEditorV6ExportHairSceneComposer({
     animation: hairAnimation, planIndex, hairRigAtFrame, hairSourceAssetId, facePatchSourceCrop, composeHairFrame, composeMotionHairFrame
   })
@@ -65,7 +78,7 @@ export function createEditorV6ExportWorkerHairRuntime(
   return {
     hairPoseReactionEnds,
     resolveRawSceneAtFrame,
-    applyMouthLoop,
+    applyMouthLoop: resolveMouthScene,
     hasAnimatedHair: hairScene.hasAnimatedHair,
     composeHairScene: hairScene.compose,
     hairSurfaceDataById

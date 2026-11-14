@@ -12,7 +12,6 @@ import { pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveE
 import { editEditorV6DocumentAtBlock } from '../../src/shared/editorV6TimelineEdits'
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { editorV6MotionBakeLaneAssignments } from '../../electron/domains/editorV6/motionBakeSchedule'
-import { EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES, editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
 import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
@@ -394,39 +393,35 @@ describe('transition preparation reuse', () => {
     expect(ready.stats.maxConcurrentBakes).toBe(2)
     expect(missingEditorV6Motions(ready.project)).toHaveLength(0)
   })
-  it('rebuilds a speaking transition with localized mouth patches aligned to the export cycle', async () => {
+  it('reuses prepared speaking transitions and skips enlarged mouth samples during pose/expression motion', async () => {
     const { project: original, character } = fixture()
-    const timeline = { ...original.timeline, tracks: original.timeline.tracks.map((track) => track.kind === 'speech'
+    const timeline = { ...original.timeline, tracks: original.timeline.tracks.map(track => track.kind === 'speech'
       ? { ...track, blocks: [{ id: crypto.randomUUID(), label: 'Fala durante a transição', characterId: character.id, startFrame: 173, durationFrames: 7 }] }
       : track) }
     const project = { ...original, timeline }
-    const plan = editorV6MotionPlans(project).find((item) => item.endFrame === 180)!
-    const oldRequest = { id: crypto.randomUUID(), plan, character }
-    const old = attachEditorV6Motion(project, plan.blockId, resultFor(oldRequest))
-    let requestWithMouth: EditorV6MotionBakeRequest | undefined
-    const prepared = await prepareExportMotions(old, 0, 300, {
-      signal: new AbortController().signal, characters: [character], mouthLoop: { startFrame: 0, cycleFrames: 30 }, progress: () => {},
-      bake: async (request) => {
-        if (request.mouthScaleSamples) requestWithMouth = request
-        const faceId = crypto.randomUUID()
-        const frames = request.plan.samples.map((sample, index) => {
-          const scale = request.mouthScaleSamples?.[index] ?? 1
-          return { offset: sample.offset, sprite: { x: index, y: 0, width: 1, height: 1, atlasWidth: 7, atlasHeight: 1 }, x: 0, y: 0, width: 20, height: 30, rotation: 0, flipX: false, ...(scale > 1 ? { facePatch: { sprite: { x: index, y: 0, width: 1, height: 1, atlasWidth: 7, atlasHeight: 1 }, x: .4, y: .4, width: .2, height: .2 } } : {}) }
-        })
-        const result = resultFor(request)
-        return request.mouthScaleSamples
-          ? { ...result, faceAsset: { id: faceId, category: 'character', name: 'Local mouth', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }, motion: { ...result.motion, faceAssetId: faceId, frames } }
-          : result
-      }
+    const plan = editorV6MotionPlans(project).find(item => item.endFrame === 180)!
+    const cached = attachEditorV6Motion(project, plan.blockId, resultFor({ id: crypto.randomUUID(), plan, character }))
+    const requests: EditorV6MotionBakeRequest[] = []
+
+    const ready = await prepareExportMotions(cached, 170, 184, {
+      signal: new AbortController().signal, characters: [character],
+      mouthLoop: { startFrame: 0, cycleFrames: 30 }, progress: () => {},
+      bake: async request => { requests.push(request); return resultFor(request) }
     })
-    expect(requestWithMouth?.mouthScaleSamples).toHaveLength(plan.samples.length)
-    expect(requestWithMouth?.mouthScaleSamples).toEqual(plan.samples.map((sample) => sample.faceMode === 'talk'
-      ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, 0, 30)
-      : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0]))
-    const readyTransition = prepared.project.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === plan.blockId)!.incomingMotion!
-    expect(readyTransition.faceAssetId).toBeDefined()
-    expect(prepared.project.assets.some((asset) => asset.id === readyTransition.faceAssetId)).toBe(true)
-    expect(readyTransition.frames.some((frame) => Boolean(frame.facePatch))).toBe(true)
+    expect(requests).toHaveLength(0)
+    expect(ready.stats.requested).toBe(0)
+    expect(missingEditorV6Motions(ready.project, 170, 184)).toHaveLength(0)
+
+    const uncached = await prepareExportMotions(project, 170, 184, {
+      signal: new AbortController().signal, characters: [character],
+      mouthLoop: { startFrame: 0, cycleFrames: 30 }, progress: () => {},
+      bake: async request => { requests.push(request); return resultFor(request) }
+    })
+    expect(requests).toHaveLength(1)
+    expect(requests[0].mouthScaleSamples).toBeUndefined()
+    expect(requests[0].plan.samples.some(sample => sample.faceMode === 'talk')).toBe(true)
+    expect(uncached.project.timeline.tracks.flatMap(track => track.blocks)
+      .find(block => block.id === plan.blockId)?.incomingMotion?.frames.every(frame => !frame.facePatch)).toBe(true)
   })
   it('cancels and waits for a sibling lane after a transition fails', async () => {
     const { project, character } = fixture()

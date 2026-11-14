@@ -3,7 +3,6 @@ import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../src/shared/editorV6CharacterSource.ts'
 import { editorV6MotionHasAvailableAssets, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
-import { editorV6MouthLoopScaleAtFrame, EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES } from '../../../src/shared/editorV6Export'
 import { editorV6MotionBakeLaneAssignments } from './motionBakeSchedule'
 
 export async function prepareExportMotions(project: EditorV6Document, startFrame: number, endFrame: number, deps: {
@@ -33,7 +32,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const plans = editorV6MotionPlans(project, motionOptions)
   const missingIds = new Set(missingEditorV6Motions(project, startFrame, endFrame, motionOptions).map((plan) => plan.blockId))
   const missing = plans.filter((plan) => plan.startFrame < endFrame && plan.endFrame > startFrame
-    && (missingIds.has(plan.blockId) || Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))))
+    && missingIds.has(plan.blockId))
   const groups = new Map<string, typeof missing>()
   for (const plan of missing) {
     const group = groups.get(plan.key)
@@ -71,13 +70,10 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
         throw failure
       }
       deps.progress(completed, missing.length, plan.from.text)
-      const needsMouthBake = Boolean(deps.mouthLoop && plan.samples.some((sample) => sample.faceMode === 'talk'))
-      const known = needsMouthBake ? undefined : knownMotions.get(plan.key)
+      // One static talk face accompanies pose/expression interpolation.
+      // The separate speech loop must not force a valid motion to re-bake.
+      const known = knownMotions.get(plan.key)
       const asset = known && assets.get(known.assetId)
-      const mouthScaleSamples = needsMouthBake ? plan.samples.map((sample) => sample.faceMode === 'talk'
-        ? editorV6MouthLoopScaleAtFrame(plan.endFrame + sample.offset, deps.mouthLoop!.startFrame, deps.mouthLoop!.cycleFrames)
-        : EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[0]) : undefined
-      const facialMotion = mouthScaleSamples?.some((scale) => scale > 1) ? mouthScaleSamples : undefined
       const started = performance.now()
       try {
         let result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>
@@ -86,7 +82,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
           activeBakes++
           maxConcurrentBakes = Math.max(maxConcurrentBakes, activeBakes)
           try {
-            const bakedResult = await deps.bake({ id: randomUUID(), plan, character, ...(facialMotion ? { mouthScaleSamples: facialMotion } : {}) }, controller.signal)
+            const bakedResult = await deps.bake({ id: randomUUID(), plan, character }, controller.signal)
             preparedRigs += bakedResult.metrics.preparedRigs
             reusedRigs += bakedResult.metrics.reusedRigs ?? 0
             rigKeyLookups += bakedResult.metrics.rigKeyLookups ?? 0

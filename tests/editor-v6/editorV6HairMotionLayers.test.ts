@@ -52,6 +52,54 @@ describe('camadas de cabelo para movimento do Editor V6', () => {
     expect(addTexture).toHaveBeenCalledTimes(2)
   })
 
+  it('prepares two hair textures concurrently, bounds the queue, and registers assets in original order', async () => {
+    const character = {
+      id: 'character-1', name: 'Ayla',
+      customization: { hairAppearance: { modelSlot: 1 }, partOverrides: {} }
+    } as unknown as CustomizerCharacter
+    const references = [
+      { id: 'first', part: 'backHair', side: 'back' },
+      { id: 'second', part: 'rearHair', side: 'front' },
+      { id: 'third', part: 'ponytail', side: 'back' }
+    ] as const
+    const pending = new Map<string, (dataUrl: string) => void>()
+    let thirdStarted!: () => void
+    const thirdReady = new Promise<void>(resolve => { thirdStarted = resolve })
+    let active = 0, peak = 0
+    const prepareTexture = vi.fn(({ styleId }: { styleId: string }) => new Promise<string>(resolve => {
+      active++
+      peak = Math.max(peak, active)
+      pending.set(styleId, value => { active--; resolve(value) })
+      if (styleId === 'third') thirdStarted()
+    }))
+    const addTexture = vi.fn((key: string, dataUrl: string) => `${key}:${dataUrl}`)
+    const preparing = prepareEditorV6HairMotionLayers({
+      character, references,
+      styles: new Map(references.map(ref => [ref.id, style(ref.id, ref.side)])),
+      sourceHead: { width: 100, height: 100 }, targetHead: { width: 100, height: 100 },
+      resolveColors: () => ({}), prepareTexture, addTexture
+    })
+
+    expect([...pending.keys()]).toEqual(['first', 'second'])
+    expect(addTexture).not.toHaveBeenCalled()
+    pending.get('second')!('done-second')
+    await thirdReady
+    expect([...pending.keys()]).toEqual(['first', 'second', 'third'])
+    expect(peak).toBe(2)
+    expect(addTexture).not.toHaveBeenCalled()
+    pending.get('third')!('done-third')
+    pending.get('first')!('done-first')
+    const result = await preparing
+
+    expect(result.map(layer => layer.id)).toEqual(['backHair:0', 'rearHair:1', 'ponytail:2'])
+    expect(addTexture.mock.calls.map(([key]) => key)).toEqual([
+      'character-1:first:back:backHair',
+      'character-1:second:front:rearHair',
+      'character-1:third:back:ponytail'
+    ])
+    expect(result.map(layer => layer.textureId.split(':').at(-1))).toEqual(['done-first', 'done-second', 'done-third'])
+  })
+
   it('reports a missing referenced style piece with the existing user-facing error', async () => {
     const character = {
       id: 'character-1', name: 'Ayla', customization: { hairAppearance: { modelSlot: 1 }, partOverrides: {} }

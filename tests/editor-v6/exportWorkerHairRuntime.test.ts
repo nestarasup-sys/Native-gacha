@@ -34,6 +34,23 @@ function resources(): Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2
 }
 
 describe('createEditorV6ExportWorkerHairRuntime', () => {
+  it('shares the resolved mouth scene between background and foreground without retaining a stale frame', () => {
+    const mouthLoops = { startFrame: 0, cycleFrames: 30, states: [] }
+    const runtime = createEditorV6ExportWorkerHairRuntime(project(), undefined, resources(), mouthLoops)
+    const first = runtime.resolveRawSceneAtFrame(11)
+    const firstMouth = runtime.applyMouthLoop(first, 11)
+    expect(firstMouth).not.toBe(first)
+    expect(runtime.applyMouthLoop(first, 11)).toBe(firstMouth)
+
+    const next = runtime.resolveRawSceneAtFrame(12)
+    const nextMouth = runtime.applyMouthLoop(next, 12)
+    expect(nextMouth).not.toBe(firstMouth)
+    expect(runtime.applyMouthLoop(next, 12)).toBe(nextMouth)
+
+    // Reusing the same number for a different scene is not a cache hit.
+    expect(runtime.applyMouthLoop(first, 11)).not.toBe(firstMouth)
+  })
+
   it('mantém uma única resolução bruta por quadro e aplica os serviços de cabelo sem tocar cenas inativas', () => {
     const runtime = createEditorV6ExportWorkerHairRuntime(project(), undefined, resources())
     const frameTen = runtime.resolveRawSceneAtFrame(10)
