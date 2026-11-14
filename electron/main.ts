@@ -96,6 +96,7 @@ import { inspectFabricatorStorage } from '../src/shared/fabricatorStorageCompati
 import { registerModelSourceDownloadHandlers } from './domains/fabricator/modelSourceExportIpc'
 import { registerEditorV6PrimaryHandlers } from './domains/editorV6/primaryIpc'
 import { registerEditorV6FileHandlers } from './domains/editorV6/fileIpc'
+import { registerEditorV6ProjectJsonHandlers } from './domains/editorV6/projectJsonIpc'
 import { createEditorV6LibraryIndex } from './domains/editorV6/libraryIndex'
 import { createEditorV6DocumentPersistence } from './domains/editorV6/documentPersistence'
 import { createVideoReferenceChangeCoordinator, createVideoReferenceGuard } from './domains/mediaLibrary/videoReferences'
@@ -657,6 +658,9 @@ async function registerFabricatorHandlers(): Promise<void> {
     getPendingWrites: () => editorV6SaveQueue,
     setPendingWrites: (pending) => { editorV6SaveQueue = pending }
   })
+
+  registerEditorV6ProjectJsonHandlers({ ipcMain, assertTrustedSender, read: readEditorV6, write: writeEditorV6,
+    assertPoseReferencesAvailable: assertEditorV6PoseReferencesAvailable, coordinatePoseReferenceChange, projectPath: editorV6Path, files: { readFile, mkdir, writeFile } })
 
   studioFileIpc = registerStudioFileHandlers({
     ipcMain, assertTrustedSender,

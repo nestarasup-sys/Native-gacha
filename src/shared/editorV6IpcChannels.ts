@@ -1,6 +1,8 @@
 import type { EditorV6DesktopApi } from './editorV6'
 
 export const editorV6IpcChannels = {
+  exportEditorV6ProjectJson: 'editor-v6:project-json:export',
+  importEditorV6ProjectJson: 'editor-v6:project-json:import',
   listEditorV6Projects: 'editor-v6:projects:list',
   loadEditorV6Project: 'editor-v6:projects:load',
   saveEditorV6Project: 'editor-v6:projects:save',

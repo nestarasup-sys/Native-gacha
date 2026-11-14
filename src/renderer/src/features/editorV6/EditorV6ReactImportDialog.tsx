@@ -14,6 +14,7 @@ type Props={
 export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}:Props){
   const input=useRef<HTMLInputElement>(null)
   const [source,setSource]=useState<EditorV6ReactImport|null>(null)
+  const [projectArchive,setProjectArchive]=useState<unknown>(null)
   const [filename,setFilename]=useState('')
   const [busy,setBusy]=useState(false)
   const [error,setError]=useState('')
@@ -23,10 +24,14 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
   const [checking,setChecking]=useState(false)
   const inspect=async(file?:File)=>{
     if(!file)return
-    setError('');setProgress('');setWarnings([]);setSource(null);setVerified(false);setFilename(file.name)
-    if(file.size>2_000_000){setError('O JSON excede o limite de 2 MB.');return}
+    setError('');setProgress('');setWarnings([]);setSource(null);setProjectArchive(null);setVerified(false);setFilename(file.name)
     try{
-      const parsed=parseEditorV6ReactImport(JSON.parse(await file.text()) as unknown)
+      const contents: unknown = JSON.parse(await file.text())
+      if (contents && typeof contents === 'object' && 'format' in contents && contents.format === 'NYMI_EDITOR_V6_PROJECT_V1') {
+        setProjectArchive(contents);setVerified(true);return
+      }
+      if(file.size>2_000_000)throw Error('O JSON de roteiro excede o limite de 2 MB.')
+      const parsed=parseEditorV6ReactImport(contents)
       setChecking(true)
       const [library,details]=await Promise.all([window.desktop.mediaLibrary.list(),window.desktop.baseVideos.listDetails()])
       const resolved=resolveEditorV6ReactVideos(parsed,library,details)
@@ -53,9 +58,16 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
     finally{setChecking(false);if(input.current)input.current.value=''}
   }
   const run=async()=>{
-    if(!source||!verified||busy)return
+    if((!source&&!projectArchive)||!verified||busy)return
     setBusy(true);setError('');setProgress('Consultando as poses e expressões reais…')
     try{
+      if(projectArchive){
+        setProgress('Validando e importando o projeto…')
+        const project=await window.desktop.editorV6.importEditorV6ProjectJson(projectArchive)
+        onImported(project)
+        return
+      }
+      if(!source)return
       const sources=await prepareEditorV6ReactSources(source,characters)
       const prepared=await compileEditorV6ReactImport(source,sources,setProgress)
       setWarnings(prepared.warnings)
@@ -67,19 +79,20 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
   }
   return <div className="v6-react-json-backdrop" role="presentation">
     <section className="v6-react-json-dialog" role="dialog" aria-modal="true" aria-label="Importar react JSON no Editor V6">
-      <header><h2>Importar react JSON · Editor V6</h2><button type="button" className="v6-react-json-close" onClick={onClose} disabled={busy} aria-label="Fechar">×</button></header>
-      <p>Importe o formato <code>{EDITOR_V6_REACT_IMPORT_FORMAT}</code>. O editor vincula personagens e vídeos reais e prepara as imagens antes de criar um projeto novo.</p>
+      <header><h2>Importar JSON · Editor V6</h2><button type="button" className="v6-react-json-close" onClick={onClose} disabled={busy} aria-label="Fechar">×</button></header>
+      <p>Importe um projeto exportado pelo Editor V6 ou um roteiro no formato <code>{EDITOR_V6_REACT_IMPORT_FORMAT}</code>.</p>
       <p>O projeto atual não será alterado. Os textos serão preservados literalmente.</p>
       <input type="file" ref={input} accept="application/json,.json" hidden disabled={busy||checking} onChange={(event)=>void inspect(event.target.files?.[0])}/>
       <button type="button" disabled={busy||checking} onClick={()=>input.current?.click()}>Selecionar JSON</button>
       {filename&&<p><strong>Arquivo:</strong> {filename}</p>}
       {source&&<p><strong>{source.title}</strong> · {source.cast.length} personagens · {source.videos.length} vídeos · {source.lines.length} falas/pensamentos · {source.beats.length} atuações</p>}
+      {Boolean(projectArchive)&&<p>Projeto V6 selecionado. O arquivo será validado antes da importação.</p>}
       {warnings.length>0&&<p role="status">{warnings.join(' | ')}</p>}
       {progress&&<p className="v6-react-json-progress" role="status">{progress}</p>}
       {error&&<pre role="alert" style={{whiteSpace:'pre-wrap',maxHeight:180,overflow:'auto'}}>{error}</pre>}
       <footer>
         <button type="button" disabled={busy} onClick={onClose}>Cancelar</button>
-        <button type="button" className="v6-react-json-primary" disabled={!source||!verified||checking||busy} onClick={()=>void run()}>{busy?'Preparando projeto…':'Validar e criar projeto'}</button>
+        <button type="button" className="v6-react-json-primary" disabled={(!source&&!projectArchive)||!verified||checking||busy} onClick={()=>void run()}>{busy?'Preparando projeto…':'Validar e criar projeto'}</button>
       </footer>
     </section>
   </div>

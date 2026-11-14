@@ -108,6 +108,8 @@ const studioApi: StudioDesktopApi = {
 
 const invokeEditorV6 = createEditorV6Invoker(ipcRenderer)
 const editorV6Api: EditorV6DesktopApi = {
+  exportEditorV6ProjectJson: (id) => invokeEditorV6('exportEditorV6ProjectJson', id),
+  importEditorV6ProjectJson: (archive) => invokeEditorV6('importEditorV6ProjectJson', archive),
   listEditorV6Projects: () => invokeEditorV6('listEditorV6Projects'),
   loadEditorV6Project: (id) => invokeEditorV6('loadEditorV6Project', id),
   saveEditorV6Project: (document) => invokeEditorV6('saveEditorV6Project', document),
