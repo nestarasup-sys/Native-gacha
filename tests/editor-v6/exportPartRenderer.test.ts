@@ -111,6 +111,7 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(result.frameMetrics).toEqual({ hairRasterFrames: 2 })
     expect(result.framePipelineOverlap).toBe(true)
     expect(result.frameRafGate).toBe(false)
+    expect(result.frameLayerCapture).toBe('single')
   })
 
   it('enables safe overlap for layered video but honors the serial A/B baseline', async () => {
@@ -118,6 +119,12 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     vi.mocked(spawnExportProcess).mockReturnValue(process.value)
     const layered = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
     expect(layered.framePipelineOverlap).toBe(true)
+    expect(layered.frameLayerCapture).toBe('stacked')
+
+    vi.stubEnv('GACHA_EDITOR_V6_LAYER_CAPTURE', 'serial')
+    const serial = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
+    expect(serial.frameLayerCapture).toBe('serial')
+    vi.unstubAllEnvs()
 
     vi.stubEnv('GACHA_EDITOR_V6_FRAME_OVERLAP', '0')
     const baseline = await renderEditorV6ExportPart(createDependencies())
