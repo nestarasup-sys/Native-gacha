@@ -35,12 +35,12 @@ function surface(name: string): HTMLImageElement {
   return { name } as unknown as HTMLImageElement
 }
 
-function composer(order: string[]) {
+function composer(order: string[], reuseRestHair = false, poseReactionEnds = new Map<string, readonly number[]>()) {
   const hairSurfaces = new Map(['base', 'face', 'eyes', 'overlay', 'behind', 'atlasFace', 'atlasEyes', 'atlasOverlay'].map(id => [id, surface(id)]))
   const drawHairPiece = vi.fn((_context: CanvasRenderingContext2D, _rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer) => order.push(piece.id))
   const hairFrameCanvases = new Map<string, CanvasSurface>()
   const motionHairFrameSurfaces = new Map<string, CanvasSurface>()
-  return { ...createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece }), hairFrameCanvases, motionHairFrameSurfaces }
+  return { ...createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece, reuseRestHair, poseReactionEnds }), hairFrameCanvases, motionHairFrameSurfaces }
 }
 
 describe('createEditorV6ExportHairFrameComposer', () => {
@@ -60,6 +60,44 @@ describe('createEditorV6ExportHairFrameComposer', () => {
     expect(metrics).toEqual({ hairRasterFrames: 2, hairRasterPixels: 160 })
     expect(factory.hairFrameCanvases.size).toBe(1)
     expect(timings.hairSurfaceComposeMs).toBeGreaterThanOrEqual(0)
+  })
+
+  it('reuses a resting hair/face canvas during mouth cycles, and redraws the one-shot reaction', () => {
+    const order: string[] = []
+    installCanvasFactory(order)
+    const factory = composer(order, true, new Map([['actor', [10]]]))
+    const element = { id: 'actor' } as SceneElement
+    const metrics: EditorV6FrameMetrics = {}
+    const baseRig = rig()
+    const first = factory.composeHairFrame(baseRig, element, 1, {}, metrics)
+    const nextMouth = factory.composeHairFrame(baseRig, element, 2, {}, metrics)
+
+    expect(nextMouth).toBe(first)
+    expect(order).toHaveLength(8)
+    expect(metrics).toEqual({ hairRasterFrames: 1, hairRasterPixels: 80, hairCompositeReuseFrames: 1 })
+
+    factory.composeHairFrame(baseRig, element, 11, {}, metrics)
+    factory.composeHairFrame(baseRig, element, 12, {}, metrics)
+    expect(order).toHaveLength(24)
+
+    factory.composeHairFrame(baseRig, element, 40, {}, metrics)
+    factory.composeHairFrame(baseRig, element, 41, {}, metrics)
+    expect(order).toHaveLength(32)
+    expect(metrics).toEqual({ hairRasterFrames: 4, hairRasterPixels: 320, hairCompositeReuseFrames: 2 })
+
+    factory.composeHairFrame({ ...baseRig, assetId: 'new-pose' }, element, 42, {}, metrics)
+    expect(factory.hairFrameCanvases.size).toBe(2)
+    expect(order).toHaveLength(40)
+    expect(metrics).toEqual({ hairRasterFrames: 5, hairRasterPixels: 400, hairCompositeReuseFrames: 2 })
+  })
+
+  it('keeps independent rasterization for non-opted-in or continuous hair', () => {
+    const order: string[] = []
+    installCanvasFactory(order)
+    const factory = composer(order)
+    factory.composeHairFrame(rig(), { id: 'actor' } as SceneElement, 30, {}, {})
+    factory.composeHairFrame(rig(), { id: 'actor' } as SceneElement, 31, {}, {})
+    expect(order).toHaveLength(16)
   })
 
   it('composes transition atlases in layer order and resizes its per-actor surface', () => {

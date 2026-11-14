@@ -3,6 +3,7 @@ import * as fs from 'node:fs/promises'
 import { stat } from 'node:fs/promises'
 import { isAbsolute, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
+import { env as nodeEnv } from 'node:process'
 import { z } from 'zod'
 import type { LocalDiagnosticEventInput } from '../../../src/shared/dataManagement'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
@@ -132,7 +133,10 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
         const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, true)
         const { assetSources, ...payloadData } = workerData
-        return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo, ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)
+        return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
+          waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
+          reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
+          ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)
       },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })

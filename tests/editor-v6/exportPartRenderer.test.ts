@@ -110,6 +110,7 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(result).toMatchObject({ rendered: 2, reused: 0, frames: 2, probe: { streams: [{ nb_frames: '2' }] } })
     expect(result.frameMetrics).toEqual({ hairRasterFrames: 2 })
     expect(result.framePipelineOverlap).toBe(true)
+    expect(result.frameRafGate).toBe(false)
   })
 
   it('enables safe overlap for layered video but honors the serial A/B baseline', async () => {

@@ -44,5 +44,7 @@ jobs:
         run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/motionStaticMouthBake.test.ts tests/editor-v6/motionMouthlessBaseAssets.test.ts tests/editor-v6/motionIsolatedMouthAtlas.test.ts tests/editor-v6/exportWorkers.test.ts tests/editor-v6/exportWorkerMediaProtocol.test.ts tests/editor-v6/exportWorkerPayload.test.ts
       - name: Run full Editor V6 contracts
         run: npm run test:editor-v6
+      - name: Validate Plano B laboratory report analyzer
+        run: npm run test:editor-v6:plan-b-lab
       - name: Compile renderer and Electron
         run: npm run build

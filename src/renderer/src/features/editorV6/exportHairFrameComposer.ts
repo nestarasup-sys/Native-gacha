@@ -1,4 +1,5 @@
 import type { EditorV6FrameMetrics, EditorV6FrameTimings } from '../../../../shared/editorV6Export'
+import { hairMotionPoseReactionIsActive } from '../../../../shared/hairMotionEngine'
 import type { EditorV6HairMotionLayer, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
 import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 
@@ -11,10 +12,17 @@ type Options = {
   hairFrameCanvases: Map<string, CanvasSurface>
   motionHairFrameSurfaces: Map<string, CanvasSurface>
   drawHairPiece: (context: CanvasRenderingContext2D, rig: EditorV6HairMotionRig, piece: EditorV6HairMotionLayer, element: SceneElement, frame: number, timings: EditorV6FrameTimings) => void
+  /** True only for one-shot hair reactions: the composed resting face/hair is stable. */
+  reuseRestHair?: boolean
+  poseReactionEnds?: ReadonlyMap<string, readonly number[]>
 }
 
 /** Composes prepared hair layers into reusable canvases without retaining rendered frame data. */
-export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece }: Options) {
+export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameCanvases, motionHairFrameSurfaces, drawHairPiece, reuseRestHair = false, poseReactionEnds }: Options) {
+  // Reuse only the canvas already owned by this export worker: no disk cache,
+  // no frame retention, no change to the SVG mouth overlay. Hair is re-rasterized
+  // when a one-shot reaction starts and once again after it ends.
+  const readyRestSurfaces = new Set<string>()
   const composeHairFrame = (rig: EditorV6HairMotionRig, element: SceneElement, frame: number, timings: EditorV6FrameTimings, metrics: EditorV6FrameMetrics): HTMLCanvasElement => {
     const canvasKey = `${element.id}:${rig.assetId}`
     let surface = hairFrameCanvases.get(canvasKey)
@@ -27,6 +35,12 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
       hairFrameCanvases.set(canvasKey, surface)
     }
     const { canvas, context } = surface
+    const resting = reuseRestHair && !hairMotionPoseReactionIsActive(poseReactionEnds?.get(element.id) ?? [], frame)
+    if (resting && readyRestSurfaces.has(canvasKey)) {
+      metrics.hairCompositeReuseFrames = (metrics.hairCompositeReuseFrames ?? 0) + 1
+      return canvas
+    }
+    readyRestSurfaces.delete(canvasKey)
     const clearStarted = performance.now()
     context.clearRect(0, 0, canvas.width, canvas.height)
     timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
@@ -51,6 +65,7 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
     drawSurface(rig.overlaySurfaceId)
     metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
     metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height
+    if (resting) readyRestSurfaces.add(canvasKey)
     return canvas
   }
 

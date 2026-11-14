@@ -29,6 +29,10 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   frameMetrics?: EditorV6FrameMetrics
   /** Whether one ordinary offscreen frame may render during FFmpeg backpressure. */
   framePipelineOverlap?: boolean
+  /** True only for the old mandatory requestAnimationFrame compositor handoff. */
+  frameRafGate?: boolean
+  /** Whether stationary hair composites can be reused during this export. */
+  frameRestHairReuse?: boolean
 }
 
 type PreparedMouthLoops = Awaited<ReturnType<typeof prepareExportMouthLoops>>
@@ -97,7 +101,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
   const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
   // All part jobs use this process's monotonic clock, so offsets expose actual overlap.
-  const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap }
+  const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1', frameRestHairReuse: Boolean(options.hairPoseReactionOnly) && nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0' }
   const timingAccumulators = createEditorV6TimingAccumulators()
   const frameMetrics: EditorV6FrameMetrics = {}
   let worker: EditorV6FrameWorker | undefined
