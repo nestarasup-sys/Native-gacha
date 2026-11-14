@@ -148,6 +148,16 @@ export function repairEditorV6FaceModeAssetReferences(document: EditorV6Document
   return changed ? { ...document, elements, timeline: { ...document.timeline, tracks } } : document
 }
 
+/** Detect repeated asset IDs without allocating a temporary array of IDs. */
+export function editorV6HasDuplicateAssetIds(assets: readonly Pick<EditorV6Asset, 'id'>[]): boolean {
+  const ids = new Set<string>()
+  for (const asset of assets) {
+    if (ids.has(asset.id)) return true
+    ids.add(asset.id)
+  }
+  return false
+}
+
 /** Recover duplicate image IDs from a live editor session without dropping either image. */
 export function repairEditorV6DuplicateAssets(document: EditorV6Document, selectedBlockId: string | null): EditorV6Document {
   const assetsById = new Map<string, EditorV6Asset[]>()

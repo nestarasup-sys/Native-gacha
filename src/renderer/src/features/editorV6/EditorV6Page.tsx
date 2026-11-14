@@ -31,7 +31,7 @@ import { createEditorV6MediaCommands } from './editorV6MediaCommands'
 import { createEditorV6TextElementCommand } from './editorV6TextElementCommand'
 import { createEditorV6DeleteSelectedCommand } from './editorV6DeleteSelectedCommand'
 import { editorV6ClipAtFrame } from '../../../../shared/editorV6TimelineCore'
-import { repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
+import { editorV6HasDuplicateAssetIds, repairEditorV6DuplicateAssets } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
 import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
@@ -138,6 +138,10 @@ export function EditorV6Page() {
   const selectedEditorV6 = editorV6Projects.find((studio) => studio.id === selectedId) ?? null
   const activeEditorV6 = activeEditorV6Stored?.id === activeEditorV6Id ? activeEditorV6Stored : null
   const timelineDurationFrames = activeEditorV6?.timeline.durationFrames ?? 300
+  const hasDuplicateAssets = useMemo(
+    () => editorV6HasDuplicateAssetIds(activeEditorV6?.assets ?? []),
+    [activeEditorV6?.assets]
+  )
   const { playheadFrame, isPlaying, publishPlayheadFrame, pausePlayback, resetPlayback, startPlayback } = useEditorV6Playback(activeEditorV6Id, timelineDurationFrames)
   const sceneCharacterProjection = useMemo(
     () => projectSceneCharacters(activeEditorV6?.elements ?? []),
@@ -196,10 +200,10 @@ export function EditorV6Page() {
     selectedElementId
   }), [activeEditorV6, availableCharacters, playheadFrame, selectedTimelineBlockId, selectedElementId])
   useEffect(() => {
-    if (!activeEditorV6 || new Set(activeEditorV6.assets.map((asset) => asset.id)).size === activeEditorV6.assets.length) return
+    if (!activeEditorV6 || !hasDuplicateAssets) return
     updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
     markEditorV6Unsaved()
-  }, [activeEditorV6, selectedTimelineBlockId, markEditorV6Unsaved])
+  }, [activeEditorV6, hasDuplicateAssets, selectedTimelineBlockId, markEditorV6Unsaved])
   const { selectedTimelineVideoClip, selectedTimelineVideo, selectedElement, selectedCharacterElement, selectedBackgroundAsset } = editorV6Selection
   const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
   const editorV6PresetCatalogEnabled = shouldLoadEditorV6PresetCatalog(inspectorOpen, inspectorTab, inspectorCustomView)

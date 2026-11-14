@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6HasDuplicateAssetIds, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 
 function fixture(): EditorV6Document {
@@ -11,6 +11,11 @@ function fixture(): EditorV6Document {
 const actorClip = (document: EditorV6Document) => timelineClips(document.timeline).find(({ track }) => track.kind === 'character')!
 
 describe('timeline do Editor V6', () => {
+  it('detecta IDs de assets repetidos sem montar array temporário', () => {
+    expect(editorV6HasDuplicateAssetIds([{ id: 'asset-a' }, { id: 'asset-b' }])).toBe(false)
+    expect(editorV6HasDuplicateAssetIds([{ id: 'asset-a' }, { id: 'asset-a' }])).toBe(true)
+  })
+
   it('aciona talk apenas durante falas e agenda piscadas determinísticas por personagem', () => {
     const document = fixture(), actor = document.elements[0]
     const blinkId = crypto.randomUUID(), talkId = crypto.randomUUID(), combinedId = crypto.randomUUID()

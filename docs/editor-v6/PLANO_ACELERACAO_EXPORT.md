@@ -493,3 +493,9 @@ A composição de cada quadro monta o índice original somente para IDs rigged e
 3 testes do renderer cobrem o índice reduzido e os caminhos com e sem patch; suíte (179 arquivos, 799 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Redução estrutural de alocações; sem benchmark do export completo.
 
 **Harness integrado subsequente:** `npm run test:editor-v6:export` passou com 81 quadros, 78 reutilizados, emenda de áudio, fallback/cancelamento, movimento na emenda turbo, Full HD e preloads sandbox. A fixture sintética de boca percorreu 301 quadros e registrou RSS máximo do processo principal de 168.607.744 bytes; os arquivos temporários foram removidos pelo próprio harness. Isso confirma integração, sem medir ganho nem prever o projeto longo.
+
+### Continuação 2026-11-13 — memorizar a verificação de IDs duplicados
+
+A guarda de recuperação de assets não monta mais um array com os IDs em cada mudança de seleção; verifica em um percurso e memoriza o resultado pela referência da coleção. Quando a lista não muda, o Editor V6 não repete essa varredura.
+
+Teste focado (31), suíte (179 arquivos, 800 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não há medição de tempo de export para esta alteração.

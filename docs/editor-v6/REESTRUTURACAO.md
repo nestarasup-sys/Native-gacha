@@ -1589,3 +1589,9 @@ O renderer do export detecta no mesmo percurso da cena se algum personagem com c
 **Verificação:** testes focados do renderer (3) cobrem a lista compartilhada sem patch, o índice limitado a personagens rigged e a remoção preservada com patch; suíte Editor V6 (179 arquivos, 799 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não foi medido o tempo completo do MP4.
 
 **Verificação integrada subsequente:** `npm run test:editor-v6:export` passou após as otimizações da trajetória e da composição de cabelo: 81 quadros, 78 reutilizados, emenda de áudio, fallback, cancelamento preservando o destino, divisão, Full HD e preloads sandbox. A sequência sintética de boca registrou 301 quadros e pico de RSS do processo principal de 168.607.744 bytes. O harness removeu seus próprios arquivos temporários. Os números não comparam versões nem representam o projeto longo.
+
+### Continuação na `Dev-V2` — memorizar a verificação de IDs duplicados
+
+A verificação de integridade dos assets no Editor V6 agora percorre os IDs sem criar o array temporário de `assets.map(...)` e seu resultado é memorizado pela referência da lista. Assim, selecionar outro bloco ou personagem não repete a varredura se a coleção de assets não mudou; a reparação de duplicados continua usando o mesmo comando e preserva os assets existentes.
+
+**Verificação:** teste focado da timeline (31), suíte Editor V6 (179 arquivos, 800 aprovados e 1 ignorado), typecheck, auditoria (878 arquivos), build e `git diff --check` passaram. Não foi medido o efeito em tempo de abertura ou exportação.
