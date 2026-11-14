@@ -425,6 +425,94 @@ describe('export worker lifecycle', () => {
     factory.dispose()
   })
 
+  it('captures both video layers in a single offscreen paint without copying BGRA rows', async () => {
+    const inspected: Array<{ layer?: string; bitmap: Buffer }> = []
+    const { factory, payload, ready } = fixture(undefined, {
+      layeredVideo: true,
+      inspectCapture: async ({ layer, bitmap }) => { inspected.push({ layer, bitmap: Buffer.from(bitmap) }) }
+    })
+    const input = { ...payload, singlePassLayers: true }
+    const pending = factory.create(input, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    const bytes = input.width * input.height * 4
+    contents.capturePage.mockImplementation(async ({ width, height }: { width: number; height: number }) => {
+      const image = state.imageFor(width, height - 24, window.paintToken, 0)
+      const bitmap = image.toBitmap()
+      bitmap.fill(21, 0, bytes)
+      bitmap.fill(77, bytes, bytes * 2)
+      return image
+    })
+
+    const result = await worker.frame(41)
+
+    expect(state.windowOptions[0]).toMatchObject({ width: input.width, height: input.height * 2 + 24, transparent: true })
+    expect(window.setContentSize).toHaveBeenCalledWith(input.width, input.height * 2 + 24)
+    expect(contents.executeJavaScript).toHaveBeenCalledOnce()
+    expect(contents.executeJavaScript.mock.calls[0][0]).toContain("'stacked'")
+    expect(contents.capturePage).toHaveBeenCalledOnce()
+    expect(contents.capturePage).toHaveBeenCalledWith({ x: 0, y: 0, width: input.width, height: input.height * 2 + 24 })
+    expect(result.bitmap).toHaveLength(bytes * 2)
+    expect(result.bitmap!.subarray(0, bytes).every(value => value === 21)).toBe(true)
+    expect(result.bitmap!.subarray(bytes).every(value => value === 77)).toBe(true)
+    expect(inspected.map(item => item.layer)).toEqual(['background', 'foreground'])
+    expect(inspected[0].bitmap.every(value => value === 21)).toBe(true)
+    expect(inspected[1].bitmap.every(value => value === 77)).toBe(true)
+    expect(result.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
+    worker.close()
+    factory.dispose()
+  })
+
+  it('rejects a stale combined-layer readback and returns only the exact frame token', async () => {
+    const { factory, payload, ready } = fixture(undefined, { layeredVideo: true })
+    const input = { ...payload, singlePassLayers: true }
+    const pending = factory.create(input, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    let readbacks = 0
+    contents.capturePage.mockImplementation(async ({ width, height }: { width: number; height: number }) => {
+      readbacks++
+      return state.imageFor(width, height - 24, readbacks === 1 ? 0xffffff : window.paintToken, 33)
+    })
+    const result = await worker.frame(5)
+    expect(contents.executeJavaScript).toHaveBeenCalledOnce()
+    expect(contents.capturePage).toHaveBeenCalledTimes(2)
+    expect(contents.invalidate).toHaveBeenCalledOnce()
+    expect(result.bitmap).toHaveLength(input.width * input.height * 8)
+    expect(result.metrics).toMatchObject({ captureReadbacks: 2, captureStaleReadbacks: 1 })
+    worker.close()
+    factory.dispose()
+  })
+
+  it('compares full stacked pixels from paint-event against capturePage using one token', async () => {
+    const { factory, payload, ready } = fixture('compare-paint', { layeredVideo: true })
+    const input = { ...payload, singlePassLayers: true }
+    const pending = factory.create(input, new AbortController().signal)
+    ready()
+    const worker = await pending
+    const window = state.windows[0]
+    const contents = window.webContents
+    contents.executeJavaScript.mockImplementation(async (script: string) => {
+      const token = Number(script.match(/renderEditorV6ExportFrame\(\d+,\s*'stacked',\s*(\d+)\)/)?.[1] ?? 0)
+      window.paintToken = token
+      contents.paintFrame(state.imageFor(input.width, input.height * 2, token, 46), { x: 0, y: 0, width: input.width, height: input.height * 2 + 24 })
+      return { reused: false, timings: {} }
+    })
+    contents.capturePage.mockImplementation(async () => state.imageFor(input.width, input.height * 2, window.paintToken, 46))
+    const result = await worker.frame(77)
+    expect(result.bitmap).toHaveLength(input.width * input.height * 8)
+    expect(result.bitmap!.every(byte => byte === 46)).toBe(true)
+    expect(contents.executeJavaScript).toHaveBeenCalledOnce()
+    expect(contents.capturePage).toHaveBeenCalledOnce()
+    expect(result.metrics).toMatchObject({ captureReadbacks: 1, captureStaleReadbacks: 0 })
+    worker.close()
+    factory.dispose()
+  })
+
   it('assembles layered frames into one reusable bitmap and aggregates both layer metrics', async () => {
     const inspected: Buffer[] = []
     const { factory, payload, ready } = fixture(undefined, { layeredVideo: true, inspectCapture: async ({ bitmap }) => { inspected.push(Buffer.from(bitmap)) } })

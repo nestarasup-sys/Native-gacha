@@ -25,6 +25,8 @@ export function createEditorV6WorkerFrameRenderer({
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
 }): EditorV6WorkerFrameRenderer {
   const { width, height, layeredVideo } = payload
+  const stackedLayers = layeredVideo && payload.singlePassLayers === true
+  const captureHeight = stackedLayers ? height * 2 : height
   const layerBytes = width * height * 4
   let layeredBitmap: Buffer | undefined
   let spareLayeredBitmap: Buffer | undefined
@@ -32,7 +34,7 @@ export function createEditorV6WorkerFrameRenderer({
   let nextPaintToken = 0
   let closed = false
 
-  const draw = async (frame: number, layer?: 'background' | 'foreground') => {
+  const draw = async (frame: number, layer?: 'background' | 'foreground' | 'stacked') => {
     const started = performance.now()
     nextPaintToken = nextPaintToken % 0xfffffe + 1
     const token = nextPaintToken
@@ -49,16 +51,27 @@ export function createEditorV6WorkerFrameRenderer({
   const capture = async (frame: number, outputOffset = 0, layer?: 'background' | 'foreground') => {
     const started = performance.now()
     const token = nextPaintToken
-    const output = layeredVideo ? currentLayeredBitmap : undefined
-    const captured = await captureEditorV6PaintedFrame({ window, signal, width, height, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
+    const output = layeredVideo && !stackedLayers ? currentLayeredBitmap : undefined
+    const captured = await captureEditorV6PaintedFrame({ window, signal, width, height: captureHeight, token, output, outputOffset, retryMilliseconds: captureRetryMilliseconds, paintCapture })
     const { bitmap, readbacks, paintWaitMs, capturePageMs, captureBitmapMs } = captured
-    const sceneBitmap = layeredVideo ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap
-    await inspectCapture?.({ window, frame, ...(layer ? { layer } : {}), bitmap: sceneBitmap })
+    const sceneBitmap = layeredVideo && !stackedLayers
+      ? bitmap.subarray(outputOffset, outputOffset + layerBytes) : bitmap
+    if (stackedLayers) {
+      // Keep per-layer quality hooks working even though only one combined
+      // Chromium readback is performed.
+      await inspectCapture?.({ window, frame, layer: 'background', bitmap: sceneBitmap.subarray(0, layerBytes) })
+      await inspectCapture?.({ window, frame, layer: 'foreground', bitmap: sceneBitmap.subarray(layerBytes) })
+    } else {
+      await inspectCapture?.({ window, frame, ...(layer ? { layer } : {}), bitmap: sceneBitmap })
+    }
     const elapsedMs = performance.now() - started
     if (comparePaintCapture) {
       const painted = await comparePaintCapture.capture(token)
       if (!sceneBitmap.equals(painted.bitmap)) {
-        const target = layer ? `na camada ${layer} do quadro ${frame}` : `no quadro ${frame}`
+        const mismatchedLayer = stackedLayers
+          ? (sceneBitmap.subarray(0, layerBytes).equals(painted.bitmap.subarray(0, layerBytes)) ? 'foreground' : 'background')
+          : layer
+        const target = mismatchedLayer ? `na camada ${mismatchedLayer} do quadro ${frame}` : `no quadro ${frame}`
         throw Error(`capturePage e paint-event divergiram ${target}, token ${token}.`)
       }
     }
@@ -68,9 +81,11 @@ export function createEditorV6WorkerFrameRenderer({
   const frame = async (frameNumber: number): Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }> => {
     signal.throwIfAborted()
     if (closed) throw Error('O renderizador de exportação foi encerrado.')
-    const result = await draw(frameNumber, layeredVideo ? 'background' : undefined)
+    const result = await draw(frameNumber, stackedLayers ? 'stacked' : layeredVideo ? 'background' : undefined)
     if (result.reused) return result
-    if (!layeredVideo) {
+    if (!layeredVideo || stackedLayers) {
+      // Capture the two vertically stacked scenes at once, directly into a
+      // contiguous BGRA view matching FFmpeg's existing rawHeight=height*2.
       const captured = await capture(frameNumber)
       return { reused: false, bitmap: captured.bitmap, timings: { ...result.timings, captureMs: captured.elapsedMs, paintWaitMs: captured.paintWaitMs, capturePageMs: captured.capturePageMs, captureBitmapMs: captured.captureBitmapMs }, metrics: {
         ...result.metrics, captureReadbacks: captured.readbacks, captureStaleReadbacks: captured.readbacks - 1

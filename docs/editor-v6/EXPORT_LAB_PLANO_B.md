@@ -141,3 +141,24 @@ npm run diagnose:editor-v6:export -- "C:\novo.report.json" "C:\antigo.report.jso
 ```
 
 A comparação recusa projetos com quantidade de quadros diferente ou encoder diferente. Valores negativos de variação significam redução de tempo. Se o exportador ainda falhar antes da codificação, nenhuma conclusão sobre FPS efetivo ou velocidade do MP4 é válida. O analisador não substitui validação de paridade de pixels e áudio.
+
+
+## Correção arquitetural: captura única das duas camadas de vídeo
+
+Nos projetos que possuem vídeos de fundo ou sobrepostos, a exportação anterior desenhava e capturava o fundo e o primeiro plano em duas chamadas sequenciais a Chromium, uma por camada. O novo caminho padrão `stacked` monta dois SVGs de `width×height` em um único offscreen de `width×(2×height)`, mantém a metade superior **opaca** para fundo e a inferior **transparente** para personagens e legendas, e faz **um único** `capturePage` verificado por token. O BGRA resultante já tem exatamente o layout de duas metades que o FFmpeg espera; não é feito copy por linha nem conversão intermediária. O modo paint-event recebe a mesma dimensão. Os hooks de auditoria por camada recebem duas fatias do mesmo bitmap.
+
+Não modificar o perfil de 30 FPS, os parâmetros do codec ou a composição do FFmpeg. O algoritmo antigo está preservado e pode ser selecionado com `GACHA_EDITOR_V6_LAYER_CAPTURE=serial` **antes de iniciar o aplicativo**; a configuração volta ao padrão ao remover a variável. Relatórios novos indicam `attempts[].parts[].frameLayerCapture` como `stacked`, `serial` ou `single` (sem vídeos). O analisador `npm run diagnose:editor-v6:export -- "caminho/report.json"` mostra esse campo junto às capturas.
+
+Comandos PowerShell de comparação na mesma versão compilada:
+
+```powershell
+$env:GACHA_EDITOR_V6_LAYER_CAPTURE = 'serial'
+npm run dev
+# Exportar um trecho com vídeo sobreposto e guardar o report.json
+# Fechar o aplicativo antes do segundo teste
+Remove-Item Env:\GACHA_EDITOR_V6_LAYER_CAPTURE -ErrorAction SilentlyContinue
+npm run dev
+# Repetir o mesmo trecho/encoder e comparar os relatórios
+```
+
+**Atenção:** esta mudança não atua em projetos **sem vídeos sobrepostos**, que já fazem apenas uma captura por quadro. Uma única captura maior não garante aceleração se a rasterização do Chromium, o FFmpeg ou o acesso à GPU dominarem o tempo. Verificar `capturePageMs`, `frameRoundTripMs`, `captureReadbacks`, o tempo de renderização e a contagem de quadros, além da paridade de pixels/transparência, em Windows. O estado atual do código não constitui uma medição de redução de seis minutos.

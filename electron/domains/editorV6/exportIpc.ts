@@ -134,6 +134,9 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
         const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, true)
         const { assetSources, ...payloadData } = workerData
         return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
+          // One paint/readback for both layers. Serial mode remains available
+          // for validation of pixel parity with the old layered compositor.
+          singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE !== 'serial',
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
           reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
           ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)

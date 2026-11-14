@@ -38,6 +38,24 @@ describe('Editor V6 single-readback frame capture', () => {
     expect(image.toBitmap).toHaveBeenCalledTimes(1)
   })
 
+  it('keeps stacked video background and foreground contiguous with one exact-token BGRA readback', () => {
+    const width = 32, layerHeight = 20
+    const captureHeight = layerHeight * 2
+    const token = 0x120011
+    const { image, bytes } = makeCapture(width, captureHeight, token)
+    const layerBytes = width * layerHeight * 4
+    bytes.fill(12, 0, layerBytes)
+    bytes.fill(99, layerBytes, layerBytes * 2)
+
+    const combined = captureEditorV6FrameBitmap(image, width, captureHeight, token)
+    expect(combined).toHaveLength(layerBytes * 2)
+    expect(combined!.subarray(0, layerBytes).every(byte => byte === 12)).toBe(true)
+    expect(combined!.subarray(layerBytes).every(byte => byte === 99)).toBe(true)
+    expect(combined!.buffer).toBe(bytes.buffer)
+    expect(image.toBitmap).toHaveBeenCalledOnce()
+    expect(captureEditorV6FrameBitmap(image, width, captureHeight, token ^ 1)).toBeNull()
+  })
+
   it('rejects a stale token without modifying or cropping its scene data', () => {
     const { image } = makeCapture(24, 20, 0x999999)
     expect(captureEditorV6FrameBitmap(image, 24, 20, 0x999998)).toBeNull()
