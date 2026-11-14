@@ -81,3 +81,12 @@ O FFmpeg 9.0.2 alternativo foi baixado da release `autobuild-2026-11-14-12-37`, 
 - A Microsoft descreve WPR como captura ETW de comportamento/uso de recursos, usada junto ao WPA para análise: [Introduction to WPR](https://learn.microsoft.com/en-us/windows-hardware/test/wpt/introduction-to-wpr) e [WPR/WPA troubleshooting and prerequisites](https://learn.microsoft.com/en-us/troubleshoot/windows-server/support-tools/support-tools-xperf-wpa-wpr).
 - O protocolo utiliza `ffprobe -count_frames`, `-show_streams`, `-show_frames` e, em futuras verificações de sincronismo, `-show_packets`, documentados no [manual oficial do ffprobe](https://ffmpeg.org/ffprobe.html).
 - O suporte `h264_amf` depende da build FFmpeg estar compilada com `--enable-amf` e da disponibilidade do stack AMF/driver; a [documentação oficial do FFmpeg sobre AMF](https://ffmpeg.org/general.html#AMD-AMF_002fVCE) explica esses requisitos. A presença do encoder na lista, isoladamente, não prova que ele inicializará no hardware.
+
+
+## Boca estática enquanto pose, expressão ou cabelo estão em movimento
+
+O Plano B mantém **pose e preset facial na mesma transição de 250 ms**. Se o personagem fala durante a transição, a boca do atlas fica em `talk` estático na escala `1×`; o preparador não gera amostras de boca ampliada para cada quadro intermediário, e a piscada automática já é suprimida nesse intervalo. Isso permite reutilizar movimentos previamente preparados sem repetir o bake apenas porque a fala está habilitada.
+
+No perfil padrão, a reação do cabelo posterior é uma animação única depois de cada troca de pose, em `end+1` até `end+29` (30 FPS). Enquanto ela ocorre, a exportação seleciona o primeiro recorte da boca (`1×`) e ignora piscadas automáticas. Fora desses momentos, **a boca volta ao ciclo completo e as piscadas voltam ao normal**. A exportação com cabelo em loop contínuo não congela a boca indefinidamente.
+
+As versões das chaves de transição e do cache de bake foram aumentadas para impedir mistura com antigos atlas de mouth-patches. Os projetos salvos e presets de expressão não são regravados por essa otimização. Repetir a exportação real para medir preparação de movimentos e verificar continuidade no início e fim das reações.

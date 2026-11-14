@@ -55,7 +55,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
             onDiscard={() => { setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }} />}
           {hairPresetMessage && <small role="status">{hairPresetMessage}</small>}
           </>}
-          {options.mouthLoop !== false && <><label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label><small>A animação da boca é aplicada automaticamente durante a fala vinculada ao personagem.</small></>}
+          {options.mouthLoop !== false && <><label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label><small>A boca segue o ciclo durante falas normais. Na transição de pose/expressão e na reação posterior do cabelo, fica estática com os olhos abertos; depois volta ao normal.</small></>}
         </fieldset>
         <EditorV6ExportAudioSettings
           clips={project.exportAudio ?? []}

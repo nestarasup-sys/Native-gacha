@@ -38,8 +38,7 @@ export function createEditorV6ExportMouthLoopResolver(
 
       const reacting = hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
       const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
-      const speaking = faceMode === 'talk' || faceMode === 'talk-blink'
-      if (!speaking) {
+      if (faceMode !== 'talk' && faceMode !== 'talk-blink') {
         if (!reacting || faceMode !== 'blink') return element
         const block = editorV6ClipAtFrame(project.timeline, element.id, frame)?.block
         const idleAssetId = block?.state?.assetId ?? canonicalAssetIds.get(element.id)
