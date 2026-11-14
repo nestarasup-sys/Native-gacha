@@ -12,8 +12,8 @@ export function createEditorV6SvgImageReadiness() {
     const image = event.currentTarget
     loadedSources.set(image, image.getAttribute('href') ?? '')
   }
-  const waitForImage = (image: SVGImageElement, expectedSource: string) => {
-    if (loadedSources.get(image) === expectedSource) return Promise.resolve()
+  const waitForImage = (image: SVGImageElement, expectedSource: string): Promise<void> | undefined => {
+    if (loadedSources.get(image) === expectedSource) return undefined
     return new Promise<void>((resolve, reject) => {
       let timeout: ReturnType<typeof setTimeout>
       const finish = (error?: Error) => {

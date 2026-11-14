@@ -1607,3 +1607,9 @@ Teste do plano (12), suíte Editor V6 (179 arquivos, 801 aprovados e 1 ignorado)
 O resolver de cena reutiliza o estado padrão do fundo enquanto seus campos não mudam e detecta alterações mesmo quando o objeto do documento é atualizado no lugar. A cache de chaves visuais também serializa uma vez cada snapshot de fundo persistente. O formato das chaves e o estado visual renderizado permanecem iguais.
 
 Testes focados de cena e plano (21), suíte Editor V6 (179 arquivos, 802 aprovados e 1 ignorado), typecheck, auditoria, build e harness integrado passaram. O benchmark sintético das chaves (1.800 quadros, 80 elementos, cinco rodadas) teve mediana de 54,33 ms sem cache e 6,66 ms com cache; é uma medida isolada, não do MP4 completo.
+
+### Continuação na `Dev-V2` — não aguardar imagens SVG já carregadas
+
+O worker agora verifica readiness sem construir arrays de Promises resolvidas por imagem. Quando todo `<image>` já recebeu `onLoad` para a fonte atual, ele retorna sem suspender o renderizador; imagens novas ou ainda carregando continuam aguardadas e falhas continuam propagando erro.
+
+8 testes focados, suíte Editor V6 (179 arquivos, 803 aprovados e 1 ignorado), typecheck, auditoria, build e harness integrado passaram. Microbenchmark sintético de 10 imagens × 5.700 quadros teve mediana de 12,51 ms com Promises resolvidas e 3,01 ms sem Promises pendentes. Não representa ganho no MP4 completo.

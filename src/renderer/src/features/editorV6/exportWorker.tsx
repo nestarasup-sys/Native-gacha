@@ -27,11 +27,15 @@ async function initialize() {
     prepareAssets: prepareFrameAssets,
     commitSurface: surface => flushSync(() => root.render(<SceneSurface {...surface} />)),
     onImageLoad: onSvgImageLoad,
-    waitForSvgImages: async () => {
-      await Promise.all(Array.from(document.querySelectorAll<SVGImageElement>('svg image')).flatMap(image => {
+    waitForSvgImages: () => {
+      let pending: Promise<void>[] | undefined
+      for (const image of document.querySelectorAll<SVGImageElement>('svg image')) {
         const source = image.getAttribute('href') ?? ''
-        return source ? [waitForSvgImage(image, source)] : []
-      }))
+        if (!source) continue
+        const readiness = waitForSvgImage(image, source)
+        if (readiness) (pending ??= []).push(readiness)
+      }
+      return pending ? Promise.all(pending).then(() => undefined) : undefined
     },
     setPaintToken,
     // capturePage validates this exact paint with the per-frame token and retries a stale readback.

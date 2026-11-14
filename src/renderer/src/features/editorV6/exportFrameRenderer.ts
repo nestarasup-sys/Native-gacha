@@ -37,7 +37,7 @@ type Options = {
   prepareAssets: (assets: readonly EditorV6Asset[]) => Promise<void>
   commitSurface: (surface: SurfaceInput) => void
   onImageLoad: (event: SyntheticEvent<SVGImageElement>) => void
-  waitForSvgImages: () => Promise<void>
+  waitForSvgImages: () => Promise<void> | undefined
   setPaintToken: (token: number) => void
   waitForPaintFrame: () => Promise<void>
   now?: () => number
@@ -118,7 +118,8 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     timings.reactCommitMs = now() - reactCommitStarted
 
     const svgImageDecodeStarted = now()
-    await waitForSvgImages()
+    const pendingSvgImages = waitForSvgImages()
+    if (pendingSvgImages) await pendingSvgImages
     timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + now() - svgImageDecodeStarted
     setPaintToken(paintToken)
     const rafStarted = now()

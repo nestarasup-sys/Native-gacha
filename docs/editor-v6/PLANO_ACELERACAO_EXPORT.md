@@ -515,3 +515,11 @@ O resolver de cena agora reutiliza o objeto do fundo padrão enquanto os campos 
 **Microbenchmark isolado:** com 80 elementos estáveis e 1.800 quadros por rodada, cinco rodadas deram mediana de 54,33 ms sem cache e 6,66 ms com a cache combinada de elementos e fundo (87,7% menos na geração dessas chaves sintéticas). O benchmark não mede o MP4.
 
 **Verificação:** testes focados de cena e plano (21); suíte Editor V6 (179 arquivos, 802 aprovados e 1 ignorado); typecheck; auditoria (878 arquivos); build e harness Electron integrado passaram. O harness cobriu 81 quadros e uma fixture de boca de 301 quadros, com RSS máximo reportado do processo principal de 165.109.760 bytes.
+
+### Continuação na `Dev-V2` — não aguardar imagens SVG já carregadas
+
+O worker de export percorre as imagens SVG com um loop direto e mantém uma lista apenas para imagens ainda sem confirmação de `onLoad` na fonte atual. Se todas já estão prontas, o retorno é síncrono e o renderizador segue para o paint sem montar `Promise.resolve()` por imagem nem suspender em `await Promise.all` a cada frame. Uma imagem nova/alterada ainda é aguardada, e erro/timeout continuam falhando o frame.
+
+**Microbenchmark isolado:** 10 imagens prontas × 5.700 frames, cinco rodadas; a mediana do caminho com arrays de Promises resolvidas foi 12,51 ms, contra 3,01 ms percorrendo os itens sem Promises pendentes. Isso mede somente o readiness JavaScript, não o round-trip de captura ou o MP4.
+
+**Verificação:** testes focados de prontidão e renderizador (8); suíte Editor V6 (179 arquivos, 803 aprovados e 1 ignorado); typecheck; auditoria de arquitetura; build e harness Electron integrado passaram. O harness cobriu 81 quadros e a fixture de boca de 301 quadros; RSS máximo do processo principal: 168.554.496 bytes.

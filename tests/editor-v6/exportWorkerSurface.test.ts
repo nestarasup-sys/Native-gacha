@@ -32,7 +32,7 @@ describe('Editor V6 export worker surface', () => {
     image.dispatchEvent(new Event('load'))
     await ready
     readiness.onLoad({ currentTarget: image } as SyntheticEvent<SVGImageElement>)
-    await expect(readiness.waitForImage(image, 'data:image/svg+xml,new')).resolves.toBeUndefined()
+    expect(readiness.waitForImage(image, 'data:image/svg+xml,new')).toBeUndefined()
   })
 
   it('reports image errors', async () => {

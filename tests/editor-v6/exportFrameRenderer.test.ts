@@ -36,7 +36,7 @@ function resources(): Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2
   } as unknown as Parameters<typeof createEditorV6ExportWorkerHairRuntime>[2]
 }
 
-function activeHairRenderer(scene: EditorV6ResolvedScene) {
+function activeHairRenderer(scene: EditorV6ResolvedScene, waitForSvgImages: () => Promise<void> | undefined = vi.fn(async () => {})) {
   const composedScenes: EditorV6ResolvedScene[] = []
   const originalElementMaps: ReadonlyMap<string, EditorV6ResolvedScene['elements'][number]>[] = []
   const hairRuntime = {
@@ -63,7 +63,7 @@ function activeHairRenderer(scene: EditorV6ResolvedScene) {
     prepareAssets: vi.fn(async () => {}),
     commitSurface: vi.fn(),
     onImageLoad: () => {},
-    waitForSvgImages: vi.fn(async () => {}),
+    waitForSvgImages,
     setPaintToken: vi.fn(),
     waitForPaintFrame: vi.fn(async () => {})
   })
@@ -102,6 +102,14 @@ describe('createEditorV6ExportFrameRenderer', () => {
     expect(reused).toMatchObject({ reused: true })
     expect(operations).toEqual([])
     expect(commitSurface).toHaveBeenCalledOnce()
+  })
+
+  it('continua a preparar a pintura sem suspender quando todas as imagens SVG já estão prontas', async () => {
+    const waitForSvgImages = vi.fn(() => undefined)
+    const { renderFrame } = activeHairRenderer({ frame: 10, background: { backgroundColor: '#fff' }, elements: [] }, waitForSvgImages)
+
+    await expect(renderFrame(10, undefined, 42)).resolves.toMatchObject({ reused: false })
+    expect(waitForSvgImages).toHaveBeenCalledOnce()
   })
 
   it('reaproveita o array da cena de cabelo quando não há mouth patch para remover', async () => {
