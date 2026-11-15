@@ -112,6 +112,38 @@ describe('transition preparation reuse', () => {
       [{ characterId: 'alpha' }], [{ characterId: 'beta' }], [{ characterId: 'gamma' }]
     ], 3)).toEqual([[0, 3], [1, 4], [2, 5]])
   })
+  it('reports effective scheduler concurrency by independent character sequences', async () => {
+    const single = fixture()
+    let active = 0, peak = 0
+    const bake = async (request: EditorV6MotionBakeRequest) => {
+      active++; peak = Math.max(peak, active)
+      await new Promise((resolve) => setTimeout(resolve, 8))
+      active--
+      return resultFor(request)
+    }
+    const oneCharacter = await prepareExportMotions(single.project, 0, 300, {
+      signal: new AbortController().signal, characters: [single.character], bake, progress: () => {}, concurrency: 3, ignoreExistingMotions: true
+    })
+    expect(oneCharacter.stats).toMatchObject({ configuredConcurrency: 3, characterSequences: 1, assignedLanes: 1, maxConcurrentBakes: 1 })
+    expect(peak).toBe(1)
+
+    const multiple = fixture()
+    const second = addSecondCharacter(multiple.project, multiple.character)
+    const third = { ...multiple.character, id: 'cara', name: 'Cara' }
+    const source = multiple.project.elements[0]
+    const thirdActor: EditorV6Element = { ...source, id: crypto.randomUUID(), characterId: third.id, assetId: crypto.randomUUID(), text: third.name }
+    multiple.project.elements.push(thirdActor)
+    multiple.project.assets.push({ id: thirdActor.assetId!, category: 'character', name: third.name, mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' })
+    const thirdTrack = createEditorV6Timeline([thirdActor]).tracks.find((track) => track.kind === 'character')!
+    thirdTrack.blocks = [1, 2].map((poseSlot, index) => ({ id: crypto.randomUUID(), elementId: thirdActor.id, label: 'Pose', startFrame: 361 + index * 30, durationFrames: 30, state: { ...thirdActor, poseSlot } }))
+    multiple.project.timeline = { ...multiple.project.timeline, tracks: [...multiple.project.timeline.tracks, thirdTrack] }
+    active = 0; peak = 0
+    const threeCharacters = await prepareExportMotions(multiple.project, 0, 500, {
+      signal: new AbortController().signal, characters: [multiple.character, second, third], bake, progress: () => {}, concurrency: 3, ignoreExistingMotions: true
+    })
+    expect(threeCharacters.stats).toMatchObject({ configuredConcurrency: 3, characterSequences: 3, assignedLanes: 3, maxConcurrentBakes: 3 })
+    expect(peak).toBe(3)
+  })
   it('detecta edição do Customizador e não prepara atlas com corpo diferente do snapshot', async () => {
     const { project, character } = fixture()
     const changedCharacter = {

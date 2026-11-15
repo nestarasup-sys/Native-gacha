@@ -14,7 +14,33 @@ export type EditorV6MotionPlan = {
   blockId: string; elementId: string; characterId: string; key: string; startFrame: number; endFrame: number
   from: EditorV6Element; to: EditorV6Element; samples: Array<{ offset: number; progress: number; faceMode?: EditorV6FaceRenderMode }>
 }
-export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number; /** Unique export-local cache scope. Scoped bakes never touch persistent cache. */ cacheScope?: string }
+export type EditorV6MotionBakeRequest = { id: string; plan: EditorV6MotionPlan; character: CustomizerCharacter; mouthScaleSamples?: number[]; maxAtlasPixels?: number; /** Unique export-local cache scope. Scoped bakes never touch persistent cache. */ cacheScope?: string; /** Test-only A/B switch; never serialized into a project. */ diagnosticDisableScopedPreparationReuse?: boolean }
+export type EditorV6MotionBakeProfile = {
+  assetLoadingMs: number
+  poseResolutionMs: number
+  facePreparationMs: number
+  endpointGeometryMs: number
+  rigBuildMs: number
+  sampleRenderingMs: number
+  cropDetectionMs: number
+  facePatchPreparationMs: number
+  atlasAssemblyMs: number
+  faceAtlasMs: number
+  atlasEncodingMs: number
+  sampleRenderCalls: number
+  providerReadCalls?: number
+  providerCacheHits?: number
+  providerCacheMisses?: number
+  providerCacheEvictions?: number
+  providerReadMs?: number
+  servicePoolCapacity?: number
+  serviceObservedPeakConcurrency?: number
+  serviceActiveConcurrencyAtDispatch?: number
+  ipcRoundTripMs?: number
+  ipcOverheadMs?: number
+  requestPayloadBytes?: number
+  resultPayloadBytes?: number
+}
 export type EditorV6MotionBakeResult = {
   asset: EditorV6Asset
   faceAsset?: EditorV6Asset
@@ -27,7 +53,7 @@ export type EditorV6MotionBakeResult = {
   /** Records whether the export loop contains only the catalog mouth or uses the compatible legacy patch. */
   mouthIsolationMode?: 'isolated-piece' | 'legacy-patch'
   motion: EditorV6MotionAtlas
-  metrics: { milliseconds: number; preparedRigs: number; reusedRigs?: number; rigKeyLookups?: number; rigRebuilds?: number; rigBuildMilliseconds?: number; samples: number; atlasPixels: number }
+  metrics: { milliseconds: number; preparedRigs: number; reusedRigs?: number; rigKeyLookups?: number; rigRebuilds?: number; rigBuildMilliseconds?: number; samples: number; atlasPixels: number; profile?: EditorV6MotionBakeProfile }
 }
 /** Static mouth cycles store their localized face atlas as the motion asset itself. */
 export function editorV6UsesStaticMouthAtlas(request: EditorV6MotionBakeRequest): boolean {

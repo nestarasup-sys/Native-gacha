@@ -14,6 +14,7 @@ type EditorV6MotionRigPreparationOptions = {
   provider: CharacterRenderAssetProvider
   materials: GachaReusableMaterialCache
   session?: EditorV6BakeSession
+  disableScopedPreparationReuse?: boolean
   fromPose: Artwork
   toPose: Artwork
   interpolateArtwork: (progress: number) => Artwork
@@ -27,6 +28,7 @@ export function createEditorV6MotionRigPreparer({
   provider,
   materials,
   session,
+  disableScopedPreparationReuse = false,
   fromPose,
   toPose,
   interpolateArtwork,
@@ -58,7 +60,10 @@ export function createEditorV6MotionRigPreparer({
     }
 
     const beganRig = performance.now()
-    const renderer = await buildRenderer(character, { source, artwork, assetProvider: provider, materialCache: materials })
+    const renderer = await buildRenderer(character, {
+      source, artwork, assetProvider: provider, materialCache: materials,
+      ...(session && !disableScopedPreparationReuse ? { expressionEffectsCache: session.expressionEffectsCache, faceCatalogItemsCache: session.faceCatalogItemsCache } : {})
+    })
     rigBuildMilliseconds += performance.now() - beganRig
     preparedRigs++
     if (key) {

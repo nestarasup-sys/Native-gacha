@@ -1,5 +1,6 @@
 import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest } from '../../../../../shared/editorV6Motion'
+import type { EditorV6MotionBakeProfile } from '../../../../../shared/editorV6Motion'
 import { editorV6FaceModeDuringMotion } from '../../../../../shared/editorV6FaceSchedule'
 import { interpolateEditorV6Face } from '../../../../../shared/editorV6MotionInterpolation'
 import type { prepareSavedCharacterRenderer, PreparedGachaLayerFrame } from '../../../characters/editorV6CharacterRenderer'
@@ -31,6 +32,7 @@ type EditorV6MotionFrameRendererOptions = {
   prepare: (progress: number) => Promise<Renderer>
   samePose: boolean
   session?: EditorV6BakeSession
+  profile?: EditorV6MotionBakeProfile
   readCrop?: typeof readMotionCanvasCrop
 }
 
@@ -42,6 +44,7 @@ export function createEditorV6MotionFrameRenderer({
   prepare,
   samePose,
   session,
+  profile,
   readCrop = readMotionCanvasCrop
 }: EditorV6MotionFrameRendererOptions) {
   return async (
@@ -61,18 +64,27 @@ export function createEditorV6MotionFrameRenderer({
       const isolateMouth = Boolean(request.mouthScaleSamples && (mode === 'talk' || mode === 'talk-blink') && renderer.canIsolateMouth(face.appearance))
       // Split-layer export needs the full body and separate layers from one render.
       const mouthOptions = isolateMouth ? { mouthLayer: 'without-mouth' as const } : undefined
+      const renderStarted = performance.now()
       const layered = captureLayers
         ? await renderer.renderToCanvasWithLayers(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
         : undefined
       const result = layered ?? await renderer.renderToCanvas(face.appearance, face.transforms, face.effects, renderMode, mouthOptions)
       const layers = layered?.layers
       const mouth = isolateMouth ? await renderer.renderMouthToCanvas(face.appearance, face.transforms, face.effects, renderMode) : undefined
+      if (profile) {
+        profile.sampleRenderingMs += performance.now() - renderStarted
+        profile.sampleRenderCalls++
+      }
+      const cropStarted = performance.now()
+      const crop = readCrop(result.canvas, fingerprint)
+      const mouthCrop = mouth ? readCrop(mouth.canvas, fingerprint, 0) : undefined
+      if (profile) profile.cropDetectionMs += performance.now() - cropStarted
       return {
         ...result,
-        crop: readCrop(result.canvas, fingerprint),
+        crop,
         renderer,
         ...(layers ? { layers } : {}),
-        ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: readCrop(mouth.canvas, fingerprint, 0) } : {}),
+        ...(mouth ? { mouthCanvas: mouth.canvas, mouthCrop: mouthCrop! } : {}),
         dispose: () => {
           if (!samePose && !preparedRenderer && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
         }

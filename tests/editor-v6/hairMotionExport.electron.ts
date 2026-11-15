@@ -769,7 +769,17 @@ async function main() {
       const outputPath = join(folder, name)
       return runEditorV6Export(exportProject, { startFrame, endFrame, width, height, turbo, encoder: 'cpu', hairAnimationPresetSlot: 1, ...(exportHairAnimation.loopFrames ? { hairAnimationLoopFrames: exportHairAnimation.loopFrames } : {}) }, {
         ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath, reportPath: join(folder, `${name}.report.json`), signal: new AbortController().signal,
-        getCharacters: async () => [], bakeMotion: async () => { throw Error('O fixture não deve preparar animações de pose.') },
+        getCharacters: async () => [...new Set(exportProject.elements.filter(element => element.kind === 'character' && element.characterId).map(element => element.characterId!))].map(id => ({
+          id, name: exportProject.elements.find(element => element.characterId === id)?.text ?? 'Fixture', hair: '', outfit: '', skin: '',
+          createdAt: now, updatedAt: now, customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] }
+        })),
+        bakeMotion: async request => {
+          const block = exportProject.timeline.tracks.flatMap(track => track.blocks).find(candidate => candidate.incomingMotion?.key === request.plan.key)
+          const motion = block?.incomingMotion
+          const asset = motion && exportProject.assets.find(candidate => candidate.id === motion.assetId)
+          if (!motion || !asset) throw Error('O fixture de cabelo não tem um atlas de pose compatível com a transição solicitada.')
+          return { asset, motion, metrics: { milliseconds: 0, preparedRigs: 0, reusedRigs: 0, samples: motion.frames.length, atlasPixels: motion.frames[0].sprite.atlasWidth * motion.frames[0].sprite.atlasHeight } } satisfies EditorV6MotionBakeResult
+        },
         ...(exportHairAnimation.preparationProfile ? { hairPreparation: exportHairAnimation.preparationProfile } : {}),
         createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => factory.create({ project: renderProject, width, height, layeredVideo, ...(mouthLoops ? { mouthLoops } : {}), hairAnimation: exportHairAnimation }, signal),
         audioPath: () => join(folder, 'unused-audio.wav'), mediaPath: () => join(folder, 'unused-media.mp4'), progress: () => {}

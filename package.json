@@ -37,6 +37,7 @@
     "editor-v6:analyze-trace": "node scripts/editor-v6/analyze-trace.cjs",
     "test:editor-v6:motion": "node scripts/editor-v6/check-motion.cjs",
     "test:editor-v6:motion-service": "node scripts/editor-v6/check-motion-service.cjs",
+    "diagnose:editor-v6:motion-preparation": "node scripts/editor-v6/analyze-motion-preparation.cjs",
     "test:editor-v6:bootstrap": "npm run build && node scripts/editor-v6/check-bootstrap.cjs",
     "test:editor-v6:surface": "node scripts/editor-v6/check-scene-surface.cjs",
     "test:editor-v6:face-export-silent": "npm run build && node scripts/editor-v6/check-face-export.cjs",

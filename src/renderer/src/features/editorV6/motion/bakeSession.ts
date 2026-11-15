@@ -1,6 +1,8 @@
 import type { CharacterRenderAssetProvider } from '../../../../../shared/characterRenderAssets'
 import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache } from '../../../characters/editorV6CharacterRenderer'
-import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
+import type { StandardExpressionEffectsCache } from '../../../characters/standardExpressionEffects'
+import type { PreparedFaceCatalogItemCache } from '../../../characters/preparedFaceCatalogItems'
+import { cacheEditorV6MotionAssetProvider, type EditorV6MotionProviderReadStats } from './motionAssetProviderCache'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 
@@ -8,6 +10,9 @@ type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 export type EditorV6BakeSession = {
   provider: CharacterRenderAssetProvider
   materials: GachaReusableMaterialCache
+  expressionEffectsCache: StandardExpressionEffectsCache
+  faceCatalogItemsCache: PreparedFaceCatalogItemCache
+  providerReadStats: EditorV6MotionProviderReadStats
   endpointRenderers: Map<string, Renderer>
   /** Bounded history distinguishes a genuinely new rig from a rig evicted earlier. */
   hasSeenPose(key: string): boolean
@@ -16,13 +21,23 @@ export type EditorV6BakeSession = {
   dispose(): void
 }
 
-export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider): EditorV6BakeSession {
+export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider, options: { providerCacheEntries?: number; providerCacheRefreshOnHit?: boolean } = {}): EditorV6BakeSession {
   const endpointRenderers = new Map<string, Renderer>()
   const poseHistory = new Set<string>()
   const materials: GachaReusableMaterialCache = new Map()
+  const faceCatalogItemsCache: PreparedFaceCatalogItemCache = new Map()
+  const providerReadStats: EditorV6MotionProviderReadStats = { calls: 0, hits: 0, misses: 0, evictions: 0, milliseconds: 0 }
+  const cachedProvider = cacheEditorV6MotionAssetProvider(provider, true, providerReadStats, {
+    maxEntries: options.providerCacheEntries ?? 192,
+    maxBytes: 48 * 1024 * 1024,
+    refreshOnHit: options.providerCacheRefreshOnHit
+  })
   return {
-    provider: cacheEditorV6MotionAssetProvider(provider, true),
+    provider: cachedProvider,
     materials,
+    expressionEffectsCache: new WeakMap(),
+    faceCatalogItemsCache,
+    providerReadStats,
     endpointRenderers,
     hasSeenPose(key) { return poseHistory.has(key) },
     rememberPose(key) {
@@ -47,6 +62,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
       endpointRenderers.clear()
       poseHistory.clear()
       materials.clear()
+      faceCatalogItemsCache.clear()
     }
   }
 }

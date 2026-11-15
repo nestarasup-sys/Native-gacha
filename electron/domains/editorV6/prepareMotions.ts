@@ -55,13 +55,15 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   }
   const plansByBlock = new Map(plans.map((plan) => [plan.blockId, plan]))
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
+  const transitionProfiles: Array<{ milliseconds: number; preparedRigs: number; reusedRigs: number; profile?: EditorV6MotionBakeResult['metrics']['profile'] }> = []
   const groupedPlans = [...groups.values()]
   const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
-  const concurrency = Math.min(deps.concurrency ?? 1, Math.max(1, groupedPlans.length)) as 1 | 2 | 3
+  const concurrency = deps.concurrency ?? 1
+  const schedulableLaneCount = Math.min(concurrency, Math.max(1, groupedPlans.length)) as 1 | 2 | 3
   // Keep a character's sequence on one stable bake loop. A shared work-stealing
   // queue can send consecutive requests to separate Electron sessions and lose
   // endpoint-renderer reuse even when the groups are adjacent.
-  const laneAssignments = editorV6MotionBakeLaneAssignments(groupedPlans, concurrency)
+  const laneAssignments = editorV6MotionBakeLaneAssignments(groupedPlans, schedulableLaneCount)
   let completed = 0, baked = 0, preparedRigs = 0, reusedRigs = 0, rigKeyLookups = 0, rigRebuilds = 0, rigBuildMilliseconds = 0, activeBakes = 0, maxConcurrentBakes = 0, failure: unknown
   const controller = new AbortController()
   const abortWithParent = () => controller.abort(deps.signal.reason ?? Error('Preparação de transições cancelada.'))
@@ -95,6 +97,7 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
             rigKeyLookups += bakedResult.metrics.rigKeyLookups ?? 0
             rigRebuilds += bakedResult.metrics.rigRebuilds ?? 0
             rigBuildMilliseconds += bakedResult.metrics.rigBuildMilliseconds ?? 0
+            transitionProfiles.push({ milliseconds: bakedResult.metrics.milliseconds, preparedRigs: bakedResult.metrics.preparedRigs, reusedRigs: bakedResult.metrics.reusedRigs ?? 0, profile: bakedResult.metrics.profile })
             result = bakedResult
           } finally { activeBakes-- }
         }
@@ -145,5 +148,24 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
       }
     }
   }
-  return { project, stats: { total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked, preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, maxConcurrentBakes, milliseconds: performance.now() - began, requestMilliseconds: timings } }
+  const percentile = (values: number[], fraction: number) => {
+    if (!values.length) return 0
+    const sorted = [...values].sort((left, right) => left - right)
+    return sorted[Math.max(0, Math.ceil(sorted.length * fraction) - 1)]
+  }
+  const stageNames = ['assetLoadingMs', 'poseResolutionMs', 'facePreparationMs', 'endpointGeometryMs', 'rigBuildMs', 'sampleRenderingMs', 'cropDetectionMs', 'facePatchPreparationMs', 'atlasAssemblyMs', 'faceAtlasMs', 'atlasEncodingMs', 'ipcRoundTripMs', 'ipcOverheadMs'] as const
+  const stageSummary = Object.fromEntries(stageNames.map((stage) => {
+    const values = transitionProfiles.map((item) => item.profile?.[stage]).filter((value): value is number => typeof value === 'number')
+    return [stage, { samples: values.length, totalMs: values.reduce((sum, value) => sum + value, 0), p50Ms: percentile(values, .5), p95Ms: percentile(values, .95) }]
+  }))
+  const characterSequences = new Set(groupedPlans.map((group) => group[0]?.characterId).filter((id): id is string => Boolean(id))).size
+  const assignedLanes = laneAssignments.filter((lane) => lane.length > 0).length
+  return { project, stats: {
+    total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked,
+    preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, maxConcurrentBakes,
+    configuredConcurrency: concurrency, characterSequences, assignedLanes,
+    milliseconds: performance.now() - began, requestMilliseconds: timings,
+    stageSummary,
+    transitionProfiles: transitionProfiles.map(({ milliseconds, preparedRigs, reusedRigs, profile }) => ({ milliseconds, preparedRigs, reusedRigs, profile }))
+  } }
 }

@@ -45,6 +45,7 @@ export type EditorV6ExportReport = {
   mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }
   mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }
   electronProcessMemory?: EditorV6ExportProcessMemoryReport
+  motionPreparationMemory?: EditorV6ExportProcessMemoryReport
   phaseMilliseconds: EditorV6ExportPhaseTimings
   startedAt: string
   endedAt?: string
