@@ -59,7 +59,7 @@ async function main() {
   const inspected = new Set<number>()
   const inspectEveryFrame = process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS === '1' && process.env.GACHA_EXPORT_CAPTURE_EVERY_FRAME === '1'
   let capturePageHashes: string[] | null = null
-  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), inspectCapture: async ({ window, frame, bitmap }) => {
+  const factory = createEditorV6WorkerFactory({ ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'), mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName), nativeRendererExecutable: join(root, 'out/native/editor-v6-renderer/Release/editor-v6-native-renderer.exe'), inspectCapture: async ({ window, frame, bitmap }) => {
     capturePageHashes?.push(createHash('sha256').update(bitmap).digest('hex'))
     if (process.env.GACHA_EXPORT_CAPTURE_DIAGNOSTICS !== '1') return
     if (!inspectEveryFrame && inspected.has(window.webContents.id)) return
@@ -73,19 +73,82 @@ async function main() {
     await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
   } })
   let active = 0, peak = 0
-  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation'], singlePassLayers = false) => {
+  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation'], singlePassLayers = false, nativeRenderer = false) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, singlePassLayers, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
+      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, singlePassLayers, nativeRenderer, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
   }
   const makeWorker = (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => makeWorkerWithFactory(factory, signal, width, height, renderProject, layeredVideo, mouthLoops)
+  const chromiumFrameWorker = await makeWorkerWithFactory(factory, new AbortController().signal)
+  const nativeFrameWorker = await makeWorkerWithFactory(factory, new AbortController().signal, 320, 180, project, false, undefined, undefined, false, true)
+  let nativeRendererParity: { passed: true; width: number; height: number; meanAbsoluteChannelError: number; alphaDifferentPixels: number; nativeRasterMs: number } | undefined
+  try {
+    const [chromiumFrame, nativeFrame] = await Promise.all([chromiumFrameWorker.frame(0), nativeFrameWorker.frame(0)])
+    assert(chromiumFrame.bitmap?.length === nativeFrame.bitmap?.length && nativeFrame.bitmap?.length === 320 * 180 * 4, 'O renderizador nativo e o Chromium não retornaram quadros BGRA com dimensões equivalentes.')
+    assert(nativeFrame.timings.nativeRasterMs! > 0 && nativeFrame.timings.capturePageMs === undefined, 'O caminho nativo não registrou a rasterização própria nem deixou de capturar via Chromium.')
+    const reference = chromiumFrame.bitmap!, actual = nativeFrame.bitmap!
+    let absoluteError = 0, differentAlpha = 0
+    for (let offset = 0; offset < reference.length; offset++) {
+      absoluteError += Math.abs(reference[offset] - actual[offset])
+      if ((offset & 3) === 3 && reference[offset] !== actual[offset]) differentAlpha++
+    }
+    const meanAbsoluteError = absoluteError / reference.length
+    assert(meanAbsoluteError <= 4 && differentAlpha <= 320 * 180 * 0.01, `O quadro nativo divergiu do Chromium no fixture sintético: MAE=${meanAbsoluteError.toFixed(3)}, pixels com alpha distinto=${differentAlpha}.`)
+    nativeRendererParity = { passed: true, width: 320, height: 180, meanAbsoluteChannelError: meanAbsoluteError, alphaDifferentPixels: differentAlpha, nativeRasterMs: nativeFrame.timings.nativeRasterMs! }
+  } finally {
+    chromiumFrameWorker.close(); nativeFrameWorker.close()
+  }
+  let native1080Benchmark: { passed: true; width: number; height: number; repetitions: number; nativeRoundTripMs: number[]; chromiumRoundTripMs: number[]; medianNativeRoundTripMs: number; medianChromiumRoundTripMs: number; medianNativeRasterMs: number; medianChromiumCapturePageMs: number; maxMeanAbsoluteChannelError: number } | undefined
+  const samples: { nativeRoundTripMs: number; chromiumRoundTripMs: number; nativeRasterMs: number; chromiumCapturePageMs: number; meanAbsoluteChannelError: number }[] = []
+  for (const [repetition, frameNumber] of [0, 25, 30].entries()) {
+    const chromium1080Worker = await makeWorkerWithFactory(factory, new AbortController().signal, 1920, 1080)
+    const native1080Worker = await makeWorkerWithFactory(factory, new AbortController().signal, 1920, 1080, project, false, undefined, undefined, false, true)
+    try {
+      const renderOne = async (mode: 'native' | 'chromium') => {
+        const started = performance.now()
+        const result = await (mode === 'native' ? native1080Worker : chromium1080Worker).frame(frameNumber)
+        return { result, elapsedMs: performance.now() - started }
+      }
+      const order: Array<'native' | 'chromium'> = repetition % 2 === 0 ? ['chromium', 'native'] : ['native', 'chromium']
+      const rendered = new Map<'native' | 'chromium', Awaited<ReturnType<typeof renderOne>>>()
+      for (const mode of order) rendered.set(mode, await renderOne(mode))
+      const chromium = rendered.get('chromium')!, native = rendered.get('native')!
+      assert(chromium.result.bitmap?.length === native.result.bitmap?.length && native.result.bitmap?.length === 1920 * 1080 * 4, 'O renderizador nativo e o Chromium não retornaram quadros Full HD equivalentes.')
+      const reference = chromium.result.bitmap!, actual = native.result.bitmap!
+      let absoluteError = 0
+      for (let offset = 0; offset < reference.length; offset++) absoluteError += Math.abs(reference[offset] - actual[offset])
+      const meanAbsoluteChannelError = absoluteError / reference.length
+      assert(meanAbsoluteChannelError <= 1, `A composição nativa Full HD divergiu do Chromium no quadro ${frameNumber}: MAE=${meanAbsoluteChannelError.toFixed(3)}.`)
+      samples.push({ nativeRoundTripMs: native.elapsedMs, chromiumRoundTripMs: chromium.elapsedMs, nativeRasterMs: native.result.timings.nativeRasterMs!, chromiumCapturePageMs: chromium.result.timings.capturePageMs!, meanAbsoluteChannelError })
+    } finally {
+      chromium1080Worker.close(); native1080Worker.close()
+    }
+  }
+  const medianOfThree = (values: number[]) => { const sorted = [...values].sort((left, right) => left - right); return sorted[1] }
+  native1080Benchmark = {
+    passed: true, width: 1920, height: 1080, repetitions: samples.length,
+    nativeRoundTripMs: samples.map(sample => sample.nativeRoundTripMs), chromiumRoundTripMs: samples.map(sample => sample.chromiumRoundTripMs),
+    medianNativeRoundTripMs: medianOfThree(samples.map(sample => sample.nativeRoundTripMs)), medianChromiumRoundTripMs: medianOfThree(samples.map(sample => sample.chromiumRoundTripMs)),
+    medianNativeRasterMs: medianOfThree(samples.map(sample => sample.nativeRasterMs)), medianChromiumCapturePageMs: medianOfThree(samples.map(sample => sample.chromiumCapturePageMs)),
+    maxMeanAbsoluteChannelError: Math.max(...samples.map(sample => sample.meanAbsoluteChannelError))
+  }
   const options = { startFrame: 5, endFrame: 86, width: 320, height: 180, turbo: true, encoder: 'cpu' as const }
   const output = join(folder, 'turbo.mp4')
   const progressMessages: string[] = []
   const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, getElectronProcessMetrics: () => app.getAppMetrics(), createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
+  const nativeOutput = join(folder, 'native-renderer.mp4')
+  const nativeExport = await runEditorV6Export(project, { ...options, startFrame: 25, endFrame: 35, turbo: false, nativeRenderer: true }, {
+    ...base, id: randomUUID(), outputPath: nativeOutput, reportPath: join(folder, 'native-renderer.report.json'),
+    createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => makeWorkerWithFactory(factory, signal, 320, 180, renderProject, layeredVideo, mouthLoops, undefined, false, true)
+  })
+  const nativePart = nativeExport.attempts.flatMap(attempt => attempt.parts)[0]
+  assert(nativeExport.state === 'completed' && nativeExport.totalFrames === 10 && !nativeExport.fallback, 'O caminho nativo não concluiu uma exportação MP4 de ponta a ponta.')
+  assert((nativePart?.frameTiming?.nativeRasterMs?.samples ?? 0) > 0 && nativePart?.frameTiming?.capturePageMs === undefined, 'O relatório da exportação nativa não separou a composição C++ da captura Chromium.')
+  const nativePacketCount = Number(execFileSync(ffprobe, ['-v', 'error', '-count_packets', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_packets', '-of', 'default=nw=1:nk=1', nativeOutput], { encoding: 'utf8', windowsHide: true }).trim())
+  assert(nativePacketCount === 10, `O MP4 do renderizador nativo não contém os dez quadros esperados (${nativePacketCount}).`)
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   const validatedVideo = (report.validation as { streams?: Array<{ codec_type: string; has_b_frames?: number; nb_read_packets?: string; nb_read_frames?: string }> }).streams?.find(stream => stream.codec_type === 'video')
@@ -667,6 +730,9 @@ async function main() {
   assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
   assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
   const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output,
+    nativeRendererParity,
+    native1080Benchmark,
+    nativeFullExport: { state: nativeExport.state, frames: nativeExport.totalFrames, rendered: nativePart?.rendered, reused: nativePart?.reused, timings: nativePart?.frameTiming },
     captureProfile: {
       turbo320: captureProfile(report), fullHd1080: captureProfile(fullHd), layeredVideo320: captureProfile(videoMotion),
       unique320: { totalFrames: uniqueCapture320.totalFrames, milliseconds: uniqueCapture320.milliseconds, parts: captureProfile(uniqueCapture320) },

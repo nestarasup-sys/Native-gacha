@@ -7,11 +7,12 @@ import { createEditorV6PaintFrameCapture, type EditorV6PaintFrameCapture } from 
 import { createEditorV6WorkerRegistry } from './exportWorkerRegistry'
 import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 import { createEditorV6WorkerFrameRenderer, type EditorV6WorkerFrameRenderer } from './exportWorkerFrameRenderer'
+import { createEditorV6NativeRendererProcess, type EditorV6NativeRendererProcess } from './nativeRendererProcess'
 import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } from './exportWorkerWindow'
 
 export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
 
-export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint' }) {
+export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint'; nativeRendererExecutable?: string }) {
   const registry = createEditorV6WorkerRegistry(deps.ipcMain)
   const activeWorkers = new Set<() => void>()
   let disposed = false
@@ -26,12 +27,14 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
     let closed = false
     let paintCapture: EditorV6PaintFrameCapture | undefined
     let frameRenderer: EditorV6WorkerFrameRenderer | undefined
+    let nativeRendererProcess: EditorV6NativeRendererProcess | undefined
     const close = () => {
       if (closed) return
       closed = true
       activeWorkers.delete(close)
       registration.retire()
       frameRenderer?.close()
+      if (nativeRendererProcess) void nativeRendererProcess.close()
       paintCapture?.close()
       signal.removeEventListener('abort', abort)
       window.removeListener('closed', close)
@@ -59,12 +62,17 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
       await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
       window.webContents.setZoomFactor(1)
       if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.layeredVideo && payload.singlePassLayers ? payload.height * 2 : payload.height, signal)
+      if (payload.nativeRenderer) {
+        if (!deps.nativeRendererExecutable) throw Error('O executável do renderizador nativo não está configurado.')
+        nativeRendererProcess = createEditorV6NativeRendererProcess(deps.nativeRendererExecutable)
+      }
       frameRenderer = createEditorV6WorkerFrameRenderer({
         window, payload, signal: workerController.signal, captureRetryMilliseconds,
         paintCapture: deps.captureMode === 'paint-event' ? paintCapture : undefined,
         comparePaintCapture: deps.captureMode === 'compare-paint' ? paintCapture : undefined,
         inspectCapture: deps.inspectCapture,
-        doubleBufferLayers: payload.layeredVideo && !payload.singlePassLayers && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+        doubleBufferLayers: payload.layeredVideo && !payload.singlePassLayers && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0',
+        nativeRendererProcess
       })
       return { close, frame: frameRenderer.frame }
     } catch (error) { close(); throw error }

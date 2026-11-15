@@ -1,9 +1,10 @@
 import type { BrowserWindow } from 'electron'
-import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameResult, EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
+import type { EditorV6FrameMetrics, EditorV6FrameTimings, EditorV6RenderFrameResult, EditorV6NativeFramePlan, EditorV6WorkerPayload } from '../../../src/shared/editorV6Export'
 import { addEditorV6FrameMetrics, addEditorV6FrameTimings, hasEditorV6FrameMetrics } from './exportMetrics'
 import { waitForExport } from './exportProcess'
 import { captureEditorV6PaintedFrame, type EditorV6PaintFrameCapture } from './exportFrameCapture'
 import { formatEditorV6Error } from '../../../src/shared/editorV6Error'
+import type { EditorV6NativeRendererProcess } from './nativeRendererProcess'
 
 export type EditorV6WorkerFrameRenderer = {
   frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>
@@ -12,7 +13,7 @@ export type EditorV6WorkerFrameRenderer = {
 
 /** Owns frame requests, paint-token capture, and layered bitmap assembly for one worker window. */
 export function createEditorV6WorkerFrameRenderer({
-  window, payload, signal, captureRetryMilliseconds, paintCapture, comparePaintCapture, inspectCapture, doubleBufferLayers = false
+  window, payload, signal, captureRetryMilliseconds, paintCapture, comparePaintCapture, inspectCapture, doubleBufferLayers = false, nativeRendererProcess
 }: {
   window: BrowserWindow
   payload: EditorV6WorkerPayload
@@ -20,6 +21,7 @@ export function createEditorV6WorkerFrameRenderer({
   captureRetryMilliseconds: number
   /** Preserve the preceding layered BGRA buffer until FFmpeg confirms its write. */
   doubleBufferLayers?: boolean
+  nativeRendererProcess?: EditorV6NativeRendererProcess
   paintCapture?: EditorV6PaintFrameCapture
   comparePaintCapture?: EditorV6PaintFrameCapture
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
@@ -78,10 +80,59 @@ export function createEditorV6WorkerFrameRenderer({
     return { bitmap, readbacks, elapsedMs, paintWaitMs, capturePageMs, captureBitmapMs }
   }
 
+  const renderNative = async (plan: EditorV6NativeFramePlan, timings: EditorV6FrameTimings = {}): Promise<{ bitmap: Buffer; timings: EditorV6FrameTimings }> => {
+    if (!nativeRendererProcess) throw Error('O processo do renderizador nativo não foi iniciado.')
+    const started = performance.now()
+    const bitmap = await nativeRendererProcess.render(plan, signal)
+    return { bitmap, timings: { ...timings, nativeRasterMs: (timings.nativeRasterMs ?? 0) + performance.now() - started } }
+  }
+
   const frame = async (frameNumber: number): Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }> => {
     signal.throwIfAborted()
     if (closed) throw Error('O renderizador de exportação foi encerrado.')
     const result = await draw(frameNumber, stackedLayers ? 'stacked' : layeredVideo ? 'background' : undefined)
+    if (payload.nativeRenderer) {
+      if (!nativeRendererProcess) throw Error('O processo do renderizador nativo não foi iniciado.')
+      if (!layeredVideo || stackedLayers) {
+        if (result.reused) return result
+        if (!result.nativeFrame) throw Error(`O worker não preparou o plano nativo do quadro ${frameNumber}.`)
+        const rendered = await renderNative(result.nativeFrame, result.timings)
+        return { ...result, ...rendered, reused: false }
+      }
+
+      currentLayeredBitmap = doubleBufferLayers && layeredBitmap
+        ? (spareLayeredBitmap ?? Buffer.allocUnsafe(layerBytes * 2))
+        : (layeredBitmap ?? Buffer.allocUnsafe(layerBytes * 2))
+      const timings: EditorV6FrameTimings = { ...result.timings }
+      const metrics: EditorV6FrameMetrics = { ...result.metrics }
+      const collect = (drawn: EditorV6RenderFrameResult) => {
+        addEditorV6FrameTimings(timings, drawn.timings)
+        addEditorV6FrameMetrics(metrics, drawn.metrics)
+      }
+      const copyLayer = async (offset: number, drawn: EditorV6RenderFrameResult) => {
+        if (drawn.layerReused) {
+          if (!layeredBitmap || !currentLayeredBitmap) throw Error('Uma camada nativa foi reutilizada antes de existir um quadro válido.')
+          if (layeredBitmap !== currentLayeredBitmap) layeredBitmap.copy(currentLayeredBitmap, offset, offset, offset + layerBytes)
+          return
+        }
+        if (!drawn.nativeFrame) throw Error(`O worker não preparou a camada nativa do quadro ${frameNumber}.`)
+        const rendered = await renderNative(drawn.nativeFrame, drawn.timings)
+        collect({ reused: false, timings: rendered.timings })
+        if (!currentLayeredBitmap || rendered.bitmap.length !== layerBytes) throw Error('Dimensões inválidas da camada renderizada em C++.')
+        rendered.bitmap.copy(currentLayeredBitmap, offset)
+      }
+      await copyLayer(0, result)
+      const foreground = await draw(frameNumber, 'foreground')
+      if (foreground.reused) throw Error('O estado visual mudou entre as camadas nativas do quadro.')
+      collect(foreground)
+      await copyLayer(layerBytes, foreground)
+      if (!currentLayeredBitmap || currentLayeredBitmap.length !== layerBytes * 2) throw Error('O renderizador nativo não montou as duas camadas do quadro.')
+      const bitmap = currentLayeredBitmap
+      if (doubleBufferLayers) spareLayeredBitmap = layeredBitmap
+      layeredBitmap = bitmap
+      currentLayeredBitmap = undefined
+      return { reused: false, bitmap, timings, ...(hasEditorV6FrameMetrics(metrics) ? { metrics } : {}) }
+    }
     if (result.reused) return result
     if (!layeredVideo || stackedLayers) {
       // Capture the two vertically stacked scenes at once, directly into a

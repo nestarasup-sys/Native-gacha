@@ -1132,6 +1132,9 @@ app.whenReady().then(async () => {
   editorV6ExportService = registerEditorV6ExportHandlers({ ipcMain, assertTrustedSender, projectPath: editorV6Path,
     recordDiagnostic: diagnosticsLog.recordMain,
     toolsDirectory: editorV6VideoTools,
+    nativeRendererExecutable: app.isPackaged
+      ? join(process.resourcesPath, 'native', 'editor-v6-native-renderer.exe')
+      : join(app.getAppPath(), 'out', 'native', 'editor-v6-renderer', 'Release', 'editor-v6-native-renderer.exe'),
     workerHtml: join(__dirname, '../renderer/editor-v6-export.html'), workerPreload: join(__dirname, '../preload/editorV6ExportPreload.cjs'),
     devUrl: devRendererUrl, tempRoot: app.getPath('temp'), getCharacters: () => customizerService.list(),
     resolveLibraryVideo: async (id) => { const item = await videoLibrary.resolveMedia(id); return { ...item, path: await dataFileSystem.resolvePhysicalPath(item.path) ?? item.path } },

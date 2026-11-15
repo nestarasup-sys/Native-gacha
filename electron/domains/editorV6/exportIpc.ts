@@ -41,6 +41,7 @@ type EditorV6ExportIpcDependencies = {
   releaseIdleMotionWorkers?: () => void
   getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
   captureMode?: 'capturePage' | 'paint-event'
+  nativeRendererExecutable?: string
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void
   qualityReferenceFolder?: string
@@ -69,7 +70,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     await publishJsonManifest({ files: fs, target: folderPreference, temporary: `${folderPreference}.${randomUUID()}.tmp`, value: { folder } })
   }
   const mediaPath = async (projectId: string, fileName: string, libraryVideoId?: string) => libraryVideoId ? (await deps.resolveLibraryVideo(libraryVideoId)).path : join(deps.projectPath(projectId), 'media', fileName)
-  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, captureMode: deps.captureMode, inspectCapture: deps.inspectCapture })
+  const workers = createEditorV6WorkerFactory({ ipcMain: deps.ipcMain, html: deps.workerHtml, preload: deps.workerPreload, devUrl: deps.devUrl, mediaPath, resolveLibraryAsset: deps.resolveLibraryAsset, captureMode: deps.captureMode, inspectCapture: deps.inspectCapture, nativeRendererExecutable: deps.nativeRendererExecutable })
   const ffmpeg = join(deps.toolsDirectory, 'ffmpeg.exe'), ffprobe = join(deps.toolsDirectory, 'ffprobe.exe')
   const jobs = createEditorV6ExportJobRegistry()
   const pendingFileWrites = createPendingOperationTracker()
@@ -137,6 +138,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
           // One paint/readback for both layers. Serial mode remains available
           // for validation of pixel parity with the old layered compositor.
           singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE !== 'serial',
+          nativeRenderer: options.nativeRenderer === true,
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
           reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
           ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)

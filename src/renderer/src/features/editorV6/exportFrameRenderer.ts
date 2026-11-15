@@ -6,6 +6,7 @@ import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
 import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
+import { createEditorV6NativeFramePlan } from './editorV6NativeFramePlan'
 
 type HairRuntime = ReturnType<typeof createEditorV6ExportWorkerHairRuntime>
 type ExportScene = ReturnType<HairRuntime['resolveRawSceneAtFrame']>
@@ -30,6 +31,7 @@ type Options = {
   width: number
   height: number
   layeredVideo: boolean
+  nativeRenderer?: boolean
   hairAnimation: EditorV6WorkerPayload['hairAnimation']
   projectAssetIndex: ReadonlyMap<string, EditorV6Asset>
   assetsById: Map<string, EditorV6Asset>
@@ -46,7 +48,7 @@ type Options = {
 /** Coordinates one export-frame resolution, composition, commit and paint handoff. */
 export function createEditorV6ExportFrameRenderer(options: Options) {
   const {
-    project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById,
+    project, width, height, layeredVideo, nativeRenderer = false, hairAnimation, projectAssetIndex, assetsById,
     hairRuntime, prepareAssets, commitSurface, onImageLoad, waitForSvgImages, setPaintToken, waitForPaintFrame
   } = options
   const now = options.now ?? (() => performance.now())
@@ -108,6 +110,22 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     })
     // Pass only assets referenced by this layer/frame instead of rebuilding the whole catalog.
     const renderAssets = selectEditorV6RenderableAssets(renderScene, activeLayer ?? 'all', resolveFrameAsset)
+    if (nativeRenderer) {
+      const nativePlanStarted = now()
+      const nativeFrame = await createEditorV6NativeFramePlan({
+        scene: renderScene,
+        assets: renderAssets,
+        resolveAssetById: resolveFrameAsset,
+        rasterCanvases,
+        frame,
+        width,
+        height,
+        layer: layer ?? 'all'
+      })
+      timings.nativePlanMs = now() - nativePlanStarted
+      frameReuse.recordRendered(key, layerKeys, activeLayer)
+      return { reused: false, nativeFrame, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
+    }
     const assetPreparationStarted = now()
     await prepareAssets(renderAssets)
     timings.assetPreparationMs = now() - assetPreparationStarted
