@@ -59,17 +59,18 @@ export function createEditorV6SvgImageReadiness() {
 }
 
 /** Builds the hidden render surface and compositor token used by export capture. */
-export function createEditorV6ExportWorkerSurface(width: number, height: number) {
+export function createEditorV6ExportWorkerSurface(width: number, height: number, stackedLayers = false) {
   const rootElement = document.getElementById('root')
   if (!rootElement) throw Error('A superfície do renderizador de exportação não foi encontrada.')
   rootElement.style.width = `${width}px`
-  rootElement.style.height = `${height}px`
+  const captureHeight = stackedLayers ? height * 2 : height
+  rootElement.style.height = `${captureHeight}px`
   rootElement.style.overflow = 'hidden'
 
   const paintTokenElement = document.createElement('div')
   paintTokenElement.setAttribute('aria-hidden', 'true')
   Object.assign(paintTokenElement.style, {
-    position: 'fixed', left: '0', top: `${height}px`, width: '24px', height: '24px',
+    position: 'fixed', left: '0', top: `${captureHeight}px`, width: '24px', height: '24px',
     pointerEvents: 'none', zIndex: '2147483647', opacity: '1', contain: 'strict'
   })
   const cells = Array.from({ length: 24 }, (_, bit) => {

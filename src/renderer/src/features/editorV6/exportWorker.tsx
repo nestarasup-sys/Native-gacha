@@ -1,5 +1,6 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
+import { EditorV6StackedExportSurface } from './exportStackedSceneSurface'
 import { type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { formatEditorV6Error } from '../../../../shared/editorV6Error'
 import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResources'
@@ -11,8 +12,8 @@ import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } fr
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
-  const { project, width, height, layeredVideo, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false, reuseRestHair = true } = await worker.payload()
-  const surface = createEditorV6ExportWorkerSurface(width, height)
+  const { project, width, height, layeredVideo, singlePassLayers = false, nativeRenderer = false, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false, reuseRestHair = true } = await worker.payload()
+  const surface = createEditorV6ExportWorkerSurface(width, height, layeredVideo && singlePassLayers)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
   const { prepare: prepareFrameAssets } = createEditorV6ExportFrameAssetImageLoader(images)
@@ -25,9 +26,14 @@ async function initialize() {
   window.addEventListener('pagehide', hairResources.dispose, { once: true })
   const hairRuntime = createEditorV6ExportWorkerHairRuntime(project, hairAnimation, hairResources, mouthLoops, includeSpeechMouth, reuseRestHair)
   const renderFrame = createEditorV6ExportFrameRenderer({
-    project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById, hairRuntime,
+    project, width, height, layeredVideo, nativeRenderer, hairAnimation, projectAssetIndex, assetsById, hairRuntime,
     prepareAssets: prepareFrameAssets,
-    commitSurface: surface => flushSync(() => root.render(<SceneSurface {...surface} />)),
+    commitSurface: surface => flushSync(() => {
+      const { renderLayer, ...sceneProps } = surface
+      root.render(renderLayer === 'stacked'
+        ? <EditorV6StackedExportSurface {...sceneProps} />
+        : <SceneSurface {...sceneProps} renderLayer={renderLayer} />)
+    }),
     onImageLoad: onSvgImageLoad,
     waitForSvgImages: () => {
       let pending: Promise<void>[] | undefined

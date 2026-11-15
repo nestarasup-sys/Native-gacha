@@ -13,8 +13,8 @@ const report = (renderingMs = 360000, wallMs = 370000) => ({
   phaseMilliseconds: { rendering: renderingMs, motionPreparation: 5000 },
   attempts: [{
     encoder: 'cpu', parts: [
-      { index: 0, frames: 5400, milliseconds: 180000, frameRafGate: false, frameRestHairReuse: true,
-        frameMetrics: { hairRasterFrames: 30, hairCompositeReuseFrames: 300, captureStaleReadbacks: 2 },
+      { index: 0, frames: 5400, milliseconds: 180000, frameRafGate: false, frameRestHairReuse: true, frameLayerCapture: 'stacked',
+        frameMetrics: { hairRasterFrames: 30, hairCompositeReuseFrames: 300, captureReadbacks: 4300, captureStaleReadbacks: 2 },
         frameTiming: { frameRoundTripMs: { p50Ms: 16, p95Ms: 35 } } },
       { index: 1, frames: 5400, milliseconds: 180000, frameRafGate: false, frameRestHairReuse: true,
         frameMetrics: { hairRasterFrames: 40, hairCompositeReuseFrames: 400, captureStaleReadbacks: 3 } }
@@ -33,6 +33,7 @@ test('resumes relative speed, hair metrics and per-part timing without summing p
   assert.equal(summary.metrics.captureStaleReadbacks, 5)
   assert.equal(summary.effectiveRenderFps, 30)
   assert.ok(formatAnalysis(summary).includes('frameRoundTripMs: p50 16ms'))
+  assert.ok(formatAnalysis(summary).includes('captura=stacked; leituras=4300'))
 })
 
 test('compares the same encoder/frame range and rejects misleading comparisons', () => {

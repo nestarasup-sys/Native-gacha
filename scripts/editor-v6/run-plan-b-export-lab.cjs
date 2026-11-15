@@ -163,7 +163,7 @@ async function runWpr(args) {
   return { ok: result.code === 0, code: result.code, message: result.stdout.toString('utf8').trim() || result.stderr.trim() }
 }
 
-async function launchBenchmark({ label, projectFolder, projectId, snapshotRoot, outputFolder, encoder, toolsPath }) {
+async function launchBenchmark({ label, projectFolder, projectId, snapshotRoot, outputFolder, encoder, toolsPath, nativeRenderer }) {
   const args = [
     path.join(root, 'scripts', 'editor-v6', 'benchmark-project-export.cjs'),
     `--project=${projectFolder}`, `--library=${path.join(snapshotRoot, 'library')}`,
@@ -171,11 +171,12 @@ async function launchBenchmark({ label, projectFolder, projectId, snapshotRoot, 
     `--motion-cache=${path.join(snapshotRoot, 'motion-cache-empty')}`, `--output=${outputFolder}`,
     `--encoder=${encoder}`, '--ui-export-profile', '--hair-preset-slot=2',
     `--hair-preset-file=${path.join(root, 'out', 'editor-v6-stress', 'preferences', `plan-b-${path.basename(snapshotRoot)}-preset-2.json`)}`,
-    '--motion-bake-concurrency=2', '--repeat=1', '--disable-mouth-animation', '--capture-pixel-hashes', '--retain-quality-artifacts',
+    '--motion-bake-concurrency=2', '--repeat=1', ...(!nativeRenderer ? ['--disable-mouth-animation'] : []), '--capture-pixel-hashes',
+    ...(nativeRenderer ? ['--native-renderer', '--retain-mp4-for-quality'] : ['--retain-quality-artifacts']),
     ...(projectId === projectIds.failureReproduction ? ['--full-timeline'] : ['--duration-seconds=20'])
   ]
   if (toolsPath) args.push(`--video-tools=${toolsPath}`)
-  const env = { ...process.env, GACHA_EDITOR_V6_STRESS_MOUTH_LOOP: '0', GACHA_EDITOR_V6_STRESS_RUN_LABEL: label }
+  const env = { ...process.env, ...(!nativeRenderer ? { GACHA_EDITOR_V6_STRESS_MOUTH_LOOP: '0' } : {}), GACHA_EDITOR_V6_STRESS_RUN_LABEL: label }
   const output = await runCapture(process.execPath, args, { env, maxBytes: 4 * 1024 * 1024 })
   await fs.mkdir(outputFolder, { recursive: true })
   await fs.writeFile(path.join(outputFolder, 'benchmark-console.log'), output.stdout)
@@ -235,6 +236,8 @@ async function readFailureReports(runFolder) {
 async function runSuite() {
   const git = assertBranch()
   const smoke = process.argv.includes('--smoke')
+  const nativeRenderer = process.argv.includes('--native-renderer')
+  if (nativeRenderer && !smoke) throw Error('O teste nativo real precisa usar --smoke para limitar a execução ao projeto curto autorizado e ao encoder CPU.')
   const tools = await verifyTools()
   const runId = `plan-b-export-lab-${nowId()}`
   const backupRoot = path.join(root, 'out', 'editor-v6-stress', 'backups', runId)
@@ -262,7 +265,7 @@ async function runSuite() {
   const comparisonToolsPath = modes[1]?.toolsPath ?? modes[0].toolsPath ?? path.join(root, 'resources', 'video-tools')
   for (const project of projectRuns) {
     for (const tool of modes) {
-      for (const encoder of ['cpu', 'amf']) {
+      for (const encoder of nativeRenderer ? ['cpu'] : ['cpu', 'amf']) {
         const shouldTrace = project.key === 'failureReproduction'
         const wprStatus = shouldTrace ? await runWpr(['-status']) : { ok: false, message: 'Trace reservado para a reprodução curta.' }
         const tracePath = path.join(suiteRoot, `${project.key}-${tool.id}-${encoder}.etl`)
@@ -276,7 +279,7 @@ async function runSuite() {
           const outputFolder = path.join(suiteRoot, label)
           const run = await launchBenchmark({
             label, projectFolder: project.folder, projectId: project.id, snapshotRoot: backupRoot,
-            outputFolder, encoder, toolsPath: tool.toolsPath
+            outputFolder, encoder, toolsPath: tool.toolsPath, nativeRenderer
           })
           run.toolchain = tool.id
           run.project = project.key
@@ -286,8 +289,10 @@ async function runSuite() {
             const selectedProbe = await probe(tool.toolsPath ? path.join(tool.toolsPath, 'ffprobe.exe') : path.join(root, 'resources', 'video-tools', 'ffprobe.exe'), run.videoPath).catch(error => ({ error: error.message }))
             const independentProbe = await probe(path.join(comparisonToolsPath, 'ffprobe.exe'), run.videoPath).catch(error => ({ error: error.message }))
             run.ffprobe = { selectedBuild: selectedProbe, independent9_0Build: independentProbe }
-            const quality = await runCapture(process.execPath, [path.join(root, 'scripts', 'editor-v6', 'compare-planb-quality.cjs'), outputFolder, run.videoPath, path.join(comparisonToolsPath, 'ffmpeg.exe'), '1920', '1080'], { maxBytes: 1024 * 1024 })
-            run.quality = quality.code === 0 ? JSON.parse(quality.stdout.toString('utf8')) : { error: quality.stderr.trim() }
+            if (!nativeRenderer) {
+              const quality = await runCapture(process.execPath, [path.join(root, 'scripts', 'editor-v6', 'compare-planb-quality.cjs'), outputFolder, run.videoPath, path.join(comparisonToolsPath, 'ffmpeg.exe'), '1920', '1080'], { maxBytes: 1024 * 1024 })
+              run.quality = quality.code === 0 ? JSON.parse(quality.stdout.toString('utf8')) : { error: quality.stderr.trim() }
+            } else run.quality = { skipped: true, reason: 'O comparador do LAB requer buffers raw; o MP4 nativo foi retido para comparação externa.' }
           }
           results.push(run)
           const validationRun = run.validation?.runs?.[0]
@@ -307,7 +312,7 @@ async function runSuite() {
     project: snapshot.projectTitles,
     snapshot: { path: backupRoot, projects: snapshotInfo.projects, inventory: snapshotInfo.inventory, hairPreset: 'FIRST_HAIR_MOTION_PRESET shipped by the app, assigned to slot 2; same preset snapshot for every encoder/build.' },
     machine: collectMachineInfo(), toolchains: tools, wpr: { executable: spawnSync('where.exe', ['wpr.exe'], { encoding: 'utf8', windowsHide: true }).stdout?.trim() ?? null, traces },
-    methodology: { mode: smoke ? 'smoke' : 'full', framePipelineOverlap: process.env.GACHA_EDITOR_V6_FRAME_OVERLAP === '0' ? 'disabled' : 'enabled', failureProjectRounds: smoke ? 1 : 3, encoders: ['cpu', 'amf'], ffmpegBuilds: modes.map(tool => tool.id), profile: '1920x1080, Turbo strict, mouth animation disabled, hair preset slot 2, 30fps', fullFailureProjectFrames: 519, planBSampleFrames: smoke ? null : 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
+    methodology: { mode: smoke ? 'smoke' : 'full', renderer: nativeRenderer ? 'native-cpp' : 'chromium', framePipelineOverlap: process.env.GACHA_EDITOR_V6_FRAME_OVERLAP === '0' ? 'disabled' : 'enabled', failureProjectRounds: smoke ? 1 : 3, encoders: nativeRenderer ? ['cpu'] : ['cpu', 'amf'], ffmpegBuilds: modes.map(tool => tool.id), profile: `1920x1080, Turbo strict, mouth animation ${nativeRenderer ? 'enabled' : 'disabled'}, hair preset slot 2, 30fps`, fullFailureProjectFrames: 519, planBSampleFrames: smoke ? null : 600, wprScope: 'GeneralProfile + GPU, per encoder/build group' },
     groups: [...new Set(results.map(item => JSON.stringify([item.project, item.toolchain, item.encoder])))].map(key => {
       const [project, toolchain, encoder] = JSON.parse(key)
       const selected = results.filter(item => item.project === project && item.toolchain === toolchain && item.encoder === encoder)

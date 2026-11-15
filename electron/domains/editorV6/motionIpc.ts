@@ -11,8 +11,8 @@ import { restrictRendererPermissions } from '../../windowPermissions'
 import { restrictRendererResources } from '../../windowResourcePolicy'
 import { createEditorV6MotionBakeSingleFlight } from './motionBakeSingleFlight'
 
-type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void }
-type Lane = { partition: string; window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
+type Active = { request: EditorV6MotionBakeRequest; resolve: (result: EditorV6MotionBakeResult) => void; reject: (error: Error) => void; dispatchedAt?: number; serviceActiveConcurrencyAtDispatch?: number }
+type Lane = { index: number; partition: string; window?: BrowserWindow; active?: Active; delivery?: EditorV6MotionBakeRequest; waiting?: (request: EditorV6MotionBakeRequest | null) => void; idle?: ReturnType<typeof setTimeout>; tail: Promise<void>; count: number }
 export function editorV6MotionMemoryCacheKey(request: EditorV6MotionBakeRequest): string {
   return `${motionCacheKey(request)}:pixels=${request.maxAtlasPixels ?? 'unbounded'}`
 }
@@ -30,7 +30,8 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   const bakeFlights = createEditorV6MotionBakeSingleFlight()
   const cacheStats: EditorV6MotionCacheStats = { memoryHits: 0, diskHits: 0, misses: 0, rasterized: 0, diskMissing: 0, diskRejected: 0, diskReadErrors: 0, diskWrites: 0, diskWriteSkipped: 0, diskWriteErrors: 0, diskBytesRead: 0, diskBytesWritten: 0 }
   // A lane reuses one in-memory session, keeping worker storage isolated and bounded by concurrency.
-  const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, () => ({ partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
+  const lanes: Lane[] = Array.from({ length: deps.concurrency ?? 1 }, (_, index) => ({ index, partition: `editor-v6-motion-${crypto.randomUUID()}`, tail: Promise.resolve(), count: 0 }))
+  let activeServiceBakes = 0, peakActiveServiceBakes = 0
   let stopped = false
   const worker = (event: IpcMainInvokeEvent) => {
     const lane = workers.get(event.sender.id)
@@ -40,13 +41,14 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   deps.ipcMain.handle(editorV6MotionChannels.payload, (event) => {
     if (stopped || retiredWorkers.has(event.sender.id)) return null
     const lane = worker(event)
-    if (lane.delivery) { const request = lane.delivery; lane.delivery = undefined; return request }
+    if (lane.delivery) { const request = lane.delivery; lane.delivery = undefined; if (lane.active) lane.active.dispatchedAt = performance.now(); return request }
     if (lane.waiting) throw Error('O preparador já está esperando trabalho.')
     return new Promise<EditorV6MotionBakeRequest | null>((resolve) => { lane.waiting = resolve })
   })
   deps.ipcMain.handle(editorV6MotionChannels.complete, (event, rawResult, error?: string) => {
     if (stopped || retiredWorkers.has(event.sender.id)) return
-    const job = worker(event).active
+    const lane = worker(event)
+    const job = lane.active
     if (!job) throw Error('O preparador não tem uma transição ativa.')
     if (error) { job.reject(Error(String(error).slice(0, 5000))); return }
     try {
@@ -57,6 +59,18 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       const needsFaceAsset = Boolean(job.request.mouthScaleSamples?.some((scale) => scale > 1.000001) && !editorV6UsesStaticMouthAtlas(job.request))
       if (job.request.mouthScaleSamples?.some((scale, index) => scale > 1.000001 && !result.motion.frames[index]?.facePatch)
         || needsFaceAsset && (!result.faceAsset || result.motion.faceAssetId !== result.faceAsset.id)) throw Error('O preparador não retornou a camada facial obrigatória da animação da boca.')
+      if (result.metrics.profile) {
+        const roundTripMs = job.dispatchedAt === undefined ? 0 : Math.max(0, performance.now() - job.dispatchedAt)
+        const payloadBytes = result.asset.dataUrl.length + (result.faceAsset?.dataUrl.length ?? 0) + JSON.stringify(result.motion).length
+        result.metrics.profile.ipcRoundTripMs = roundTripMs
+        // Includes worker scheduling, IPC transfer and main-process validation; it is not a pure serialization timer.
+        result.metrics.profile.ipcOverheadMs = Math.max(0, roundTripMs - result.metrics.milliseconds)
+        result.metrics.profile.requestPayloadBytes = JSON.stringify(job.request).length
+        result.metrics.profile.resultPayloadBytes = payloadBytes
+        result.metrics.profile.servicePoolCapacity = lanes.length
+        result.metrics.profile.serviceObservedPeakConcurrency = peakActiveServiceBakes
+        result.metrics.profile.serviceActiveConcurrencyAtDispatch = job.serviceActiveConcurrencyAtDispatch ?? 0
+      }
       job.resolve(result)
     } catch (reason) { job.reject(reason instanceof Error ? reason : Error(String(reason))) }
   })
@@ -73,7 +87,9 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     let resolve!: Active['resolve'], reject!: Active['reject']
     const completion = new Promise<EditorV6MotionBakeResult>((yes, no) => { resolve = yes; reject = no })
     void completion.catch(() => {})
-    lane.active = { request, resolve, reject }
+    activeServiceBakes++
+    peakActiveServiceBakes = Math.max(peakActiveServiceBakes, activeServiceBakes)
+    lane.active = { request, resolve, reject, dispatchedAt: undefined, serviceActiveConcurrencyAtDispatch: activeServiceBakes }
     const abort = () => close(lane)
     signal.addEventListener('abort', abort, { once: true })
     try {
@@ -100,7 +116,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       lane.idle.unref()
       return result
     } catch (error) { close(lane); throw error }
-    finally { lane.active = undefined; signal.removeEventListener('abort', abort) }
+    finally { lane.active = undefined; activeServiceBakes--; signal.removeEventListener('abort', abort) }
   }
   const validateRequest = (request: EditorV6MotionBakeRequest) => {
     const { plan, character } = request

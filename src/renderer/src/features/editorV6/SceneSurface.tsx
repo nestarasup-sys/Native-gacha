@@ -14,7 +14,7 @@ export { wrapSceneText } from './sceneTextLayout'
 
 const transform = (x: number, y: number, rotation: number) => `translate(${(50 + x) * 19.2} ${(50 + y) * 10.8}) rotate(${rotation})`
 const Selection = ({ width, height }: { width: number; height: number }) => <rect x={-width / 2 - 2} y={-height / 2 - 2} width={width + 4} height={height + 4} fill="none" stroke="#e84f88" strokeWidth={2} vectorEffect="non-scaling-stroke" pointerEvents="none" />
-type SceneSurfaceProps = {
+export type SceneSurfaceProps = {
   scene: EditorV6ResolvedScene
   assets: readonly EditorV6Asset[]
   resolveAssetById?: (id: string) => EditorV6Asset | undefined

@@ -1,6 +1,8 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMotion'
-import { createEditorV6ExportWorkerHairResources } from '../../src/renderer/src/features/editorV6/exportWorkerHairResources'
+import { createEditorV6ExportWorkerHairResources, loadHairImage } from '../../src/renderer/src/features/editorV6/exportWorkerHairResources'
+
+afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks() })
 
 function animation(): EditorV6HairMotionBundle {
   return {
@@ -22,6 +24,46 @@ function fakeRenderer() {
 }
 
 describe('createEditorV6ExportWorkerHairResources', () => {
+  it('decodes PNG data URLs as origin-clean bitmaps', async () => {
+    const createBitmap = vi.fn(async (_blob: ImageBitmapSource) => ({ width: 1, height: 1, close: vi.fn() } as unknown as ImageBitmap))
+    vi.stubGlobal('createImageBitmap', createBitmap)
+
+    await loadHairImage('data:image/png;base64,aGVsbG8=')
+
+    const [blob] = createBitmap.mock.calls[0]
+    expect(blob).toBeInstanceOf(Blob)
+    expect((blob as Blob).type).toBe('image/png')
+  })
+
+  it('rasterizes SVG data URLs into an origin-clean canvas bitmap', async () => {
+    const canvas = {
+      width: 0, height: 0,
+      getContext: vi.fn(() => ({ drawImage: vi.fn() }))
+    } as unknown as HTMLCanvasElement
+    const image = { naturalWidth: 80, naturalHeight: 64, src: '', decode: vi.fn(async () => {}) }
+    const createBitmap = vi.fn(async (_source: ImageBitmapSource) => ({ width: 80, height: 64, close: vi.fn() } as unknown as ImageBitmap))
+    vi.stubGlobal('createImageBitmap', createBitmap)
+    vi.stubGlobal('Image', vi.fn(function ImageMock() { return image }))
+    vi.stubGlobal('document', { createElement: vi.fn(() => canvas) })
+    const createObjectUrl = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:hair-test')
+    const revokeObjectUrl = vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {})
+
+    await loadHairImage(`data:image/svg+xml;base64,${Buffer.from('<svg/>').toString('base64')}`)
+
+    expect(createObjectUrl.mock.calls[0][0]).toMatchObject({ type: 'image/svg+xml' })
+    expect(image.decode).toHaveBeenCalledOnce()
+    expect(canvas.getContext).toHaveBeenCalledWith('2d')
+    expect(createBitmap).toHaveBeenCalledWith(canvas)
+    expect(revokeObjectUrl).toHaveBeenCalledWith('blob:hair-test')
+    expect([canvas.width, canvas.height]).toEqual([1, 1])
+  })
+
+  it('rejects unsupported data URL origins and formats', async () => {
+    await expect(loadHairImage('data:image/jpeg;base64,aGVsbG8=')).rejects.toMatchObject({
+      cause: expect.objectContaining({ message: expect.stringContaining('origem ou formato não aceito') })
+    })
+  })
+
   it('loads each image once and releases every worker-owned map and canvas on disposal', async () => {
     const renderer = fakeRenderer()
     const loaded = new Map<string, ImageBitmap>()

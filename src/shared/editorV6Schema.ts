@@ -129,7 +129,26 @@ export const editorV6MotionResultSchema = z.object({
   assetRole: z.literal('face-atlas').optional(),
   mouthIsolationMode: z.enum(['isolated-piece', 'legacy-patch']).optional(),
   motion: editorV6MotionAtlasSchema,
-  metrics: z.object({ milliseconds: finite.min(0), preparedRigs: z.number().int().min(0).max(9), reusedRigs: z.number().int().min(0).max(100).optional(), rigKeyLookups: z.number().int().min(0).max(100).optional(), rigRebuilds: z.number().int().min(0).max(100).optional(), rigBuildMilliseconds: finite.min(0).optional(), samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000) })
+  metrics: z.object({
+    milliseconds: finite.min(0), preparedRigs: z.number().int().min(0).max(9),
+    reusedRigs: z.number().int().min(0).max(100).optional(), rigKeyLookups: z.number().int().min(0).max(100).optional(),
+    rigRebuilds: z.number().int().min(0).max(100).optional(), rigBuildMilliseconds: finite.min(0).optional(),
+    samples: z.number().int().min(1).max(7), atlasPixels: z.number().int().min(1).max(8_100_000),
+    profile: z.object({
+      assetLoadingMs: finite.min(0), poseResolutionMs: finite.min(0), facePreparationMs: finite.min(0),
+      endpointGeometryMs: finite.min(0), rigBuildMs: finite.min(0), sampleRenderingMs: finite.min(0),
+      cropDetectionMs: finite.min(0), facePatchPreparationMs: finite.min(0), atlasAssemblyMs: finite.min(0),
+      faceAtlasMs: finite.min(0), atlasEncodingMs: finite.min(0), sampleRenderCalls: z.number().int().min(0),
+      providerReadCalls: z.number().int().min(0).optional(), providerCacheHits: z.number().int().min(0).optional(),
+      providerCacheMisses: z.number().int().min(0).optional(), providerCacheEvictions: z.number().int().min(0).optional(),
+      providerReadMs: finite.min(0).optional(),
+      servicePoolCapacity: z.number().int().min(1).max(3).optional(),
+      serviceObservedPeakConcurrency: z.number().int().min(0).max(3).optional(),
+      serviceActiveConcurrencyAtDispatch: z.number().int().min(0).max(3).optional(),
+      ipcRoundTripMs: finite.min(0).optional(), ipcOverheadMs: finite.min(0).optional(),
+      requestPayloadBytes: z.number().int().min(0).optional(), resultPayloadBytes: z.number().int().min(0).optional()
+    }).optional()
+  })
 }).refine((result) => {
   const hasFacePatches = result.motion.frames.some((frame) => frame.facePatch)
   const mouthlessBaseAssets = result.mouthlessBaseAssets ?? []
@@ -160,7 +179,7 @@ export const editorV6MotionResultSchema = z.object({
   return validPrimaryAsset && validMouthlessBaseAssets && validMouthIsolationMode && (selfContainedFaceAtlas || separateFaceAtlas)
 }, 'Atlas de animação inválido.')
 export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
-  return z.object({ id: uuid, cacheScope: uuid.optional(), character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
+  return z.object({ id: uuid, cacheScope: uuid.optional(), diagnosticDisableScopedPreparationReuse: z.boolean().optional(), character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
 }
 
 const editorV6TimelineTrackSchema = z.object({

@@ -9,7 +9,7 @@ export type EditorV6ExportAudio = {
   libraryAudioId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu' | 'amf'; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; encoder: 'auto' | 'cpu' | 'amf'; nativeRenderer?: boolean; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Single source of truth for the Editor V6 Export panel's user-facing default profile. */
 export const EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT = 2
 export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
@@ -51,6 +51,7 @@ export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number,
 }
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
   if (!options || typeof options.turbo !== 'boolean') throw Error('Configuração de exportação inválida.')
+  if (options.nativeRenderer !== undefined && typeof options.nativeRenderer !== 'boolean') throw Error('Configuração do renderizador nativo inválida.')
   if (!Number.isSafeInteger(durationFrames) || durationFrames < 1) throw Error('A duração do documento é inválida.')
   if (!Number.isInteger(options.startFrame) || !Number.isInteger(options.endFrame) || options.startFrame < 0 || options.endFrame > durationFrames || options.endFrame <= options.startFrame) throw Error('Escolha um intervalo válido de quadros para exportar.')
   if (!Number.isInteger(options.width) || !Number.isInteger(options.height) || options.width < 320 || options.height < 180 || options.width > 1920 || options.height > 1080 || options.width % 2 || options.height % 2 || options.width * 9 !== options.height * 16) throw Error('A resolução precisa ser 16:9, com dimensões pares, entre 320×180 e 1920×1080.')
@@ -88,9 +89,32 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
   return result
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; waitForRaf?: boolean; reuseRestHair?: boolean; includeSpeechMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; singlePassLayers?: boolean; nativeRenderer?: boolean; waitForRaf?: boolean; reuseRestHair?: boolean; includeSpeechMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
-export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
+export type EditorV6NativeImageCommand = {
+  kind: 'image'
+  assetId: string
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+  opacity: number
+  flipX?: boolean
+  contain?: boolean
+  source?: { x: number; y: number; width: number; height: number }
+  cutout?: { x: number; y: number; width: number; height: number }
+}
+export type EditorV6NativeSolidCommand = { kind: 'solid'; x: number; y: number; width: number; height: number; color: string }
+export type EditorV6NativeFramePlan = {
+  width: number
+  height: number
+  logicalHeight: number
+  backgroundColor: string
+  assets: Array<{ id: string; dataUrl: string }>
+  commands: Array<EditorV6NativeImageCommand | EditorV6NativeSolidCommand>
+}
+export type EditorV6FrameTimings = Partial<Record<'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'nativePlanMs' | 'nativeRasterMs' | 'nativeProcessMs' | 'nativeTransportMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
 export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRasterPixels' | 'hairCompositeReuseFrames' | 'captureReadbacks' | 'captureStaleReadbacks', number>>
 /** A real-project export may legitimately contain audio even with animated hair.
  * The benchmark must verify its MP4 output, not assume a silent test scene.
@@ -98,7 +122,7 @@ export type EditorV6FrameMetrics = Partial<Record<'hairRasterFrames' | 'hairRast
 export function editorV6BenchmarkAudioMatchesExport(audioClips: number, outputHasAudio: boolean): boolean {
   return Number.isSafeInteger(audioClips) && audioClips >= 0 && outputHasAudio === (audioClips > 0)
 }
-export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
+export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; nativeFrame?: EditorV6NativeFramePlan; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
 type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6SceneElement[]; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 export type EditorV6VisualKeys = { key: string; layerKeys: { background: string; foreground: string } }
 type CachedElementVisualKeys = { compact?: string; complete?: string }

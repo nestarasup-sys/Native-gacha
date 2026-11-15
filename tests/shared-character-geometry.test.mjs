@@ -3,6 +3,17 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { faceRenderGeometry, fitElementToTrim } from '../src/renderer/src/characters/characterGeometry.ts'
 
+test('troca facial em personagem legado preserva escala e origem usando o recorte anterior', () => {
+ const element = { x: 10, y: 20, width: 50, height: 80, rotation: 0 }
+ const before = { left: 100, top: 50, width: 500, height: 400 }
+ const after = { left: 80, top: 30, width: 540, height: 440 }
+ const result = faceRenderGeometry(element, { width: 1000, height: 800 }, after, 1920, 1080, before)
+ assert.equal(result.characterCanvasWidth, 100)
+ assert.equal(result.width, 54)
+ assert.equal(result.x, 10)
+ assert.equal(result.y, 20)
+})
+
 test('recorte de personagem preserva proporções dos Studios, incluindo rotação e flip',()=>{
  const crop={dataUrl:'data:image/png;base64,',left:20,top:12,width:80,height:95,sourceWidth:120,sourceHeight:140}
  for(const rotation of [0,45,90,180]){

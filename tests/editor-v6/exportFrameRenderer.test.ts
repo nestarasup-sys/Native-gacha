@@ -104,6 +104,27 @@ describe('createEditorV6ExportFrameRenderer', () => {
     expect(commitSurface).toHaveBeenCalledOnce()
   })
 
+  it('composes both halves from a single scene and reuses the complete stacked frame', async () => {
+    const doc = project()
+    const hairRuntime = createEditorV6ExportWorkerHairRuntime(doc, undefined, resources())
+    const prepareAssets = vi.fn(async () => {})
+    const commitSurface = vi.fn()
+    const renderFrame = createEditorV6ExportFrameRenderer({
+      project: doc, width: 1280, height: 720, layeredVideo: true, hairAnimation: undefined,
+      projectAssetIndex: new Map(), assetsById: new Map(), hairRuntime,
+      prepareAssets, commitSurface, onImageLoad: () => {}, waitForSvgImages: () => undefined,
+      setPaintToken: vi.fn(), waitForPaintFrame: vi.fn(async () => {})
+    })
+    const first = await renderFrame(10, 'stacked', 1)
+    expect(first.reused).toBe(false)
+    expect(commitSurface).toHaveBeenCalledWith(expect.objectContaining({ renderLayer: 'stacked', outputWidth: 1280, outputHeight: 720 }))
+    expect(prepareAssets).toHaveBeenCalledOnce()
+    const second = await renderFrame(10, 'stacked', 2)
+    expect(second.reused).toBe(true)
+    expect(commitSurface).toHaveBeenCalledOnce()
+    expect(prepareAssets).toHaveBeenCalledOnce()
+  })
+
   it('continua a preparar a pintura sem suspender quando todas as imagens SVG já estão prontas', async () => {
     const waitForSvgImages = vi.fn(() => undefined)
     const { renderFrame } = activeHairRenderer({ frame: 10, background: { backgroundColor: '#fff' }, elements: [] }, waitForSvgImages)

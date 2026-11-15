@@ -1,7 +1,7 @@
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceTransform } from '../../../../shared/editorV6'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
-import { bakeFaceModeAssets, editorV6FaceModeForElement, trimTransparentCanvas } from './faceModeAssets'
+import { bakeFaceModeAssets, editorV6FaceModeForElement, measureFaceModeCrop, trimTransparentCanvas } from './faceModeAssets'
 import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
 import { createEditorV6CharacterAppearanceCommands } from './editorV6CharacterAppearanceCommands'
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
@@ -39,7 +39,7 @@ export function useEditorV6CharacterAppearance(options: Options) {
     poseSourceSnapshot: options.poseSourceSnapshot,
     prepareFaceAppearance: (input, renderer) => prepareEditorV6FaceAppearance(input, renderer, {
       faceModeForElement: editorV6FaceModeForElement,
-      trimCanvas: trimTransparentCanvas,
+      measureCrop: measureFaceModeCrop,
       bakeAssets: bakeFaceModeAssets
     }),
     preparePoseChange: async (input) => {

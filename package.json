@@ -7,9 +7,11 @@
   "main": "out/main/main.js",
   "scripts": {
     "postinstall": "node scripts/install-electron.cjs",
-    "predev": "node scripts/prepare-app-data.cjs",
+    "predev": "npm run build:editor-v6:native && node scripts/prepare-app-data.cjs",
     "dev": "electron-vite dev --watch",
-    "build": "electron-vite build",
+    "build:editor-v6:native": "node scripts/editor-v6/build-native-renderer.cjs",
+    "build": "npm run build:editor-v6:native && electron-vite build",
+    "test:editor-v6:native-renderer": "npm run build:editor-v6:native && node --experimental-strip-types scripts/editor-v6/check-native-renderer.mjs",
     "prepreview": "node scripts/prepare-app-data.cjs",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json",
@@ -37,6 +39,7 @@
     "editor-v6:analyze-trace": "node scripts/editor-v6/analyze-trace.cjs",
     "test:editor-v6:motion": "node scripts/editor-v6/check-motion.cjs",
     "test:editor-v6:motion-service": "node scripts/editor-v6/check-motion-service.cjs",
+    "diagnose:editor-v6:motion-preparation": "node scripts/editor-v6/analyze-motion-preparation.cjs",
     "test:editor-v6:bootstrap": "npm run build && node scripts/editor-v6/check-bootstrap.cjs",
     "test:editor-v6:surface": "node scripts/editor-v6/check-scene-surface.cjs",
     "test:editor-v6:face-export-silent": "npm run build && node scripts/editor-v6/check-face-export.cjs",
@@ -198,6 +201,13 @@
           "BUILD_INFO.json",
           "SOURCE_INFO.txt"
         ]
+    },
+    {
+      "from": "out/native/editor-v6-renderer/Release",
+      "to": "native",
+      "filter": [
+        "editor-v6-native-renderer.exe"
+      ]
       }
     ]
   }

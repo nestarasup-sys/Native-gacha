@@ -47,6 +47,8 @@ function analyzeEditorV6ExportReport(report) {
       index: part.index, frames: part.frames, milliseconds: numberOrNull(part.milliseconds),
       frameRafGate: part.frameRafGate, frameRestHairReuse: part.frameRestHairReuse,
       framePipelineOverlap: part.framePipelineOverlap,
+      frameLayerCapture: part.frameLayerCapture ?? 'legacy-report',
+      captureReadbacks: numberOrNull(part.frameMetrics?.captureReadbacks),
       frameTiming: part.frameTiming ?? {}
     }))
   }
@@ -81,7 +83,7 @@ function formatAnalysis(result) {
         const t = part.frameTiming[name]
         return t ? `${name}: p50 ${t.p50Ms}ms, p95 ${t.p95Ms}ms` : null
       }).filter(Boolean).join(' · ')
-    lines.push(`Parte ${part.index}: ${part.frames} quadros; RAF antigo=${part.frameRafGate ?? '?'}; cabelo em repouso=${part.frameRestHairReuse ?? '?'}; overlap=${part.framePipelineOverlap ?? '?'}`)
+    lines.push(`Parte ${part.index}: ${part.frames} quadros; captura=${part.frameLayerCapture}; leituras=${part.captureReadbacks ?? '?'}; RAF antigo=${part.frameRafGate ?? '?'}; cabelo em repouso=${part.frameRestHairReuse ?? '?'}; overlap=${part.framePipelineOverlap ?? '?'}`)
     if (timings) lines.push('  ' + timings)
   }
   return lines.join('\n')

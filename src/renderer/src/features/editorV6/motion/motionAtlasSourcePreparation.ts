@@ -5,6 +5,7 @@ import type { PreparedGachaLayerFrame } from '../../../characters/editorV6Charac
 import type { BakedFacePatch } from './motionFacePatchPreparation'
 import { cropPreparedMotionLayers, disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLayerCrops'
 import type { MotionPixelCrop } from './motionPixelAnalysis'
+import type { EditorV6MotionBakeProfile } from '../../../../../shared/editorV6Motion'
 
 export type MotionAtlasSourceFrame = {
   canvas: HTMLCanvasElement
@@ -27,6 +28,7 @@ type PrepareMotionAtlasSourcesOptions<Frame extends MotionAtlasSourceFrame> = {
   prepareFacePatch: (options: { index: number; faceMode?: EditorV6FaceRenderMode; progress: number; mouthScale: number; frame: Frame }) => Promise<BakedFacePatch | undefined>
   createCanvas?: () => HTMLCanvasElement
   cropLayers?: typeof cropPreparedMotionLayers
+  profile?: EditorV6MotionBakeProfile
 }
 
 export type PreparedMotionAtlasSources = {
@@ -46,7 +48,8 @@ export async function prepareEditorV6MotionAtlasSources<Frame extends MotionAtla
   render,
   prepareFacePatch,
   createCanvas = () => document.createElement('canvas'),
-  cropLayers = cropPreparedMotionLayers
+  cropLayers = cropPreparedMotionLayers,
+  profile
 }: PrepareMotionAtlasSourcesOptions<Frame>): Promise<PreparedMotionAtlasSources> {
   const frames: PreparedMotionAtlasFrame[] = [], facePatches: BakedFacePatch[] = []
   let maximumWidth = Math.max(fromCrop.width, toCrop.width), maximumHeight = Math.max(fromCrop.height, toCrop.height)
@@ -62,8 +65,10 @@ export async function prepareEditorV6MotionAtlasSources<Frame extends MotionAtla
         croppedCanvas = createCanvas()
         croppedCanvas.width = frame.crop.width
         croppedCanvas.height = frame.crop.height
+        const atlasDrawStarted = performance.now()
         croppedCanvas.getContext('2d')!.drawImage(frame.canvas, frame.crop.left, frame.crop.top, frame.crop.width, frame.crop.height, 0, 0, frame.crop.width, frame.crop.height)
         if (captureLayers && frame.layers) croppedLayers = cropLayers(frame.layers, frame.crop)
+        if (profile) profile.atlasAssemblyMs += performance.now() - atlasDrawStarted
         frames.push({ canvas: croppedCanvas, crop: frame.crop, ...(croppedLayers ? { layers: croppedLayers } : {}) })
         croppedCanvas = undefined
         croppedLayers = undefined

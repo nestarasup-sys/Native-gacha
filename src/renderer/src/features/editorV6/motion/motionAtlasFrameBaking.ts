@@ -7,6 +7,7 @@ import { cropPreparedMotionLayers } from './motionLayerCrops'
 import { createEditorV6MotionLayerAtlases, disposeEditorV6MotionLayerAtlases, writeEditorV6MotionLayerAtlasFrame, type MotionLayerAtlases } from './motionLayerAtlasWriter'
 import { interpolateEditorV6MotionFrameGeometry, resolveEditorV6MotionElementScales } from './motionFrameGeometry'
 import type { MotionPixelCrop } from './motionPixelAnalysis'
+import type { EditorV6MotionBakeProfile } from '../../../../../shared/editorV6Motion'
 
 type BakeMotionAtlasFramesOptions<Frame extends MotionAtlasSourceFrame> = {
   samples: EditorV6MotionPlan['samples']
@@ -26,6 +27,7 @@ type BakeMotionAtlasFramesOptions<Frame extends MotionAtlasSourceFrame> = {
   prepareFacePatch: (options: { index: number; faceMode?: EditorV6MotionPlan['samples'][number]['faceMode']; progress: number; mouthScale: number; frame: Frame }) => Promise<BakedFacePatch | undefined>
   createCanvas?: () => HTMLCanvasElement
   cropLayers?: typeof cropPreparedMotionLayers
+  profile?: EditorV6MotionBakeProfile
 }
 
 export type BakedMotionAtlasFrames = {
@@ -54,7 +56,8 @@ export async function bakeEditorV6MotionAtlasFrames<Frame extends MotionAtlasSou
   render,
   prepareFacePatch,
   createCanvas = () => document.createElement('canvas'),
-  cropLayers = cropPreparedMotionLayers
+  cropLayers = cropPreparedMotionLayers,
+  profile
 }: BakeMotionAtlasFramesOptions<Frame>): Promise<BakedMotionAtlasFrames> {
   const cellWidth = Math.ceil(maximumWidth * ratio), cellHeight = Math.ceil(maximumHeight * ratio)
   const atlas = createCanvas()
@@ -75,7 +78,9 @@ export async function bakeEditorV6MotionAtlasFrames<Frame extends MotionAtlasSou
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight
         const width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
         const sourceCanvas = baked?.canvas ?? frame!.canvas
+        const atlasDrawStarted = performance.now()
         context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)
+        if (profile) profile.atlasAssemblyMs += performance.now() - atlasDrawStarted
         const geometry = interpolateEditorV6MotionFrameGeometry({ from, to, fromCrop, toCrop, endpointScales, crop, progress })
         const motionFrame: EditorV6MotionFrame = { offset: sample.offset, sprite: { x, y, width, height, atlasWidth: atlas.width, atlasHeight: atlas.height }, ...geometry }
         frames.push(motionFrame)
@@ -83,7 +88,9 @@ export async function bakeEditorV6MotionAtlasFrames<Frame extends MotionAtlasSou
         if (captureLayers) {
           const layers = baked?.layers ?? (frame?.layers ? cropLayers(frame.layers, crop) : undefined)
           if (!layerAtlases) throw Error('A preparação do cabelo não capturou as camadas da pose intermediária.')
+          const layerWriteStarted = performance.now()
           layerFrames.push(writeEditorV6MotionLayerAtlasFrame({ atlases: layerAtlases, layers, motionFrame, offset: sample.offset, crop, destination: { x, y, width, height }, createCanvas }))
+          if (profile) profile.atlasAssemblyMs += performance.now() - layerWriteStarted
         }
         if (frame) {
           const facePatch = await prepareFacePatch({ index, faceMode: sample.faceMode, progress, mouthScale, frame })

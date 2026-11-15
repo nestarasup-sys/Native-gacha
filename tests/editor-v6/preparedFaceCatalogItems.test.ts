@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CharacterRenderAssetProvider } from '../../src/shared/characterRenderAssets'
+import type { FaceCatalogItem } from '../../src/shared/fabricator'
 import { createPreparedFaceCatalogItemLoader, type PreparedFaceCatalogItemCache } from '../../src/renderer/src/characters/preparedFaceCatalogItems'
 
 describe('createPreparedFaceCatalogItemLoader', () => {
@@ -34,5 +35,17 @@ describe('createPreparedFaceCatalogItemLoader', () => {
     await expect(loadSlotTwo('eyes')).resolves.toBeNull()
     expect(loadFaceCatalogItem).toHaveBeenCalledTimes(3)
     expect(sharedCache.size).toBe(2)
+  })
+
+  it('bounds retained catalog image bytes across paired renderers', async () => {
+    const largeItem = { name: 'large synthetic item', sheet: { dataUrl: 'x'.repeat(13 * 1024 * 1024) }, pieces: [], transforms: {} } as unknown as FaceCatalogItem
+    const loadFaceCatalogItem = vi.fn(async () => largeItem)
+    const provider = { loadFaceCatalogItem } as unknown as CharacterRenderAssetProvider
+    const sharedCache: PreparedFaceCatalogItemCache = new Map()
+    await createPreparedFaceCatalogItemLoader(1, provider, sharedCache)('large')
+    await createPreparedFaceCatalogItemLoader(1, provider, sharedCache)('large')
+
+    expect(sharedCache.size).toBe(0)
+    expect(loadFaceCatalogItem).toHaveBeenCalledTimes(2)
   })
 })

@@ -4,6 +4,7 @@ import type { BakedFacePatch } from './motionFacePatchPreparation'
 import { buildEditorV6MotionFaceAtlas } from './motionFaceAtlas'
 import { createEditorV6MotionLayerAtlasCapture, type EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
 import type { MotionLayerAtlases } from './motionLayerAtlasWriter'
+import type { EditorV6MotionBakeProfile } from '../../../../../shared/editorV6Motion'
 
 type FinalizeMotionBakeOptions = {
   atlas: HTMLCanvasElement
@@ -12,7 +13,8 @@ type FinalizeMotionBakeOptions = {
   key: string
   samples: number
   maxAtlasPixels: number
-  metrics: Pick<EditorV6MotionBakeResult['metrics'], 'milliseconds' | 'preparedRigs' | 'reusedRigs'>
+  metrics: Omit<EditorV6MotionBakeResult['metrics'], 'samples' | 'atlasPixels' | 'profile'>
+  profile?: EditorV6MotionBakeProfile
   layerAtlases?: MotionLayerAtlases
   layerFrames: EditorV6MotionLayerAtlasCapture['frames']
   captureLayerAtlases?: (capture: EditorV6MotionLayerAtlasCapture) => void
@@ -36,30 +38,36 @@ function captureLayers(options: FinalizeMotionBakeOptions): void {
 
 /** Serializes motion atlases, attaches face snapshots and creates the stable bake result. */
 export function finalizeEditorV6MotionBake(options: FinalizeMotionBakeOptions): EditorV6MotionBakeResult {
-  const { atlas, frames, facePatches, key, samples, maxAtlasPixels, metrics, createCanvas = () => document.createElement('canvas'), createId = () => crypto.randomUUID() } = options
+  const { atlas, frames, facePatches, key, samples, maxAtlasPixels, metrics, profile, createCanvas = () => document.createElement('canvas'), createId = () => crypto.randomUUID() } = options
   let faceAtlas: HTMLCanvasElement | undefined
   try {
     if (facePatches.length) {
       const bodyPixels = atlas.width * atlas.height
+      const faceAtlasStarted = performance.now()
       const result = buildEditorV6MotionFaceAtlas({ patches: facePatches, frames, bodyPixels, maxAtlasPixels, createCanvas, createId })
       faceAtlas = result.faceAtlas
+      if (profile) profile.faceAtlasMs += performance.now() - faceAtlasStarted
+      const encodeStarted = performance.now()
       const dataUrl = atlas.toDataURL('image/png')
+      if (profile) profile.atlasEncodingMs += performance.now() - encodeStarted
       captureLayers(options)
       return {
         asset: createMotionAsset(result.assetId, dataUrl),
         faceAsset: result.faceAsset,
         motion: { version: 1, key, assetId: result.assetId, faceAssetId: result.faceAssetId, frames },
-        metrics: { ...metrics, samples, atlasPixels: bodyPixels + result.facePixels }
+        metrics: { ...metrics, samples, atlasPixels: bodyPixels + result.facePixels, ...(profile ? { profile } : {}) }
       }
     }
 
     const atlasPixels = atlas.width * atlas.height, assetId = createId()
+    const encodeStarted = performance.now()
     const dataUrl = atlas.toDataURL('image/png')
+    if (profile) profile.atlasEncodingMs += performance.now() - encodeStarted
     captureLayers(options)
     return {
       asset: createMotionAsset(assetId, dataUrl),
       motion: { version: 1, key, assetId, frames },
-      metrics: { ...metrics, samples, atlasPixels }
+      metrics: { ...metrics, samples, atlasPixels, ...(profile ? { profile } : {}) }
     }
   } finally {
     atlas.width = atlas.height = 1

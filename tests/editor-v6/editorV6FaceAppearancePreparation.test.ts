@@ -36,7 +36,7 @@ function renderer(): PreparedEditorV6FaceRenderer {
 function dependencies(mode: EditorV6FaceRenderMode = 'talk') {
   return {
     faceModeForElement: vi.fn(() => mode),
-    trimCanvas: vi.fn(() => ({ dataUrl: 'data:image/png;base64,old-crop', width: 500, height: 400, left: 10, top: 20, sourceWidth: 800, sourceHeight: 600 })),
+    measureCrop: vi.fn(async () => ({ width: 500, height: 400, left: 10, top: 20 })),
     bakeAssets: vi.fn(async () => ({
       dataUrl: 'data:image/png;base64,new-face', crop: null, assetIds: {}, extraAssets: [] as EditorV6Asset[]
     }))
@@ -56,7 +56,7 @@ describe('preparação de aparência facial do Editor V6', () => {
     expect(faceRenderer.renderToCanvas).toHaveBeenNthCalledWith(1, oldAppearance, {}, oldEffects, 'blink')
     expect(faceRenderer.renderToCanvas).toHaveBeenNthCalledWith(2, newAppearance, nextTransforms, oldEffects, 'blink')
     expect(deps.faceModeForElement).not.toHaveBeenCalled()
-    expect(deps.trimCanvas).toHaveBeenCalledWith(expect.objectContaining({ width: 800, height: 600 }))
+    expect(deps.measureCrop).toHaveBeenCalledWith('Hero', faceRenderer, oldAppearance, {}, oldEffects, 'blink', expect.objectContaining({ width: 800, height: 600 }), true)
     expect(deps.bakeAssets).toHaveBeenCalledWith('Hero', faceRenderer, newAppearance, nextTransforms, oldEffects, 'blink', expect.objectContaining({ width: 810, height: 610 }))
     expect(prepared.baseMode).toBe('blink')
     expect(prepared.previousCrop?.width).toBe(500)

@@ -6,11 +6,12 @@ import { createEditorV6ExportWorkerHairRuntime } from './exportWorkerHairRuntime
 import { createEditorV6ExportFrameReuseState } from './exportFrameReuse'
 import { resolveEditorV6ExportFramePlan } from './exportFramePlan'
 import { createEditorV6FrameAssetRegistry, selectEditorV6RenderableAssets } from './exportFrameAssets'
+import { createEditorV6NativeFramePlan } from './editorV6NativeFramePlan'
 
 type HairRuntime = ReturnType<typeof createEditorV6ExportWorkerHairRuntime>
 type ExportScene = ReturnType<HairRuntime['resolveRawSceneAtFrame']>
 type ExportSceneElement = ExportScene['elements'][number]
-type RenderLayer = 'all' | 'background' | 'foreground'
+type RenderLayer = 'all' | 'background' | 'foreground' | 'stacked'
 
 const EMPTY_ORIGINAL_ELEMENTS: ReadonlyMap<string, ExportSceneElement> = new Map()
 
@@ -30,6 +31,7 @@ type Options = {
   width: number
   height: number
   layeredVideo: boolean
+  nativeRenderer?: boolean
   hairAnimation: EditorV6WorkerPayload['hairAnimation']
   projectAssetIndex: ReadonlyMap<string, EditorV6Asset>
   assetsById: Map<string, EditorV6Asset>
@@ -46,7 +48,7 @@ type Options = {
 /** Coordinates one export-frame resolution, composition, commit and paint handoff. */
 export function createEditorV6ExportFrameRenderer(options: Options) {
   const {
-    project, width, height, layeredVideo, hairAnimation, projectAssetIndex, assetsById,
+    project, width, height, layeredVideo, nativeRenderer = false, hairAnimation, projectAssetIndex, assetsById,
     hairRuntime, prepareAssets, commitSurface, onImageLoad, waitForSvgImages, setPaintToken, waitForPaintFrame
   } = options
   const now = options.now ?? (() => performance.now())
@@ -55,7 +57,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
 
   return async (
     frame: number,
-    layer: 'background' | 'foreground' | undefined,
+    layer: 'background' | 'foreground' | 'stacked' | undefined,
     paintToken: number
   ): Promise<EditorV6RenderFrameResult> => {
     const timings: EditorV6FrameTimings = {}
@@ -65,11 +67,13 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     const rawScene = hairRuntime.resolveRawSceneAtFrame(frame)
     const scene = hairRuntime.applyMouthLoop(rawScene, frame)
     const framePlan = resolveEditorV6ExportFramePlan({
-      scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
+      scene, frame, requestedLayer: layer === 'stacked' ? undefined : layer, layeredVideo: layeredVideo && layer !== 'stacked', hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
       visualKeyCache,
       hasAnimatedHair: element => hairRuntime.hasAnimatedHair(element, frame)
     })
     const { activeLayer, activeHair, riggedElementIds, key, layerKeys } = framePlan
+    // A stacked frame contains the full background and foreground in one
+    // DOM paint. Frame reuse is evaluated for both layers together.
     timings.sceneResolutionMs = now() - resolutionStarted
     const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
     if (reuseDecision === 'frame') return { reused: true, timings }
@@ -106,6 +110,22 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     })
     // Pass only assets referenced by this layer/frame instead of rebuilding the whole catalog.
     const renderAssets = selectEditorV6RenderableAssets(renderScene, activeLayer ?? 'all', resolveFrameAsset)
+    if (nativeRenderer) {
+      const nativePlanStarted = now()
+      const nativeFrame = await createEditorV6NativeFramePlan({
+        scene: renderScene,
+        assets: renderAssets,
+        resolveAssetById: resolveFrameAsset,
+        rasterCanvases,
+        frame,
+        width,
+        height,
+        layer: layer ?? 'all'
+      })
+      timings.nativePlanMs = now() - nativePlanStarted
+      frameReuse.recordRendered(key, layerKeys, activeLayer)
+      return { reused: false, nativeFrame, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
+    }
     const assetPreparationStarted = now()
     await prepareAssets(renderAssets)
     timings.assetPreparationMs = now() - assetPreparationStarted
@@ -113,7 +133,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     const reactCommitStarted = now()
     commitSurface({
       scene: renderScene, assets: renderAssets, resolveAssetById: resolveFrameAsset, outputWidth: width, outputHeight: height,
-      renderLayer: activeLayer ?? 'all', onImageLoad, rasterCanvases
+      renderLayer: layer === 'stacked' ? 'stacked' : activeLayer ?? 'all', onImageLoad, rasterCanvases
     })
     timings.reactCommitMs = now() - reactCommitStarted
 

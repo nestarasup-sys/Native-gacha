@@ -147,6 +147,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       getMotionCacheStats: deps.getMotionCacheStats,
       bakeMotion: deps.bakeMotion,
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
+      getElectronProcessMetrics: deps.getElectronProcessMetrics,
       report,
       progress: deps.progress,
       saveReport

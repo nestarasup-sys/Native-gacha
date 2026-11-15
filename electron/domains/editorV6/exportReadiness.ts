@@ -8,6 +8,8 @@ import { addEditorV6PhaseTime } from './exportMetrics'
 import { prepareEditorV6ExportMotions, type EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import type { EditorV6MotionCacheStats } from './motionCache'
 import type { EditorV6ExportReport } from './exportReport'
+import type { ProcessMetric } from 'electron'
+import { createEditorV6ExportProcessMemoryReport, recordEditorV6ExportProcessMemorySample, recordEditorV6ExportProcessMemorySampleFailure } from './exportProcessMemory'
 
 export type EditorV6ExportMotionPreparation = typeof prepareEditorV6ExportMotions
 
@@ -24,7 +26,8 @@ type Dependencies = {
   bakeMotion: (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
   /** Close the temporary offscreen motion renderers at the render handoff. */
   releaseIdleMotionWorkers?: () => void
-  report: Pick<EditorV6ExportReport, 'hairPreparation' | 'motionTransitionsRequired' | 'motionTransitionsPrepared' | 'motionPreparation' | 'motionCache' | 'phaseMilliseconds'>
+  getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
+  report: Pick<EditorV6ExportReport, 'hairPreparation' | 'motionTransitionsRequired' | 'motionTransitionsPrepared' | 'motionPreparation' | 'motionCache' | 'motionPreparationMemory' | 'phaseMilliseconds'>
   progress: (patch: Partial<EditorV6ExportStatus>) => void
   saveReport: () => Promise<void>
   prepareMotions?: EditorV6ExportMotionPreparation
@@ -34,7 +37,7 @@ type Dependencies = {
 export async function prepareEditorV6ExportReadiness(dependencies: Dependencies): Promise<{ project: EditorV6Document; characters: CustomizerCharacter[] }> {
   const {
     project, options, testSettings, hairPreparation, motionPreparationConcurrency, motionCacheScope,
-    signal, getCharacters, getMotionCacheStats, bakeMotion, releaseIdleMotionWorkers, report, progress, saveReport
+    signal, getCharacters, getMotionCacheStats, bakeMotion, releaseIdleMotionWorkers, getElectronProcessMetrics, report, progress, saveReport
   } = dependencies
   signal.throwIfAborted()
   report.hairPreparation = hairPreparation
@@ -45,6 +48,18 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
   finally { addEditorV6PhaseTime(report, 'characterLoading', characterLoadStarted) }
 
   const motionPreparationStarted = performance.now()
+  const motionPreparationMemory = getElectronProcessMetrics ? createEditorV6ExportProcessMemoryReport(250) : undefined
+  if (motionPreparationMemory) {
+    report.motionPreparationMemory = motionPreparationMemory
+    try { recordEditorV6ExportProcessMemorySample(motionPreparationMemory, getElectronProcessMetrics!()) }
+    catch { recordEditorV6ExportProcessMemorySampleFailure(motionPreparationMemory) }
+  }
+  const memorySampler = motionPreparationMemory && getElectronProcessMetrics
+    ? setInterval(() => {
+      try { recordEditorV6ExportProcessMemorySample(motionPreparationMemory, getElectronProcessMetrics()) }
+      catch { recordEditorV6ExportProcessMemorySampleFailure(motionPreparationMemory) }
+    }, motionPreparationMemory.sampleIntervalMs)
+    : undefined
   const cacheBefore = getMotionCacheStats?.()
   let prepared: EditorV6PreparedExportMotions
   try {
@@ -66,6 +81,11 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
       }
     })
   } finally {
+    if (memorySampler) clearInterval(memorySampler)
+    if (motionPreparationMemory && getElectronProcessMetrics) {
+      try { recordEditorV6ExportProcessMemorySample(motionPreparationMemory, getElectronProcessMetrics()) }
+      catch { recordEditorV6ExportProcessMemorySampleFailure(motionPreparationMemory) }
+    }
     addEditorV6PhaseTime(report, 'motionPreparation', motionPreparationStarted)
     releaseIdleMotionWorkers?.()
   }
