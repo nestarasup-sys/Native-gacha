@@ -9,7 +9,7 @@ export type EditorV6ExportAudio = {
   libraryAudioId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; fps?: 24 | 30; forceTurbo1080?: boolean; singleWorker?: boolean; encoder: 'auto' | 'cpu' | 'amf'; nativeRenderer?: boolean; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; fps?: 24 | 30; forceTurbo1080?: boolean; singleWorker?: boolean; encoder: 'auto' | 'cpu' | 'amf'; nativeRenderer?: boolean; includeSpeechMouth?: boolean; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Single source of truth for the Editor V6 Export panel's user-facing default profile. */
 export const EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT = 2
 export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
@@ -66,6 +66,7 @@ export function planEditorV6Export(options: EditorV6ExportOptions, durationFrame
   if (options.forceTurbo1080 && (!options.turbo || options.width !== 1920 || options.height !== 1080 || options.endFrame - options.startFrame < 2)) throw Error('Turbo obrigatório exige 1080p e ao menos dois quadros.')
   if (options.encoder !== 'auto' && options.encoder !== 'cpu' && options.encoder !== 'amf') throw Error('Codificador inválido.')
   if (options.testMode !== undefined && !isEditorV6ExportTestMode(options.testMode)) throw Error('Modo de teste de exportação inválido.')
+  if (options.includeSpeechMouth !== undefined && typeof options.includeSpeechMouth !== 'boolean') throw Error('Configuração de boca durante a fala inválida.')
   if (options.mouthLoop !== undefined && typeof options.mouthLoop !== 'boolean') throw Error('Configuração de animação da boca inválida.')
   if (!Number.isInteger(options.mouthLoopCycleFrames ?? 30) || (options.mouthLoopCycleFrames ?? 30) < 30 || (options.mouthLoopCycleFrames ?? 30) > 180) throw Error('O ciclo da boca deve durar de 1 a 6 segundos.')
   if (options.hairAnimationPresetSlot !== undefined && (!Number.isInteger(options.hairAnimationPresetSlot) || options.hairAnimationPresetSlot < 1 || options.hairAnimationPresetSlot > 5)) throw Error('Selecione um preset de animação de cabelo válido.')

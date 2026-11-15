@@ -13,7 +13,7 @@ export type EditorV6PreparedExportMotions = Awaited<ReturnType<typeof prepareExp
 
 type Dependencies = {
   project: EditorV6Document
-  options: Pick<EditorV6ExportOptions, 'startFrame' | 'endFrame' | 'mouthLoop' | 'mouthLoopCycleFrames' | 'testMode'>
+  options: Pick<EditorV6ExportOptions, 'startFrame' | 'endFrame' | 'includeSpeechMouth' | 'mouthLoop' | 'mouthLoopCycleFrames' | 'testMode'>
   testSettings: EditorV6ExportTestSettings
   characters: CustomizerCharacter[]
   signal: AbortSignal
@@ -38,7 +38,7 @@ export async function prepareEditorV6ExportMotions(dependencies: Dependencies): 
     concurrency: options.testMode && options.testMode !== 'controle'
       ? testSettings.motionConcurrency
       : motionPreparationConcurrency ?? 2,
-    includeSpeechMouth: true,
+    includeSpeechMouth: options.includeSpeechMouth !== false,
     // Each export reconstructs motion atlases from current timeline/character
     // inputs. Only equal transitions within THIS run share a result.
     ignoreExistingMotions: true,

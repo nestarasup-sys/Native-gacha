@@ -131,14 +131,19 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
 
   const start = async () => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
-    if (!selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
-    const preparedHairPreset = hairMotionPosteriorOnlyPreset(selectedHairPreset)
+    if (!simplifiedAnimation && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
+    const preparedHairPreset = !simplifiedAnimation && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
     setExportStartedAt(Date.now()); setStartingExport(true)
     setBusy(true); setError('')
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
         project,
-        options: { ...options, ...DEFAULT_EXPORT_SETTINGS, encoder: options.encoder, mouthLoop: !simplifiedAnimation, mouthLoopCycleFrames: options.mouthLoopCycleFrames },
+        options: {
+          ...options, ...DEFAULT_EXPORT_SETTINGS, encoder: options.encoder,
+          includeSpeechMouth: !simplifiedAnimation, mouthLoop: !simplifiedAnimation,
+          mouthLoopCycleFrames: options.mouthLoopCycleFrames,
+          hairPoseReactionOnly: Boolean(preparedHairPreset), hairPosteriorOnly: Boolean(preparedHairPreset)
+        },
         hairPresetSlot,
         hairPreset: preparedHairPreset,
         prepareHair,

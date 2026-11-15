@@ -133,7 +133,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
       getElectronProcessMetrics: deps.getElectronProcessMetrics,
       createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
-        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, true)
+        const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, options.includeSpeechMouth !== false)
         const { assetSources, ...payloadData } = workerData
         return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
           // One paint/readback for both layers. Serial mode remains available

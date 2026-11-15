@@ -28,7 +28,7 @@ export function createEditorV6ExportExecutionPlan(
 ): EditorV6ExportExecutionPlan {
   const options: EditorV6ExportOptions = {
     ...requestedOptions,
-    mouthLoop: requestedOptions.mouthLoop ?? true
+    mouthLoop: requestedOptions.includeSpeechMouth !== false && (requestedOptions.mouthLoop ?? true)
   }
   const testSettings = editorV6ExportTestSettings(options.testMode)
   const stressWorkerOverride = environment.GACHA_VIDEO_STRESS_OFFSCREEN === '1'

@@ -42,14 +42,14 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           {exportFolder && <button type="button" onClick={() => void clearExportFolder()}>Voltar a perguntar onde salvar</button>}
           <p><strong>{options.encoder === 'amf' ? '1080p · 1920 × 1080 · AMD AMF H.264' : '1080p · 1920 × 1080 · CPU H.264'}</strong></p>
           <p><strong>Turbo 2× obrigatório</strong><br /><small>Se o Turbo falhar, a exportação será interrompida e mostrará o erro.</small></p>
-          <label className="v6-export-check"><input type="checkbox" checked={simplifiedAnimation} onChange={(event) => setSimplifiedAnimation(event.target.checked)} /><span><strong>Usar só piscadas, poses e preset de cabelo</strong><small>Desativa a animação automática da boca; mantém as piscadas, as transições de pose e o preset selecionado.</small></span></label>
+          <label className="v6-export-check"><input type="checkbox" checked={simplifiedAnimation} onChange={(event) => setSimplifiedAnimation(event.target.checked)} /><span><strong>Usar só piscadas e transições de pose e expressão</strong><small>Desativa o movimento da boca e do cabelo.</small></span></label>
           <button type="button" aria-pressed={options.nativeRenderer === true} onClick={() => setOptions({ ...options, nativeRenderer: options.nativeRenderer !== true })}>
             {options.nativeRenderer === true ? 'Renderizador nativo em C++ · selecionado' : 'Renderizador nativo em C++'}
           </button>
           {options.nativeRenderer === true && <small>Experimental: usa um processo nativo separado para compor imagens. Texto é rasterizado pelo Chromium; compare o resultado visual antes de usar em um projeto final.</small>}
           <label>Codificador<select value={options.encoder} onChange={(event) => setOptions({ ...options, encoder: event.target.value as 'cpu' | 'amf' })}><option value="cpu">CPU · H.264</option><option value="amf">AMD AMF · H.264</option></select></label>
           {options.encoder === 'amf' && <small>AMF usa somente h264_amf, sem fallback. A disponibilidade depende do driver AMD.</small>}
-          <p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
+          {!simplifiedAnimation && <><p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
           <label>Preset de cabelo<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
           {!selectedHairPreset && <small role="status">O preset selecionado está vazio. Crie ou selecione um preset para exportar.</small>}
           <button type="button" aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
@@ -57,7 +57,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
             onChange={(value) => { setPresetDraft({ slot: hairPresetSlot, value }); setHairPresetMessage('') }}
             onSave={saveHairPreset}
             onDiscard={() => { setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }} />}
-          {hairPresetMessage && <small role="status">{hairPresetMessage}</small>}
+          {hairPresetMessage && <small role="status">{hairPresetMessage}</small>}</>}
           {!simplifiedAnimation && <label className="v6-export-mouth-cycle">Ciclo da animação da boca<select value={options.mouthLoopCycleFrames ?? 30} onChange={(event) => setOptions({ ...options, mouthLoopCycleFrames: Number(event.target.value) })}><option value={30}>1 segundo</option><option value={60}>2 segundos</option><option value={90}>3 segundos</option><option value={180}>6 segundos</option></select></label>}
         </fieldset>
         <EditorV6ExportAudioSettings
@@ -71,7 +71,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {job && active && <p className="v6-export-keep-open">Você pode fechar este painel. Mantenha o aplicativo aberto até a exportação terminar.</p>}
       {job && isEditorV6ExportFinished(job) && <div className="v6-export-result-actions"><span>{job.state === 'completed' ? `MP4 pronto${job.totalExportMilliseconds !== undefined ? ` · ${(job.totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s com preparo` : ''}` : 'Relatório da exportação disponível'}</span><button type="button" onClick={() => void window.desktop.editorV6.revealEditorV6Export(job.id).catch((reason: unknown) => setError(String(reason)))}>{job.state === 'completed' ? 'Mostrar MP4 e relatório' : 'Mostrar relatório'}</button></div>}
       {error && <p role="alert" className="v6-export-error">{error}</p>}
-      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.nativeRenderer ? 'EXPORTAR MP4 · RENDERIZADOR NATIVO C++' : 'EXPORTAR MP4 · COM PRESET'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button>{job && isEditorV6ExportFinished(job) && <button type="button" disabled={busy} onClick={onExitEditor}>Voltar aos projetos</button>}</footer>
+      <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.nativeRenderer ? 'EXPORTAR MP4 · RENDERIZADOR NATIVO C++' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button>{job && isEditorV6ExportFinished(job) && <button type="button" disabled={busy} onClick={onExitEditor}>Voltar aos projetos</button>}</footer>
     </section>
     {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudio} />}
   </div>
