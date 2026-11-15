@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6Document } from '../../src/shared/editorV6'
 import { prepareEditorV6LegacyCharacterCrops } from '../../src/renderer/src/features/editorV6/editorV6LegacyCharacterCropNormalization'
+import { editorV6RefreshedCharacterGeometry } from '../../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel'
+import { resolveEditorV6MotionElementScales } from '../../src/renderer/src/features/editorV6/motion/motionFrameGeometry'
 
 const project = {
   id: 'project-a', title: 'Project', schemaVersion: 1, color: '#fff', createdAt: '', updatedAt: '',
@@ -27,6 +29,29 @@ const crop = (label: string) => ({
 })
 
 describe('preparação de recortes legados do Editor V6', () => {
+  it('inclui retratos usados somente por blocos legados da timeline', async () => {
+    const saved = {
+      ...project, elements: [project.elements[2]],
+      timeline: { ...project.timeline, tracks: [{ blocks: [{ state: project.elements[0] }] }] }
+    } as EditorV6Document
+    const trimImage = vi.fn(async () => crop('a'))
+    expect(await prepareEditorV6LegacyCharacterCrops(saved, () => false, trimImage)).toEqual([{ assetId: 'legacy-a', crop: crop('a') }])
+    expect(trimImage).toHaveBeenCalledExactlyOnceWith('legacy-a-bytes')
+  })
+
+  it('conserva a posição ao reabrir e usa a mesma escala de corpo para expressões com recortes diferentes', () => {
+    const state = { ...project.elements[0], x: -14, y: 21, width: 20, height: 30, characterCanvasWidth: 40 }
+    const canvas = { width: 1000, height: 1000 }
+    const idle = { left: 100, top: 100, width: 500, height: 700, fingerprint: '' }
+    const expression = { left: 90, top: 70, width: 550, height: 730, fingerprint: '' }
+    const from = { ...state, ...editorV6RefreshedCharacterGeometry(state, canvas, idle) }
+    const to = { ...state, ...editorV6RefreshedCharacterGeometry(state, canvas, expression) }
+    expect(to).toMatchObject({ x: -14, y: 21, characterCanvasWidth: 40 })
+    expect({ ...to, ...editorV6RefreshedCharacterGeometry(to, canvas, expression) }).toEqual(to)
+    const scales = resolveEditorV6MotionElementScales(from, to, idle, expression)
+    expect(scales.to.x).toBeCloseTo(scales.from.x)
+    expect(scales.to.y).toBeCloseTo(scales.from.y)
+  })
   it('processa somente assets de personagem referenciados por snapshots legados e mantém a ordem', async () => {
     const trimImage = vi.fn(async (dataUrl: string) => {
       await new Promise((resolve) => setTimeout(resolve, dataUrl === 'legacy-a-bytes' ? 5 : 0))

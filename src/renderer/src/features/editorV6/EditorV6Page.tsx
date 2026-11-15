@@ -189,7 +189,6 @@ export function EditorV6Page() {
     availableCharacters,
     availableCharactersReady,
     poseSourceSnapshot: activePoseSourceSnapshot,
-    sceneRef,
     updateProject: updateActiveEditorV6Project,
     markUnsaved: markEditorV6Unsaved,
     pausePlayback,

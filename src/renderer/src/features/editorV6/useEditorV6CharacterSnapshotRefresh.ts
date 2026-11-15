@@ -16,7 +16,6 @@ type EditorV6CharacterSnapshotRefreshOptions = {
   availableCharacters: CustomizerCharacter[]
   availableCharactersReady: boolean
   poseSourceSnapshot: PoseRevisionSnapshot | null
-  sceneRef: { current: HTMLDivElement | null }
   updateProject: (update: (project: EditorV6Document) => EditorV6Document) => void
   markUnsaved: () => void
   pausePlayback: () => void
@@ -29,7 +28,6 @@ export function useEditorV6CharacterSnapshotRefresh({
   availableCharacters,
   availableCharactersReady,
   poseSourceSnapshot,
-  sceneRef,
   updateProject,
   markUnsaved,
   pausePlayback,
@@ -99,8 +97,6 @@ export function useEditorV6CharacterSnapshotRefresh({
       try {
         const result = await renderEditorV6CharacterRefresh(
           plan.groups,
-          sceneRef.current?.clientWidth ?? 1000,
-          sceneRef.current?.clientHeight ?? 562,
           () => cancelled
         )
         if (cancelled || !result) return
@@ -121,7 +117,7 @@ export function useEditorV6CharacterSnapshotRefresh({
     })()
 
     return () => { cancelled = true }
-  }, [project, poseSourceSnapshot, availableCharacters, availableCharactersReady, normalizedSourceVersion, refreshOnOpenProjectId, sceneRef, pausePlayback, updateProject, markUnsaved, reportError])
+  }, [project, poseSourceSnapshot, availableCharacters, availableCharactersReady, normalizedSourceVersion, refreshOnOpenProjectId, pausePlayback, updateProject, markUnsaved, reportError])
 
   return refreshing || refreshOnOpenProjectId === project?.id
 }

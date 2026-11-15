@@ -1,5 +1,5 @@
 import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
-import { faceRenderGeometry } from '../../characters/characterGeometry.ts'
+import { editorV6RefreshedCharacterGeometry } from './editorV6CharacterRefreshModel'
 import type { TrimmedImage } from '../../characters/transparentImageTrim.ts'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets.ts'
 import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshPublication'
@@ -24,8 +24,6 @@ function memoizedPromise<T>(cache: Map<string, Promise<T>>, key: string, load: (
 /** Rebuild outdated snapshots with per-refresh asset/source caches and bounded renderer lifetimes. */
 export async function renderEditorV6CharacterRefresh(
   groups: EditorV6CharacterRefreshGroup[],
-  stageWidth: number,
-  stageHeight: number,
   isCancelled: () => boolean
 ): Promise<EditorV6CharacterRefreshResult | null> {
   if (!groups.length) return { nextElements: new Map(), nextBlocks: new Map(), expectedElementStates: new Map(), expectedBlockStates: new Map(), refreshedAssets: [], staleAssetIds: new Set() }
@@ -45,7 +43,6 @@ export async function renderEditorV6CharacterRefresh(
   const sourceCache = new Map<string, ReturnType<typeof resolveSavedCharacterSource>>()
   const materialCache: import('../../characters/editorV6CharacterRenderer').GachaReusableMaterialCache = new Map()
   const rendererGroups = new Map<string, EditorV6CharacterRefreshRenderJob[]>()
-  const poseReferenceCrops = new Map<string, TrimmedImage | null>()
 
   for (const group of groups) {
     if (isCancelled()) return null
@@ -98,9 +95,7 @@ export async function renderEditorV6CharacterRefresh(
         const assetId = faceModeAssetIds[faceMode]
         if (!assetId) throw new Error(`Não foi possível preparar a variante facial ${faceMode} de ${character.name}.`)
         for (const target of targets) {
-          const poseKey = JSON.stringify([target.state.id, character.customization.modelSlot ?? 1, target.state.poseSlot === undefined ? character.customization.poseSlot ?? null : target.state.poseSlot])
-          if (!poseReferenceCrops.has(poseKey)) poseReferenceCrops.set(poseKey, crop)
-          const geometry = faceRenderGeometry(target.state, rendered, crop, stageWidth, stageHeight, poseReferenceCrops.get(poseKey))
+          const geometry = editorV6RefreshedCharacterGeometry(target.state, rendered, crop)
           const next: EditorV6Element = {
             ...target.state, assetId, faceModeAssetIds, ...geometry,
             ...(appearance ? { faceAppearance: appearance } : {}),
