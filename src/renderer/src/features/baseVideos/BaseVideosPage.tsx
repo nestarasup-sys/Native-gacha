@@ -414,7 +414,7 @@ export function BaseVideosPage() {
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
-        <button className="base-videos-ai-package" type="button" onClick={() => setAiPackageOpen(true)} disabled={!loaded || Boolean(loadError) || !items.length || busy}>✦ Pacote completo para IA</button>
+        <button className="base-videos-ai-package" type="button" onClick={() => setAiPackageOpen(true)} disabled={!loaded || Boolean(loadError) || !items.some((item) => detailsById[item.id]?.videoNumber !== undefined) || busy}>✦ Pacote completo para IA</button>
         <button className="base-videos-ai-package" type="button" onClick={() => setV6GuideOpen(true)} disabled={busy}>Guia V6 · V14.1</button>
         <button className="base-videos-ai-import" type="button" onClick={() => importAiRef.current?.click()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>{aiImportBusy ? 'Importando…' : '↑ Importar roteiro da IA'}</button>
         <button className="base-videos-ai-imported" type="button" onClick={() => void openImportedRoteiros()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>♙ Roteiros importados</button>

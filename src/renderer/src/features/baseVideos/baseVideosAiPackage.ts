@@ -5,16 +5,13 @@ import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 
 export function buildBaseVideosAiPackage(items: VideoLibraryItem[], detailsById: Record<string, BaseVideoDetails>, categories: BaseVideoCategory[], characters: CustomizerCharacter[], sheets: CharacterSheet[]): string {
   const categoryNames = new Map(categories.map((category) => [category.id, category.name]))
-  const orderedItems = [...items].sort((left, right) => {
-    const leftNumber = detailsById[left.id]?.videoNumber, rightNumber = detailsById[right.id]?.videoNumber
-    if (leftNumber !== undefined && rightNumber !== undefined) return leftNumber - rightNumber
-    if (leftNumber !== undefined) return -1
-    if (rightNumber !== undefined) return 1
-    return left.createdAt.localeCompare(right.createdAt) || left.name.localeCompare(right.name, 'pt-BR')
-  })
-  const videos = orderedItems.map((item, index) => {
+  const orderedItems = items.flatMap((item) => {
     const details = detailsById[item.id]
-    return { videoId: item.id, order: index + 1, videoNumber: details?.videoNumber ?? null, name: item.name, available: item.available, durationSeconds: item.durationFrames === null ? null : Number((item.durationFrames / 60).toFixed(2)), description: details?.description ?? '', sceneEndSeconds: details?.sceneEndSeconds ?? null, firstGroupReactionSeconds: details?.firstGroupReactionSeconds ?? null, secondGroupReactionSeconds: details?.secondGroupReactionSeconds ?? null, category: details?.categoryId ? categoryNames.get(details.categoryId) ?? null : null, additionalContext: details?.additionalContext ?? '' }
+    return details?.videoNumber === undefined ? [] : [{ item, videoNumber: details.videoNumber }]
+  }).sort((left, right) => left.videoNumber - right.videoNumber)
+  const videos = orderedItems.map(({ item, videoNumber }, index) => {
+    const details = detailsById[item.id]
+    return { videoId: item.id, order: index + 1, videoNumber, name: item.name, available: item.available, durationSeconds: item.durationFrames === null ? null : Number((item.durationFrames / 60).toFixed(2)), description: details?.description ?? '', sceneEndSeconds: details?.sceneEndSeconds ?? null, firstGroupReactionSeconds: details?.firstGroupReactionSeconds ?? null, secondGroupReactionSeconds: details?.secondGroupReactionSeconds ?? null, category: details?.categoryId ? categoryNames.get(details.categoryId) ?? null : null, additionalContext: details?.additionalContext ?? '' }
   })
   const characterData = characters.map((character) => {
     const sheet = sheets.find((entry) => entry.characterId === character.id)
