@@ -1,3 +1,4 @@
+import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
 import { availableParallelism } from 'node:os'
 import { env as nodeEnv } from 'node:process'
 import { join } from 'node:path'
@@ -99,6 +100,10 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     throw error
   }
 
+  const fps = options.fps ?? 30
+  const firstOutputFrame = editorV6OutputFrame(part.startFrame, options.startFrame, fps)
+  const outputFrames = editorV6OutputFrame(part.endFrame, options.startFrame, fps) - firstOutputFrame
+  const sampleTimelineFrame = (index: number) => options.startFrame + Math.floor(index * 30 / fps)
   const beganPart = performance.now()
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
   const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
@@ -114,24 +119,25 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     const videoClips = planEditorV6VideoOverlays(project, part.startFrame, part.endFrame)
     const videoPaths = await Promise.all(videoClips.map((clip) => mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
     const qualityFrames = qualityReferenceFolder
-      ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.filter(frame => frame >= part.startFrame && frame < part.endFrame).map(frame => frame - part.startFrame)
+      ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.map(frame => editorV6OutputFrame(frame, options.startFrame, fps)).filter(index => index >= firstOutputFrame && index < firstOutputFrame + outputFrames).map(index => index - firstOutputFrame)
       : []
-    const absoluteQualityFrames = qualityFrames.map(frame => frame + part.startFrame)
+    const absoluteQualityFrames = qualityFrames.map(frame => sampleTimelineFrame(frame + firstOutputFrame))
     const qualityReferencePath = qualityFrames.length ? join(qualityReferenceFolder!, `part-${part.index}.bgra`) : undefined
     if (qualityReferencePath) await mkdir(qualityReferenceFolder!, { recursive: true })
     const videoComposition = buildEditorV6VideoComposition({
-      clips: videoClips, mediaPaths: videoPaths, partStartFrame: part.startFrame, width: options.width, height: options.height, layeredVideo,
+      clips: videoClips, mediaPaths: videoPaths, partStartFrame: options.startFrame + firstOutputFrame * 30 / fps, width: options.width, height: options.height, layeredVideo,
       ...(qualityReferencePath ? { qualityReference: { frames: qualityFrames, outputPath: qualityReferencePath } } : {})
     })
-    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', '30', '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(part.endFrame - part.startFrame), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
+    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', String(fps), '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(outputFrames), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
     if (process.child.pid) onFfmpegProcessStarted?.(process.child.pid)
     const workerStarted = performance.now()
-    worker = await createWorker(renderProject, part, signal, layeredVideo, mouthLoops)
+    const frameWorker = await createWorker(renderProject, part, signal, layeredVideo, mouthLoops)
+    worker = frameWorker
     recordEditorV6Timing(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
 
     await renderAndWriteEditorV6Frames({
-      worker,
-      part,
+      worker: { frame: (index) => frameWorker.frame(sampleTimelineFrame(index)) },
+      part: { startFrame: firstOutputFrame, endFrame: firstOutputFrame + outputFrames },
       signal,
       counters: result,
       timingAccumulators,
@@ -161,7 +167,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     }), { flag: 'wx' })
     recordEditorV6Timing(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
     result.probe = await probeExportMedia(ffprobe, path, signal)
-    if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== part.endFrame - part.startFrame) throw Error('Uma parte não contém todos os quadros previstos.')
+    if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== outputFrames) throw Error('Uma parte não contém todos os quadros previstos.')
     result.milliseconds = performance.now() - beganPart
     result.finishedAtOffsetMs = performance.now() - exportStartedAt
     result.frameTiming = summarizeEditorV6Timings(timingAccumulators)

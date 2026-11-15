@@ -1,3 +1,4 @@
+import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
 import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent, type ProcessMetric } from 'electron'
 import * as fs from 'node:fs/promises'
 import { stat } from 'node:fs/promises'
@@ -197,7 +198,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
     assertAvailable()
     if (jobs.hasActive()) throw Error('Outra exportação já foi iniciada.')
     const controller = new AbortController(), reportPath = join(deps.projectPath(project.id), 'exports', `${id}.report.json`)
-    const status: EditorV6ExportStatus = { id, state: 'preparing', frames: 0, totalFrames: options.endFrame - options.startFrame, message: 'Verificando codificador e preparando exportação…', fallback: false, reportPath, ...(options.testMode ? { testMode: options.testMode } : {}) }
+    const status: EditorV6ExportStatus = { id, state: 'preparing', frames: 0, totalFrames: editorV6OutputFrame(options.endFrame, options.startFrame, options.fps), message: 'Verificando codificador e preparando exportação…', fallback: false, reportPath, ...(options.testMode ? { testMode: options.testMode } : {}) }
     const job = { owner: event.sender.id, status, controller, promise: Promise.resolve() }
     jobs.add(job)
     const abort = () => controller.abort(Error('A janela do editor foi fechada.'))

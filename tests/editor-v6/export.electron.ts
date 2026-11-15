@@ -151,6 +151,12 @@ async function main() {
   assert(nativePacketCount === 10, `O MP4 do renderizador nativo não contém os dez quadros esperados (${nativePacketCount}).`)
   const report = await runEditorV6Export(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
+  const film = await runEditorV6Export(project, { ...options, fps: 24, endFrame: options.endFrame - 2 }, {
+    ...base, id: randomUUID(), outputPath: join(folder, '24fps.mp4'), reportPath: join(folder, '24fps.report.json')
+  })
+  const filmVideo = film.validation?.streams.find((stream) => stream.codec_type === 'video')
+  assert(film.state === 'completed' && !film.fallback && film.totalFrames === 64 && filmVideo?.r_frame_rate === '24/1', 'A exportação Turbo a 24 FPS não preservou a cadência.')
+  assert(film.attempts[0].parts.map(part => part.frames).sort((a, b) => a - b).join(',') === '32,32' && film.audioClips === 1, 'A exportação a 24 FPS perdeu quadros na emenda ou a trilha de áudio.')
   const validatedVideo = (report.validation as { streams?: Array<{ codec_type: string; has_b_frames?: number; nb_read_packets?: string; nb_read_frames?: string }> }).streams?.find(stream => stream.codec_type === 'video')
   assert(validatedVideo?.has_b_frames === 0 && Number(validatedVideo.nb_read_packets) === 81 && validatedVideo.nb_read_frames === undefined,
     'A validação final não contou os pacotes H.264 no caminho rápido ou decodificou o vídeo inteiro sem necessidade.')

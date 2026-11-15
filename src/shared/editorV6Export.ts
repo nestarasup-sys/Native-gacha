@@ -9,7 +9,7 @@ export type EditorV6ExportAudio = {
   libraryAudioId?: string
   startFrame: number; sourceInFrame: number; durationFrames: number; gain: number; muted: boolean
 }
-export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; forceTurbo1080?: boolean; singleWorker?: boolean; encoder: 'auto' | 'cpu' | 'amf'; nativeRenderer?: boolean; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
+export type EditorV6ExportOptions = { testMode?: EditorV6ExportTestMode; startFrame: number; endFrame: number; width: number; height: number; turbo: boolean; fps?: 24 | 30; forceTurbo1080?: boolean; singleWorker?: boolean; encoder: 'auto' | 'cpu' | 'amf'; nativeRenderer?: boolean; mouthLoop?: boolean; mouthLoopCycleFrames?: number; hairAnimationPresetSlot?: number; hairAnimationLoopFrames?: 90 | 120; hairPoseReactionOnly?: boolean; hairPosteriorOnly?: boolean }
 /** Single source of truth for the Editor V6 Export panel's user-facing default profile. */
 export const EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT = 2
 export const EDITOR_V6_DEFAULT_EXPORT_PROFILE = {
@@ -49,8 +49,14 @@ export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number,
   const index = Math.round(travel * (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES.length - 1))
   return EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[index]
 }
+/** Output frame index of the first sample at or after a timeline boundary. */
+export function editorV6OutputFrame(timelineFrame: number, exportStart: number, fps: 24 | 30 = 30): number {
+  return Math.ceil((timelineFrame - exportStart) * fps / 30)
+}
+
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
   if (!options || typeof options.turbo !== 'boolean') throw Error('Configuração de exportação inválida.')
+  if (options.fps !== undefined && options.fps !== 24 && options.fps !== 30) throw Error('FPS de exportação inválido.')
   if (options.nativeRenderer !== undefined && typeof options.nativeRenderer !== 'boolean') throw Error('Configuração do renderizador nativo inválida.')
   if (options.singleWorker !== undefined && typeof options.singleWorker !== 'boolean') throw Error('Configuração de worker único inválida.')
   if (!Number.isSafeInteger(durationFrames) || durationFrames < 1) throw Error('A duração do documento é inválida.')

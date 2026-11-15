@@ -1,3 +1,4 @@
+import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6ExportOptions, EditorV6ExportPart, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
@@ -41,7 +42,7 @@ type Dependencies = {
 /** Schedules an attempt's parts, reports progress, and aggregates per-part diagnostics. */
 export async function renderEditorV6ExportAttempt(dependencies: Dependencies): Promise<EditorV6ExportPartReport[]> {
   const {
-    project, parts, encoder, maxParallelism = 2, exportStartedAt, options, layeredVideo, speechInRange,
+    project, parts: plannedParts, encoder, maxParallelism = 2, exportStartedAt, options, layeredVideo, speechInRange,
     characters, testSettings, folder, ffmpeg, ffprobe, motionCacheScope, signal, report,
     createWorker, bakeMotion, mediaPath, onFfmpegProcessStarted, qualityReferenceFolder, progress, saveReport, formatError
   } = dependencies
@@ -51,6 +52,7 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
   const abort = () => controller.abort(signal.reason)
   signal.addEventListener('abort', abort, { once: true })
   if (signal.aborted) abort()
+  const parts = plannedParts.filter(part => editorV6OutputFrame(part.endFrame, options.startFrame, options.fps) > editorV6OutputFrame(part.startFrame, options.startFrame, options.fps))
   const parallelism = Math.max(1, Math.min(maxParallelism, parts.length))
   const attempt: EditorV6ExportAttemptReport = { parts: [], encoder, parallelism }
   report.attempts.push(attempt)

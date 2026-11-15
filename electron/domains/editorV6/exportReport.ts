@@ -1,3 +1,4 @@
+import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
 import { release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
@@ -27,7 +28,7 @@ export type EditorV6ExportReport = {
   currentPhase: 'preparing' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
   projectId: string
   options: EditorV6ExportOptions
-  fps: 30
+  fps: 24 | 30
   totalFrames: number
   fallback: boolean
   attempts: EditorV6ExportAttemptReport[]
@@ -74,7 +75,7 @@ type ContextDependencies = {
 /** Creates the stable export report and the video-layer context used by render workers. */
 export function createEditorV6ExportReportContext({ project, options, testSettings, id, outputPath }: ContextDependencies): EditorV6ExportReportContext {
   const started = performance.now()
-  const totalFrames = options.endFrame - options.startFrame
+  const totalFrames = editorV6OutputFrame(options.endFrame, options.startFrame, options.fps)
   const videoOverlays = planEditorV6VideoOverlays(project, options.startFrame, options.endFrame)
   const compiledSha = typeof __NATIVE_GACHA_BUILD_SHA__ === 'string' ? __NATIVE_GACHA_BUILD_SHA__ : ''
   const revision = process.env.NATIVE_GACHA_BUILD_SHA || compiledSha
@@ -93,7 +94,7 @@ export function createEditorV6ExportReportContext({ project, options, testSettin
     projectId: project.id,
     currentPhase: 'preparing',
     options,
-    fps: 30,
+    fps: options.fps ?? 30,
     totalFrames,
     state: 'preparing',
     fallback: false,

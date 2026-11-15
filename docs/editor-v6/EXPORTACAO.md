@@ -2,6 +2,8 @@
 
 ## Uso
 
+Em **FPS do MP4**, escolha 30 FPS (padrão) ou 24 FPS. A timeline continua em 30 FPS. Em 24 FPS, o exportador amostra os quadros ao longo do intervalo inteiro, com a mesma cadência nas emendas. O áudio mantém seu tempo original e a duração do vídeo arredonda para cima até o próximo quadro de saída.
+
 Abra **Exportar MP4** na barra lateral do V6. Escolha o intervalo, 1080p ou 720p e a codificação automática ou CPU. O projeto usa 30 FPS. Com Turbo habilitado, o botão é **EXPORTAR TURBO 2×**. A caixa **Turbo com 1 worker (trechos em sequência)** mantém as duas partes e processa uma por vez para comparar consumo e estabilidade; pode aumentar o tempo total.
 
 O fim inicial do intervalo acompanha o último bloco ativo e visível, sem contar fundos persistentes, lacunas ou snapshots explicitamente invisíveis. Faixas ocultas e silenciadas não estendem o vídeo. Se não houver outro bloco para delimitar o final, personagens continuam persistindo até a duração do documento; o mínimo padrão é 10 segundos.
