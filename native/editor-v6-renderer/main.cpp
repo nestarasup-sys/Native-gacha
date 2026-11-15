@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -18,7 +19,7 @@
 using Microsoft::WRL::ComPtr;
 namespace {
 constexpr std::array<char, 4> kMagic{'V', '6', 'N', 'R'};
-constexpr std::uint32_t kVersion = 1;
+constexpr std::uint32_t kVersion = 2;
 constexpr std::uint32_t kMaxDimension = 4096;
 constexpr std::uint64_t kMaxFrameBytes = 4096ull * 2160ull * 4ull;
 constexpr std::uint32_t kMaxPacketBytes = 256u * 1024u * 1024u;
@@ -248,12 +249,15 @@ int main() {
       if (std::cin.gcount() != sizeof(packetLength) || packetLength < 32 || packetLength > kMaxPacketBytes) throw std::runtime_error("Tamanho de pacote inválido no protocolo do renderizador.");
       std::vector<std::uint8_t> packet(packetLength);
       readExact(std::cin, packet.data(), packet.size());
+      const auto renderStarted = std::chrono::steady_clock::now();
       try {
         const auto pixels = render(packet, factory.Get(), assets, cachedBytes);
-        writeU32(std::cout, 0); writeU32(std::cout, static_cast<std::uint32_t>(pixels.size())); writeExact(std::cout, pixels.data(), pixels.size());
+        const auto elapsedMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - renderStarted).count();
+        writeU32(std::cout, 0); writeU32(std::cout, static_cast<std::uint32_t>(pixels.size())); writeExact(std::cout, &elapsedMilliseconds, sizeof(elapsedMilliseconds)); writeExact(std::cout, pixels.data(), pixels.size());
       } catch (const std::exception& error) {
         const std::string message(error.what());
-        writeU32(std::cout, 1); writeU32(std::cout, static_cast<std::uint32_t>(message.size())); writeExact(std::cout, message.data(), message.size());
+        const auto elapsedMilliseconds = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - renderStarted).count();
+        writeU32(std::cout, 1); writeU32(std::cout, static_cast<std::uint32_t>(message.size())); writeExact(std::cout, &elapsedMilliseconds, sizeof(elapsedMilliseconds)); writeExact(std::cout, message.data(), message.size());
       }
       std::cout.flush();
     }

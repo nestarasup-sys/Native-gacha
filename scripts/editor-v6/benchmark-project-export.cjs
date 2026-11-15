@@ -30,6 +30,7 @@ const rendererPortValue = argument('--renderer-port=')
 const rendererPort = rendererPortValue === undefined ? 5188 : Number(rendererPortValue)
 const captureModeValue = argument('--capture-mode=')
 const uiExportProfile = process.argv.includes('--ui-export-profile')
+const nativeRenderer = process.argv.includes('--native-renderer')
 const disableMouthAnimation = process.argv.includes('--disable-mouth-animation')
 const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument('--hair-preset-file='))
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
@@ -209,6 +210,9 @@ async function main() {
     throw Error('--ui-export-profile exige Preset 2 salvo para cabelo ativo ou --no-hair-control para o controle sem cabelo.')
   }
   if (disableMouthAnimation && !uiExportProfile) throw Error('--disable-mouth-animation exige --ui-export-profile.')
+  if (nativeRenderer && (!uiExportProfile || !hairPresetSlot || encoder !== 'cpu' || repeatValue && repeatValue !== '1' || !fullTimeline)) {
+    throw Error('--native-renderer exige perfil UI de cabelo, CPU, uma rodada e timeline completa para este benchmark.')
+  }
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
     || !Number.isInteger(repeatCount) || repeatCount < 1 || repeatCount > 3
@@ -294,6 +298,7 @@ async function main() {
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
     ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
+    ...(nativeRenderer ? { GACHA_EDITOR_V6_STRESS_NATIVE_RENDERER: '1' } : {}),
     ...(disableMouthAnimation ? { GACHA_EDITOR_V6_STRESS_MOUTH_LOOP: '0' } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
@@ -363,6 +368,7 @@ async function main() {
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== manifest.title
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
+      || summary.nativeRenderer !== nativeRenderer
       || summary.requestedEncoder !== encoder
       || summary.motionConcurrency !== Number(motionConcurrency)
       || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)

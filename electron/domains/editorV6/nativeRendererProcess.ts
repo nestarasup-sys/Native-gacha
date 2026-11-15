@@ -5,7 +5,7 @@ const MAX_PACKET_BYTES = 256 * 1024 * 1024
 const MAX_FRAME_BYTES = 4096 * 2160 * 4
 
 export type EditorV6NativeRendererProcess = {
-  render: (plan: EditorV6NativeFramePlan, signal: AbortSignal) => Promise<Buffer>
+  render: (plan: EditorV6NativeFramePlan, signal: AbortSignal) => Promise<{ bitmap: Buffer; processMilliseconds: number }>
   close: () => Promise<void>
 }
 
@@ -57,7 +57,7 @@ function buildPacket(plan: EditorV6NativeFramePlan, assetsToSend: Array<{ id: st
   for (const command of plan.commands) size += command.kind === 'solid' ? 24 : 4 + 14 * 4 + 2 + Buffer.byteLength(command.assetId, 'utf8')
   if (size > MAX_PACKET_BYTES) throw Error('O plano de quadro excedeu o limite de transferência do renderizador nativo.')
   const packet = Buffer.allocUnsafe(size)
-  packet.write('V6NR', 0, 'ascii'); packet.writeUInt32LE(1, 4)
+  packet.write('V6NR', 0, 'ascii'); packet.writeUInt32LE(2, 4)
   packet.writeUInt32LE(plan.width, 8); packet.writeUInt32LE(plan.height, 12); packet.writeUInt32LE(plan.logicalHeight, 16)
   packet.writeUInt32LE(colorToBgra(plan.backgroundColor), 20); packet.writeUInt32LE(assets.length, 24); packet.writeUInt32LE(plan.commands.length, 28)
   let offset = 32
@@ -90,15 +90,21 @@ async function writeToChild(child: ChildProcessWithoutNullStreams, packet: Buffe
 export function createEditorV6NativeRendererProcess(executablePath: string): EditorV6NativeRendererProcess {
   const child = spawn(executablePath, [], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
   const iterator = child.stdout[Symbol.asyncIterator]()
-  let buffered = Buffer.alloc(0), closed = false, stderr = ''
+  let buffered = Buffer.alloc(0), closed = false, stderr = '', processExit: { code: number | null; signal: NodeJS.Signals | null } | undefined
   const sentAssets = new Set<string>()
   child.stderr.on('data', (chunk: Buffer) => { stderr = (stderr + chunk.toString('utf8')).slice(-8000) })
-  child.on('error', () => { closed = true })
+  child.on('error', error => { stderr = `${stderr}\n${error.message}`.slice(-8000); closed = true })
+  child.on('exit', (code, signal) => { processExit = { code, signal }; closed = true })
+
+  const processFailure = () => {
+    const exit = processExit ? ` (código ${processExit.code ?? 'n/a'}, sinal ${processExit.signal ?? 'nenhum'})` : ''
+    return `O processo do renderizador nativo não está ativo${exit}.${stderr.trim() ? ` ${stderr.trim()}` : ''}`
+  }
 
   const readExactly = async (count: number): Promise<Buffer> => {
     while (buffered.length < count) {
       const next = await iterator.next()
-      if (next.done) throw Error(stderr.trim() || 'O renderizador nativo encerrou antes de responder ao quadro.')
+      if (next.done) throw Error(stderr.trim() || `O renderizador nativo encerrou antes de responder ao quadro${processExit ? ` (código ${processExit.code ?? 'n/a'}, sinal ${processExit.signal ?? 'nenhum'})` : ''}.`)
       buffered = buffered.length ? Buffer.concat([buffered, Buffer.from(next.value)]) : Buffer.from(next.value)
     }
     const result = buffered.subarray(0, count)
@@ -109,7 +115,7 @@ export function createEditorV6NativeRendererProcess(executablePath: string): Edi
   return {
     async render(plan, signal) {
       signal.throwIfAborted()
-      if (closed || child.killed) throw Error('O processo do renderizador nativo não está ativo.')
+      if (closed || child.killed) throw Error(processFailure())
       const planAssets = new Map(plan.assets.map(asset => [asset.id, asset]))
       const requiredIds = new Set(plan.commands.filter(command => command.kind === 'image').map(command => command.assetId))
       const assetsToSend = [...requiredIds].filter(id => !sentAssets.has(id)).map(id => {
@@ -120,8 +126,9 @@ export function createEditorV6NativeRendererProcess(executablePath: string): Edi
       const framed = buildPacket(plan, assetsToSend)
       await writeToChild(child, framed)
       for (const asset of assetsToSend) sentAssets.add(asset.id)
-      const header = await readExactly(8)
+      const header = await readExactly(16)
       const status = header.readUInt32LE(0), length = header.readUInt32LE(4)
+      const processMilliseconds = header.readDoubleLE(8)
       if (status !== 0) {
         if (length > 8192) throw Error('O renderizador nativo retornou uma falha sem mensagem válida.')
         const message = (await readExactly(length)).toString('utf8')
@@ -129,7 +136,8 @@ export function createEditorV6NativeRendererProcess(executablePath: string): Edi
       }
       const expectedLength = plan.width * plan.height * 4
       if (length !== expectedLength || length > MAX_FRAME_BYTES) throw Error('O renderizador nativo retornou um quadro com dimensões inesperadas.')
-      return await readExactly(length)
+      if (!Number.isFinite(processMilliseconds) || processMilliseconds < 0) throw Error('O renderizador nativo retornou uma duração inválida.')
+      return { bitmap: await readExactly(length), processMilliseconds }
     },
     async close() {
       if (closed) return

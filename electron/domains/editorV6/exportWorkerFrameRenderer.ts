@@ -83,8 +83,22 @@ export function createEditorV6WorkerFrameRenderer({
   const renderNative = async (plan: EditorV6NativeFramePlan, timings: EditorV6FrameTimings = {}): Promise<{ bitmap: Buffer; timings: EditorV6FrameTimings }> => {
     if (!nativeRendererProcess) throw Error('O processo do renderizador nativo não foi iniciado.')
     const started = performance.now()
-    const bitmap = await nativeRendererProcess.render(plan, signal)
-    return { bitmap, timings: { ...timings, nativeRasterMs: (timings.nativeRasterMs ?? 0) + performance.now() - started } }
+    const rendered = await nativeRendererProcess.render(plan, signal)
+    const elapsedMs = performance.now() - started
+    return { bitmap: rendered.bitmap, timings: {
+      ...timings,
+      nativeRasterMs: (timings.nativeRasterMs ?? 0) + elapsedMs,
+      nativeProcessMs: (timings.nativeProcessMs ?? 0) + rendered.processMilliseconds,
+      nativeTransportMs: (timings.nativeTransportMs ?? 0) + Math.max(0, elapsedMs - rendered.processMilliseconds)
+    } }
+  }
+
+  const inspectNative = async (frame: number, bitmap: Buffer, layer?: 'background' | 'foreground') => {
+    if (!inspectCapture) return
+    if (stackedLayers && !layer) {
+      await inspectCapture({ window, frame, layer: 'background', bitmap: bitmap.subarray(0, layerBytes) })
+      await inspectCapture({ window, frame, layer: 'foreground', bitmap: bitmap.subarray(layerBytes) })
+    } else await inspectCapture({ window, frame, ...(layer ? { layer } : {}), bitmap })
   }
 
   const frame = async (frameNumber: number): Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }> => {
@@ -97,6 +111,7 @@ export function createEditorV6WorkerFrameRenderer({
         if (result.reused) return result
         if (!result.nativeFrame) throw Error(`O worker não preparou o plano nativo do quadro ${frameNumber}.`)
         const rendered = await renderNative(result.nativeFrame, result.timings)
+        await inspectNative(frameNumber, rendered.bitmap)
         return { ...result, ...rendered, reused: false }
       }
 
@@ -109,7 +124,7 @@ export function createEditorV6WorkerFrameRenderer({
         addEditorV6FrameTimings(timings, drawn.timings)
         addEditorV6FrameMetrics(metrics, drawn.metrics)
       }
-      const copyLayer = async (offset: number, drawn: EditorV6RenderFrameResult) => {
+      const copyLayer = async (offset: number, layer: 'background' | 'foreground', drawn: EditorV6RenderFrameResult) => {
         if (drawn.layerReused) {
           if (!layeredBitmap || !currentLayeredBitmap) throw Error('Uma camada nativa foi reutilizada antes de existir um quadro válido.')
           if (layeredBitmap !== currentLayeredBitmap) layeredBitmap.copy(currentLayeredBitmap, offset, offset, offset + layerBytes)
@@ -117,15 +132,16 @@ export function createEditorV6WorkerFrameRenderer({
         }
         if (!drawn.nativeFrame) throw Error(`O worker não preparou a camada nativa do quadro ${frameNumber}.`)
         const rendered = await renderNative(drawn.nativeFrame, drawn.timings)
+        await inspectNative(frameNumber, rendered.bitmap, layer)
         collect({ reused: false, timings: rendered.timings })
         if (!currentLayeredBitmap || rendered.bitmap.length !== layerBytes) throw Error('Dimensões inválidas da camada renderizada em C++.')
         rendered.bitmap.copy(currentLayeredBitmap, offset)
       }
-      await copyLayer(0, result)
+      await copyLayer(0, 'background', result)
       const foreground = await draw(frameNumber, 'foreground')
       if (foreground.reused) throw Error('O estado visual mudou entre as camadas nativas do quadro.')
       collect(foreground)
-      await copyLayer(layerBytes, foreground)
+      await copyLayer(layerBytes, 'foreground', foreground)
       if (!currentLayeredBitmap || currentLayeredBitmap.length !== layerBytes * 2) throw Error('O renderizador nativo não montou as duas camadas do quadro.')
       const bitmap = currentLayeredBitmap
       if (doubleBufferLayers) spareLayeredBitmap = layeredBitmap
