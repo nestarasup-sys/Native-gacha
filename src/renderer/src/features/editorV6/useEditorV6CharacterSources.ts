@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type RefObject } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { subscribeToCustomizerCharacterUpdates } from './editorV6CharacterSourceEvents.ts'
 import {
@@ -36,7 +36,12 @@ export {
 } from './editorV6CharacterSourceModel.ts'
 
 /** Loads live character and Fabricator source revisions used by this project. */
-export function useEditorV6CharacterSources(projectId: string | null, reportError: (message: string) => void) {
+export function useEditorV6CharacterSources(
+  projectId: string | null,
+  reportError: (message: string) => void,
+  exportInProgress: boolean,
+  exportInProgressRef: RefObject<boolean>
+) {
   const [availableCharacters, setAvailableCharacters] = useState<CustomizerCharacter[]>([])
   const [availableCharactersReady, setAvailableCharactersReady] = useState(false)
   const [poseSourceSnapshot, setPoseSourceSnapshot] = useState<PoseRevisionSnapshot | null>(null)
@@ -56,7 +61,9 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
   const activePoseSourceSnapshot = poseSourceSnapshot?.projectId === projectId ? poseSourceSnapshot : null
 
   useEffect(() => {
+    if (exportInProgress) return
     let cancelled = false
+    const stopped = () => cancelled || exportInProgressRef.current
     let requestRunning = false
     let requestQueued = false
     if (!shouldLoadEditorV6CharacterSources(projectId)) {
@@ -65,19 +72,20 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
       return () => { cancelled = true }
     }
     const refreshCharacters = () => {
+      if (stopped()) return
       if (requestRunning) { requestQueued = true; return }
       requestRunning = true
       setAvailableCharactersReady(false)
       void window.desktop.customizer.listCustomizerCharacters().then((characters) => {
-        if (!cancelled) {
+        if (!stopped()) {
           setAvailableCharacters((current) => sameCustomizerCharacterCatalog(current, characters) ? current : characters)
           setAvailableCharactersReady(true)
         }
       }).catch((reason: unknown) => {
-        if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
+        if (!stopped()) reportError(reason instanceof Error ? reason.message : 'Não foi possível carregar o elenco de personagens.')
       }).finally(() => {
         requestRunning = false
-        if (requestQueued && !cancelled) { requestQueued = false; refreshCharacters() }
+        if (requestQueued) { requestQueued = false; refreshCharacters() }
       })
     }
     const refreshWhenVisible = () => { if (document.visibilityState === 'visible') refreshCharacters() }
@@ -91,14 +99,17 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
       window.removeEventListener('focus', refreshCharacters)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [projectId, reportError])
+  }, [projectId, reportError, exportInProgress, exportInProgressRef])
 
   useEffect(() => {
+    if (exportInProgress) return
     if (!projectId) { setPoseSourceSnapshot(null); return }
     let cancelled = false
+    const stopped = () => cancelled || exportInProgressRef.current
     let requestRunning = false
     let requestQueued = false
     const refreshPoseSourceSnapshot = async () => {
+      if (stopped()) return
       if (requestRunning) { requestQueued = true; return }
       requestRunning = true
       try {
@@ -129,7 +140,7 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
                 assets: await window.desktop.fabricator.listFaceComponentAssets(modelSlot, kind)
               }))))
             ])
-            if (cancelled) return
+            if (stopped()) return
             if (requestQueued) continue
             const next = {
               projectId,
@@ -142,13 +153,13 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
             }
             setPoseSourceSnapshot((current) => current?.projectId === projectId && sameSourceRevisionSnapshot(current, next) ? current : next)
           } catch (reason) {
-            if (!cancelled) reportError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das fontes do personagem.')
+            if (!stopped()) reportError(reason instanceof Error ? reason.message : 'Não foi possível verificar as versões das fontes do personagem.')
           }
-        } while (requestQueued && !cancelled)
+        } while (requestQueued && !stopped())
       } finally { requestRunning = false }
     }
     const refreshWhenVisible = () => {
-      if (document.visibilityState !== 'visible') return
+      if (stopped() || document.visibilityState !== 'visible') return
       setPoseSourceSnapshot((current) => current?.projectId === projectId ? null : current)
       void refreshPoseSourceSnapshot()
     }
@@ -162,7 +173,7 @@ export function useEditorV6CharacterSources(projectId: string | null, reportErro
       window.removeEventListener('fabricator:assets-updated', refreshWhenVisible)
       document.removeEventListener('visibilitychange', refreshWhenVisible)
     }
-  }, [projectId, fabricatorModelSlotsKey])
+  }, [projectId, fabricatorModelSlotsKey, exportInProgress, exportInProgressRef])
 
   return { availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot }
 }

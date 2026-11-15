@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6LibraryMediaItem } from '../../../../shared/editorV6'
 import { EDITOR_V6_DEFAULT_EXPORT_PROFILE, EDITOR_V6_DEFAULT_HAIR_PRESET_SLOT, editorV6ExportContentEndFrame, type EditorV6ExportAudio, type EditorV6ExportOptions, type EditorV6ExportStatus } from '../../../../shared/editorV6Export'
 import { FIRST_HAIR_MOTION_PRESET, HAIR_MOTION_PRESET_KEY, hairMotionPosteriorOnlyPreset, parseHairMotionPresets, type HairMotionPreset } from '../../../../shared/hairMotionEngine'
@@ -71,7 +71,9 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     return () => { cancelled = true }
   }, [open])
 
-  useEffect(() => { onActivity?.(active || busy); return () => onActivity?.(false) }, [active, busy, onActivity])
+  const exportInProgress = active || startingExport
+  useLayoutEffect(() => { onActivity?.(exportInProgress) }, [exportInProgress, onActivity])
+  useLayoutEffect(() => () => onActivity?.(false), [onActivity])
 
   const setStatus = (value: EditorV6ExportStatus) => { rememberedJob = value; setJob(value) }
   useEffect(() => {
@@ -133,8 +135,11 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
     if (!simplifiedAnimation && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
     const preparedHairPreset = !simplifiedAnimation && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
+    // Block focus events and pending refresh results before starting async work.
+    onActivity?.(true)
     setExportStartedAt(Date.now()); setStartingExport(true)
     setBusy(true); setError('')
+    let jobIsActive = false
     try {
       const startedJob = await trackOperation(() => runEditorV6ExportCommand({
         project,
@@ -151,9 +156,13 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
         onPreparingHair: setPreparingHair,
         onStatus: setStatus
       }))
+      jobIsActive = Boolean(startedJob && !isEditorV6ExportFinished(startedJob))
       if (!startedJob) setExportStartedAt(null)
     } catch (reason) { setExportStartedAt(null); setError(reason instanceof Error ? reason.message : String(reason)) }
-    finally { setBusy(false); setPreparingHair(false); setStartingExport(false) }
+    finally {
+      if (!jobIsActive) onActivity?.(false)
+      setBusy(false); setPreparingHair(false); setStartingExport(false)
+    }
   }
 
   const cancel = async () => {

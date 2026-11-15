@@ -103,9 +103,15 @@ export function EditorV6Page() {
     activeEditorV6IdRef.current = id
     setActiveEditorV6IdState(id)
   }, [])
+  const [exportInProgress, setExportInProgress] = useState(false)
+  const exportInProgressRef = useRef(false)
+  const onExportActivity = useCallback((active: boolean) => {
+    exportInProgressRef.current = active
+    setExportInProgress(active)
+  }, [])
   const {
     availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot
-  } = useEditorV6CharacterSources(activeEditorV6Id, setError)
+  } = useEditorV6CharacterSources(activeEditorV6Id, setError, exportInProgress, exportInProgressRef)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [sharedBackgrounds, setSharedBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
   const [sharedObjects, setSharedObjects] = useState<EditorV6LibraryMediaItem[]>([])
@@ -125,7 +131,6 @@ export function EditorV6Page() {
   const [reactImportOpen, setReactImportOpen] = useState(false)
   const [saved, setSaved] = useState(true)
   const [selectedElementId, setSelectedElementId] = useState<string | null>(null)
-  const [motionExportBusy, setMotionExportBusy] = useState(false)
   const [selectedTimelineBlockId, setSelectedTimelineBlockId] = useState<string | null>(null)
   const [historyVersion, setHistoryVersion] = useState(0)
   const [canUndo, setCanUndo] = useState(false)
@@ -189,6 +194,8 @@ export function EditorV6Page() {
     availableCharacters,
     availableCharactersReady,
     poseSourceSnapshot: activePoseSourceSnapshot,
+    exportInProgress,
+    exportInProgressRef,
     updateProject: updateActiveEditorV6Project,
     markUnsaved: markEditorV6Unsaved,
     pausePlayback,
@@ -196,7 +203,7 @@ export function EditorV6Page() {
   })
   const characterSourceRefreshRequired = !availableCharactersReady || faceAssetRefreshRequired || characterSnapshotsRefreshing
   useMotionPreparation(activeEditorV6, availableCharacters,
-    saved && !isPlaying && !motionExportBusy && !characterSourceRefreshRequired
+    saved && !isPlaying && !exportInProgress && !characterSourceRefreshRequired
     && activePoseSourceSnapshot?.projectId === activeEditorV6Id)
   const {
     previewBackground, inspectorSelection: editorV6Selection,
@@ -711,7 +718,7 @@ export function EditorV6Page() {
         {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={stageSelection.selectTimelineBlock} /></Profiler> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={setMotionExportBusy} trackOperation={trackEditorV6Operation} />
+        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={onExportActivity} trackOperation={trackEditorV6Operation} />
         {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
         {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}

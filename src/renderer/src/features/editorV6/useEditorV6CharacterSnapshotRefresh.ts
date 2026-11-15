@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { pruneEditorV6TimelineSnapshots } from '../../../../shared/editorV6TimelineEdits'
@@ -16,6 +16,8 @@ type EditorV6CharacterSnapshotRefreshOptions = {
   availableCharacters: CustomizerCharacter[]
   availableCharactersReady: boolean
   poseSourceSnapshot: PoseRevisionSnapshot | null
+  exportInProgress: boolean
+  exportInProgressRef: RefObject<boolean>
   updateProject: (update: (project: EditorV6Document) => EditorV6Document) => void
   markUnsaved: () => void
   pausePlayback: () => void
@@ -28,6 +30,8 @@ export function useEditorV6CharacterSnapshotRefresh({
   availableCharacters,
   availableCharactersReady,
   poseSourceSnapshot,
+  exportInProgress,
+  exportInProgressRef,
   updateProject,
   markUnsaved,
   pausePlayback,
@@ -53,12 +57,13 @@ export function useEditorV6CharacterSnapshotRefresh({
   }, [project?.id])
 
   useEffect(() => {
-    if (!project || normalizedProjectIdsRef.current.has(project.id)) return
+    if (exportInProgress || !project || normalizedProjectIdsRef.current.has(project.id)) return
     let cancelled = false
+    const stopped = () => cancelled || exportInProgressRef.current
     const projectId = project.id
     void (async () => {
-      const crops = await prepareEditorV6LegacyCharacterCrops(project, () => cancelled)
-      if (cancelled || !crops) return
+      const crops = await prepareEditorV6LegacyCharacterCrops(project, stopped)
+      if (stopped() || !crops) return
 
       normalizedProjectIdsRef.current.add(projectId)
       setNormalizedSourceVersion((version) => version + 1)
@@ -71,10 +76,10 @@ export function useEditorV6CharacterSnapshotRefresh({
     })()
 
     return () => { cancelled = true }
-  }, [project, markUnsaved, updateProject])
+  }, [project, markUnsaved, updateProject, exportInProgress, exportInProgressRef])
 
   useEffect(() => {
-    if (!project || !availableCharactersReady || !normalizedProjectIdsRef.current.has(project.id)
+    if (exportInProgress || !project || !availableCharactersReady || !normalizedProjectIdsRef.current.has(project.id)
       || poseSourceSnapshot?.projectId !== project.id) return
 
     const forceRefresh = refreshOnOpenProjectId === project.id
@@ -92,14 +97,15 @@ export function useEditorV6CharacterSnapshotRefresh({
     setRefreshing(true)
     pausePlayback()
     let cancelled = false
+    const stopped = () => cancelled || exportInProgressRef.current
     const projectId = project.id
     void (async () => {
       try {
         const result = await renderEditorV6CharacterRefresh(
           plan.groups,
-          () => cancelled
+          stopped
         )
-        if (cancelled || !result) return
+        if (stopped() || !result) return
 
         if (forceRefresh) setRefreshOnOpenProjectId(null)
         updateProject((current) => current.id === projectId
@@ -107,17 +113,17 @@ export function useEditorV6CharacterSnapshotRefresh({
           : current)
         markUnsaved()
       } catch (reason) {
-        if (!cancelled) {
+        if (!stopped()) {
           if (forceRefresh) setRefreshOnOpenProjectId(null)
           reportError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
         }
       } finally {
-        if (!cancelled) setRefreshing(false)
+        if (!stopped()) setRefreshing(false)
       }
     })()
 
     return () => { cancelled = true }
-  }, [project, poseSourceSnapshot, availableCharacters, availableCharactersReady, normalizedSourceVersion, refreshOnOpenProjectId, pausePlayback, updateProject, markUnsaved, reportError])
+  }, [project, poseSourceSnapshot, availableCharacters, availableCharactersReady, normalizedSourceVersion, refreshOnOpenProjectId, pausePlayback, updateProject, markUnsaved, reportError, exportInProgress, exportInProgressRef])
 
   return refreshing || refreshOnOpenProjectId === project?.id
 }

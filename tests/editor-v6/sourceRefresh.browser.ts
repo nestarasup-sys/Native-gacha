@@ -31,12 +31,12 @@ export async function checkConcurrentSourceRefresh(character: CustomizerCharacte
   const errors: string[] = []
   const noop = () => {}
   const reportError = (message: string) => { errors.push(message) }
-  const stageRef = { current: null }
+  const exportInProgressRef = { current: false }
   function Harness({ currentCharacter, sources }: { currentCharacter: CustomizerCharacter; sources: PoseRevisionSnapshot }) {
     const [document, setDocument] = useState(project)
     latestDocument = document
     useEditorV6CharacterSnapshotRefresh({ project: document, availableCharacters: [currentCharacter], availableCharactersReady: true, poseSourceSnapshot: sources,
-      sceneRef: stageRef, updateProject: setDocument, markUnsaved: noop, pausePlayback: noop, reportError })
+      exportInProgress: false, exportInProgressRef, updateProject: setDocument, markUnsaved: noop, pausePlayback: noop, reportError })
     return null
   }
   const mount = document.createElement('div'); document.body.append(mount)
