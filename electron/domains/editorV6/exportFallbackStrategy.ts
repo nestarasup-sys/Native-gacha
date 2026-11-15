@@ -28,7 +28,7 @@ export async function renderEditorV6ExportWithFallback(dependencies: Dependencie
     options, plannedParts, requestedPartCount, stressWorkerOverride, speechInRange, encoder,
     signal, report, progress, renderAttempt, finishMeasured, selectFallbackEncoder, formatError
   } = dependencies
-  const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo ? 2 : 1
+  const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo && !options.singleWorker ? 2 : 1
 
   try {
     return await finishMeasured(await renderAttempt(plannedParts, encoder, turboParallelism))

@@ -41,6 +41,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           {exportFolder && <button type="button" onClick={() => void clearExportFolder()}>Voltar a perguntar onde salvar</button>}
           <p><strong>{options.encoder === 'amf' ? '1080p · 1920 × 1080 · AMD AMF H.264' : '1080p · 1920 × 1080 · CPU H.264'}</strong></p>
           <p><strong>Turbo 2× obrigatório</strong><br /><small>Se o Turbo falhar, a exportação será interrompida e mostrará o erro.</small></p>
+          <label className="v6-export-check"><input type="checkbox" checked={options.singleWorker === true} onChange={(event) => setOptions({ ...options, singleWorker: event.target.checked })} /><span><strong>Turbo com 1 worker (trechos em sequência)</strong><small>Mantém a divisão do Turbo, mas processa um trecho por vez. Use para comparar estabilidade e consumo; pode demorar mais.</small></span></label>
           <button type="button" aria-pressed={options.nativeRenderer === true} onClick={() => setOptions({ ...options, nativeRenderer: options.nativeRenderer !== true })}>
             {options.nativeRenderer === true ? 'Renderizador nativo em C++ · selecionado' : 'Renderizador nativo em C++'}
           </button>

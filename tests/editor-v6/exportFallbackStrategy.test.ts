@@ -60,6 +60,17 @@ describe('política de fallback da exportação do Editor V6', () => {
     expect(dependencies.report.fallback).toBe(false)
   })
 
+  it('processa os trechos Turbo em sequência quando a opção de worker único está ativa', async () => {
+    const defaults = createDependencies()
+    const dependencies = createDependencies({ options: { ...defaults.options, singleWorker: true } })
+
+    await expect(renderEditorV6ExportWithFallback(dependencies)).resolves.toEqual({ valid: true })
+
+    expect(dependencies.renderAttempt).toHaveBeenCalledWith(dependencies.plannedParts, 'h264_nvenc', 1)
+    expect(dependencies.report.attempts[0]?.parallelism).toBe(1)
+    expect(dependencies.report.fallback).toBe(false)
+  })
+
   it('repete com CPU e divide a faixa de fala em partes de 300 quadros', async () => {
     const failure = new Error('falha no Turbo')
     const dependencies = createDependencies({

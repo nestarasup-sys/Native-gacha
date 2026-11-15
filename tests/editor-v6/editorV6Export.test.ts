@@ -74,6 +74,12 @@ describe('planejamento de exportação do Editor V6', () => {
     }
   })
 
+  it('valida a opção de renderizar com um worker sem alterar a divisão Turbo', () => {
+    expect(planEditorV6Export({ ...options, singleWorker: true }, 100)).toHaveLength(2)
+    expect(planEditorV6Export({ ...options, singleWorker: false }, 100)).toHaveLength(2)
+    expect(() => planEditorV6Export({ ...options, singleWorker: 'sim' as never }, 100)).toThrow('worker único')
+  })
+
   it('divide intervalos ímpares sem repetir nem omitir quadros', () => {
     expect(planEditorV6Export(options, 100)).toEqual([{ index: 0, startFrame: 5, endFrame: 45 }, { index: 1, startFrame: 45, endFrame: 86 }])
     for (const count of [1, 2, 3, 29, 30, 31, 18000]) {

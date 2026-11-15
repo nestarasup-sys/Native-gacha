@@ -2,7 +2,7 @@
 
 ## Uso
 
-Abra **Exportar MP4** na barra lateral do V6. Escolha o intervalo, 1080p ou 720p e a codificação automática ou CPU. O projeto usa 30 FPS. Com Turbo habilitado, o botão é **EXPORTAR TURBO 2×**.
+Abra **Exportar MP4** na barra lateral do V6. Escolha o intervalo, 1080p ou 720p e a codificação automática ou CPU. O projeto usa 30 FPS. Com Turbo habilitado, o botão é **EXPORTAR TURBO 2×**. A caixa **Turbo com 1 worker (trechos em sequência)** mantém as duas partes e processa uma por vez para comparar consumo e estabilidade; pode aumentar o tempo total.
 
 O fim inicial do intervalo acompanha o último bloco ativo e visível, sem contar fundos persistentes, lacunas ou snapshots explicitamente invisíveis. Faixas ocultas e silenciadas não estendem o vídeo. Se não houver outro bloco para delimitar o final, personagens continuam persistindo até a duração do documento; o mínimo padrão é 10 segundos.
 
@@ -72,7 +72,7 @@ O painel pode ser fechado durante a exportação. O trabalho continua enquanto o
 1. O main valida o documento e o intervalo `[início, fim)`, em quadros inteiros. Sem pasta fixa, abre o diálogo de destino; com pasta fixa, usa a preferência local `editor-v6-export-folder.json` no perfil do Electron e gera um nome com UUID para cada MP4. A pasta é escolhida ou alterada por diálogo nativo, validada no main e pode ser desativada no painel. Caso esteja indisponível, a exportação informa o erro; a preferência não altera documentos do Editor V6.
 2. Para Turbo com pelo menos dois quadros, a divisão ocorre em `início + floor(total / 2)`. Intervalos ímpares não repetem nem perdem o quadro da emenda. Um intervalo de um quadro usa um único renderizador.
 3. O codificador é escolhido antes de renderizar. A seleção automática testa NVENC, QSV e AMF e usa OpenH264 por CPU se necessário. O FFmpeg já incluído no projeto fornece OpenH264; não exige baixar outro binário.
-4. Duas janelas Electron ocultas e offscreen recebem o documento completo. Cada uma carrega uma página exclusiva de exportação e desenha apenas seu intervalo com o próprio `SceneSurface` da prévia.
+4. Até duas janelas Electron ocultas e offscreen recebem o documento completo. Cada uma carrega uma página exclusiva de exportação e desenha apenas seu intervalo com o próprio `SceneSurface` da prévia. Com a opção de worker único, as partes Turbo continuam divididas, mas o agendador mantém somente um renderizador ativo por vez.
 5. O worker resolve o quadro diretamente, prepara as imagens e espera o desenho do Chromium. Estados anteriores ao início da segunda parte continuam disponíveis.
 6. Quando existe fala ligada a personagem visível, o main pede ao preparador facial até três recortes temporários por estado visual. O atlas contém só a pequena região facial que muda; o corpo mantém a imagem original. O ciclo segue a fase global do vídeo, inclusive nas emendas Turbo. Se faltarem personagem, recorte, revisão compatível ou orçamento para manter a resolução nativa, a exportação falha e não publica um MP4 sem a animação obrigatória. Cenas sem fala elegível não fazem preparação facial.
 6a. Se a opção experimental estiver ativa, o renderer prepara camadas temporárias por personagem e variante facial, aplica o preset selecionado e valida IDs/referências no main antes de abrir os workers. O worker reexecuta a simulação determinística a partir do quadro zero, recompõe o cabelo fora de imagens rasterizadas de transição e acrescenta o quadro da animação à chave visual para não reaproveitar uma captura parada. Os dados não são persistidos no documento nem no catálogo. O custo adicional depende das dimensões e do número de peças de cabelo; sem preset, a captura permanece idêntica ao fluxo normal.
@@ -117,13 +117,13 @@ O preload dos workers expõe apenas a obtenção do documento e a confirmação 
 
 `npm run test:editor-v6` cobre divisão de intervalos pares/ímpares, resolução, áudio recortado/deslocado e referências seguras.
 
-`npm run test:editor-v6:export` compila e executa o fluxo real no Electron/Chromium e FFmpeg incluídos, com perfil e arquivos temporários isolados. Confere duas partes simultâneas, 81 quadros em 40+41, estado anterior ao início da segunda parte, cores BGRA, continuidade em transição de pose, talk e pensamento, faixa de vídeo oculta, áudio contínuo na emenda, recuperação após falha simulada, cancelamento preservando o destino, intervalo de um quadro e saída 1080p. Também verifica que o relatório contém tempos por fase. A contagem de quadros e amostras de áudio são verificadas no MP4 produzido.
+`npm run test:editor-v6:export` compila e executa o fluxo real no Electron/Chromium e FFmpeg incluídos, com perfil e arquivos temporários isolados. Confere duas partes simultâneas no modo padrão, 81 quadros em 40+41, estado anterior ao início da segunda parte, cores BGRA, continuidade em transição de pose, talk e pensamento, faixa de vídeo oculta, áudio contínuo na emenda, recuperação após falha simulada, cancelamento preservando o destino, intervalo de um quadro e saída 1080p. Também verifica que o relatório contém tempos por fase. A contagem de quadros e amostras de áudio são verificadas no MP4 produzido.
 
 `npm run test:editor-v6:surface` confere o desenho comum da cena e a ligação do painel de exportação/importação de áudio.
 
 ## Limites atuais
 
-Turbo 2× significa dois trabalhos simultâneos; não garante reduzir o tempo pela metade. GPU só é usada na codificação quando um encoder compatível passa no teste inicial. As verificações técnicas não substituem revisão visual de todas as cenas.
+Turbo 2× usa dois trabalhos simultâneos por padrão; a opção de worker único reduz essa concorrência para um, sem alterar as partes nem o vídeo final. Nenhum dos modos garante reduzir o tempo pela metade. GPU só é usada na codificação quando um encoder compatível passa no teste inicial. As verificações técnicas não substituem revisão visual de todas as cenas.
 
 O loop aumenta o trabalho de preparação antes do FFmpeg. Os atlas ficam no documento temporário do job e o serviço de animação pode manter cópias no cache descartável fora da pasta do projeto; nada é acrescentado ao JSON do projeto. O orçamento agregado é 64 MiB e 32 milhões de pixels para os trechos simultâneos, com no máximo 8 milhões de pixels por estado. Não há corte artificial de 12 estados; o teste sintético prepara 501 estados. Se o orçamento ou os vínculos faciais não forem compatíveis, a exportação falha claramente em vez de publicar um vídeo sem movimento de boca.
 
