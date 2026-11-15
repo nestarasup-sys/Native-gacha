@@ -3,6 +3,7 @@ import type { HairMotionLoop, HairMotionState } from '../../../../shared/hairMot
 import { editorV6HairMotionInstancePhase } from '../../../../shared/editorV6HairMotion'
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
+import { loadEditorV6WorkerMediaImage } from './exportWorkerMediaImage'
 
 type ImageLoader = (dataUrl: string) => Promise<ImageBitmap>
 type HairMeshRenderer = ReturnType<typeof createExportHairMeshRenderer>
@@ -14,13 +15,7 @@ export async function loadHairImage(dataUrl: string): Promise<ImageBitmap> {
     // trigger a cross-origin SecurityError. Set the CORS mode before loading
     // media URLs and upload only the resulting origin-clean ImageBitmap.
     if (dataUrl.startsWith('gacha-editor-media://')) {
-      const image = new Image()
-      image.crossOrigin = 'anonymous'
-      image.src = dataUrl
-      try {
-        await image.decode()
-        return await createImageBitmap(image)
-      } finally { image.src = '' }
+      return await loadEditorV6WorkerMediaImage(dataUrl)
     }
     const prefixes = ['data:image/png;base64,', 'data:image/svg+xml;base64,'] as const
     const prefix = prefixes.find(candidate => dataUrl.startsWith(candidate))

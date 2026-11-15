@@ -6,6 +6,7 @@ import type { EditorV6NativeFramePlan, EditorV6NativeImageCommand } from '../../
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 import { editorV6ElementsWithBalloonsOnTop } from './editorV6SceneLayerOrder'
 import { SceneTextContent } from './SceneTextContent'
+import { loadEditorV6WorkerMediaImage } from './exportWorkerMediaImage'
 
 type Layer = 'all' | 'background' | 'foreground' | 'stacked'
 type CanvasMap = ReadonlyMap<string, HTMLCanvasElement>
@@ -32,22 +33,21 @@ function dataUrlFromBlob(blob: Blob): Promise<string> {
 async function pngDataUrlFromImage(bitmap: ImageBitmap): Promise<string> {
   const canvas = new OffscreenCanvas(bitmap.width, bitmap.height)
   const context = canvas.getContext('2d', { alpha: true })
-  if (!context) throw Error('Canvas de conversão indisponível no renderizador nativo.')
-  try { context.drawImage(bitmap, 0, 0) }
-  catch (error) { bitmap.close(); throw Error(`Não foi possível copiar uma imagem para o canvas nativo: ${error instanceof Error ? error.message : String(error)}`) }
-  bitmap.close()
+  try {
+    if (!context) throw Error('Canvas de conversão indisponível no renderizador nativo.')
+    context.drawImage(bitmap, 0, 0)
+  } finally { bitmap.close() }
   return dataUrlFromBlob(await canvas.convertToBlob({ type: 'image/png' }))
 }
 
 async function resolveNativeAsset(asset: EditorV6Asset, suppliedAssets: Map<string, { id: string; dataUrl: string }>): Promise<string> {
   const cachedUrl = assetUrlCache.get(asset.id)
   const dataUrl = asset.dataUrl.startsWith('data:') ? asset.dataUrl : cachedUrl ?? await (async () => {
-    const response = await fetch(asset.dataUrl, { credentials: 'omit' })
-    if (!response.ok) throw Error(`Não foi possível ler o asset “${asset.name}” para o renderizador nativo.`)
-    let bitmap: ImageBitmap
-    try { bitmap = await createImageBitmap(await response.blob()) }
-    catch (error) { throw Error(`O navegador não decodificou o asset “${asset.name}” (${asset.id}) para o renderizador nativo: ${error instanceof Error ? error.message : String(error)}`) }
-    return pngDataUrlFromImage(bitmap)
+    try {
+      return await pngDataUrlFromImage(await loadEditorV6WorkerMediaImage(asset.dataUrl))
+    } catch (error) {
+      throw Error(`Não foi possível preparar a imagem “${asset.name}” (${asset.id}) para o renderizador nativo: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+    }
   })()
   if (!asset.dataUrl.startsWith('data:') && !cachedUrl) {
     assetUrlCache.set(asset.id, dataUrl)

@@ -12,6 +12,7 @@ import type { EditorV6HairMotionBundle } from '../../src/shared/editorV6HairMoti
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
+import { createEditorV6ExportWorkerData } from '../../electron/domains/editorV6/exportWorkerPayload'
 import { encodingArgs, probeExportMedia, runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import type { EditorV6ExportReport } from '../../electron/domains/editorV6/exportRunner'
 import { editorV6OutputColorFilter } from '../../electron/domains/editorV6/exportVideoComposition'
@@ -142,7 +143,12 @@ async function main() {
   const nativeOutput = join(folder, 'native-renderer.mp4')
   const nativeExport = await runEditorV6Export(project, { ...options, startFrame: 25, endFrame: 35, turbo: false, nativeRenderer: true }, {
     ...base, id: randomUUID(), outputPath: nativeOutput, reportPath: join(folder, 'native-renderer.report.json'),
-    createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => makeWorkerWithFactory(factory, signal, 320, 180, renderProject, layeredVideo, mouthLoops, undefined, false, true)
+    createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
+      // Exercise the production asset transport through the sandboxed worker.
+      const { project: workerProject, assetSources } = createEditorV6ExportWorkerData(renderProject, part, mouthLoops)
+      assert(assetSources.size > 0, 'O teste nativo precisa carregar imagens pelo protocolo do worker.')
+      return factory.create({ project: workerProject, width: 320, height: 180, layeredVideo, mouthLoops, nativeRenderer: true }, signal, assetSources)
+    }
   })
   const nativePart = nativeExport.attempts.flatMap(attempt => attempt.parts)[0]
   assert(nativeExport.state === 'completed' && nativeExport.totalFrames === 10 && !nativeExport.fallback, 'O caminho nativo não concluiu uma exportação MP4 de ponta a ponta.')
