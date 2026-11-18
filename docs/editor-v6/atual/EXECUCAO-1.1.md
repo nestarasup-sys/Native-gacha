@@ -168,3 +168,10 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - Os dois vídeos validaram 6.000 quadros H.264 e AAC, duração de 200 s, nove emendas (cinco no candidato por seis partes) e zero erros de limpeza. SSIM decodificado entre os MP4s: 0,996784. O candidato preparou 33 atlas de boca, mas somou 104,882 s de bake contra 55,999 s no lote 600; esses tempos são somas de workers e se sobrepõem.
 - Decisão: rejeitar lote 1.200; preservar o padrão de 600 quadros. A hipótese de menos partes não reduziu a espera de inicialização o suficiente e aumentou o custo observado de preparação facial. Relatório: `out/editor-v6-stress/runs/standard-mouth-batch1200-full200-2026-11-18/stress-export-validation.json`.
 - O ambiente bloqueou a remoção automática do MP4 usado na comparação e do marcador do ensaio. O diretório é apenas de laboratório em `out/`, não é reaproveitado pelo exportador do aplicativo; não tentei contornar o bloqueio. A meta de 90 s continua aberta.
+
+## Rodada — evitar IPC de quadros repetidos (18/11)
+
+- Mantive somente o perfil padrão completo: simplificação desligada, boca, piscadas, transições, Preset 2, áudio, OpenH264, 1080p/30. Não usei o renderizador C++ nem rodei build ou testes C++.
+- A hipótese era que o worker pudesse pular a chamada IPC para os quadros visualmente idênticos, usando as mesmas chaves de reuso já existentes. No corte de 40 s, o plano acertou 880 quadros repetidos e os três hashes amostrados foram idênticos ao controle.
+- Resultado: controle 40,631 s; candidato 40,705 s (+0,18%). A renderização caiu só 0,179 s (20,750 → 20,571 s), enquanto a preparação global aumentou 0,128 s e o plano custou 0,187 s. A soma de tempos de worker variou bastante entre lados, sem ganho consistente.
+- Decisão: descartar a implementação experimental. Pular IPC redundante não resolve o gargalo sustentado de captura/roundtrip e escrita FFmpeg; não repetir o corte integral com essa hipótese. Relatórios: `standard-frame-reuse-control-40s-2026-11-18` e `standard-frame-reuse-candidate-40s-2026-11-18` em `out/editor-v6-stress/runs/`. A meta de 90 s segue aberta.

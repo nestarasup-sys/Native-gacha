@@ -27,6 +27,8 @@ Na rodada posterior, `paint-event`, concorrência 3 de boca e lote 300 não redu
 
 Lookahead de dois quadros, encoder com menos threads e lote de boca 1.200 também foram medidos, sem ganho longo que justifique mudança. O último levou 165,006 s contra 163,760 s e aumentou o bake de boca; manter lote 600. O padrão segue com captura `capturePage`, quatro workers, boca concorrência 2/lote 600 e lookahead 1. Nenhum teste C++ foi executado.
 
+O último candidato tentou pular IPC de 880 quadros repetidos em um corte padrão de 40 s. Manteve os hashes amostrados, mas levou 40,705 s contra 40,631 s no controle; foi removido. A investigação continua centrada em captura e transporte de bitmaps. Consulte [Execução 1.1](EXECUCAO-1.1.md).
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.
