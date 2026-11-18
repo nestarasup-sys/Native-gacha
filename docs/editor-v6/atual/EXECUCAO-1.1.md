@@ -11,7 +11,9 @@
 
 ### Autorização e meta
 
-O usuário autorizou exportar autonomamente o mesmo corte de **3 min 20 s** do projeto `editorV6-408a77d1-d964-4c04-a66b-f4e9fcfeee46`. Use o intervalo de timeline `[0, 6000)`, 1920×1080, 30 FPS, Turbo com dois workers, CPU `libopenh264`, boca com ciclo de 30 quadros e cabelo posterior com preset 2 e reação à pose. Consulte o JSON de referência para reproduzir as opções exatas.
+O usuário autorizou exportar autonomamente o mesmo corte de **3 min 20 s** do projeto `editorV6-408a77d1-d964-4c04-a66b-f4e9fcfeee46`. Use o intervalo de timeline `[0, 6000)`, 1920×1080, 30 FPS, Turbo, CPU `libopenh264`, boca com ciclo de 30 quadros e cabelo posterior com preset 2 e reação à pose. Consulte o JSON de referência para reproduzir as opções exatas.
+
+**Perfil obrigatório das próximas medições:** export padrão da interface, caixinha “Usar só piscadas e transições de pose e expressão” desmarcada. Assim, piscadas e transições continuam ativas, junto com boca e preset de cabelo. Não use o perfil simplificado, não desative uma animação para melhorar artificialmente o tempo e não execute testes/benchmarks do renderizador nativo C++. A rodada integral registrada em `actual-project-full4-batch600-200s-2026-11-18` foi CPU `libopenh264`, `capturePage`, boca ativa, preset 2 e perfil `editor-v6-ui-default`; não foi C++.
 
 A meta é **90 s no caminho padrão**, incluindo preparação anterior ao IPC, transições, renderização, validação e publicação. Frente aos 200,84 s registrados só no main, isso exige pelo menos **55% de redução** e ganho em mais de uma fase. A renderização sozinha levou 147,23 s. Como orçamento de investigação, mire em 25 s de preparação total, 60 s de renderização e 5 s de finalização. O critério de aceitação é o tempo total, com a qualidade e os 6.000 quadros verificados.
 
