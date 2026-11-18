@@ -101,10 +101,19 @@ export async function createEditorV6ExportWorkerHairResources(
   try {
     if (animation) {
       const loadImage = dependencies.loadImage ?? loadHairImage
+      const imagesByUrl = new Map<string, Promise<ImageBitmap>>()
       const loadInto = async (id: string, dataUrl: string, target: Map<string, ImageBitmap>) => {
-        const image = await loadImage(dataUrl)
-        if (disposed) { image.close(); throw Error('A preparação das imagens de cabelo foi cancelada.') }
-        ownedImages.add(image)
+        let pending = imagesByUrl.get(dataUrl)
+        if (!pending) {
+          pending = loadImage(dataUrl).then(image => {
+            if (disposed) { image.close(); throw Error('A preparação das imagens de cabelo foi cancelada.') }
+            ownedImages.add(image)
+            return image
+          })
+          imagesByUrl.set(dataUrl, pending)
+        }
+        const image = await pending
+        if (disposed) return
         target.set(id, image)
       }
       await Promise.all([

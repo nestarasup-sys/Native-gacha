@@ -17,6 +17,33 @@ function accounting() {
 }
 
 describe('pipeline de quadros renderizados do Editor V6', () => {
+  it('conta apenas a espera que sobrou depois que o quadro antecipado ficou pronto', async () => {
+    let time = 0
+    let finishFirstWrite!: () => void
+    const firstWrite = new Promise<void>(resolve => { finishFirstWrite = resolve })
+    const renderer = {
+      frame: vi.fn(async (index: number) => {
+        if (index === 1) time = 30
+        return { reused: false, bitmap: Buffer.from([index]) }
+      })
+    }
+    const state = accounting()
+    const exporting = renderAndWriteEditorV6Frames({
+      worker: renderer, part: { startFrame: 0, endFrame: 2 },
+      signal: new AbortController().signal, ...state,
+      overlapEncoding: true, now: () => time, onFrameWritten: () => {},
+      writeFrame: bitmap => bitmap[0] === 0 ? firstWrite : Promise.resolve()
+    })
+    await new Promise<void>(resolve => setImmediate(resolve))
+    time = 50
+    finishFirstWrite()
+    await exporting
+
+    const summary = summarizeEditorV6Timings(state.timingAccumulators)
+    expect(summary.ffmpegWriteMs?.totalMs).toBe(50)
+    expect(summary.ffmpegWriteUncoveredMs?.totalMs).toBe(20)
+  })
+
   it('reutiliza o último bitmap, escreve todos os quadros e agrega métricas', async () => {
     const first = Buffer.from([1, 2, 3])
     const last = Buffer.from([4, 5, 6])

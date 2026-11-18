@@ -36,6 +36,7 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   rawBytesPerFrame?: number
   mediaPlanningMs?: number
   probeMs?: number
+  workerStartup?: EditorV6FrameWorker['startup']
   failedOutputFrame?: number
   stage?: 'mouthPreparation' | 'mediaPlanning' | 'encoderStart' | 'workerStartup' | 'streaming' | 'encoderDrain' | 'validation' | 'completed'
   error?: string
@@ -165,6 +166,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     const workerStarted = performance.now()
     const frameWorker = await createWorker(renderProject, part, signal, layeredVideo, mouthLoops)
     worker = frameWorker
+    result.workerStartup = frameWorker.startup
     recordEditorV6Timing(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
 
     result.stage = 'streaming'

@@ -132,10 +132,12 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       releaseMotionCacheScope: deps.releaseMotionCacheScope,
       releaseIdleMotionWorkers: deps.releaseIdleMotionWorkers,
       getElectronProcessMetrics: deps.getElectronProcessMetrics,
-      createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
+      createWorker: async (renderProject, part, signal, layeredVideo, mouthLoops) => {
+        const snapshotStarted = performance.now()
         const workerData = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, hairAnimation, options.includeSpeechMouth !== false)
+        const snapshotMs = performance.now() - snapshotStarted
         const { assetSources, ...payloadData } = workerData
-        return workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
+        const worker = await workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
           // One paint/readback for both layers. Serial mode remains available
           // for validation of pixel parity with the old layered compositor.
           singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE !== 'serial',
@@ -143,6 +145,8 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
           reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
           ...(options.testMode ? { testMode: options.testMode } : {}), ...(mouthLoops ? { mouthLoops } : {}) }, signal, assetSources)
+        if (worker.startup) worker.startup.snapshotMs = snapshotMs
+        return worker
       },
       audioPath: (clip) => audioPath(project.id, clip, project.media), mediaPath, progress
     })

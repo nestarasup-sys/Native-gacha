@@ -130,7 +130,7 @@ describe('dados isolados por trecho para workers do Editor V6', () => {
     ]
     expect(workerImageUrls.every(url => url.startsWith(`gacha-editor-media://snapshot/${project.id}/asset-`))).toBe(true)
     expect(JSON.stringify({ workerProject, workerHair })).not.toContain('data:image/png;base64,')
-    expect(assetSources.size).toBe(workerImageUrls.length)
+    expect(assetSources.size).toBe(new Set(workerImageUrls).size)
     expect([...assetSources.values()].every(source => source.mimeType === 'image/png' && source.dataUrl.startsWith('data:image/png;base64,'))).toBe(true)
   })
 
@@ -154,14 +154,14 @@ describe('dados isolados por trecho para workers do Editor V6', () => {
 
     const { project: workerProject, hairAnimation: workerHair, assetSources } = createEditorV6ExportWorkerData(project, { index: 0, startFrame: 100, endFrame: 205 }, undefined, hairAnimation)
     const serializedPayload = JSON.stringify({ project: workerProject, hairAnimation: workerHair })
-    const inlineImageBytes = [...assetSources].reduce((bytes, [token, source]) => {
-      const route = `gacha-editor-media://snapshot/${project.id}/${token}`
-      return bytes + Buffer.byteLength(source.dataUrl) - Buffer.byteLength(route)
-    }, 0)
+    const imageReferences = [...workerProject.assets, ...workerHair!.surfaces, ...workerHair!.textures]
+    const route = `gacha-editor-media://snapshot/${project.id}/asset-0`
+    expect(imageReferences.every(reference => reference.dataUrl === route)).toBe(true)
+    const inlineImageBytes = imageReferences.length * (Buffer.byteLength(image) - Buffer.byteLength(route))
     const currentBytes = Buffer.byteLength(serializedPayload)
     const previousEquivalentBytes = currentBytes + inlineImageBytes
 
-    expect(assetSources.size).toBeGreaterThan(0)
+    expect(assetSources.size).toBe(1)
     expect(currentBytes / previousEquivalentBytes).toBeLessThan(0.05)
   })
 })

@@ -10,7 +10,19 @@ import { createEditorV6WorkerFrameRenderer, type EditorV6WorkerFrameRenderer } f
 import { createEditorV6NativeRendererProcess, type EditorV6NativeRendererProcess } from './nativeRendererProcess'
 import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } from './exportWorkerWindow'
 
-export type EditorV6FrameWorker = { frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>; close: () => void }
+export type EditorV6WorkerStartup = {
+  snapshotMs?: number
+  snapshotImages: number
+  windowCreationMs: number
+  navigationMs: number
+  readinessAfterNavigationMs: number
+}
+
+export type EditorV6FrameWorker = {
+  frame: (frame: number) => Promise<EditorV6RenderFrameResult & { bitmap?: Buffer }>
+  close: () => void
+  startup?: EditorV6WorkerStartup
+}
 
 export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependencies & { ipcMain: Pick<IpcMain, 'handle' | 'removeHandler'>; inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>; captureMode?: 'capturePage' | 'paint-event' | 'compare-paint'; nativeRendererExecutable?: string }) {
   const registry = createEditorV6WorkerRegistry(deps.ipcMain)
@@ -20,7 +32,9 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
     const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
+    const windowStarted = performance.now()
     const window = createEditorV6WorkerWindow(payload, deps, assetSources)
+    const windowCreationMs = performance.now() - windowStarted
     const id = window.webContents.id
     const registration = registry.register(id, payload)
     const workerController = new AbortController()
@@ -58,8 +72,16 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
     window.once('closed', close)
     window.webContents.once('render-process-gone', onRenderProcessGone)
     try {
+      const navigationStarted = performance.now()
       await waitForExport(deps.devUrl ? window.loadURL(new URL('editor-v6-export.html', deps.devUrl.endsWith('/') ? deps.devUrl : deps.devUrl + '/').href) : window.loadFile(deps.html), signal, 60000, 'abrir renderizador')
+      const navigationFinished = performance.now()
       await waitForExport(registration.ready, signal, 60000, 'preparar renderizador')
+      const startup = {
+        snapshotImages: assetSources?.size ?? 0,
+        windowCreationMs,
+        navigationMs: navigationFinished - navigationStarted,
+        readinessAfterNavigationMs: performance.now() - navigationFinished
+      }
       window.webContents.setZoomFactor(1)
       if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.layeredVideo && payload.singlePassLayers ? payload.height * 2 : payload.height, signal)
       if (payload.nativeRenderer) {
@@ -74,7 +96,7 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
         doubleBufferLayers: payload.layeredVideo && !payload.singlePassLayers && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0',
         nativeRendererProcess
       })
-      return { close, frame: frameRenderer.frame }
+      return { close, frame: frameRenderer.frame, startup }
     } catch (error) { close(); throw error }
   }
   return { create, dispose: () => {

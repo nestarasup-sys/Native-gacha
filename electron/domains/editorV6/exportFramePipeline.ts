@@ -62,18 +62,25 @@ export async function renderAndWriteEditorV6Frames(dependencies: Dependencies): 
 
     const writeStarted = now()
     const writing = writeFrame(previousBitmap)
+    let nextRenderFinishedAt: number | undefined
     if (dependencies.overlapEncoding && frame + 1 < part.endFrame && !signal.aborted) {
       // A fast failed render must not cause an unhandled rejection while the
       // preceding FFmpeg write is still waiting for backpressure.
       nextFrame = renderFrame(frame + 1).then(
-        (value): Lookahead => ({ ok: true, value }),
+        (value): Lookahead => {
+          nextRenderFinishedAt = now()
+          return { ok: true, value }
+        },
         (error): Lookahead => ({ ok: false, error })
       )
     }
     // Never queue a second stream write before the first callback finishes.
     // The old BGRA view remains alive and frame ordering is preserved.
     await writing
-    recordEditorV6Timing(timingAccumulators, 'ffmpegWriteMs', now() - writeStarted)
+    const writeFinishedAt = now()
+    recordEditorV6Timing(timingAccumulators, 'ffmpegWriteMs', writeFinishedAt - writeStarted)
+    const uncoveredFrom = nextFrame ? nextRenderFinishedAt ?? writeFinishedAt : writeStarted
+    recordEditorV6Timing(timingAccumulators, 'ffmpegWriteUncoveredMs', writeFinishedAt - uncoveredFrom)
     counters.frames++
     onFrameWritten()
   }

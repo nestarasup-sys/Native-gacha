@@ -2,14 +2,14 @@ import type { EditorV6FrameMetrics, EditorV6FrameTimings } from '../../../src/sh
 
 export type EditorV6ExportPhase = 'temporarySetup' | 'characterLoading' | 'motionPreparation' | 'encoderProbe' | 'rendering' | 'finalization' | 'publication'
 export type EditorV6ExportPhaseTimings = Record<EditorV6ExportPhase, number>
-export type EditorV6TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs' | 'hairPngEncodeMs' | 'hairPngDecodeMs'
+export type EditorV6TimingPhase = keyof EditorV6FrameTimings | 'workerStartupMs' | 'ffmpegFinalizeMs' | 'hairPngEncodeMs' | 'hairPngDecodeMs' | 'ffmpegWriteUncoveredMs'
 export type EditorV6TimingAccumulator = { count: number; totalMs: number; maxMs: number; histogram: number[] }
 export type EditorV6TimingAccumulators = Record<EditorV6TimingPhase, EditorV6TimingAccumulator>
 export type EditorV6FrameTimingReport = Partial<Record<EditorV6TimingPhase, { samples: number; totalMs: number; p50Ms: number; p95Ms: number; maxMs: number }>>
 
 const TIMING_BUCKET_MS = .1
 const TIMING_BUCKETS = 2001
-const TIMING_PHASES = ['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'nativePlanMs', 'nativeRasterMs', 'nativeProcessMs', 'nativeTransportMs', 'captureMs', 'paintWaitMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegFinalizeMs'] as const satisfies readonly EditorV6TimingPhase[]
+const TIMING_PHASES = ['workerStartupMs', 'sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'hairCompositionOtherMs', 'hairMotionStateMs', 'hairLayerDrawMs', 'hairSurfaceComposeMs', 'hairCanvasClearMs', 'hairRigInterpolationMs', 'hairMeshContextCheckMs', 'hairMeshStateSetupMs', 'hairMeshPositionMs', 'hairMeshUploadMs', 'hairMeshTextureUploadMs', 'hairMeshDrawMs', 'hairCanvasBlitMs', 'hairMotionPrewarmMs', 'hairPngEncodeMs', 'hairPngDecodeMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'ipcDrawMs', 'nativePlanMs', 'nativeRasterMs', 'nativeProcessMs', 'nativeTransportMs', 'captureMs', 'paintWaitMs', 'capturePageMs', 'captureBitmapMs', 'backgroundCaptureMs', 'foregroundCaptureMs', 'frameRoundTripMs', 'ffmpegWriteMs', 'ffmpegWriteUncoveredMs', 'ffmpegFinalizeMs'] as const satisfies readonly EditorV6TimingPhase[]
 
 export function createEditorV6TimingAccumulators(): EditorV6TimingAccumulators {
   return Object.fromEntries(TIMING_PHASES.map((phase) => [phase, { count: 0, totalMs: 0, maxMs: 0, histogram: Array<number>(TIMING_BUCKETS).fill(0) }])) as EditorV6TimingAccumulators

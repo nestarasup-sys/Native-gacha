@@ -28,6 +28,15 @@ function installImageFactory(behavior: 'load' | 'decode' | 'success' = 'success'
 function asset(id: string) { return { id, name: `Asset ${id}`, dataUrl: `data:image/png;base64,${id}` } }
 
 describe('createEditorV6ExportFrameAssetImageLoader', () => {
+  it('starts four image loads together and waits before starting the next batch', async () => {
+    const created = installImageFactory()
+    const loader = createEditorV6ExportFrameAssetImageLoader(new Map())
+    const prepared = loader.prepare(Array.from({ length: 5 }, (_, index) => asset(String(index))))
+
+    expect(created).toHaveLength(4)
+    await prepared
+    expect(created).toHaveLength(5)
+  })
   it('reuses decoded promises for repeated assets', async () => {
     const created = installImageFactory()
     const cache = new Map<string, Promise<void>>()
