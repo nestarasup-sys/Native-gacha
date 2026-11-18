@@ -28,6 +28,16 @@ describe('codificação do Editor V6', () => {
     expect(args.slice(args.indexOf('-hw_encoding') + 1, args.indexOf('-hw_encoding') + 2)).toEqual(['0'])
     expect(args).toContain('yuv420p')
   })
+
+  it('limita threads somente no harness isolado e nunca excede o automático', () => {
+    expect(encodingArgs('libopenh264', 6).slice(encodingArgs('libopenh264', 6).indexOf('-threads') + 1)[0]).toBe('6')
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_ENCODER_THREADS', '2')
+    expect(encodingArgs('libopenh264', 6).slice(encodingArgs('libopenh264', 6).indexOf('-threads') + 1)[0]).toBe('6')
+    vi.stubEnv('GACHA_VIDEO_STRESS_OFFSCREEN', '1')
+    expect(encodingArgs('libopenh264', 6).slice(encodingArgs('libopenh264', 6).indexOf('-threads') + 1)[0]).toBe('2')
+    vi.stubEnv('GACHA_EDITOR_V6_STRESS_ENCODER_THREADS', '8')
+    expect(encodingArgs('libopenh264', 6).slice(encodingArgs('libopenh264', 6).indexOf('-threads') + 1)[0]).toBe('6')
+  })
 })
 
 describe('publicação do MP4 do Editor V6', () => {

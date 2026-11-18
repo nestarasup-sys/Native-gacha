@@ -164,6 +164,19 @@ test('requires explicit permission when capture strategy differs', () => {
   assert.equal(compare(reference, candidate, { allowCaptureStrategyChange: true }).comparable, true)
 })
 
+test('requires an explicit comparator flag when the isolated encoder thread cap changes', () => {
+  const reference = report()
+  const candidate = report()
+  reference.attempts[0].parts[0].encoderThreads = 6
+  candidate.attempts[0].parts[0].encoderThreads = 2
+  assert.equal(compare(reference, candidate).comparable, false)
+  const result = compare(reference, candidate, { allowEncoderThreadChange: true })
+  assert.equal(result.comparable, true)
+  assert.equal(result.validation.passed, true)
+  assert.equal(result.reference.options.encoderThreads, 6)
+  assert.equal(result.candidate.options.encoderThreads, 2)
+})
+
 test('analyzes the benchmark aggregate and keeps click wall time separate from worker sums', () => {
   const analyzed = analyzeEditorV6ExportReport({
     passed: true, projectId: 'project-fixture', sourceRevision: 'sha-fixture', workingTreeDirty: true, captureMode: 'capturePage',

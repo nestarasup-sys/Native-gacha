@@ -11,7 +11,7 @@ import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComp
 import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { prepareExportMouthLoops } from './prepareMouthLoops'
 import { spawnExportProcess, waitForExport } from './exportProcess'
-import { encodingArgs } from './exportEncoding'
+import { editorV6EncodingThreadCount, encodingArgs } from './exportEncoding'
 import { probeExportMedia } from './exportMediaProbe'
 import type { EditorV6FrameWorker } from './exportWorkers'
 import { buildEditorV6VideoComposition, EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES } from './exportVideoComposition'
@@ -38,6 +38,7 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   firstOutputFrame?: number
   videoOverlayClips?: number
   rawBytesPerFrame?: number
+  encoderThreads?: number
   mediaPlanningMs?: number
   probeMs?: number
   workerStartup?: EditorV6FrameWorker['startup']
@@ -104,11 +105,14 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   const outputFrames = editorV6OutputFrame(part.endFrame, options.startFrame, fps) - firstOutputFrame
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
   const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+  const automaticEncoderThreads = Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))
+  const encoderThreads = encoder === 'libx264' || encoder === 'libopenh264'
+    ? editorV6EncodingThreadCount(automaticEncoderThreads) : undefined
   const partStarted = performance.now()
   const result: EditorV6ExportPartReport = {
     ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0,
     startedAtOffsetMs: partStarted - exportStartedAt, expectedFrames: outputFrames, firstOutputFrame,
-    framePipelineOverlap, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
+    framePipelineOverlap, encoderThreads, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
     frameRestHairReuse: Boolean(options.hairPoseReactionOnly) && nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0'
   }
   onPartCreated(result)
@@ -167,7 +171,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     })
     result.mediaPlanningMs = performance.now() - beganPart
     result.stage = 'encoderStart'
-    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', String(fps), '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(outputFrames), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
+    process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', String(fps), '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, automaticEncoderThreads), '-frames:v', String(outputFrames), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
     if (process.child.pid) onFfmpegProcessStarted?.(process.child.pid)
     result.rawBytesPerFrame = options.width * videoComposition.rawHeight * 4
     result.stage = 'workerStartup'

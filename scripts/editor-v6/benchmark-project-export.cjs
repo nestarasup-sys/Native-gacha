@@ -38,6 +38,7 @@ const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument(
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
 const videoToolsDirectory = argument('--video-tools=') && path.resolve(argument('--video-tools='))
 const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
+const encoderThreads = argument('--encoder-threads=')
 const authorizedProjectId = argument('--authorized-project-id=')
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
 const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
@@ -212,6 +213,10 @@ async function main() {
   }
   if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
   if (!['auto', 'cpu', 'amf'].includes(encoder)) throw Error('--encoder aceita auto, cpu ou amf.')
+  if (encoderThreads !== undefined && (!/^\d+$/.test(encoderThreads) || Number(encoderThreads) < 1 || Number(encoderThreads) > 8
+    || !uiExportProfile || !hairPresetSlot || encoder !== 'cpu' || nativeRenderer)) {
+    throw Error('--encoder-threads=1..8 só é aceito para exportação CPU padrão isolada com preset de cabelo; a opção limita threads, nunca aumenta o automático.')
+  }
   if (videoToolsDirectory) {
     const allowedToolsRoot = path.resolve(root, 'out', 'editor-v6-stress', 'tools')
     const canonicalToolsRoot = await fs.realpath(allowedToolsRoot)
@@ -326,6 +331,7 @@ if (mouthBatchFrames !== undefined && (!uiExportProfile || !hairPresetSlot || ha
     ...(exportTestMode ? { GACHA_EDITOR_V6_STRESS_EXPORT_TEST_MODE: exportTestMode } : {}),
     ...(captureModeValue ? { GACHA_EDITOR_V6_STRESS_CAPTURE_MODE: captureModeValue } : {}),
     ...(uiExportProfile ? { GACHA_EDITOR_V6_STRESS_UI_EXPORT_PROFILE: '1', GACHA_EDITOR_V6_STRESS_HAIR_PRESET_JSON: JSON.stringify(uiPreset) } : {}),
+    ...(encoderThreads ? { GACHA_EDITOR_V6_STRESS_ENCODER_THREADS: encoderThreads } : {}),
     ...(nativeRenderer ? { GACHA_EDITOR_V6_STRESS_NATIVE_RENDERER: '1' } : {}),
     ...(disableMouthAnimation ? { GACHA_EDITOR_V6_STRESS_MOUTH_LOOP: '0' } : {}),
     GACHA_EDITOR_V6_STRESS_ENCODER: encoder,
@@ -397,6 +403,7 @@ if (mouthBatchFrames !== undefined && (!uiExportProfile || !hairPresetSlot || ha
     ? summary.benchmarkKind !== 'real-project-hair-export' || summary.projectTitle !== manifest.title
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.hairPresetSlot !== Number(hairPresetSlot)
+      || encoderThreads !== undefined && summary.encoderThreads !== Number(encoderThreads)
       || summary.nativeRenderer !== nativeRenderer
       || summary.requestedEncoder !== encoder
       || summary.motionConcurrency !== Number(motionConcurrency)
