@@ -21,6 +21,8 @@ No perfil padrão sem simplificação, a exportação serial levou **163,760 s**
 
 O A/B curto no transporte de duas camadas separadas foi mais lento que o buffer combinado (+7,2%, uma amostra por lado). A tentativa foi removida; não usar o corte completo nela.
 
+Antecipar o preparo de boca também perdeu 1,7% num corte padrão de 40 s. Mantive o preparo atual intercalado com a renderização; as comparações e o próximo foco estão em [Execução 1.1](EXECUCAO-1.1.md) e [Pesquisa 1.1](PESQUISA-1.1.md).
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.

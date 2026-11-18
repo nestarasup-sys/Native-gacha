@@ -99,4 +99,10 @@ As somas de timing por worker se sobrepõem: roundtrip 227,34 s; escrita FFmpeg 
 
 O A/B pareado confirma que a estratégia de surface importa mais que a contagem de retries: stacked→serial reduziu `capturePage` de 114,65 para 82,05 s somados por worker, conversão/cópia (`captureBitmap`) de 20,67 para 14,60 s, `ffmpegWrite` de 193,78 para 172,20 s e IPC de desenho de 132,66 para 118,51 s. Os readbacks obsoletos subiram de 193 para 283. O ganho veio de capturar camadas em superfícies de 1080p, mesmo com mais retries; não repetir testes de retry como próximo foco.
 
+## Preparação de boca durante o render
+
+No corte padrão de 200 s, 10 trechos prepararam 36 atlas de boca: 49,49 s somados em preparação, 56,00 s em bake e 37,23 s em espera de fila (medidas somadas por worker, sobrepostas). A primeira hipótese foi antecipar os mesmos bakes de todos os trechos antes de abrir os renderizadores. No A/B de 40 s, isso passou de 40,920 para 41,617 s (+1,7%); a renderização subiu de 21,001 para 22,461 s. Os dois exports preservaram seis atlas, 1.200 quadros, áudio e limpeza; SSIM do candidato contra o início do export integral: 0,999956. Rejeitado: o bake e a renderização já se sobrepõem de forma útil.
+
+O próximo teste deve eliminar trabalho repetido no preparo por estado, crop ou codificação de atlas com evidência de identidade visual. Reduzir somente chamadas de IPC, mover o mesmo bake para outra fase ou desligar animações não é candidato. A estratégia de buffers de camadas independentes também foi medida e rejeitada (+7,2% no corte de 40 s); o padrão combinado continua intacto. Os relatórios das duas comparações estão nas pastas `mouth-*40s-2026-11-18` e `serial-buffer-*40s-2026-11-18`.
+
 O agregado indicava dois workers incorretamente; run e tentativa confirmaram quatro, a política de CPU Turbo. Corrigi o JSON com nota transparente e o agregador agora usa a contagem observada. A meta de 90 s segue sem atingir.
