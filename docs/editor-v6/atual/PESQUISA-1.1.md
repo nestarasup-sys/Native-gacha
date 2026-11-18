@@ -114,3 +114,5 @@ O agregado indicava dois workers incorretamente; run e tentativa confirmaram qua
 - Concorrência 3 de boca reduziu a fila no corte de 120 s e ganhou 1,900 s, mas no integral empatou/perdeu 0,110 s. Lote de boca 300 também ficou 0,296 s mais lento em 120 s. Não trocar os padrões.
 - Os contadores do cache de geometria agora atravessam o schema IPC: integral registrou 117 hits/95 misses. Ainda é necessário um A/B de parede para converter a taxa de reutilização em ganho demonstrado.
 - Nova prioridade: perfilar a captura do frame/roundtrip IPC/pipe a partir dos relatórios serializados; os testes de paralelismo e estratégia de captura não justificam alterar os padrões atuais.
+- Teste posterior: lookahead de dois quadros teve ganho de 0,3% no corte de 120 s, insuficiente para promover mais buffers. A gravação continua sequencial; não manter o candidato nem repetir em 200 s.
+- Threads do encoder 2 vs. 3 deram diferença pequena em um único corte de 120 s; faltam medições pareadas e não há justificativa para mudar a configuração automática.
