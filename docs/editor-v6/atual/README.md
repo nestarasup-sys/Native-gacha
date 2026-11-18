@@ -17,7 +17,7 @@ O código e os relatórios da execução são as fontes de verdade. O [arquivo h
 
 ## Resultado mais recente
 
-O corte completo repetido com o teste de captura de 8 ms levou **206,06 s** do clique até validação, contra **209,87 s** na rodada anterior com as mesmas opções. O teste não confirma ganho estável: quadros únicos, reuso, proporção de leituras descartadas, preparação de movimento e renderização variaram pouco. A meta de 90 s continua distante. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md) para medições e limitações do preset.
+O corte de 600 quadros por parte levou **201,45 s** do clique até validação; com 1.200 quadros, levou **209,20 s**. O renderizador C++ falhou na amostra porque o conjunto de assets ultrapassou 512 MiB. A meta de 90 s continua distante; os 201,45 s ainda precisam de controle pareado com o mesmo cronômetro. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md).
 
 ## Rotina para continuar sem supervisão
 

@@ -49,3 +49,14 @@ Limitação: o preset 2 de cabelo reproduzido é o preset de laboratório, finge
 4. **Pipe e boca.** A espera descoberta sugere verificar o pipe por trecho, principalmente com vídeo. O custo facial foi residual aqui. Reserve mudanças na boca para casos em que tempo por trecho, atlas e sobreposição indiquem efeito sobre o tempo total.
 
 O relatório de 21.914 quadros de hoje tem outro intervalo e não serve sozinho como controle A/B deste corte. A de 6.000 quadros do dia 15 usou AMF, enquanto a atual usou CPU. Isolar encoder, intervalo, opções, conteúdo e carga da máquina antes de atribuir diferenças a commits.
+
+## Rodada de partes e renderização C++
+
+- 600 quadros/parte: 201,45 s clique→validado; 138,58 s de render; 45,01 s de preparação de movimento; 20,61 s de boca somada; 10 partes; 94,56 GB BGRA. Passou validação de fluxo, duração, 6.000 quadros, áudio, 9 emendas e limpeza.
+- 1.200 quadros/parte: 209,20 s; 145,22 s de render; 46,10 s de movimento; 22,96 s de boca; 6 partes; 99,53 GB BGRA. Passou as mesmas verificações, mas foi 7,75 s mais lento com cronômetro idêntico. Menos inicializações não compensou o volume por trecho.
+- A referência padrão de 300 quadros é relatório antigo sem cronômetro de clique. O total calculado 211,88 s (main+preparação) não se compara com click→validado. O comparador agora marca bases distintas, não calcula delta e mostra revisão/dirty.
+- Renderer C++ em amostra de 40 s falhou por assets acima de 512 MiB antes de produzir vídeo. O relatório parcial não permite dizer se seria mais rápido depois do limite; primeiro é preciso reduzir/medir os assets transportados sem eliminar imagens válidas.
+- Repetir a amostra C++ com partes de 300 em vez de 600 não evitou o teto: 512 MiB foram excedidos novamente. O limite não depende apenas da duração do worker; investigar retenção/cache global do processo antes de experimentar novo tamanho de parte.
+- O analisador agora aceita o agregado do benchmark e produz uma linha clara de custos sobrepostos. No corte 1.200 somou 188,34 s de roundtrip, 95,83 s em `capturePage`, 21,56 s na conversão BGRA, 99,22 s de escrita FFmpeg e 19,86 s descobertos. FFmpeg atingiu 454% CPU; main 3,87 GiB; `export-renderer` 1,61 GiB. Esses tempos de worker não são aditivos e confirmam trabalho simultâneo limitado por CPU e cópia de quadros.
+- Perfil exato ainda não verificável contra o relatório antigo: o fingerprint do cabelo não estava nele. Os dois novos candidatos usaram o mesmo preset de laboratório 2, fingerprint `2a0f0859...`; revisão/dirty aparecem no relatório de 1.200, mas faltam no relatório de 600.
+- Melhor oportunidade continua sendo reduzir custo de frame/captura e bytes transferidos sem mudar pixels. Medir roundtrip, captura, escrita FFmpeg, BGRA total e RSS/GPU. A meta 90 s exige aceleração de aproximadamente 2,23× sobre o melhor corte medido.

@@ -52,7 +52,7 @@ type Dependencies = {
 const message = formatEditorV6Error
 
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
-  const { options, testSettings, requestedParts, parts: planned, speechInRange, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
+  const { options, testSettings, requestedParts, parts: planned, speechInRange, mouthLoopBatchFrames, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
   const { report, layeredVideo, started, totalFrames } = createEditorV6ExportReportContext({ project, options, testSettings, id: deps.id, outputPath: deps.outputPath })
   let reportWriteQueue = Promise.resolve()
   const saveReport = () => {
@@ -193,6 +193,7 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
       options,
       plannedParts: planned,
       requestedPartCount: requestedParts.length,
+      mouthLoopBatchFrames,
       stressWorkerOverride,
       speechInRange,
       encoder,

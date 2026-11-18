@@ -12,15 +12,43 @@ function selectedAttempt(report) {
     ?? attempts.at(-1) ?? { parts: [] }
 }
 
+function normalizeBenchmarkReport(report) {
+  if (!Array.isArray(report.runs)) return report
+  const run = report.runs.at(-1)
+  if (!run) return report
+  return {
+    projectId: report.projectId,
+    state: report.passed ? 'completed' : 'failed',
+    totalFrames: run.totalFrames ?? report.durationFrames,
+    fps: Number.parseInt(String(run.fps ?? report.fps), 10),
+    options: run.options ?? {},
+    milliseconds: run.mainExportWallMs ?? run.exportMilliseconds,
+    clickToValidatedMilliseconds: run.clickToValidatedWallMs,
+    hairPreparation: { totalMilliseconds: run.hairPreparationWallMs },
+    phaseMilliseconds: run.phaseMilliseconds,
+    motionPreparation: run.motionPreparation,
+    mouthAnimation: run.mouthAnimation,
+    attempts: run.attemptDiagnostics,
+    validation: run.ffprobeValidation,
+    cleanup: { errors: run.cleanupErrors ?? [] },
+    processPeaks: run.processPeaks,
+    captureMode: report.captureMode,
+    runtime: { buildSha: report.sourceRevision, workingTreeDirty: report.workingTreeDirty }
+  }
+}
+
 /** Read a real export report without conflating rendering time and hair preparation. */
 function analyzeEditorV6ExportReport(report) {
+  report = normalizeBenchmarkReport(report)
   if (!report || !Number.isSafeInteger(report.totalFrames) || report.totalFrames < 1) {
     throw Error('Relatório do Editor V6 sem contagem válida de quadros.')
   }
   const attempt = selectedAttempt(report)
   const parts = Array.isArray(attempt.parts) ? attempt.parts : []
   const phase = report.phaseMilliseconds ?? {}
-  const wallMilliseconds = numberOrNull(report.milliseconds)
+  const clickToValidatedMilliseconds = numberOrNull(report.clickToValidatedMilliseconds)
+  const mainProcessMilliseconds = numberOrNull(report.milliseconds)
+  const wallMilliseconds = clickToValidatedMilliseconds ?? mainProcessMilliseconds
     ?? (Number.isFinite(Date.parse(report.endedAt)) && Number.isFinite(Date.parse(report.startedAt))
       ? Date.parse(report.endedAt) - Date.parse(report.startedAt) : null)
   const hairPreparationMilliseconds = numberOrNull(report.hairPreparation?.totalMilliseconds) ?? 0
@@ -31,17 +59,35 @@ function analyzeEditorV6ExportReport(report) {
       result[key] = parts.reduce((sum, part) => sum + (numberOrNull(part.frameMetrics?.[key]) ?? 0), 0)
       return result
     }, {})
+  const workerTimingTotalsMilliseconds = {}
+  for (const part of parts) for (const [phaseName, timing] of Object.entries(part.frameTiming ?? {})) {
+    const total = numberOrNull(timing?.totalMs)
+    if (total !== null) workerTimingTotalsMilliseconds[phaseName] = (workerTimingTotalsMilliseconds[phaseName] ?? 0) + total
+  }
   const durationMilliseconds = report.totalFrames / (numberOrNull(report.fps) || 30) * 1000
+  const totalWithHairMilliseconds = clickToValidatedMilliseconds
+    ?? (mainProcessMilliseconds === null ? null : mainProcessMilliseconds + hairPreparationMilliseconds)
   return {
     state: report.state, encoder: report.options?.encoder ?? attempt.encoder ?? 'não informado',
+    projectId: report.projectId ?? null,
+    sourceRevision: report.runtime?.buildSha ?? null,
+    workingTreeDirty: report.runtime?.workingTreeDirty ?? null,
     totalFrames: report.totalFrames, capturedFrames: frames, durationMilliseconds,
-    wallMilliseconds, hairPreparationMilliseconds,
-    totalWithHairMilliseconds: wallMilliseconds === null ? null : wallMilliseconds + hairPreparationMilliseconds,
+    wallMilliseconds, mainProcessMilliseconds, clickToValidatedMilliseconds, hairPreparationMilliseconds,
+    totalTimeBasis: clickToValidatedMilliseconds !== null ? 'click-to-validated'
+      : mainProcessMilliseconds !== null && hairPreparationMilliseconds ? 'main-plus-hair-estimate' : 'main-process',
+    totalWithHairMilliseconds,
     renderingMilliseconds,
     effectiveRenderFps: renderingMilliseconds ? report.totalFrames * 1000 / renderingMilliseconds : null,
-    realTimeFactor: wallMilliseconds === null ? null : durationMilliseconds / (wallMilliseconds + hairPreparationMilliseconds),
+    realTimeFactor: totalWithHairMilliseconds === null ? null : durationMilliseconds / totalWithHairMilliseconds,
     motionPreparationMilliseconds: numberOrNull(report.motionPreparation?.milliseconds),
     phaseMilliseconds: phase,
+    workerTimingTotalsMilliseconds,
+    processPeaks: Array.isArray(report.processPeaks) ? report.processPeaks.map(item => ({
+      role: item.role, peakWorkingSetBytes: item.peakWorkingSetBytes, peakCpuPercent: item.peakCpuPercent
+    })) : [],
+    captureMode: report.captureMode ?? null,
+    validation: report.validation ?? null,
     metrics,
     parts: parts.map(part => ({
       index: part.index, frames: part.frames, milliseconds: numberOrNull(part.milliseconds),
@@ -69,12 +115,15 @@ function compareEditorV6Exports(before, after) {
 
 const seconds = ms => ms === null ? 'não medido' : `${(ms / 1000).toFixed(2)} s`
 const percent = value => value === null ? 'não medido' : `${value > 0 ? '+' : ''}${value.toFixed(1)}%`
+const gibibytes = bytes => bytes === null ? 'não medido' : `${(bytes / 1024 ** 3).toFixed(2)} GiB`
 function formatAnalysis(result) {
   const lines = [
     `Estado: ${result.state} · Encoder: ${result.encoder} · Quadros: ${result.totalFrames} (enviados: ${result.capturedFrames})`,
-    `Duração do vídeo: ${seconds(result.durationMilliseconds)} · Execução: ${seconds(result.wallMilliseconds)} · Preparo do cabelo anterior à execução: ${seconds(result.hairPreparationMilliseconds)}`,
-    `Execução + cabelo: ${seconds(result.totalWithHairMilliseconds)} · Velocidade vs tempo real: ${result.realTimeFactor === null ? 'não medida' : result.realTimeFactor.toFixed(2) + 'x'}`,
+    `Duração: ${seconds(result.durationMilliseconds)} · Total: ${seconds(result.totalWithHairMilliseconds)} (${result.totalTimeBasis}) · Main: ${seconds(result.mainProcessMilliseconds)} · Cabelo: ${seconds(result.hairPreparationMilliseconds)}`,
+    `Velocidade vs tempo real: ${result.realTimeFactor === null ? 'não medida' : result.realTimeFactor.toFixed(2) + 'x'} · Projeto: ${result.projectId ?? 'não informado'} · Revisão: ${result.sourceRevision ?? 'não informada'} · Dirty: ${result.workingTreeDirty ?? 'não informado'}`,
+    `Captura: ${result.captureMode ?? 'não informada'} · Picos do processo: ${result.processPeaks.map(item => `${item.role} ${gibibytes(item.peakWorkingSetBytes)}, CPU ${item.peakCpuPercent?.toFixed(0) ?? '?'}%`).join(' · ') || 'não medidos'}`,
     `Preparação de poses/expressões: ${seconds(result.motionPreparationMilliseconds)} · Fase de renderização: ${seconds(result.renderingMilliseconds)} · FPS efetivo (fase renderização): ${result.effectiveRenderFps === null ? 'não medido' : result.effectiveRenderFps.toFixed(1)}`,
+    `Somas sobrepostas dos workers (não são tempo de parede): frame roundtrip ${seconds(result.workerTimingTotalsMilliseconds.frameRoundTripMs)} · capturePage ${seconds(result.workerTimingTotalsMilliseconds.capturePageMs)} · cópia BGRA ${seconds(result.workerTimingTotalsMilliseconds.captureBitmapMs)} · escrita FFmpeg ${seconds(result.workerTimingTotalsMilliseconds.ffmpegWriteMs)} · pipe descoberto ${seconds(result.workerTimingTotalsMilliseconds.ffmpegWriteUncoveredMs)}`,
     `Cabelo: ${result.metrics.hairRasterFrames} rasterizações, ${result.metrics.hairCompositeReuseFrames} recomposições evitadas; capturas antigas: ${result.metrics.captureStaleReadbacks}`
   ]
   for (const part of result.parts) {
@@ -104,4 +153,4 @@ if (require.main === module) {
   main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1 })
 }
 
-module.exports = { analyzeEditorV6ExportReport, compareEditorV6Exports, formatAnalysis }
+module.exports = { analyzeEditorV6ExportReport, compareEditorV6Exports, formatAnalysis, normalizeBenchmarkReport }

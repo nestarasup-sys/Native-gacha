@@ -94,6 +94,39 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts.every((part) => part.endFrame - part.startFrame === 300)).toBe(true)
   })
 
+  it('permite testar 600 quadros por trecho somente no harness isolado', () => {
+    const project = createProject(1200, [speechTrack({ blocks: [{ characterId: 'character-synthetic', startFrame: 0, durationFrames: 1200 }] })])
+    const options = createOptions({ endFrame: 1200 })
+    const isolated = createEditorV6ExportExecutionPlan(project, options, {
+      GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES: '600'
+    }, 'win32')
+    const production = createEditorV6ExportExecutionPlan(project, options, {}, 'win32')
+
+    expect(isolated.mouthLoopBatchFrames).toBe(600)
+    expect(isolated.parts).toHaveLength(2)
+    expect(isolated.parts.every((part) => part.endFrame - part.startFrame === 600)).toBe(true)
+    expect(production.mouthLoopBatchFrames).toBe(300)
+    expect(production.parts).toHaveLength(4)
+    expect(() => createEditorV6ExportExecutionPlan(project, options, {
+      GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES: '900'
+    }, 'win32')).toThrow('O benchmark isolado aceita trechos de boca de 300, 600 ou 1200 quadros.')
+  })
+
+  it('permite testar 1200 quadros por trecho somente no harness isolado', () => {
+    const project = createProject(2400, [speechTrack({ blocks: [{ characterId: 'character-synthetic', startFrame: 0, durationFrames: 2400 }] })])
+    const options = createOptions({ endFrame: 2400 })
+    const isolated = createEditorV6ExportExecutionPlan(project, options, {
+      GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES: '1200'
+    }, 'win32')
+    const production = createEditorV6ExportExecutionPlan(project, options, {}, 'win32')
+
+    expect(isolated.mouthLoopBatchFrames).toBe(1200)
+    expect(isolated.parts).toHaveLength(2)
+    expect(isolated.parts.every((part) => part.endFrame - part.startFrame === 1200)).toBe(true)
+    expect(production.mouthLoopBatchFrames).toBe(300)
+    expect(production.parts).toHaveLength(8)
+  })
+
   it('ignora a variável de workers se o harness isolado não estiver habilitado', () => {
     const result = createEditorV6ExportExecutionPlan(
       createProject(600, [speechTrack()]),

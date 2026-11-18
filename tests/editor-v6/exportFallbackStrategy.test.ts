@@ -94,6 +94,25 @@ describe('política de fallback da exportação do Editor V6', () => {
     expect(dependencies.report.attempts[0]?.error).toBe(failure.message)
   })
 
+  it('mantém o tamanho de trecho do benchmark ao dividir a faixa no fallback', async () => {
+    const failure = new Error('falha no Turbo')
+    const dependencies = createDependencies({
+      speechInRange: true,
+      mouthLoopBatchFrames: 600,
+      renderAttempt: vi.fn<EditorV6ExportAttempt>(async (parts, encoder, parallelism = 2) => {
+        dependencies.report.attempts.push({ parts: [], encoder, parallelism })
+        if (dependencies.renderAttempt.mock.calls.length === 1) throw failure
+        return parts.map((part) => createPartReport(part, encoder))
+      })
+    })
+
+    await expect(renderEditorV6ExportWithFallback(dependencies)).resolves.toEqual({ valid: true })
+
+    expect(vi.mocked(dependencies.renderAttempt).mock.calls[1]?.[0]).toEqual([
+      createPart(0, 0, 600), createPart(1, 600, 650)
+    ])
+  })
+
   it('não tenta fallback para CPU, faixa com uma parte ou Turbo obrigatório', async () => {
     const scenarios = [
       { name: 'CPU', overrides: { options: { ...createDependencies().options, turbo: false } } },
@@ -117,6 +136,25 @@ describe('política de fallback da exportação do Editor V6', () => {
       expect(dependencies.selectFallbackEncoder).not.toHaveBeenCalled()
       expect(dependencies.report.fallback).toBe(false)
     }
+  })
+
+  it('mantém trechos de 1200 quadros no fallback isolado', async () => {
+    const failure = new Error('falha no Turbo')
+    const dependencies = createDependencies({
+      options: { ...createDependencies().options, endFrame: 2450 },
+      speechInRange: true,
+      mouthLoopBatchFrames: 1200,
+      renderAttempt: vi.fn<EditorV6ExportAttempt>(async (parts, encoder, parallelism = 2) => {
+        dependencies.report.attempts.push({ parts: [], encoder, parallelism })
+        if (dependencies.renderAttempt.mock.calls.length === 1) throw failure
+        return parts.map((part) => createPartReport(part, encoder))
+      })
+    })
+
+    await expect(renderEditorV6ExportWithFallback(dependencies)).resolves.toEqual({ valid: true })
+    expect(vi.mocked(dependencies.renderAttempt).mock.calls[1]?.[0]).toEqual([
+      createPart(0, 0, 1200), createPart(1, 1200, 2400), createPart(2, 2400, 2450)
+    ])
   })
 
   it('interrompe o perfil AMF quando ele falha sem consultar ou usar fallback', async () => {

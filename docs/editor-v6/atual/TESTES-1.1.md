@@ -33,3 +33,13 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - Microbenchmark sintético de alpha crop: 0,40 ms otimizado versus 2,61 ms referência, limites iguais. O contador no projeto real permaneceu ~39,6 s; use a fixture para paridade e não como estimativa de ganho do export.
 - Verificações desta rodada: 5 arquivos Vitest / 38 testes, 4 testes do comparador de relatórios e `npm run typecheck`; todos passaram. O comparador exige compatibilidade de perfil e resume preparação, captura, pipe, validação e limpeza.
 - O comparador foi ampliado para entender o relatório agregado do harness. Ao testar os arquivos antigos, identifica corretamente 206,06 s de parede, mas recusa a validação completa porque a saída anterior não registrava ID de projeto nem limpeza; o gerador novo passa a incluir ambos.
+
+## Rodada de lotes 600/1.200 e C++
+
+- `--mouth-batch-frames=300|600|1200` só funciona no perfil UI do harness isolado; o padrão de produção continua 300. Planejamento e fallback têm testes para 1.200 quadros.
+- Teste integral 600: 201,45 s clique→validado, 6.000 frames, H.264 1080p/30, AAC 200 s, 9 emendas, zero erros de limpeza e zero estados de boca ignorados/obsoletos. Paridade visual entre MP4s não é inferida pelo relatório.
+- Teste integral 1.200: 209,20 s; perfil e validação aprovados, 6 partes; rejeitado por desempenho.
+- C++ em amostra 40 s: sem MP4, bloqueado por conjunto de assets >512 MiB. Relatório de falha preservado.
+- A repetição C++ com partes 300 também excedeu 512 MiB e não gerou MP4; alterar batch não reduz o conjunto acumulado do processo.
+- O comparador mostra revisão e dirty e impede comparar click→validado com soma estimada de fases. Use `--allow-mouth-batch-change` só quando aceitar explicitamente essa diferença de planejamento.
+- `analyze-export-performance.cjs` agora entende o agregado do harness e mostra tempo total com sua base, main, preparação, somas de worker, memória/CPU por processo, capturas e detalhe por parte. As somas paralelas são explicitamente rotuladas como sobrepostas.

@@ -20,6 +20,7 @@ const hairPreparationOnly = process.argv.includes('--hair-preparation-only')
 const noHairControl = process.argv.includes('--no-hair-control')
 const motionConcurrency = argument('--motion-bake-concurrency=') ?? '2'
 const renderWorkers = argument('--render-workers=')
+const mouthBatchFrames = argument('--mouth-batch-frames=')
 const exportTestMode = argument('--export-test-mode=')
 const hairPresetSlot = argument('--hair-preset-slot=')
 const segmentStartFrameValue = argument('--start-frame=')
@@ -238,6 +239,9 @@ async function main() {
     || (segmentStartFrameValue !== undefined || segmentDurationSecondsValue !== undefined || fullTimeline) && hairPreparationOnly)) {
     throw Error('Benchmark de cabelo aceita --start-frame=, --duration-seconds= e --repeat=1..3; janela e repetição não se aplicam ao perfil somente de preparação.')
   }
+if (mouthBatchFrames !== undefined && (!uiExportProfile || !hairPresetSlot || hairPreparationOnly || !['300', '600', '1200'].includes(mouthBatchFrames))) {
+  throw Error('--mouth-batch-frames aceita 300, 600 ou 1200 somente no perfil UI isolado de exportação completa com preset de cabelo.')
+}
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   const allowedPresetRoot = path.join(root, 'out', 'editor-v6-stress', 'preferences')
   const immutableSources = [projectFolder, libraryFolder, backgroundLibraryFolder, charactersPath, fabricatorFolder]
@@ -328,6 +332,7 @@ async function main() {
     GACHA_EDITOR_V6_STRESS_X264_PRESET: x264Preset,
     GACHA_EDITOR_V6_STRESS_MOTION_CONCURRENCY: motionConcurrency,
     ...(renderWorkers ? { GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: renderWorkers } : {}),
+    ...(mouthBatchFrames ? { GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES: mouthBatchFrames } : {}),
     ...(capturePixelHashes ? { GACHA_EDITOR_V6_STRESS_CAPTURE_PIXEL_HASHES: '1' } : {}),
     ...(retainQualityArtifacts ? { GACHA_EDITOR_V6_STRESS_CAPTURE_ENCODER_INPUT: '1' } : {}),
     ...(videoToolsDirectory ? { GACHA_EDITOR_V6_STRESS_VIDEO_TOOLS: videoToolsDirectory } : {}),

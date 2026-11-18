@@ -10,6 +10,7 @@ export type EditorV6ExportExecutionPlan = {
   requestedParts: EditorV6ExportPart[]
   parts: EditorV6ExportPart[]
   speechInRange: boolean
+  mouthLoopBatchFrames: number
   stressWorkerOverride?: string
 }
 
@@ -34,9 +35,15 @@ export function createEditorV6ExportExecutionPlan(
   const stressWorkerOverride = environment.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
     ? environment.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS
     : undefined
+  const stressMouthBatchOverride = environment.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
+    ? environment.GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES
+    : undefined
   // Worker count changes concurrency only. Keep mouth atlas windows identical
-  // so worker A/B runs compare the same preparation and timeline boundaries.
-  const mouthLoopBatchFrames = EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES
+  // unless the isolated harness explicitly tests a larger safe batch.
+  if (stressMouthBatchOverride !== undefined && !['300', '600', '1200'].includes(stressMouthBatchOverride)) {
+    throw Error('O benchmark isolado aceita trechos de boca de 300, 600 ou 1200 quadros.')
+  }
+  const mouthLoopBatchFrames = Number(stressMouthBatchOverride ?? EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES)
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const parts = options.mouthLoop !== false && speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
@@ -44,5 +51,5 @@ export function createEditorV6ExportExecutionPlan(
     throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
   }
   if (platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
-  return { options, testSettings, requestedParts, parts, speechInRange, ...(stressWorkerOverride !== undefined ? { stressWorkerOverride } : {}) }
+  return { options, testSettings, requestedParts, parts, speechInRange, mouthLoopBatchFrames, ...(stressWorkerOverride !== undefined ? { stressWorkerOverride } : {}) }
 }

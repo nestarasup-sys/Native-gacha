@@ -10,6 +10,7 @@ type Dependencies = {
   options: EditorV6ExportOptions
   plannedParts: EditorV6ExportPart[]
   requestedPartCount: number
+  mouthLoopBatchFrames?: number
   stressWorkerOverride?: string
   speechInRange: boolean
   encoder: string
@@ -25,7 +26,7 @@ type Dependencies = {
 /** Applies the existing Turbo policy and retries a failed eligible export with one CPU renderer. */
 export async function renderEditorV6ExportWithFallback(dependencies: Dependencies): Promise<unknown> {
   const {
-    options, plannedParts, requestedPartCount, stressWorkerOverride, speechInRange, encoder,
+    options, plannedParts, requestedPartCount, mouthLoopBatchFrames = EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES, stressWorkerOverride, speechInRange, encoder,
     signal, report, progress, renderAttempt, finishMeasured, selectFallbackEncoder, formatError
   } = dependencies
   const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo && !options.singleWorker ? 2 : 1
@@ -45,7 +46,7 @@ export async function renderEditorV6ExportWithFallback(dependencies: Dependencie
     const safeEncoder = await selectFallbackEncoder(encoder)
     if (!safeEncoder) throw Error('Nenhum codificador H.264 de fallback pôde ser iniciado.')
     const safePart = [{ index: 0, startFrame: options.startFrame, endFrame: options.endFrame }]
-    const safeParts = options.mouthLoop !== false && speechInRange ? splitEditorV6ExportParts(safePart, EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES) : safePart
+    const safeParts = options.mouthLoop !== false && speechInRange ? splitEditorV6ExportParts(safePart, mouthLoopBatchFrames) : safePart
     return await finishMeasured(await renderAttempt(safeParts, safeEncoder, 1))
   }
 }

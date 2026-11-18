@@ -8,7 +8,7 @@ const SAME_PROFILE_OPTIONS = [
   'startFrame', 'endFrame', 'width', 'height', 'turbo', 'encoder', 'mouthLoop',
   'forceTurbo1080', 'singleWorker', 'mouthLoopCycleFrames', 'includeSpeechMouth',
   'hairPoseReactionOnly', 'hairPosteriorOnly', 'hairAnimationPresetSlot',
-  'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'testMode'
+  'hairAnimationPresetFingerprint', 'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'testMode', 'mouthLoopBatchFrames'
 ]
 const sum = (items, select) => items.reduce((total, item) => total + (Number(select(item)) || 0), 0)
 const round = value => Number.isFinite(value) ? Number(value.toFixed(3)) : null
@@ -18,23 +18,42 @@ const percentile = (values, fraction) => {
 }
 
 function normalizeReport(report) {
-  if (!Array.isArray(report.runs)) return report
+  if (!Array.isArray(report.runs)) {
+    if (!report.options) return report
+    const retry = report.exportTestSettings?.captureRetryMilliseconds ?? 16
+    return { ...report, options: {
+      ...report.options,
+      testMode: report.options.testMode ?? `capture-retry-${retry}`,
+      mouthLoopBatchFrames: report.options.mouthLoopBatchFrames ?? 300,
+      nativeRenderer: Boolean(report.options.nativeRenderer)
+    } }
+  }
   const run = report.runs.at(-1)
   if (!run) return report
   return {
     projectId: report.projectId,
+    sourceRevision: report.sourceRevision ?? null,
+    workingTreeDirty: report.workingTreeDirty ?? null,
     state: report.passed ? 'completed' : 'failed',
     totalFrames: run.totalFrames ?? report.durationFrames,
     fps: Number.parseInt(String(run.fps ?? report.fps), 10),
     options: {
+      ...(run.options ?? {}),
       startFrame: report.startFrame, endFrame: report.endFrame,
       width: run.width ?? report.width, height: run.height ?? report.height,
-      turbo: report.turbo, encoder: run.selectedEncoder,
+      turbo: report.turbo, encoder: run.options?.encoder ?? report.requestedEncoder,
       mouthLoop: run.mouthLoopDisabled === false,
+      mouthLoopCycleFrames: run.options?.mouthLoopCycleFrames ?? 30,
+      includeSpeechMouth: run.options?.includeSpeechMouth !== false,
       hairPoseReactionOnly: run.hairPoseReactionOnly ?? report.hairPoseReactionOnly,
       hairPosteriorOnly: run.hairPosteriorOnly ?? report.hairPosteriorOnly,
+      hairAnimationPresetSlot: run.hairPresetSlot ?? report.hairPresetSlot,
+      hairAnimationPresetFingerprint: run.hairPresetFingerprint ?? report.hairPresetFingerprint,
+      forceTurbo1080: run.options?.forceTurbo1080 ?? true,
+      singleWorker: run.options?.singleWorker ?? false,
       nativeRenderer: report.nativeRenderer,
-      testMode: `capture-retry-${run.captureRetryMilliseconds ?? report.captureRetryMilliseconds}`
+      testMode: `capture-retry-${run.captureRetryMilliseconds ?? report.captureRetryMilliseconds ?? 16}`,
+      mouthLoopBatchFrames: report.mouthLoopBatchFrames ?? 300
     },
     milliseconds: run.exportMilliseconds,
     clickToValidatedMilliseconds: run.clickToValidatedWallMs,
@@ -65,9 +84,13 @@ function summarize(report) {
     ? report.hairPreparation.totalMilliseconds / 1000 : null
   return {
     state: report.state ?? 'missing', projectIdPresent: typeof report.projectId === 'string' && report.projectId.length > 0,
+    sourceRevision: report.runtime?.buildSha ?? report.sourceRevision ?? null,
+    workingTreeDirty: report.runtime?.workingTreeDirty ?? report.workingTreeDirty ?? null,
     frames: report.totalFrames ?? null, fps: report.fps ?? null,
     options: report.options ?? {}, mainSeconds: round(mainSeconds),
     preparationSeconds: round(preparationSeconds),
+    timeMeasurement: Number.isFinite(report.clickToValidatedMilliseconds) ? 'click-to-validated'
+      : Number.isFinite(mainSeconds) && Number.isFinite(preparationSeconds) ? 'main-plus-preparation-estimate' : 'unavailable',
     knownTotalSeconds: Number.isFinite(report.clickToValidatedMilliseconds)
       ? round(report.clickToValidatedMilliseconds / 1000)
       : mainSeconds !== null && preparationSeconds !== null ? round(mainSeconds + preparationSeconds) : null,
@@ -108,7 +131,7 @@ function summarize(report) {
   }
 }
 
-function compare(reference, candidate, { allowWorkerChange = false } = {}) {
+function compare(reference, candidate, { allowWorkerChange = false, allowMouthBatchChange = false } = {}) {
   reference = normalizeReport(reference)
   candidate = normalizeReport(candidate)
   const before = summarize(reference), after = summarize(candidate)
@@ -118,6 +141,7 @@ function compare(reference, candidate, { allowWorkerChange = false } = {}) {
   if (before.frames !== after.frames) mismatches.push('totalFrames')
   if (before.fps !== after.fps) mismatches.push('fps')
   for (const key of SAME_PROFILE_OPTIONS) {
+    if (allowMouthBatchChange && key === 'mouthLoopBatchFrames') continue
     if (before.options[key] !== after.options[key]) mismatches.push(`options.${key}`)
   }
   if (before.attempt?.encoder !== after.attempt?.encoder) mismatches.push('encoderActual')
@@ -141,10 +165,17 @@ function compare(reference, candidate, { allowWorkerChange = false } = {}) {
   return {
     comparable: mismatches.length === 0,
     mismatches,
+    sourceRevision: { reference: before.sourceRevision, candidate: after.sourceRevision },
+    workingTreeDirty: { reference: before.workingTreeDirty, candidate: after.workingTreeDirty },
     timeDeltaSeconds: before.knownTotalSeconds !== null && after.knownTotalSeconds !== null
+      && before.timeMeasurement === after.timeMeasurement
       ? round(after.knownTotalSeconds - before.knownTotalSeconds) : null,
     timeChangePercent: before.knownTotalSeconds > 0 && after.knownTotalSeconds !== null
+      && before.timeMeasurement === after.timeMeasurement
       ? round((after.knownTotalSeconds / before.knownTotalSeconds - 1) * 100) : null,
+    timingComparable: before.timeMeasurement === after.timeMeasurement && before.knownTotalSeconds !== null && after.knownTotalSeconds !== null,
+    timeComparisonNote: before.timeMeasurement === after.timeMeasurement ? null
+      : `Bases de tempo diferentes: referência=${before.timeMeasurement}; candidato=${after.timeMeasurement}.`,
     validation: { passed: verified, missingEvidence: [
       ...(!validation.videoPresent ? ['video stream'] : []),
       ...(videoFrames !== after.frames ? ['verified frame count'] : []),
@@ -167,14 +198,15 @@ async function main(args = process.argv.slice(2)) {
   const referenceArg = args.find(value => value.startsWith('--reference='))?.slice('--reference='.length)
   const candidateArg = args.find(value => value.startsWith('--candidate='))?.slice('--candidate='.length)
   const allowWorkerChange = args.includes('--allow-worker-change')
-  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change')) {
-    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change]')
+  const allowMouthBatchChange = args.includes('--allow-mouth-batch-change')
+  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change' && value !== '--allow-mouth-batch-change')) {
+    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change] [--allow-mouth-batch-change]')
   }
   const [reference, candidate] = await Promise.all([
     fs.readFile(path.resolve(referenceArg), 'utf8').then(JSON.parse),
     fs.readFile(path.resolve(candidateArg), 'utf8').then(JSON.parse)
   ])
-  const result = compare(reference, candidate, { allowWorkerChange })
+  const result = compare(reference, candidate, { allowWorkerChange, allowMouthBatchChange })
   console.log(JSON.stringify(result, null, 2))
   if (!result.comparable || !result.validation.passed) process.exitCode = 2
   return result
