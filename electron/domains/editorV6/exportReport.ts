@@ -45,7 +45,7 @@ export type EditorV6ExportReport = {
   exportTestSettings?: EditorV6ExportTestSettings
   runtime?: { platform: string; arch: string; osRelease: string; node: string; electron?: string; buildSha?: string; workingTreeDirty?: boolean }
   motionCache?: EditorV6MotionCacheReport
-  mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; details: string[] }
+  mouthAnimation?: { stateAtlases: number; characters: number; isolatedStates: number; legacyPatchStates: number; skippedStates: number; staleStates: number; cycleFrames: number; atlasBytes: number; atlasPixels: number; preparationMilliseconds: number; bakeMilliseconds: number; serviceQueueWaitMilliseconds: number; serviceQueueWaitSamples: number; maxServiceQueueDepth: number; details: string[] }
   mainProcessMemory?: { startRssBytes: number; peakRssBytes: number; sampleIntervalMs: number }
   electronProcessMemory?: EditorV6ExportProcessMemoryReport
   motionPreparationMemory?: EditorV6ExportProcessMemoryReport

@@ -133,10 +133,13 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
   }
   const runBake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => {
     if (stopped) return Promise.reject(Error('O preparador está encerrando.'))
+    const enqueuedAt = performance.now()
     const key = editorV6MotionMemoryCacheKey(request)
     const lane = lanes.reduce((best, candidate) => candidate.count < best.count ? candidate : best)
+    const queueDepthAtEnqueue = lane.count
     lane.count++
     const promise = lane.tail.catch(() => {}).then(async () => {
+      const serviceQueueWaitMs = Math.max(0, performance.now() - enqueuedAt)
       signal.throwIfAborted()
       if (stopped) throw Error('O preparador está encerrando.')
       let cached = cache.get(key)
@@ -145,6 +148,10 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       if (cached) { assertAtlasBudget(request, cached); remember(key, cached); return cached }
       cacheStats.misses++
       const result = await render(lane, request, signal)
+      if (result.metrics.profile) {
+        result.metrics.profile.serviceQueueWaitMs = serviceQueueWaitMs
+        result.metrics.profile.serviceQueueDepthAtEnqueue = queueDepthAtEnqueue
+      }
       cacheStats.rasterized++
       remember(key, result, request.cacheScope)
       return result

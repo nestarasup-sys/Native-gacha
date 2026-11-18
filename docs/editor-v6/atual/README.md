@@ -2,7 +2,7 @@
 
 **Rodada iniciada em 18/11/2026 · branch `Dev-V2`.**
 
-O objetivo é diminuir o tempo entre clicar em Exportar MP4 e receber o vídeo validado. O último corte tinha 200 s de vídeo e levou 200,84 s no processo principal. O usuário também relatou tempos próximos da duração em outros projetos. Ainda não há comparação controlada suficiente para atribuir essa relação a um limite do app ou confirmar ganho das últimas mudanças.
+O objetivo é diminuir o tempo entre clicar em Exportar MP4 e receber o vídeo validado. O corte de 200 s agora leva 187,864 s do clique à validação, com quatro workers de CPU e lote de boca de 600 quadros. A melhora pareada sobre 300 quadros é 3,4%; a meta de 90 s segue aberta.
 
 **Meta de aceitação: até 90 s do clique ao MP4 validado** para os mesmos 6.000 quadros, com a configuração de referência e qualidade preservada. O usuário autorizou repetir esse corte no próprio projeto. Use a autorização e o protocolo em [Execução 1.1](EXECUCAO-1.1.md) e [Testes 1.1](TESTES-1.1.md).
 
@@ -17,7 +17,7 @@ O código e os relatórios da execução são as fontes de verdade. O [arquivo h
 
 ## Resultado mais recente
 
-O corte de 600 quadros por parte levou **201,45 s** do clique até validação; com 1.200 quadros, levou **209,20 s**. O renderizador C++ falhou na amostra porque o conjunto de assets ultrapassou 512 MiB. A meta de 90 s continua distante; os 201,45 s ainda precisam de controle pareado com o mesmo cronômetro. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md).
+O corte pareado levou **194,502 s com lote 300** e **187,864 s com lote 600**. Ambos validaram 6.000 quadros, AAC, emendas e limpeza. Uma comparação curta decodificada marcou SSIM 0,996211 contra dois controles 300. O renderizador C++ falhou porque seu conjunto de assets ultrapassou 512 MiB. A fase de render ainda leva **125,563 s**, então a meta de 90 s não foi atingida. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md).
 
 ## Rotina para continuar sem supervisão
 

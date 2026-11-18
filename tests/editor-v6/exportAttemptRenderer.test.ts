@@ -243,6 +243,7 @@ describe('agendamento de tentativas do Editor V6', () => {
       stats: {
         states: 2, characters: 2, skipped: 1, skippedStale: 0, skippedUnsupported: 0,
         isolatedStates: 1, legacyPatchStates: 1, atlasBytes: 128, atlasPixels: 32,
+        bakeMilliseconds: 4, serviceQueueWaitMilliseconds: 7, serviceQueueWaitSamples: 2, maxServiceQueueDepth: 3,
         errors: ['detalhe A', 'detalhe A', 'detalhe B', 'detalhe C', 'detalhe D'], milliseconds: 6
       }
     }
@@ -269,6 +270,10 @@ describe('agendamento de tentativas do Editor V6', () => {
       atlasBytes: 256,
       atlasPixels: 64,
       preparationMilliseconds: 12,
+      bakeMilliseconds: 8,
+      serviceQueueWaitMilliseconds: 14,
+      serviceQueueWaitSamples: 4,
+      maxServiceQueueDepth: 3,
       details: ['detalhe A', 'detalhe B', 'detalhe C']
     })
   })

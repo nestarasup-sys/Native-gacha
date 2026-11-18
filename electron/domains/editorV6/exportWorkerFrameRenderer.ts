@@ -36,7 +36,7 @@ export function createEditorV6WorkerFrameRenderer({
   let nextPaintToken = 0
   let closed = false
 
-  const draw = async (frame: number, layer?: 'background' | 'foreground' | 'stacked') => {
+  const draw = async (frame: number, layer: 'background' | 'foreground' | 'stacked' | undefined) => {
     const started = performance.now()
     nextPaintToken = nextPaintToken % 0xfffffe + 1
     const token = nextPaintToken

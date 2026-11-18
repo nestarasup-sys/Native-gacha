@@ -25,6 +25,8 @@ export function summarizeEditorV6ExportAttempt(parts: readonly EditorV6ExportPar
     captureStaleReadbacks: sum(part => part.frameMetrics?.captureStaleReadbacks ?? 0),
     summedWorkerMilliseconds: {
       mouthPreparation: round(sum(part => part.mouthPreparationMs ?? 0)),
+      mouthBake: round(sum(part => part.mouthBakeMs ?? 0)),
+      mouthBakeQueueWait: round(sum(part => part.mouthBakeQueueWaitMs ?? 0)),
       faceComposition: timing('faceCompositionMs'),
       hairComposition: timing('hairCompositionMs'),
       assetPreparation: timing('assetPreparationMs'),

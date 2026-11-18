@@ -72,6 +72,7 @@ test('compares the isolated benchmark report directly and requires cleanup evide
     runs: [{ totalFrames: 6000, fps: '30/1', width: 1920, height: 1080,
       selectedEncoder: 'libopenh264', mouthLoopDisabled: false, audioClips: 1,
       exportMilliseconds: milliseconds, hairPreparationWallMs: 1000,
+      phaseMilliseconds: { motionPreparation: 12_000, rendering: milliseconds - 20_000 },
       captureRetryMilliseconds: 16, cleanupErrors: [],
       ffprobeValidation: { streams: [
         { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, r_frame_rate: '30/1', nb_frames: '6000', has_b_frames: 0 },
@@ -91,6 +92,7 @@ test('compares the isolated benchmark report directly and requires cleanup evide
   assert.equal(result.validation.passed, true, JSON.stringify(result.validation))
   assert.equal(result.timeDeltaSeconds, -10)
   assert.equal(result.candidate.attempt.framesDrawn, 1710)
+  assert.deepEqual(result.reference.phasesSeconds, { motionPreparation: 12, rendering: 180 })
 })
 
 test('compares the 600-frame harness against the standard report only when chunk size is explicitly allowed', () => {

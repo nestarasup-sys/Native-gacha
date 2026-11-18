@@ -36,6 +36,10 @@ export type EditorV6MotionBakeProfile = {
   servicePoolCapacity?: number
   serviceObservedPeakConcurrency?: number
   serviceActiveConcurrencyAtDispatch?: number
+  /** Time queued behind another bake in the Electron motion-service lane. */
+  serviceQueueWaitMs?: number
+  /** Number of requests already queued on the selected lane when this bake arrived. */
+  serviceQueueDepthAtEnqueue?: number
   ipcRoundTripMs?: number
   ipcOverheadMs?: number
   requestPayloadBytes?: number

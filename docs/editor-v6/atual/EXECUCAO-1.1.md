@@ -52,7 +52,7 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 
 ## Rodada — partes de 600 e 1.200 quadros; tentativa C++
 
-- Preservei o padrão de produção em 300 quadros. O override 600/1.200 fica restrito a `GACHA_VIDEO_STRESS_OFFSCREEN=1`; fallback usa o mesmo limite. O harness aceita `--mouth-batch-frames=...`; o comparador tem `--allow-mouth-batch-change` para explicitar essa diferença.
+- Depois do A/B integral abaixo, o padrão de produção passou a 600 quadros por trecho falado. O harness mantém overrides 200/300/600/1.200 restritos a `GACHA_VIDEO_STRESS_OFFSCREEN=1`; fallback reutiliza o mesmo tamanho. O comparador tem `--allow-mouth-batch-change` para explicitar diferenças entre relatórios.
 - O corte completo de 600 passou: 6.000 quadros, 1920×1080/30, AAC por 200 s, H.264, 9 emendas, zero estados de boca ignorados/obsoletos e zero erros de limpeza. Clique→validado 201,45 s; 10 partes; boca 20,61 s somados; renderização 138,58 s. O controle antigo não tem o mesmo cronômetro de clique; ainda não se pode anunciar uma redução pareada.
 - O corte completo de 1.200 também passou: mesmo perfil, 6 emendas, clique→validado 209,20 s; 6 partes; boca 22,96 s; renderização 145,22 s. Escreveu 99,53 GB de quadros BGRA contra 94,56 GB no corte de 600. Menos inicializações não compensaram a carga por parte; rejeitado como otimização.
 - O renderizador C++ falhou na amostra de 40 s antes de validar vídeo: conjunto de assets >512 MiB. Preparação de movimento 11,82 s e renderização parcial 19,84 s. Não houve MP4 para comparar. Não elevar o teto; primeiro medir tipos/bytes de assets enviados e limitar cache por execução.
@@ -62,7 +62,15 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - Metadados: o relatório de 600 foi criado antes da inclusão de revisão/dirty no agregado. O de 1.200 registra revisão `1ee95c3a...` e `workingTreeDirty=true`. O controle antigo também não guarda o fingerprint do preset; as duas execuções novas têm o mesmo preset sintético 2 (`2a0f0859...`). Portanto, não usar o controle antigo para reivindicar igualdade exata do preset ou delta de tempo.
 - A/B curto de concorrência de bake, 1.200 quadros, 2 workers de render, batch 600: concurrency 2 terminou em 44,318 s; concurrency 3 em 45,151 s (+0,833 s). Preparação subiu de 12,360 para 12,745 s e render de 22,724 para 23,364 s. Amostra única, sem ganho; não elevar a concorrência padrão.
 - Saídas: `out/editor-v6-stress/runs/actual-project-2026-11-18T09-06-07-709Z-16536/` (600), `.../actual-project-2026-11-18T09-22-59-852Z-4064/` (1.200) e falha C++ `.../actual-project-2026-11-18T09-27-48-073Z-20044/native-renderer-failure.report.json`. As duas execuções válidas ficaram só com MP4 e relatório; a falha, só com o relatório.
-- Decisão: não mudar o tamanho padrão. A próxima hipótese deve reduzir custo no renderer/captura ou bytes BGRA sem alterar pixels. Mais tuning de tamanho de trecho não tem sinal para reduzir 55% do tempo. Consulte [Pesquisa 1.1](PESQUISA-1.1.md).
+- Decisão registrada antes do A/B integral da rodada seguinte: manter 300 até haver evidência de qualidade e tempo de parede. O resultado de 18/11 abaixo supersede esta decisão.
+
+## Rodada — lote 600 confirmado
+
+- A/B integral `[0,6000)`, 1080p/30, CPU OpenH264, 4 workers, áudio e animações iguais: lote 300 = 194,502 s; lote 600 = 187,864 s, −6,637 s (−3,4%). Renderização caiu de 130,305 para 125,563 s. Os dois validaram 6.000 quadros, AAC por 200 s, emendas e limpeza.
+- Comparei o MP4 curto de lote 600 (40 s; duas partes, portanto dois workers) com dois controles de lote 300 (40 s, quatro workers). FFmpeg reportou SSIM global 0,996211 em ambos. Isso sustenta qualidade semelhante, sem alegar igualdade exata.
+- O teste integral de 600 manteve quatro workers e passou as validações; alterei o padrão de produção para 600 quadros. O fallback usa o mesmo tamanho; atlas e arquivos não são mantidos entre jobs. Lote 1.200 segue rejeitado por ser 7,75 s mais lento que 600.
+- Meta 90 s ainda aberta: mesmo a fase de renderização dura 125,563 s. O relatório agrega 119,86 s de `capturePage`, 20,89 s de conversão BGRA e 200,99 s de escrita FFmpeg, somas paralelas dos workers, não tempo de parede. Cena (272 ms), composição facial (8 ms) e commit React (175 ms) são residuais.
+- Um protótipo de `ffconcat` repetiu imagens com durações exatas em fixture apenas com `option framerate 30`; sem isso, um segmento de dois quadros virou um quadro. Não integra: não reduz os quadros H.264 do contrato CFR e exigiria estratégia de armazenamento/timestamps sem ganho demonstrado.
 
 ## Rodada — encoder Media Foundation e concorrência real
 
@@ -70,6 +78,9 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - Reencodei offline 40 s do MP4 já validado: `h264_mf` levou 3,70 s e `libopenh264` 7,06 s. SSIM/PSNR contra a origem comprimida foram 0,997073/48,52 dB e 0,996593/47,89 dB. Isso mede apenas o encoder, não a captura.
 - No export real isolado de 40 s, `h264_mf` levou 44,282 s e OpenH264 44,318 s. O empate confirma que encoder não reduz o tempo de parede neste perfil; não alterei a seleção de produção.
 - Uma tentativa de quatro workers usou lotes de 600: havia só dois trechos e o export executou com paralelismo 2. Corrigi o plano para recusar workers em número maior que trechos disponíveis. O relatório foi retido para auditoria, mas não conta como teste de quatro workers.
-- Com lotes de 300 e quatro partes, dois pares curtos deram medianas de 46,951 s (2 workers) e 43,857 s (4), ganho de 6,6%. Em cada execução passaram 1.200 quadros 1080p/30, áudio, três emendas e limpeza. É um sinal reproduzido, ainda longe da meta de 90 s.
-- Quatro workers elevaram o pico do processo GPU de cerca de 0,95 GiB para 1,27 GiB (+0,3 GiB). Os picos dos demais processos variaram bastante entre rodadas; confirmar memória numa execução longa.
-- Próximo passo: medir 4 contra 6 workers no mesmo lote e corte curto; só depois considerar 6.000 quadros. Não misturar amostras de tamanho de lote diferente.
+- Quatro execuções curtas, dois pares 2/4 em lote de 300, deram medianas 46,951/43,857 s (−6,6%). O par 2/6 em lote 200 deu 48,927/44,262 s (−9,5%); todos validaram quadros, áudio, emendas e limpeza.
+- Full pareado, mesma cópia, `[0,6000)`, CPU OpenH264, lote 300: 2 workers = 210,963 s; 4 = 194,502 s; 6 = 192,850 s. Todos passaram 6.000 quadros, AAC por 200 s, 19 emendas, zero bocas ignoradas/obsoletas e limpeza. Quatro salvaram 16,461 s (7,8%); seis, 18,113 s (8,6%).
+- Fases de renderização caíram de 145,97 s (2 workers) para 130,30 s (4) e 128,22 s (6); a preparação global ficou ~45 s nos três. O ganho veio do renderer, mas não chega perto de 90 s.
+- Seis workers só venceram quatro por 1,65 s, com pico GPU ~1,49 GiB contra 1,20 GiB. Promovi quatro workers para H.264 CPU e mantive dois para encoder GPU; o texto da interface não promete “2×”.
+- As somas de preparação de boca por worker foram 25,0/84,4/155,8 s, sobrepostas e não aditivas. Os 43 estados foram iguais e nenhum foi ignorado; sob concorrência a latência por trecho cresceu. Próxima otimização: reduzir espera/contenda da preparação facial durante renderização, sem duplicar ou alterar os atlas.
+- A meta permanece 90 s. A próxima rodada deve medir a boca por fila, bake efetivo e tempo de parede da parte; não escalar workers acima de quatro sem evidência maior.

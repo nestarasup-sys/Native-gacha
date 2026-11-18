@@ -61,6 +61,7 @@ function normalizeReport(report) {
     },
     milliseconds: run.exportMilliseconds,
     clickToValidatedMilliseconds: run.clickToValidatedWallMs,
+    phaseMilliseconds: run.phaseMilliseconds ?? {},
     hairPreparation: { totalMilliseconds: run.hairPreparationWallMs },
     audioClips: run.audioClips ?? report.audioClips ?? 0,
     mouthAnimation: run.mouthAnimation,
@@ -109,6 +110,10 @@ function summarize(report) {
       staleReadbackPercent: readbacks ? round(stale / readbacks * 100) : null,
       uncoveredPipeSeconds: round((attemptSummary.summedWorkerMilliseconds?.ffmpegWriteUncovered ?? sum(parts, part => part.frameTiming?.ffmpegWriteUncoveredMs?.totalMs)) / 1000),
       mouthPreparationSeconds: round((report.mouthAnimation?.preparationMilliseconds ?? 0) / 1000),
+      mouthBakeSeconds: round((report.mouthAnimation?.bakeMilliseconds ?? 0) / 1000),
+      mouthBakeQueueWaitSeconds: round((report.mouthAnimation?.serviceQueueWaitMilliseconds ?? 0) / 1000),
+      mouthBakeQueueSamples: report.mouthAnimation?.serviceQueueWaitSamples ?? 0,
+      mouthBakeMaxQueueDepth: report.mouthAnimation?.maxServiceQueueDepth ?? 0,
       faceCompositionSeconds: round((attemptSummary.summedWorkerMilliseconds?.faceComposition ?? sum(parts, part => part.frameTiming?.faceCompositionMs?.totalMs)) / 1000),
       workerStartupSeconds: round((attemptSummary.summedWorkerMilliseconds?.workerStartup ?? sum(parts, part => part.frameTiming?.workerStartupMs?.totalMs)) / 1000),
       partWallSeconds: {

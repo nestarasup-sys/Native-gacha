@@ -30,6 +30,10 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   mouthPreparationMs?: number
   mouthAtlases?: number
   mouthAtlasPixels?: number
+  mouthBakeMs?: number
+  mouthBakeQueueWaitMs?: number
+  mouthBakeQueueWaitSamples?: number
+  mouthBakeMaxQueueDepth?: number
   expectedFrames?: number
   firstOutputFrame?: number
   videoOverlayClips?: number
@@ -82,7 +86,7 @@ type Dependencies = {
   progress: (patch: Partial<EditorV6ExportStatus>) => void
   onMouthPrepared: (mouth: PreparedMouthLoops) => void
   onPartCreated: (part: EditorV6ExportPartReport) => void
-  onFrameWritten: () => void
+  onFrameWritten: (count?: number) => void
 }
 
 /** Owns preparation, FFmpeg/worker lifetime, streaming, probing, and cleanup for one render part. */
@@ -124,6 +128,10 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       result.mouthPreparationMs = mouth.stats.milliseconds
       result.mouthAtlases = mouth.stats.states
       result.mouthAtlasPixels = mouth.stats.atlasPixels
+      result.mouthBakeMs = mouth.stats.bakeMilliseconds
+      result.mouthBakeQueueWaitMs = mouth.stats.serviceQueueWaitMilliseconds
+      result.mouthBakeQueueWaitSamples = mouth.stats.serviceQueueWaitSamples
+      result.mouthBakeMaxQueueDepth = mouth.stats.maxServiceQueueDepth
       onMouthPrepared(mouth)
     }
   } catch (error) {

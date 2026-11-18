@@ -2,7 +2,7 @@ import type { EditorV6Document } from '../../../src/shared/editorV6'
 import { editorV6ExportTestSettings, type EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import { planEditorV6Export, splitEditorV6ExportParts, type EditorV6ExportOptions, type EditorV6ExportPart } from '../../../src/shared/editorV6Export'
 
-export const EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES = 300
+export const EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES = 600
 
 export type EditorV6ExportExecutionPlan = {
   options: EditorV6ExportOptions
@@ -40,15 +40,15 @@ export function createEditorV6ExportExecutionPlan(
     : undefined
   // Worker count changes concurrency only. Keep mouth atlas windows identical
   // unless the isolated harness explicitly tests a larger safe batch.
-  if (stressMouthBatchOverride !== undefined && !['300', '600', '1200'].includes(stressMouthBatchOverride)) {
-    throw Error('O benchmark isolado aceita trechos de boca de 300, 600 ou 1200 quadros.')
+  if (stressMouthBatchOverride !== undefined && !['200', '300', '600', '1200'].includes(stressMouthBatchOverride)) {
+    throw Error('O benchmark isolado aceita trechos de boca de 200, 300, 600 ou 1200 quadros.')
   }
   const mouthLoopBatchFrames = Number(stressMouthBatchOverride ?? EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES)
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const parts = options.mouthLoop !== false && speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts
-  if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
-    throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
+  if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-6])$/.test(stressWorkerOverride))) {
+    throw Error('O benchmark isolado do Editor V6 aceita de 2 a 6 renderizadores Turbo.')
   }
   if (stressWorkerOverride !== undefined && Number(stressWorkerOverride) > parts.length) {
     throw Error(`O benchmark pediu ${stressWorkerOverride} renderizadores, mas o plano contém apenas ${parts.length} trechos. Reduza --mouth-batch-frames ou use menos renderizadores.`)

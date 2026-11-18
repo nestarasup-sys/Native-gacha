@@ -145,6 +145,8 @@ export const editorV6MotionResultSchema = z.object({
       servicePoolCapacity: z.number().int().min(1).max(3).optional(),
       serviceObservedPeakConcurrency: z.number().int().min(0).max(3).optional(),
       serviceActiveConcurrencyAtDispatch: z.number().int().min(0).max(3).optional(),
+      serviceQueueWaitMs: finite.min(0).optional(),
+      serviceQueueDepthAtEnqueue: z.number().int().min(0).optional(),
       ipcRoundTripMs: finite.min(0).optional(), ipcOverheadMs: finite.min(0).optional(),
       requestPayloadBytes: z.number().int().min(0).optional(), resultPayloadBytes: z.number().int().min(0).optional()
     }).optional()

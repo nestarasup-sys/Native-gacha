@@ -6,6 +6,10 @@ import type { EditorV6ExportReport } from './exportReport'
 
 export type EditorV6ExportAttempt = (parts: EditorV6ExportPart[], encoder: string, maxParallelism?: number) => Promise<EditorV6ExportPartReport[]>
 
+const CPU_ENCODERS = new Set(['libx264', 'libopenh264', 'h264_mf'])
+const CPU_TURBO_PARALLELISM = 4
+const GPU_TURBO_PARALLELISM = 2
+
 type Dependencies = {
   options: EditorV6ExportOptions
   plannedParts: EditorV6ExportPart[]
@@ -29,7 +33,8 @@ export async function renderEditorV6ExportWithFallback(dependencies: Dependencie
     options, plannedParts, requestedPartCount, mouthLoopBatchFrames = EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES, stressWorkerOverride, speechInRange, encoder,
     signal, report, progress, renderAttempt, finishMeasured, selectFallbackEncoder, formatError
   } = dependencies
-  const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo && !options.singleWorker ? 2 : 1
+  const defaultTurboParallelism = CPU_ENCODERS.has(encoder) ? CPU_TURBO_PARALLELISM : GPU_TURBO_PARALLELISM
+  const turboParallelism = stressWorkerOverride ? Number(stressWorkerOverride) : options.turbo && !options.singleWorker ? defaultTurboParallelism : 1
 
   try {
     return await finishMeasured(await renderAttempt(plannedParts, encoder, turboParallelism))

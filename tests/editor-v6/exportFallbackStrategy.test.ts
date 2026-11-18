@@ -60,6 +60,17 @@ describe('política de fallback da exportação do Editor V6', () => {
     expect(dependencies.report.fallback).toBe(false)
   })
 
+  it('usa quatro workers Turbo com CPU e preserva dois para encoder de GPU', async () => {
+    const cpu = createDependencies({ encoder: 'libopenh264' })
+    const gpu = createDependencies({ encoder: 'h264_amf' })
+
+    await renderEditorV6ExportWithFallback(cpu)
+    await renderEditorV6ExportWithFallback(gpu)
+
+    expect(cpu.renderAttempt).toHaveBeenCalledWith(cpu.plannedParts, 'libopenh264', 4)
+    expect(gpu.renderAttempt).toHaveBeenCalledWith(gpu.plannedParts, 'h264_amf', 2)
+  })
+
   it('processa os trechos Turbo em sequência quando a opção de worker único está ativa', async () => {
     const defaults = createDependencies()
     const dependencies = createDependencies({ options: { ...defaults.options, singleWorker: true } })
@@ -71,7 +82,7 @@ describe('política de fallback da exportação do Editor V6', () => {
     expect(dependencies.report.fallback).toBe(false)
   })
 
-  it('repete com CPU e divide a faixa de fala em partes de 300 quadros', async () => {
+  it('repete com CPU e divide a faixa de fala em partes de 600 quadros', async () => {
     const failure = new Error('falha no Turbo')
     const dependencies = createDependencies({
       speechInRange: true,
@@ -86,7 +97,7 @@ describe('política de fallback da exportação do Editor V6', () => {
 
     expect(dependencies.renderAttempt).toHaveBeenNthCalledWith(1, dependencies.plannedParts, 'h264_nvenc', 2)
     const fallbackParts = vi.mocked(dependencies.renderAttempt).mock.calls[1]?.[0]
-    expect(fallbackParts).toEqual([createPart(0, 0, 300), createPart(1, 300, 600), createPart(2, 600, 650)])
+    expect(fallbackParts).toEqual([createPart(0, 0, 600), createPart(1, 600, 650)])
     expect(dependencies.renderAttempt).toHaveBeenNthCalledWith(2, fallbackParts, 'libx264', 1)
     expect(dependencies.selectFallbackEncoder).toHaveBeenCalledWith('h264_nvenc')
     expect(dependencies.progress).toHaveBeenCalledWith({ message: 'O Turbo falhou. Reiniciando com um renderizador e CPU…', fallback: true })

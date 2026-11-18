@@ -100,11 +100,12 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   if (!candidates.length) return {
     project,
     mouthLoops: { startFrame: phaseStartFrame, cycleFrames, states: [] } satisfies EditorV6ExportMouthLoops,
-    stats: { states: 0, characters: 0, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates: 0, legacyPatchStates: 0, atlasBytes: 0, atlasPixels: 0, errors: [], milliseconds: performance.now() - began }
+    stats: { states: 0, characters: 0, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates: 0, legacyPatchStates: 0, atlasBytes: 0, atlasPixels: 0, bakeMilliseconds: 0, serviceQueueWaitMilliseconds: 0, serviceQueueWaitSamples: 0, maxServiceQueueDepth: 0, errors: [], milliseconds: performance.now() - began }
   }
 
   const states: EditorV6ExportMouthLoopState[] = []
   let atlasBytes = 0, atlasPixels = 0, isolatedStates = 0, legacyPatchStates = 0
+  let bakeMilliseconds = 0, serviceQueueWaitMilliseconds = 0, serviceQueueWaitSamples = 0, maxServiceQueueDepth = 0
   // Append in one operation. Thousands of distinct mouth states used to copy
   // the growing array of encoded atlas references after every state.
   const appendedAssets: EditorV6Document['assets'] = []
@@ -139,6 +140,13 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
         if (result.metrics.atlasPixels > statePixelBudget || bytes > stateByteBudget)
           throw Error('A camada facial excede o orçamento seguro em resolução nativa.')
         baked[index] = result
+        bakeMilliseconds += result.metrics.milliseconds
+        const profile = result.metrics.profile
+        if (typeof profile?.serviceQueueWaitMs === 'number') {
+          serviceQueueWaitMilliseconds += profile.serviceQueueWaitMs
+          serviceQueueWaitSamples++
+        }
+        maxServiceQueueDepth = Math.max(maxServiceQueueDepth, profile?.serviceQueueDepthAtEnqueue ?? 0)
         completed++
       } catch (error) {
         if (failure === undefined) failure = error
@@ -179,6 +187,6 @@ export async function prepareExportMouthLoops(project: EditorV6Document, startFr
   return {
     project: { ...project, assets: [...project.assets, ...appendedAssets] },
     mouthLoops: { startFrame: phaseStartFrame, cycleFrames, states } satisfies EditorV6ExportMouthLoops,
-    stats: { states: states.length, characters: new Set(states.map((state) => state.characterId)).size, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates, legacyPatchStates, atlasBytes, atlasPixels, errors, milliseconds: performance.now() - began }
+    stats: { states: states.length, characters: new Set(states.map((state) => state.characterId)).size, skipped: 0, skippedStale: 0, skippedUnsupported: 0, isolatedStates, legacyPatchStates, atlasBytes, atlasPixels, bakeMilliseconds, serviceQueueWaitMilliseconds, serviceQueueWaitSamples, maxServiceQueueDepth, errors, milliseconds: performance.now() - began }
   }
 }

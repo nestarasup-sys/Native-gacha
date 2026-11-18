@@ -68,6 +68,10 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
     atlasBytes: 0,
     atlasPixels: 0,
     preparationMilliseconds: 0,
+    bakeMilliseconds: 0,
+    serviceQueueWaitMilliseconds: 0,
+    serviceQueueWaitSamples: 0,
+    maxServiceQueueDepth: 0,
     details: new Set<string>()
   }
   report.mouthAnimation = undefined
@@ -83,6 +87,10 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
       atlasBytes: mouthStats.atlasBytes,
       atlasPixels: mouthStats.atlasPixels,
       preparationMilliseconds: mouthStats.preparationMilliseconds,
+      bakeMilliseconds: mouthStats.bakeMilliseconds ?? 0,
+      serviceQueueWaitMilliseconds: mouthStats.serviceQueueWaitMilliseconds ?? 0,
+      serviceQueueWaitSamples: mouthStats.serviceQueueWaitSamples ?? 0,
+      maxServiceQueueDepth: mouthStats.maxServiceQueueDepth ?? 0,
       details: [...mouthStats.details].slice(0, 3)
     }
   }
@@ -113,7 +121,7 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
     onFfmpegProcessStarted,
     progress,
     onPartCreated: (result) => attempt.parts.push(result),
-    onFrameWritten: () => { done++; progress({ frames: done }) },
+    onFrameWritten: (count = 1) => { done += count; progress({ frames: done }) },
     onMouthPrepared: (mouth) => {
       mouthStats.states += mouth.stats.states
       mouthStats.isolatedStates += mouth.stats.isolatedStates
@@ -124,6 +132,10 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
       mouthStats.atlasBytes += mouth.stats.atlasBytes
       mouthStats.atlasPixels += mouth.stats.atlasPixels
       mouthStats.preparationMilliseconds += mouth.stats.milliseconds
+      mouthStats.bakeMilliseconds += mouth.stats.bakeMilliseconds ?? 0
+      mouthStats.serviceQueueWaitMilliseconds += mouth.stats.serviceQueueWaitMilliseconds ?? 0
+      mouthStats.serviceQueueWaitSamples += mouth.stats.serviceQueueWaitSamples ?? 0
+      mouthStats.maxServiceQueueDepth = Math.max(mouthStats.maxServiceQueueDepth, mouth.stats.maxServiceQueueDepth ?? 0)
       for (const detail of mouth.stats.errors) mouthStats.details.add(detail)
       publishMouthStats()
     }
