@@ -137,3 +137,7 @@ Relatório: `out/editor-v6-stress/runs/standard-mouth-batch1200-full200-2026-11-
 ## Reuso de quadro antes da chamada IPC — 18/11
 
 Em 40 s do mesmo perfil padrão com todas as animações, um pré-plano identificou 880 quadros repetidos e pulou suas chamadas ao worker. Os hashes amostrados permaneceram idênticos, mas o tempo total foi 40,705 s contra 40,631 s no controle (+0,18%); a renderização economizou 0,179 s e o planejamento adicionou 0,187 s. Rejeitado: o IPC evitado não representa parcela suficiente do tempo de parede. O foco deve permanecer na captura/cópia do bitmap e no transporte/escrita para FFmpeg, preservando `capturePage` e o pipeline padrão até haver candidato com ganho medido. Não houve compilação ou teste C++.
+
+## Handoff de captura — 18/11
+
+Um yield de event loop em 40 s terminou em 40,248 s contra 40,631 s no controle, mas teve 4 capturas antigas a menos e fase de preparação 0,960 s menor; a renderização foi 0,298 s maior. A amostra não atribui o delta ao yield. Um gate de `requestAnimationFrame` reduziu leituras antigas no corte integral de 297 para 254 e `capturePage` agregado de 82,07 para 80,13 s. Mesmo com a leitura mais barata, o clique→validado foi 164,139 s contra 163,760 s. Preservar o handoff atual: a captura já é token-verificada e aguardar a próxima pintura desloca custo sem reduzir o tempo de parede. O próximo candidato precisa reduzir o custo real do frame ou transferir/codificar pixels com menos CPU, sem suprimir animações nem diminuir a saída.

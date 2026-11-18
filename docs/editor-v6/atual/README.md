@@ -29,6 +29,8 @@ Lookahead de dois quadros, encoder com menos threads e lote de boca 1.200 també
 
 O último candidato tentou pular IPC de 880 quadros repetidos em um corte padrão de 40 s. Manteve os hashes amostrados, mas levou 40,705 s contra 40,631 s no controle; foi removido. A investigação continua centrada em captura e transporte de bitmaps. Consulte [Execução 1.1](EXECUCAO-1.1.md).
 
+Uma espera extra antes da captura reduziu `capturePage` agregado em 1,94 s no corte de 200 s, mas o total ficou 0,379 s mais lento; removi a flag experimental. O padrão continua sem gate RAF. A meta de 90 s está aberta e exige reduzir a etapa sustentada de render/codificação, sem simplificar animações ou resolução.
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.
