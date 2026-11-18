@@ -25,7 +25,7 @@ Antecipar o preparo de boca também perdeu 1,7% num corte padrão de 40 s. Manti
 
 Na rodada posterior, `paint-event`, concorrência 3 de boca e lote 300 não reduziram o corte integral frente ao padrão. Quatro workers continuam melhores que dois; seis não ajudam por causa da fila de preparação da boca. O relatório agora conserva hits/misses do cache de geometria. Nenhum teste C++ foi executado. Consulte a rodada de 18/11 em [Execução 1.1](EXECUCAO-1.1.md).
 
-Lookahead de dois quadros e encoder com menos threads também foram medidos, sem ganho longo que justifique mudança. O padrão segue com captura `capturePage`, quatro workers, boca concorrência 2/lote 600 e lookahead 1.
+Lookahead de dois quadros, encoder com menos threads e lote de boca 1.200 também foram medidos, sem ganho longo que justifique mudança. O último levou 165,006 s contra 163,760 s e aumentou o bake de boca; manter lote 600. O padrão segue com captura `capturePage`, quatro workers, boca concorrência 2/lote 600 e lookahead 1. Nenhum teste C++ foi executado.
 
 ## Rotina para continuar sem supervisão
 

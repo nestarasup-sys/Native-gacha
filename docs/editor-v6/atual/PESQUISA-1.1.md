@@ -116,3 +116,20 @@ O agregado indicava dois workers incorretamente; run e tentativa confirmaram qua
 - Nova prioridade: perfilar a captura do frame/roundtrip IPC/pipe a partir dos relatórios serializados; os testes de paralelismo e estratégia de captura não justificam alterar os padrões atuais.
 - Teste posterior: lookahead de dois quadros teve ganho de 0,3% no corte de 120 s, insuficiente para promover mais buffers. A gravação continua sequencial; não manter o candidato nem repetir em 200 s.
 - Threads do encoder 2 vs. 3 deram diferença pequena em um único corte de 120 s; faltam medições pareadas e não há justificativa para mudar a configuração automática.
+
+## Lote de boca 1.200 no perfil padrão — 18/11
+
+Foi autorizado repetir o mesmo corte `[0,6000)` para otimizar o tempo. Mantive simplificação desligada (`includeSpeechMouth=true`), boca, piscadas, transições, cabelo Preset 2, seis clipes de áudio, CPU OpenH264, quatro workers, 1080p/30 e todos os demais parâmetros do perfil padrão. Somente o lote da boca mudou de 600 para 1.200 quadros; não houve C++.
+
+| Métrica | Padrão 600 | Teste 1.200 |
+| --- | ---: | ---: |
+| Clique → MP4 validado | 163,760 s | 165,006 s |
+| Renderização | 109,489 s | 110,280 s |
+| Preparação global | 36,806 s | 37,505 s |
+| Partes | 10 | 6 |
+| Atlas de boca | 36 | 33 |
+| Bake de boca, soma dos workers | 55,999 s | 104,882 s |
+
+Ambos passaram validação de 6.000 quadros H.264 1080p/30, AAC e 200 s, com nove emendas no padrão e cinco no candidato (seis partes), sem erro de limpeza. SSIM entre as saídas decodificadas foi 0,996784. A comparação preservou qualidade próxima, mas o candidato foi 1,247 s (0,76%) mais lento. O bake somado não é tempo de parede; mesmo com 3 atlas a menos, cresceu 87%, indicando que a redução de partes não simplifica o trabalho de boca. Rejeitar o lote 1.200 e conservar 600.
+
+Relatório: `out/editor-v6-stress/runs/standard-mouth-batch1200-full200-2026-11-18/stress-export-validation.json`. O MP4 comparador e marcador permanecem na pasta de laboratório porque a ferramenta do ambiente bloqueou sua remoção. A exportação padrão não lê nem reaproveita essa pasta. Nenhuma mudança de código ou de perfil foi promovida; a meta de 90 s ainda não foi atingida.
