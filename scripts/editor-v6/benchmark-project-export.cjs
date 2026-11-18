@@ -211,7 +211,7 @@ async function main() {
   if (exportTestMode !== undefined && !['controle', 'captura-8', 'boca-1'].includes(exportTestMode)) {
     throw Error('--export-test-mode aceita controle, captura-8 ou boca-1 no benchmark isolado do projeto autorizado.')
   }
-  if (captureModeValue !== undefined && !['capturePage', 'paint-event'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage ou paint-event.')
+  if (captureModeValue !== undefined && !['capturePage', 'paint-event', 'compare-paint'].includes(captureModeValue)) throw Error('--capture-mode aceita capturePage, paint-event ou compare-paint.')
   if (!['auto', 'cpu', 'amf'].includes(encoder)) throw Error('--encoder aceita auto, cpu ou amf.')
   if (encoderThreads !== undefined && (!/^\d+$/.test(encoderThreads) || Number(encoderThreads) < 1 || Number(encoderThreads) > 8
     || !uiExportProfile || !hairPresetSlot || encoder !== 'cpu' || nativeRenderer)) {

@@ -41,7 +41,7 @@ type EditorV6ExportIpcDependencies = {
   releaseMotionCacheScope?: (scope: string) => void
   releaseIdleMotionWorkers?: () => void
   getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
-  captureMode?: 'capturePage' | 'paint-event'
+  captureMode?: 'capturePage' | 'paint-event' | 'compare-paint'
   nativeRendererExecutable?: string
   inspectCapture?: (capture: { window: BrowserWindow; frame: number; layer?: 'background' | 'foreground'; bitmap: Buffer }) => Promise<void>
   onFfmpegProcessStarted?: (pid: number) => void

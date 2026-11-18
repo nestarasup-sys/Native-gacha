@@ -3,17 +3,17 @@ import type { NativeImage } from 'electron'
 const PAINT_TOKEN_SIZE = 24
 const PAINT_TOKEN_CELL_SIZE = 4
 const PAINT_TOKEN_COLUMNS = 6
+const MAX_CAPTURE_PADDING = 4
 
 /**
  * Validate the compositor marker and expose BGRA scene bytes from a *single*
  * readback. The marker occupies a strip below the scene so the scene bytes are
  * already contiguous and can be passed to FFmpeg without a per-row copy.
  *
- * This works only for exact 1x BGRA readbacks with the expected scene width;
- * unexpected geometry is rejected so the caller can retry or fail rather than
- * rescale silently. When an output is provided (layered video), one contiguous
- * copy appends the scene into that reusable frame. Otherwise the returned view
- * retains the `toBitmap()` buffer until its FFmpeg write callback completes.
+ * CapturePage returns the exact requested dimensions. Offscreen paint events
+ * can include a few compositor padding pixels; those are accepted only at 1x
+ * dimensions and cropped row-by-row after validating the same physical token.
+ * Exact-width captures remain zero-copy when no output buffer is requested.
  */
 export function captureEditorV6FrameBitmap(
   image: Pick<NativeImage, 'getSize' | 'toBitmap'>,
@@ -29,7 +29,8 @@ export function captureEditorV6FrameBitmap(
   if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height)
     || width < 1 || height < 1 || !Number.isSafeInteger(outputOffset) || outputOffset < 0
     || !Number.isSafeInteger(outputBytes) || !Number.isSafeInteger(requiredOutputBytes) || output && output.length < requiredOutputBytes
-    || size.width !== width || size.height < height + PAINT_TOKEN_SIZE) return null
+    || size.width < width || size.width > width + MAX_CAPTURE_PADDING
+    || size.height < height + PAINT_TOKEN_SIZE || size.height > height + PAINT_TOKEN_SIZE + MAX_CAPTURE_PADDING) return null
 
   const bitmap = image.toBitmap({ scaleFactor: 1 })
   if (bitmap.length !== size.width * size.height * 4) return null
@@ -47,8 +48,18 @@ export function captureEditorV6FrameBitmap(
   }
 
   if (output) {
-    bitmap.copy(output, outputOffset, 0, outputBytes)
+    if (size.width === width) bitmap.copy(output, outputOffset, 0, outputBytes)
+    else for (let row = 0; row < height; row++) {
+      const sourceStart = row * size.width * 4
+      bitmap.copy(output, outputOffset + row * width * 4, sourceStart, sourceStart + width * 4)
+    }
     return output
   }
-  return bitmap.subarray(0, outputBytes)
+  if (size.width === width) return bitmap.subarray(0, outputBytes)
+  const cropped = Buffer.allocUnsafe(outputBytes)
+  for (let row = 0; row < height; row++) {
+    const sourceStart = row * size.width * 4
+    bitmap.copy(cropped, row * width * 4, sourceStart, sourceStart + width * 4)
+  }
+  return cropped
 }
