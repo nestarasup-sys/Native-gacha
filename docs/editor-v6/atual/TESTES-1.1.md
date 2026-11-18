@@ -78,3 +78,9 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - Corrigi o guard do harness: sem `--render-workers`, agora aceita o paralelismo observado e só verifica igualdade se o usuário solicitar uma contagem explícita. Executar `node --check scripts/editor-v6/benchmark-project-export.cjs` para validar sintaxe.
 - `npm run bench:editor-v6:project` não foi usado; o build executado foi apenas `electron-vite`. Nenhum teste ou renderizador C++ foi executado. A meta 90 s permanece aberta.
 - Lookahead 2: no mesmo perfil padrão, 40 s = 40,362 s; 120 s = 104,084 s. Controle 120 s = 104,417 s. Todas as validações passaram, mas o ganho longo de 0,3% não paga os buffers extras; o código foi revertido. Controle de threads de encoder 2 levou 102,660 s em 120 s, sem repetição pareada; não promovido.
+
+## Rodada de 18/11 — comparação de captura e entrada variável
+
+- No candidato isolado de entrada PNG, typecheck, 9 testes focados, 5 testes do grafo FFmpeg, sintaxe do harness e build `electron-vite` passaram; o caminho candidate foi removido depois que o benchmark padrão de 40 s piorou de 40,631 para 60,422 s. Nenhum teste C++ foi executado.
+- O perfil `paint-event` validou um MP4 padrão de 40 s: 1.200 quadros, H.264/AAC, áudio, emenda no frame 600 e cleanup sem erros. O resultado de 40,020 s não é ganho conclusivo frente ao padrão; o teste integral anterior também foi mais lento. Não alterar a captura padrão.
+- Relatórios de cada execução estão em `out/editor-v6-stress/runs/standard-variable-frame-40s-2026-11-18/` e `out/editor-v6-stress/runs/standard-paint-event-40s-2026-11-18/`. Não foram retidos MP4s curtos.

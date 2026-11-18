@@ -176,6 +176,15 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - Resultado: controle 40,631 s; candidato 40,705 s (+0,18%). A renderização caiu só 0,179 s (20,750 → 20,571 s), enquanto a preparação global aumentou 0,128 s e o plano custou 0,187 s. A soma de tempos de worker variou bastante entre lados, sem ganho consistente.
 - Decisão: descartar a implementação experimental. Pular IPC redundante não resolve o gargalo sustentado de captura/roundtrip e escrita FFmpeg; não repetir o corte integral com essa hipótese. Relatórios: `standard-frame-reuse-control-40s-2026-11-18` e `standard-frame-reuse-candidate-40s-2026-11-18` em `out/editor-v6-stress/runs/`. A meta de 90 s segue aberta.
 
+## Rodada — descarte de PNG por quadro e paint-event (18/11)
+
+- Mantive o perfil padrão de 40 s: 1080p/30, CPU OpenH264, Turbo, boca, piscadas, transições, Preset 2 e áudio. O projeto veio de cópia isolada com cache de movimento vazio; nenhuma saída de exportação anterior foi usada. Não rodei compilação, teste ou benchmark C++.
+- Controle `capturePage`: 40,631 s clique→validado, renderização 20,750 s, preparação global 11,161 s. Todos os 1.200 quadros, áudio e emenda passaram.
+- O candidato experimental lossless armazenava PNG só quando o bitmap mudava e registrava duração para repetições. Resultado: 60,422 s (+48,7%); 320 imagens únicas, 880 quadros repetidos, 2,015 GB temporários e 27,542 s de codificação/escrita PNG. Finalização FFmpeg: 17,628 s. O relatório passou, mas o tempo piorou; removi código, flag e teste.
+- O A/B `paint-event` terminou em 40,020 s (−0,611 s/−1,5%), renderização 20,723 s e preparação 10,324 s. A renderização é virtualmente igual ao controle; a preparação variou −0,837 s e `ffmpegWrite` subiu de 12,373 para 14,409 s somados por worker. `paintWait` (11,829 s) substituiu `capturePage` (12,016 s), sem reduzir o gargalo total. Não promover: o ganho curto é inconclusivo e o A/B integral anterior levou 165,836 s vs. 163,760 s.
+- `npm run typecheck`, Vitest focal (9 testes), teste Node do construtor de composição (5 testes), `node --check` do harness, `git diff --check` e `npx electron-vite build` passaram durante a avaliação. Build e testes incluíram o candidato antes da remoção; nenhuma mudança experimental ficou no produto.
+- Relatórios sem MP4: `out/editor-v6-stress/runs/standard-variable-frame-40s-2026-11-18/` e `out/editor-v6-stress/runs/standard-paint-event-40s-2026-11-18/`. O melhor integral padrão continua em 163,760 s; meta de 90 s não atingida. Próximo foco: trabalho por quadro no renderer/roundtrip, separando desenho, captura e encodador.
+
 ## Rodada — sincronização antes de `capturePage` (18/11)
 
 - Mantive o export padrão completo e testei duas sincronizações temporárias: ceder um ciclo ao event loop antes da primeira leitura e aguardar um `requestAnimationFrame` antes da captura. Em ambos os casos, o token do quadro continuou obrigatório; nenhuma imagem antiga podia entrar no MP4.

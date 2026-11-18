@@ -31,6 +31,8 @@ O último candidato tentou pular IPC de 880 quadros repetidos em um corte padrã
 
 Uma espera extra antes da captura reduziu `capturePage` agregado em 1,94 s no corte de 200 s, mas o total ficou 0,379 s mais lento; removi a flag experimental. O padrão continua sem gate RAF. A meta de 90 s está aberta e exige reduzir a etapa sustentada de render/codificação, sem simplificar animações ou resolução.
 
+Na rodada mais recente, gravar quadros únicos em PNG lossless levou 60,422 s em 40 s de vídeo e foi removido. `paint-event` ficou 0,611 s mais rápido numa amostra curta, mas praticamente não alterou renderização e teve preparação menor; o A/B integral anterior também foi mais lento. Nenhum candidato foi promovido. O melhor integral padrão segue 163,760 s; o próximo foco é o custo sustentado no renderer e no roundtrip por quadro. Consulte [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md).
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.
