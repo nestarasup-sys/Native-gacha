@@ -144,6 +144,15 @@ test('does not subtract a click-to-validation timer from an estimated pre-export
   assert.match(result.timeComparisonNote, /bases de tempo diferentes/i)
 })
 
+test('requires explicit permission in the comparison when motion bake concurrency differs', () => {
+  const reference = report()
+  const candidate = report()
+  reference.exportTestSettings = { motionConcurrency: 2 }
+  candidate.exportTestSettings = { motionConcurrency: 3 }
+  assert.equal(compare(reference, candidate).comparable, false)
+  assert.equal(compare(reference, candidate, { allowMotionConcurrencyChange: true }).comparable, true)
+})
+
 test('analyzes the benchmark aggregate and keeps click wall time separate from worker sums', () => {
   const analyzed = analyzeEditorV6ExportReport({
     passed: true, projectId: 'project-fixture', sourceRevision: 'sha-fixture', workingTreeDirty: true, captureMode: 'capturePage',

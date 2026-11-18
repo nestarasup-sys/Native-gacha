@@ -8,7 +8,7 @@ const SAME_PROFILE_OPTIONS = [
   'startFrame', 'endFrame', 'width', 'height', 'turbo', 'encoder', 'mouthLoop',
   'forceTurbo1080', 'singleWorker', 'mouthLoopCycleFrames', 'includeSpeechMouth',
   'hairPoseReactionOnly', 'hairPosteriorOnly', 'hairAnimationPresetSlot',
-  'hairAnimationPresetFingerprint', 'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'testMode', 'mouthLoopBatchFrames'
+  'hairAnimationPresetFingerprint', 'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'testMode', 'mouthLoopBatchFrames', 'motionBakeConcurrency'
 ]
 const sum = (items, select) => items.reduce((total, item) => total + (Number(select(item)) || 0), 0)
 const round = value => Number.isFinite(value) ? Number(value.toFixed(3)) : null
@@ -25,7 +25,8 @@ function normalizeReport(report) {
       ...report.options,
       testMode: report.options.testMode ?? `capture-retry-${retry}`,
       mouthLoopBatchFrames: report.options.mouthLoopBatchFrames ?? 300,
-      nativeRenderer: Boolean(report.options.nativeRenderer)
+      nativeRenderer: Boolean(report.options.nativeRenderer),
+      motionBakeConcurrency: report.options.motionBakeConcurrency ?? report.exportTestSettings?.motionConcurrency ?? 2
     } }
   }
   const run = report.runs.at(-1)
@@ -53,7 +54,8 @@ function normalizeReport(report) {
       singleWorker: run.options?.singleWorker ?? false,
       nativeRenderer: report.nativeRenderer,
       testMode: `capture-retry-${run.captureRetryMilliseconds ?? report.captureRetryMilliseconds ?? 16}`,
-      mouthLoopBatchFrames: report.mouthLoopBatchFrames ?? 300
+      mouthLoopBatchFrames: report.mouthLoopBatchFrames ?? 300,
+      motionBakeConcurrency: report.motionConcurrency ?? 2
     },
     milliseconds: run.exportMilliseconds,
     clickToValidatedMilliseconds: run.clickToValidatedWallMs,
@@ -131,7 +133,7 @@ function summarize(report) {
   }
 }
 
-function compare(reference, candidate, { allowWorkerChange = false, allowMouthBatchChange = false } = {}) {
+function compare(reference, candidate, { allowWorkerChange = false, allowMouthBatchChange = false, allowMotionConcurrencyChange = false } = {}) {
   reference = normalizeReport(reference)
   candidate = normalizeReport(candidate)
   const before = summarize(reference), after = summarize(candidate)
@@ -142,6 +144,7 @@ function compare(reference, candidate, { allowWorkerChange = false, allowMouthBa
   if (before.fps !== after.fps) mismatches.push('fps')
   for (const key of SAME_PROFILE_OPTIONS) {
     if (allowMouthBatchChange && key === 'mouthLoopBatchFrames') continue
+    if (allowMotionConcurrencyChange && key === 'motionBakeConcurrency') continue
     if (before.options[key] !== after.options[key]) mismatches.push(`options.${key}`)
   }
   if (before.attempt?.encoder !== after.attempt?.encoder) mismatches.push('encoderActual')
@@ -199,14 +202,15 @@ async function main(args = process.argv.slice(2)) {
   const candidateArg = args.find(value => value.startsWith('--candidate='))?.slice('--candidate='.length)
   const allowWorkerChange = args.includes('--allow-worker-change')
   const allowMouthBatchChange = args.includes('--allow-mouth-batch-change')
-  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change' && value !== '--allow-mouth-batch-change')) {
-    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change] [--allow-mouth-batch-change]')
+  const allowMotionConcurrencyChange = args.includes('--allow-motion-concurrency-change')
+  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change' && value !== '--allow-mouth-batch-change' && value !== '--allow-motion-concurrency-change')) {
+    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change] [--allow-mouth-batch-change] [--allow-motion-concurrency-change]')
   }
   const [reference, candidate] = await Promise.all([
     fs.readFile(path.resolve(referenceArg), 'utf8').then(JSON.parse),
     fs.readFile(path.resolve(candidateArg), 'utf8').then(JSON.parse)
   ])
-  const result = compare(reference, candidate, { allowWorkerChange, allowMouthBatchChange })
+  const result = compare(reference, candidate, { allowWorkerChange, allowMouthBatchChange, allowMotionConcurrencyChange })
   console.log(JSON.stringify(result, null, 2))
   if (!result.comparable || !result.validation.passed) process.exitCode = 2
   return result

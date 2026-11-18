@@ -43,3 +43,4 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - A repetição C++ com partes 300 também excedeu 512 MiB e não gerou MP4; alterar batch não reduz o conjunto acumulado do processo.
 - O comparador mostra revisão e dirty e impede comparar click→validado com soma estimada de fases. Use `--allow-mouth-batch-change` só quando aceitar explicitamente essa diferença de planejamento.
 - `analyze-export-performance.cjs` agora entende o agregado do harness e mostra tempo total com sua base, main, preparação, somas de worker, memória/CPU por processo, capturas e detalhe por parte. As somas paralelas são explicitamente rotuladas como sobrepostas.
+- Comparação curta de motion bake: concurrency 2→3 levou 44,318→45,151 s e passou a validação dos 1.200 quadros, áudio e emenda. Não é candidata para promoção.
