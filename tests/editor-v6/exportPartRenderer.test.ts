@@ -96,7 +96,7 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
 
     expect(dependencies.onPartCreated).toHaveBeenCalledTimes(1)
     expect(dependencies.onPartCreated).toHaveBeenCalledWith(result)
-    expect(planEditorV6VideoOverlays).toHaveBeenCalledWith(dependencies.project, 0, 2)
+    expect(planEditorV6VideoOverlays).not.toHaveBeenCalled()
     expect(buildEditorV6VideoComposition).toHaveBeenCalledWith(expect.objectContaining({ width: 320, height: 180, layeredVideo: false }))
     expect(spawnExportProcess).toHaveBeenCalledWith('ffmpeg.exe', expect.arrayContaining(['320x180']), dependencies.signal)
     expect(process.stdin.write).toHaveBeenCalledTimes(2)
@@ -117,6 +117,10 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
   it('enables safe overlap for layered video but honors the serial A/B baseline', async () => {
     const process = mockProcess()
     vi.mocked(spawnExportProcess).mockReturnValue(process.value)
+    vi.mocked(planEditorV6VideoOverlays).mockReturnValue([{
+      blockId: 'video', fileName: 'video.mp4', startFrame: 0, endFrame: 2, mediaInFrame: 0,
+      layout: { x: 0, y: 0, width: 100, height: 100, rotation: 0 }
+    }])
     const layered = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
     expect(layered.framePipelineOverlap).toBe(true)
     expect(layered.frameLayerCapture).toBe('stacked')
@@ -133,6 +137,18 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     vi.unstubAllEnvs()
   })
 
+  it('usa uma única camada no trecho sem vídeo de um export com vídeos', async () => {
+    vi.mocked(spawnExportProcess).mockReturnValue(mockProcess().value)
+    const dependencies = createDependencies({ layeredVideo: true })
+
+    const result = await renderEditorV6ExportPart(dependencies)
+
+    expect(planEditorV6VideoOverlays).toHaveBeenCalledWith(dependencies.project, 0, 2)
+    expect(result.frameLayerCapture).toBe('single')
+    expect(dependencies.createWorker).toHaveBeenCalledWith(dependencies.project, dependencies.part, dependencies.signal, false, undefined)
+    expect(buildEditorV6VideoComposition).toHaveBeenCalledWith(expect.objectContaining({ clips: [], layeredVideo: false }))
+  })
+
   it('prepara os loops de fala antes de criar o worker e encaminha projeto e atlas preparados', async () => {
     const process = mockProcess()
     vi.mocked(spawnExportProcess).mockReturnValue(process.value)
@@ -145,7 +161,8 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     const createWorker = vi.fn(async () => renderedWorker.value)
     const dependencies = createDependencies({ project, speechInRange: true, completedFrames: () => 7, createWorker })
 
-    await renderEditorV6ExportPart(dependencies)
+    const result = await renderEditorV6ExportPart(dependencies)
+    expect(result.mouthPreparationMs).toBe(2)
 
     vi.mocked(prepareExportMouthLoops).mock.calls[0]?.[4].progress(0, 1, 'boca sintética')
     expect(prepareExportMouthLoops).toHaveBeenCalledWith(project, 0, 2, 30, expect.objectContaining({ signal: dependencies.signal, characters: [] }), 0, 1, 2)

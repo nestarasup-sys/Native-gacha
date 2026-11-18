@@ -26,6 +26,7 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   milliseconds: number
   startedAtOffsetMs: number
   finishedAtOffsetMs?: number
+  mouthPreparationMs?: number
   frameTiming?: EditorV6FrameTimingReport
   frameMetrics?: EditorV6FrameMetrics
   /** Whether one ordinary offscreen frame may render during FFmpeg backpressure. */
@@ -75,7 +76,7 @@ type Dependencies = {
 export async function renderEditorV6ExportPart(dependencies: Dependencies): Promise<EditorV6ExportPartReport> {
   const {
     project, part, attemptNumber, attemptPartCount, exportStartedAt, encoder, parallelism,
-    options, layeredVideo, speechInRange, characters, testSettings, folder, ffmpeg, ffprobe,
+    options, layeredVideo: exportHasVideo, speechInRange, characters, testSettings, folder, ffmpeg, ffprobe,
     motionCacheScope, qualityReferenceFolder, signal, abort, completedFrames, createWorker, bakeMotion, mediaPath,
     onFfmpegProcessStarted, progress, onMouthPrepared, onPartCreated, onFrameWritten
   } = dependencies
@@ -83,6 +84,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   signal.throwIfAborted()
   let renderProject = project
   let mouthLoops: EditorV6ExportMouthLoops | undefined
+  let mouthPreparationMs: number | undefined
   try {
     if (speechInRange && options.mouthLoop !== false) {
       const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
@@ -93,6 +95,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       }, options.startFrame, Math.min(2, parallelism) as 1 | 2, testSettings.mouthConcurrency)
       renderProject = mouth.project
       mouthLoops = mouth.mouthLoops
+      mouthPreparationMs = mouth.stats.milliseconds
       onMouthPrepared(mouth)
     }
   } catch (error) {
@@ -105,10 +108,14 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   const outputFrames = editorV6OutputFrame(part.endFrame, options.startFrame, fps) - firstOutputFrame
   const sampleTimelineFrame = (index: number) => options.startFrame + Math.floor(index * 30 / fps)
   const beganPart = performance.now()
+  const videoClips = exportHasVideo ? planEditorV6VideoOverlays(project, part.startFrame, part.endFrame) : []
+  // Only a video between the scene layers requires two surfaces and twice the raw input height.
+  const layeredVideo = videoClips.length > 0
   const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
   const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
   // All part jobs use this process's monotonic clock, so offsets expose actual overlap.
   const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1', frameRestHairReuse: Boolean(options.hairPoseReactionOnly) && nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0', frameLayerCapture: !layeredVideo ? 'single' : nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'serial' ? 'serial' : 'stacked' }
+  if (mouthPreparationMs !== undefined) result.mouthPreparationMs = mouthPreparationMs
   const timingAccumulators = createEditorV6TimingAccumulators()
   const frameMetrics: EditorV6FrameMetrics = {}
   let worker: EditorV6FrameWorker | undefined
@@ -116,7 +123,6 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   onPartCreated(result)
 
   try {
-    const videoClips = planEditorV6VideoOverlays(project, part.startFrame, part.endFrame)
     const videoPaths = await Promise.all(videoClips.map((clip) => mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
     const qualityFrames = qualityReferenceFolder
       ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.map(frame => editorV6OutputFrame(frame, options.startFrame, fps)).filter(index => index >= firstOutputFrame && index < firstOutputFrame + outputFrames).map(index => index - firstOutputFrame)

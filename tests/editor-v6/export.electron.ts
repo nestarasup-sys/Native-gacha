@@ -336,6 +336,8 @@ async function main() {
   const mediaOutput = join(folder, 'media-timeline.mp4')
   const mediaReport = await runEditorV6Export(mediaProject, { ...options, startFrame: 0, endFrame: 30 }, { ...base, id: randomUUID(), outputPath: mediaOutput, reportPath: join(folder, 'media-timeline.report.json'), audioPath: (clip) => join(folder, 'media', clip.fileName) })
   assert(!mediaReport.fallback && mediaReport.videoInputs === 1 && mediaReport.audioClips === 2, 'Mídias da timeline não chegaram ao exportador.')
+  assert(mediaReport.attempts[0].parts.map(part => part.frameLayerCapture).join(',') === 'stacked,single',
+    'A emenda Turbo deve juntar um trecho com vídeo em camadas e outro em uma única camada.')
   const mediaRgb = run(['-i', mediaOutput, '-vf', "select='eq(n,0)+eq(n,10)'", '-fps_mode', 'passthrough', '-frames:v', '2', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const mediaFrameBytes = 320 * 180 * 3
   assert(!mediaRgb.subarray(0, mediaFrameBytes).equals(mediaRgb.subarray(mediaFrameBytes, mediaFrameBytes * 2)), 'Vídeo importado não mudou quadro a quadro na composição exportada.')
