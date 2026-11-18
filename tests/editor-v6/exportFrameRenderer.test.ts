@@ -87,6 +87,7 @@ describe('createEditorV6ExportFrameRenderer', () => {
       waitForSvgImages: vi.fn(async () => { operations.push('wait-images') }),
       setPaintToken: vi.fn(() => { operations.push('set-paint') }),
       waitForPaintFrame: vi.fn(async () => { operations.push('wait-paint') }),
+      setDiagnosticStage: stage => { operations.push(`stage:${stage}`) },
       now: (() => { let tick = 0; return () => ++tick })()
     })
 
@@ -95,12 +96,17 @@ describe('createEditorV6ExportFrameRenderer', () => {
     expect(commitSurface).toHaveBeenCalledWith(expect.objectContaining({
       scene: expect.objectContaining({ frame: 10 }), outputWidth: 1280, outputHeight: 720, renderLayer: 'all'
     }))
-    expect(operations).toEqual(['prepare-assets', 'commit:10:1280x720:all', 'wait-images', 'set-paint', 'wait-paint'])
+    expect(operations).toEqual([
+      'stage:scene-resolution:10', 'stage:face-composition:10', 'stage:hair-composition:10',
+      'stage:asset-selection:10', 'stage:asset-decode:10', 'prepare-assets',
+      'stage:react-commit:10', 'commit:10:1280x720:all', 'stage:svg-image-decode:10',
+      'wait-images', 'set-paint', 'stage:paint-handoff:10', 'wait-paint', 'stage:frame-ready:10'
+    ])
 
     operations.length = 0
     const reused = await renderFrame(10, undefined, 43)
     expect(reused).toMatchObject({ reused: true })
-    expect(operations).toEqual([])
+    expect(operations).toEqual(['stage:scene-resolution:10'])
     expect(commitSurface).toHaveBeenCalledOnce()
   })
 

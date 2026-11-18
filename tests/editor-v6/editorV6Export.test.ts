@@ -45,6 +45,7 @@ describe('planejamento de exportação do Editor V6', () => {
     expect(editorV6ExportTestSettings('movimentos-1').motionConcurrency).toBe(1)
     expect(editorV6ExportTestSettings('boca-1').mouthConcurrency).toBe(1)
     expect(editorV6ExportTestSettings('captura-8').captureRetryMilliseconds).toBe(8)
+    expect(editorV6ExportTestSettings().captureRetryMilliseconds).toBe(16)
     expect(editorV6ExportTestSettings('rosto-legado').encodeFaceCropPng).toBe(true)
     for (const mode of EDITOR_V6_EXPORT_TEST_MODES) {
       expect(planEditorV6Export({ ...options, testMode: mode.id }, 100)).toEqual(planEditorV6Export(options, 100))

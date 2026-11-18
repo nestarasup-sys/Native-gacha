@@ -74,6 +74,8 @@
     "bench:animator:garments": "node --experimental-strip-types scripts/diagnostics/benchmark-animator-garment-layers.mjs",
     "bench:editor-v6:motion-preparation": "node --experimental-strip-types scripts/diagnostics/benchmark-editor-v6-motion-preparation.mjs",
     "bench:editor-v6:compare": "node scripts/editor-v6/compare-real-export.cjs",
+    "bench:editor-v6:compare-runs": "node scripts/editor-v6/compare-run-reports.cjs",
+    "test:editor-v6:compare-runs": "node --test tests/editor-v6/compareRunReports.test.cjs",
     "bench:editor-v6:project": "npm run build && node scripts/editor-v6/benchmark-project-export.cjs",
     "lab:editor-v6:plan-b": "node scripts/editor-v6/run-plan-b-export-lab.cjs",
     "summary:editor-v6:plan-b-lab": "node scripts/editor-v6/summarize-planb-export-lab.cjs",

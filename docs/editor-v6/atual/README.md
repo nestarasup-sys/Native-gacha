@@ -15,6 +15,10 @@ O objetivo é diminuir o tempo entre clicar em Exportar MP4 e receber o vídeo v
 
 O código e os relatórios da execução são as fontes de verdade. O [arquivo histórico](../../lixo/editor-v6/README.md) serve para recuperar um experimento específico quando necessário. As recomendações e permissões antigas precisam de confirmação nos contratos atuais.
 
+## Resultado mais recente
+
+O corte completo repetido com o teste de captura de 8 ms levou **206,06 s** do clique até validação, contra **209,87 s** na rodada anterior com as mesmas opções. O teste não confirma ganho estável: quadros únicos, reuso, proporção de leituras descartadas, preparação de movimento e renderização variaram pouco. A meta de 90 s continua distante. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md) para medições e limitações do preset.
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.

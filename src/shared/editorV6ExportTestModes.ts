@@ -9,7 +9,7 @@ export type EditorV6ExportTestMode =
 export const EDITOR_V6_EXPORT_TEST_MODES: ReadonlyArray<{
   id: EditorV6ExportTestMode; label: string; description: string
 }> = [
-  { id: 'controle', label: '01 · Controle', description: 'Padrão atual: 2 movimentos, 2 bocas e captura segura de 16 ms.' },
+  { id: 'controle', label: '01 · Controle', description: 'Padrão atual: 2 movimentos, 2 bocas e nova leitura após 16 ms.' },
   { id: 'movimentos-1', label: '02 · Movimentos 1×', description: 'Prepara transições em uma lane. Mede se reduz a disputa de recursos.' },
   { id: 'boca-1', label: '03 · Boca 1×', description: 'Prepara um atlas de boca de cada vez. Isola o custo da concorrência.' },
   { id: 'captura-8', label: '04 · Captura 8 ms', description: 'Tenta novamente mais cedo após um bitmap antigo; o token continua obrigatório.' },

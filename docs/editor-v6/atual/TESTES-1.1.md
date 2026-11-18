@@ -29,3 +29,7 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 
 - A rodada `45e009f0` passou 70 testes focados, typecheck, auditoria e harness de export. O novo relatório de 18/11 comprova a conclusão do corte real, mas não fornece um controle pareado.
 - A rodada atual de documentação usa verificação de links ativos, limite de linhas, preservação do guia carregado pelo app e revisão do diff. A próxima rodada de código registra aqui ou na continuação quais checks executou.
+- Rodada completa pareada: 6.000 quadros, ambos os MP4s passaram FFprobe, áudio, emendas e limpeza. Clique→validado 209,87 s e 206,06 s; não é uma melhoria confirmada.
+- Microbenchmark sintético de alpha crop: 0,40 ms otimizado versus 2,61 ms referência, limites iguais. O contador no projeto real permaneceu ~39,6 s; use a fixture para paridade e não como estimativa de ganho do export.
+- Verificações desta rodada: 5 arquivos Vitest / 38 testes, 4 testes do comparador de relatórios e `npm run typecheck`; todos passaram. O comparador exige compatibilidade de perfil e resume preparação, captura, pipe, validação e limpeza.
+- O comparador foi ampliado para entender o relatório agregado do harness. Ao testar os arquivos antigos, identifica corretamente 206,06 s de parede, mas recusa a validação completa porque a saída anterior não registrava ID de projeto nem limpeza; o gerador novo passa a incluir ambos.

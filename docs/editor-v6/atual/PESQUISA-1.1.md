@@ -22,6 +22,25 @@ Os tempos seguintes são somas dos workers e se sobrepõem. Captura 116,95 s, in
 
 O relatório do processo principal não inclui necessariamente toda a preparação anterior ao IPC. Para comparar a espera percebida, registre também o tempo do clique ao MP4 validado. A renderização avançou a 40,75 FPS para um vídeo de 30 FPS. Nesse caso, a preparação global e a finalização aproximaram o total da duração do vídeo.
 
+## Repetição pareada — 8 ms e alpha crop
+
+O segundo corte foi executado na mesma cópia verificada, faixa `[0, 6000)`, 1920×1080/30, Turbo com dois workers, `libopenh264`, boca, cabelo, áudio e 6 vídeos. O relatório está em `out/editor-v6-stress/runs/actual-project-2026-11-18T08-41-31-158Z-10320/stress-export-validation.json`; o controle anterior com a mesma captura de 8 ms está em `.../actual-project-2026-11-18T08-29-44-675Z-2744/stress-export-validation.json`.
+
+| Métrica | Controle | Repetição |
+| --- | ---: | ---: |
+| Clique → validado | 209,87 s | 206,06 s |
+| Preparação global | 46,49 s | 45,76 s |
+| Renderização | 144,33 s | 141,25 s |
+| Capturas descartadas | 429 / 2.139 | 423 / 2.133 |
+| Crop detection somado | 39,83 s | 39,61 s |
+| Quadros renderizados / reutilizados | 1.710 / 4.290 | 1.710 / 4.290 |
+
+A queda total de 1,8% não estabelece causalidade. O scan 32-bit dá cerca de 4,9× contra a implementação anterior no microbenchmark sintético, com os mesmos limites, mas a captura completa do Canvas domina `cropDetectionMs`; no corte real a fase mudou apenas 0,22 s. A mudança não é responsável pelo export lento.
+
+O relatório mostra `capturePageMs` 88,98 s, conversão BGRA 18,89 s, `ffmpegWriteMs` 91,13 s, `ffmpegWriteUncoveredMs` 21,34 s e inicialização de workers 32,11 s, todos somados por trechos em paralelo. Esses números se sobrepõem e não podem ser somados como tempo de parede. FFmpeg chegou a ~575% CPU, renderer ~152%, GPU ~110%; a máquina estava sob contenção de processamento. O gargalo é a trilha de captura/transferência/encode do render, com custos de inicialização por trecho e pressão de CPU. AMF deu tempo equivalente em corte curto, e 4 workers deram apenas ~5,5% de vantagem sobre 2; não justificam trocar o padrão.
+
+Limitação: o preset 2 de cabelo reproduzido é o preset de laboratório, fingerprint `2a0f0859cffe0f64477b98f71aa06eaec21bad1f6d5c32e41067ce761c2abba9`; o estado exato da UI não pôde ser extraído do perfil. O par mede throughput, não identidade visual do preset. Para mudar desenho ou escala, ainda é necessário comparar quadros decodificados com um preset exato.
+
 ## Hipóteses prioritárias
 
 1. **Captura descartada.** O token protege a ordem e a qualidade. Medir em uma fixture com muitos quadros únicos se dá para sincronizar a primeira captura com o compositor sem aumentar a espera dos casos que já passam na primeira tentativa. A taxa de rejeição sozinha não prova ganho.

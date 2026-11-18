@@ -28,6 +28,15 @@ describe('Editor V6 first-export alpha crop parity', () => {
     expect(editorV6AlphaCropBounds(data, width, height, 255)).toEqual({ left: 0, top: 0, width: 1, height: 1 })
   })
 
+  it('uses the byte-safe path for unaligned RGBA views', () => {
+    const width = 5, height = 4
+    const storage = new Uint8Array(width * height * 4 + 1)
+    const pixels = storage.subarray(1)
+    pixels[(1 * width + 3) * 4 + 3] = 9
+    pixels[(3 * width + 1) * 4 + 3] = 255
+    expect(editorV6AlphaCropBounds(pixels, width, height, 8)).toEqual(oldCrop(new Uint8ClampedArray(pixels), width, height, 8))
+  })
+
   it('matches the original pixel loop on 100 deterministic dense/sparse/transparent frames', () => {
     let seed = 0x14d3ba91
     const next = () => {

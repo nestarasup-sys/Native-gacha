@@ -42,7 +42,27 @@ export function createEditorV6WorkerFrameRenderer({
     const token = nextPaintToken
     const layerArgument = layer ? `'${layer}'` : 'undefined'
     const script = `Promise.resolve().then(() => window.renderEditorV6ExportFrame(${Math.round(frame)}, ${layerArgument}, ${token})).then(value => ({ ok: true, value }), error => ({ ok: false, error: { name: error?.name, message: error?.message, stack: error?.stack, code: error?.code, cause: error?.cause, value: String(error) } }))`
-    const response = await waitForExport(window.webContents.executeJavaScript(script) as Promise<EditorV6RenderFrameResult | { ok: boolean; value?: EditorV6RenderFrameResult; error?: unknown }>, signal, 60000, 'desenhar quadro')
+    let response: EditorV6RenderFrameResult | { ok: boolean; value?: EditorV6RenderFrameResult; error?: unknown }
+    try {
+      response = await waitForExport(window.webContents.executeJavaScript(script) as Promise<EditorV6RenderFrameResult | { ok: boolean; value?: EditorV6RenderFrameResult; error?: unknown }>, signal, 60000, 'desenhar quadro')
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('Tempo limite: desenhar quadro')) {
+        const snapshot = await Promise.race([
+          window.webContents.executeJavaScript('JSON.stringify({stage:window.__editorV6ExportDiagnosticStage ?? "stage-unavailable",assets:window.__editorV6ExportDiagnosticAssets ?? []})').catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))
+        ])
+        let detail = 'diagnostic-unavailable'
+        if (typeof snapshot === 'string') {
+          try {
+            const parsed = JSON.parse(snapshot) as { stage?: unknown; assets?: unknown }
+            const assets = Array.isArray(parsed.assets) ? parsed.assets.slice(0, 4) : []
+            detail = `stage=${String(parsed.stage ?? 'stage-unavailable').slice(0, 80)};pending-assets=${JSON.stringify(assets).slice(0, 360)}`
+          } catch { detail = 'diagnostic-invalid' }
+        }
+        throw Error(`${error.message} (${detail})`, { cause: error })
+      }
+      throw error
+    }
     const envelope = response && typeof response === 'object' && 'ok' in response ? response : undefined
     if (envelope && (!envelope.ok || !envelope.value)) throw Error(`Falha no quadro ${frame}${layer ? ` (${layer})` : ''}: ${formatEditorV6Error(envelope.error)}`)
     const result = (envelope?.value ?? response) as EditorV6RenderFrameResult | undefined

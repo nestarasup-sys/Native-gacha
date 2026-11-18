@@ -8,6 +8,7 @@ const root = path.resolve(__dirname, '../..')
 const argument = (prefix) => process.argv.find((value) => value.startsWith(prefix))?.slice(prefix.length)
 const projectFolder = argument('--project=') && path.resolve(argument('--project='))
 const libraryFolder = argument('--library=') && path.resolve(argument('--library='))
+const backgroundLibraryFolder = argument('--background-library=') && path.resolve(argument('--background-library='))
 const charactersPath = argument('--characters=') && path.resolve(argument('--characters='))
 const fabricatorFolder = argument('--fabricator=') && path.resolve(argument('--fabricator='))
 const sourceMotionCache = argument('--motion-cache=') && path.resolve(argument('--motion-cache='))
@@ -36,6 +37,7 @@ const hairPresetFile = argument('--hair-preset-file=') && path.resolve(argument(
 const encoder = argument('--encoder=') ?? (uiExportProfile ? 'cpu' : 'auto')
 const videoToolsDirectory = argument('--video-tools=') && path.resolve(argument('--video-tools='))
 const x264Preset = argument('--x264-preset=') ?? 'ultrafast'
+const authorizedProjectId = argument('--authorized-project-id=')
 const capturePixelHashes = process.argv.includes('--capture-pixel-hashes')
 const retainMp4ForQuality = process.argv.includes('--retain-mp4-for-quality')
 const retainQualityArtifacts = process.argv.includes('--retain-quality-artifacts')
@@ -111,6 +113,22 @@ async function directoryBytes(directory) {
   }
   return total
 }
+async function generatedOutputBytes(directory) {
+  const entries = await fs.readdir(directory, { withFileTypes: true })
+  let total = 0
+  for (const entry of entries) {
+    // The isolated application profile is a disposable input copy, not export
+    // output. Counting its multi-gigabyte project assets trips the output cap
+    // before the renderer can finish even though the produced MP4 is small.
+    if (entry.name === 'isolated-app-data') continue
+    const target = path.join(directory, entry.name)
+    if (entry.isSymbolicLink()) throw Error('Link simbólico inesperado na pasta de saída.')
+    if (entry.isDirectory()) total += await directoryBytes(target)
+    else if (entry.isFile()) total += (await fs.stat(target)).size
+    else throw Error('Tipo de entrada não suportado na pasta de saída.')
+  }
+  return total
+}
 async function cleanupGeneratedRun(outputFolder, { retainMp4 = false } = {}) {
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   let realRoot, realOutput
@@ -172,13 +190,13 @@ async function preserveFailureReports(outputFolder, runStartedAt) {
 }
 
 async function main() {
-  const sources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
+  const sources = [projectFolder, libraryFolder, backgroundLibraryFolder, charactersPath, fabricatorFolder, sourceMotionCache]
   if (sources.some((source) => !source) || (!process.argv.includes('--compare-workers') && !cacheProbe && !singleMotionRun)
     && !hairPresetSlot && !noHairControl
     || singleMotionRun && !['1', '2', '3'].includes(motionConcurrency)
     || hairPreparationOnly && (!hairPresetSlot || cacheProbe || singleMotionRun || noHairControl || process.argv.includes('--compare-workers'))
     || noHairControl && (hairPresetSlot || cacheProbe || singleMotionRun || hairPreparationOnly || process.argv.includes('--compare-workers'))) {
-    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2|3 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control) [--render-workers=2|4]')
+    throw Error('Uso: node scripts/editor-v6/benchmark-project-export.cjs --project=<cópia verificada> --library=<mídias vinculadas> --background-library=<fundos vinculados> --characters=<personagens copiados> --fabricator=<cópia do Fabricador> --motion-cache=<cache vazio> (--compare-workers | --cache-probe | --single-motion-run --motion-bake-concurrency=1|2|3 | --hair-preset-slot=1..5 [--hair-preparation-only] | --no-hair-control) [--render-workers=2|4]')
   }
   if (!Number.isInteger(rendererPort) || rendererPort < 1024 || rendererPort > 65535) throw Error('--renderer-port precisa ser uma porta local válida.')
   if (argument('--session-data=') !== undefined) throw Error('Reutilizar sessão Electron não é permitido no protocolo frio; cada execução cria uma sessão nova.')
@@ -210,8 +228,8 @@ async function main() {
     throw Error('--ui-export-profile exige Preset 2 salvo para cabelo ativo ou --no-hair-control para o controle sem cabelo.')
   }
   if (disableMouthAnimation && !uiExportProfile) throw Error('--disable-mouth-animation exige --ui-export-profile.')
-  if (nativeRenderer && (!uiExportProfile || !hairPresetSlot || encoder !== 'cpu' || repeatValue && repeatValue !== '1' || !fullTimeline)) {
-    throw Error('--native-renderer exige perfil UI de cabelo, CPU, uma rodada e timeline completa para este benchmark.')
+  if (nativeRenderer && (!uiExportProfile || !hairPresetSlot || encoder !== 'cpu' || repeatValue && repeatValue !== '1')) {
+    throw Error('--native-renderer exige perfil UI de cabelo, CPU e uma rodada para este benchmark.')
   }
   if ((hairPresetSlot || noHairControl) && (!Number.isSafeInteger(segmentStartFrame) || segmentStartFrame < 0
     || segmentDurationSeconds !== null && (!Number.isSafeInteger(segmentDurationSeconds) || segmentDurationSeconds < 1)
@@ -222,7 +240,7 @@ async function main() {
   }
   const allowedRunsRoot = path.join(root, 'out', 'editor-v6-stress', 'runs')
   const allowedPresetRoot = path.join(root, 'out', 'editor-v6-stress', 'preferences')
-  const immutableSources = [projectFolder, libraryFolder, charactersPath, fabricatorFolder]
+  const immutableSources = [projectFolder, libraryFolder, backgroundLibraryFolder, charactersPath, fabricatorFolder]
   if (!immutableSources.every((source) => inside(verifiedBackupRoot, source))
     || !(inside(verifiedBackupRoot, sourceMotionCache) || inside(allowedRunsRoot, sourceMotionCache))) {
     throw Error('Projeto, mídias, personagens e Fabricador precisam vir do backup verificado; o cache pode vir do backup ou de uma execução isolada anterior.')
@@ -244,7 +262,11 @@ async function main() {
 
   const manifest = JSON.parse(await fs.readFile(path.join(projectFolder, 'editorV6.json'), 'utf8'))
   const acceptedProjectTitles = [authorizedProjectTitle, 'Editor V6 01', 'FYN & RONAN — UM CASAL PERIGOSO — Plano B · 6 min']
-  if ((hairPresetSlot || noHairControl) && (!acceptedProjectTitles.includes(manifest.title?.trim()) || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
+  const authorizedProjectIds = new Set(['408a77d1-d964-4c04-a66b-f4e9fcfeee46'])
+  const projectAuthorized = authorizedProjectId
+    ? authorizedProjectIds.has(authorizedProjectId) && manifest.id === authorizedProjectId
+    : acceptedProjectTitles.includes(manifest.title?.trim())
+  if ((hairPresetSlot || noHairControl) && (!projectAuthorized || !Number.isSafeInteger(manifest.timeline?.durationFrames) || manifest.timeline.durationFrames < 1)) {
     throw Error('O benchmark exige uma cópia verificada de um projeto Plano B autorizado com duração válida; nenhum projeto foi modificado.')
   }
   const segmentFrameCount = segmentDurationSeconds === null ? manifest.timeline?.durationFrames : segmentDurationSeconds * 30
@@ -275,12 +297,14 @@ async function main() {
   const profile = path.join(dataRoot, 'runtime', 'profile')
   const projectTarget = path.join(profile, 'studios', 'Editor V6', `editorV6-${manifest.id}`)
   const libraryTarget = path.join(profile, 'studios', 'Editor Gacha', 'media-library')
+  const backgroundLibraryTarget = path.join(profile, 'studios', 'Editor Gacha', 'background-library')
   const charactersTarget = path.join(profile, 'customizer', 'characters', 'characters.json')
   await fs.mkdir(path.dirname(projectTarget), { recursive: true })
   await fs.mkdir(path.dirname(libraryTarget), { recursive: true })
   await fs.mkdir(path.dirname(charactersTarget), { recursive: true })
   await fs.cp(projectFolder, projectTarget, { recursive: true, errorOnExist: true, force: false })
   await fs.cp(libraryFolder, libraryTarget, { recursive: true, errorOnExist: true, force: false })
+  await fs.cp(backgroundLibraryFolder, backgroundLibraryTarget, { recursive: true, errorOnExist: true, force: false })
   await fs.cp(charactersPath, charactersTarget, { errorOnExist: true, force: false })
   await fs.cp(fabricatorFolder, path.join(profile, 'fabricator'), { recursive: true, errorOnExist: true, force: false })
   await fs.cp(sourceMotionCache, path.join(profile, 'cache', 'editor-v6-motion-v2'), { recursive: true, errorOnExist: true, force: false })
@@ -324,7 +348,7 @@ async function main() {
     const sizeCheck = setInterval(() => {
       if (sizeCheckRunning || outputLimitExceeded) return
       sizeCheckRunning = true
-      void directoryBytes(outputFolder).then((bytes) => {
+      void generatedOutputBytes(outputFolder).then((bytes) => {
         if (bytes > MAX_RUN_OUTPUT_BYTES) {
           outputLimitExceeded = true
           exportChild.kill()

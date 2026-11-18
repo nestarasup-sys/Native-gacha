@@ -38,3 +38,14 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - Localizado e interpretado o relatório de 6.000 quadros. O trabalho ativo foi consolidado nesta pasta.
 - As otimizações citadas acima já pertencem aos commits indicados. Esta passagem é de documentação e preparação da próxima rodada.
 - Próxima nota de execução deve registrar hipótese, fixture, controles, números, decisão, testes e commit em um único lugar.
+
+## Rodada de comparação — alpha e captura
+
+- Repeti o corte `[0, 6000)`, 1080p/30, dois workers, CPU `libopenh264`, áudio, boca e cabelo ativos, em perfil isolado. Backup e preset ficam em `out/editor-v6-stress`; o preset 2 disponível é o preset sintético autorizado do harness, não o estado exato da UI do usuário.
+- Antes do export, validei que a leitura de alpha em fixture 960×1280 devolve os mesmos limites do algoritmo anterior. O scan novo levou 0,36 ms versus 1,76 ms por chamada no microbenchmark local. Essa diferença não apareceu no export inteiro: `cropDetectionMs` foi 39,83 s antes e 39,61 s depois, pois a medição inclui uma leitura Canvas custosa. Não atribuir o tempo total ao scan de bytes.
+- A execução completa passou: 6.000 quadros H.264, 1920×1080, 30 FPS, 200 s, 6 clipes de áudio, 19 emendas, limpeza dos temporários. Tempo clique→MP4 validado 206,06 s; processo principal 191,95 s; renderização 141,25 s; preparação de movimento 45,76 s; cabelo 12,25 s; boca 24,49 s somados.
+- O controle da rodada anterior, também captura 8 ms, foi 209,87 s. `captureStaleReadbacks` mudou de 429/2139 (20,1%) para 423/2133 (19,8%); captura descartada segue sem evidência de redução material. A medição de 3,81 s (1,8%) é pequena demais para confirmar melhoria.
+- Não alterar o retry padrão: continua em 16 ms; 8 ms permanece apenas como modo de laboratório. Não anunciar a meta de 90 s como atingida.
+- Ampliei o comparador para aceitar diretamente o relatório agregado do harness. Ele calcula clique→validado, identifica o projeto, compara os mesmos parâmetros e recusa conclusão quando faltam quadros, áudio, emendas ou limpeza. O relatório produzido antes desta ampliação não traz ID do projeto nem `cleanupErrors`; o comparador agora o rejeita como prova completa. Próximos relatórios de laboratório incluem esses campos.
+- Nova tentativa recusada antes de rodar porque o harness não recebeu o ID autorizado no formato que espera; outra falhou na preparação por não injetar o preset; ambas pararam antes do primeiro quadro e não alteraram a fonte. A repetição final incluiu ID UUID, arquivo de preset e perfil UI.
+- Próximo foco: a renderização consome 141 s de parede; captura, frame roundtrip e FFmpeg são custos sobrepostos. Investigar por trecho o ciclo de worker/FFmpeg e a contenção de CPU. A troca para AMF e quatro workers em corte curto já não mostrou caminho para uma redução de 2×. Não fazer novo corte completo sem candidato que ataque a etapa crítica.

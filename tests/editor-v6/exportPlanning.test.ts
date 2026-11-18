@@ -83,15 +83,15 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('usa trechos de 150 quadros somente no modo isolado com quatro workers', () => {
+  it('mantém trechos de boca de 300 quadros no modo isolado com quatro workers', () => {
     const environment = { GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: '4' }
     const result = createEditorV6ExportExecutionPlan(
       createProject(600, [speechTrack()]), createOptions(), environment, 'win32'
     )
 
     expect(result.stressWorkerOverride).toBe('4')
-    expect(result.parts).toHaveLength(4)
-    expect(result.parts.every((part) => part.endFrame - part.startFrame === 150)).toBe(true)
+    expect(result.parts).toHaveLength(2)
+    expect(result.parts.every((part) => part.endFrame - part.startFrame === 300)).toBe(true)
   })
 
   it('ignora a variável de workers se o harness isolado não estiver habilitado', () => {

@@ -8,6 +8,7 @@ const fs = require('node:fs/promises')
 const path = require('node:path')
 
 const PROJECT_TITLE = 'Teste de Importação — Personagens do Pacote'
+const AUTHORIZED_PROJECT_IDS = new Set(['408a77d1-d964-4c04-a66b-f4e9fcfeee46'])
 
 async function inventory(source) {
   const entries = []
@@ -39,25 +40,35 @@ function sameInventory(left, right) {
 
 async function main() {
   const root = path.resolve(__dirname, '../..')
+  const requestedProjectId = process.argv.find((value) => value.startsWith('--project-id='))?.slice('--project-id='.length)
   const appData = path.join(root, 'app-data')
   const profile = path.join(appData, 'runtime', 'profile')
   const projectsRoot = path.join(profile, 'studios', 'Editor V6')
-  const projectMatches = []
-  for (const entry of await fs.readdir(projectsRoot, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !entry.name.startsWith('editorV6-')) continue
-    const candidate = path.join(projectsRoot, entry.name)
-    try {
-      const candidateManifest = JSON.parse(await fs.readFile(path.join(candidate, 'editorV6.json'), 'utf8'))
-      if (candidateManifest.title?.trim() === PROJECT_TITLE) projectMatches.push({ folder: candidate, manifest: candidateManifest })
-    } catch (error) {
-      if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+  let projectSource, manifest
+  if (requestedProjectId !== undefined) {
+    if (!AUTHORIZED_PROJECT_IDS.has(requestedProjectId)) throw Error('O ID solicitado não está na lista de projetos autorizados para cópia isolada.')
+    projectSource = path.join(projectsRoot, `editorV6-${requestedProjectId}`)
+    manifest = JSON.parse(await fs.readFile(path.join(projectSource, 'editorV6.json'), 'utf8'))
+    if (manifest.id !== requestedProjectId) throw Error('O manifesto não corresponde ao ID autorizado.')
+  } else {
+    const projectMatches = []
+    for (const entry of await fs.readdir(projectsRoot, { withFileTypes: true })) {
+      if (!entry.isDirectory() || !entry.name.startsWith('editorV6-')) continue
+      const candidate = path.join(projectsRoot, entry.name)
+      try {
+        const candidateManifest = JSON.parse(await fs.readFile(path.join(candidate, 'editorV6.json'), 'utf8'))
+        if (candidateManifest.title?.trim() === PROJECT_TITLE) projectMatches.push({ folder: candidate, manifest: candidateManifest })
+      } catch (error) {
+        if (error?.code !== 'ENOENT' && !(error instanceof SyntaxError)) throw error
+      }
     }
+    if (projectMatches.length !== 1) throw Error(`Esperava um único projeto autorizado "${PROJECT_TITLE}"; encontrados: ${projectMatches.length}.`)
+    ;({ folder: projectSource, manifest } = projectMatches[0])
   }
-  if (projectMatches.length !== 1) throw Error(`Esperava um único projeto autorizado "${PROJECT_TITLE}"; encontrados: ${projectMatches.length}.`)
-  const { folder: projectSource, manifest } = projectMatches[0]
   const sources = [
     ['project', projectSource],
     ['library', path.join(profile, 'studios', 'Editor Gacha', 'media-library')],
+    ['background-library', path.join(profile, 'studios', 'Editor Gacha', 'background-library')],
     ['characters', path.join(profile, 'customizer', 'characters', 'characters.json')],
     ['fabricator', path.join(profile, 'fabricator')]
   ]

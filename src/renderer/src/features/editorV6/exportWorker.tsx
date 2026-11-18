@@ -12,11 +12,21 @@ import { createEditorV6ExportWorkerSurface, createEditorV6SvgImageReadiness } fr
 
 const worker = (window as unknown as { editorV6ExportWorker: EditorV6WorkerBridge }).editorV6ExportWorker
 async function initialize() {
+  const exportDiagnosticWindow = window as unknown as {
+    __editorV6ExportDiagnosticStage?: string
+    __editorV6ExportDiagnosticAssets?: Array<{ index: number; state: string; mime: string; bytes: number }>
+  }
+  exportDiagnosticWindow.__editorV6ExportDiagnosticStage = 'worker-initialize'
   const { project, width, height, layeredVideo, singlePassLayers = false, nativeRenderer = false, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false, reuseRestHair = true } = await worker.payload()
   const surface = createEditorV6ExportWorkerSurface(width, height, layeredVideo && singlePassLayers)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
-  const { prepare: prepareFrameAssets } = createEditorV6ExportFrameAssetImageLoader(images)
+  const assetDecodeDiagnostics = new Map<number, { index: number; state: string; mime: string; bytes: number }>()
+  const { prepare: prepareFrameAssets } = createEditorV6ExportFrameAssetImageLoader(images, status => {
+    assetDecodeDiagnostics.set(status.index, status)
+    exportDiagnosticWindow.__editorV6ExportDiagnosticAssets = [...assetDecodeDiagnostics.values()]
+      .filter(asset => asset.state !== 'ready')
+  })
   const { onLoad: onSvgImageLoad, waitForImage: waitForSvgImage } = createEditorV6SvgImageReadiness()
   // The document catalog is immutable during this worker's lifetime. Keep its
   // composition index separate from the small durable atlas cache.
@@ -46,6 +56,7 @@ async function initialize() {
       return pending ? Promise.all(pending).then(() => undefined) : undefined
     },
     setPaintToken,
+    setDiagnosticStage: stage => { exportDiagnosticWindow.__editorV6ExportDiagnosticStage = stage },
     // The main process checks paint-token pixels and retries stale readbacks.
     // Do not force a 60Hz display tick here unless explicitly benchmarking the
     // legacy path; otherwise the UI can be ready before the next vsync.

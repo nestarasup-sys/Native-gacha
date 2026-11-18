@@ -4,17 +4,20 @@ import { createEditorV6ExportFrameAssetImageLoader } from '../../src/renderer/sr
 afterEach(() => vi.unstubAllGlobals())
 
 function installImageFactory(behavior: 'load' | 'decode' | 'success' = 'success') {
-  const created: Array<{ src: string; decode: ReturnType<typeof vi.fn> }> = []
+  const created: Array<{ src: string; crossOrigin: string | null; crossOriginAtSource: string | null; decode: ReturnType<typeof vi.fn> }> = []
   class FakeImage {
     onload: GlobalEventHandlers['onload'] = null
     onerror: GlobalEventHandlers['onerror'] = null
     private source = ''
+    crossOrigin: string | null = null
+    crossOriginAtSource: string | null = null
     decode = vi.fn(() => behavior === 'decode' ? Promise.reject(Error('decode failed')) : Promise.resolve())
 
     constructor() { created.push(this) }
     get src() { return this.source }
     set src(value: string) {
       this.source = value
+      this.crossOriginAtSource = this.crossOrigin
       queueMicrotask(() => {
         if (behavior === 'load') (this.onerror as ((event: Event) => void) | null)?.(new Event('error'))
         else (this.onload as ((event: Event) => void) | null)?.(new Event('load'))
@@ -36,6 +39,28 @@ describe('createEditorV6ExportFrameAssetImageLoader', () => {
     expect(created).toHaveLength(4)
     await prepared
     expect(created).toHaveLength(5)
+  })
+  it('reports only pending asset decode counts and MIME/byte metadata, without asset IDs', async () => {
+    installImageFactory()
+    const diagnostics: unknown[] = []
+    const loader = createEditorV6ExportFrameAssetImageLoader(new Map(), status => diagnostics.push(status))
+
+    await loader.prepare([asset('private-id')])
+
+    expect(diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({ index: 0, state: 'loading', mime: 'image/png' }),
+      expect.objectContaining({ index: 0, state: 'decoding', mime: 'image/png' }),
+      expect.objectContaining({ index: 0, state: 'ready', mime: 'image/png' })
+    ]))
+    expect(JSON.stringify(diagnostics)).not.toContain('private-id')
+  })
+  it('loads scoped project media URLs with CORS enabled before assigning src', async () => {
+    const created = installImageFactory()
+    const loader = createEditorV6ExportFrameAssetImageLoader(new Map())
+
+    await loader.prepare([{ id: 'asset-id', name: 'Asset', dataUrl: 'gacha-editor-media://project/asset' }])
+
+    expect(created[0]).toMatchObject({ crossOrigin: 'anonymous', crossOriginAtSource: 'anonymous' })
   })
   it('reuses decoded promises for repeated assets', async () => {
     const created = installImageFactory()

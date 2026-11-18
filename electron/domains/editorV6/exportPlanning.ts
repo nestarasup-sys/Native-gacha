@@ -34,9 +34,9 @@ export function createEditorV6ExportExecutionPlan(
   const stressWorkerOverride = environment.GACHA_VIDEO_STRESS_OFFSCREEN === '1'
     ? environment.GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS
     : undefined
-  // Four stress renderers need 150-frame mouth-loop windows to expose all lanes
-  // during short harness runs; authored timeline frames stay unchanged.
-  const mouthLoopBatchFrames = stressWorkerOverride === '4' ? Math.floor(EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES / 2) : EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES
+  // Worker count changes concurrency only. Keep mouth atlas windows identical
+  // so worker A/B runs compare the same preparation and timeline boundaries.
+  const mouthLoopBatchFrames = EDITOR_V6_MOUTH_LOOP_BATCH_FRAMES
   const requestedParts = planEditorV6Export(options, project.timeline.durationFrames)
   const speechInRange = hasLinkedSpeech(project, options.startFrame, options.endFrame)
   const parts = options.mouthLoop !== false && speechInRange ? splitEditorV6ExportParts(requestedParts, mouthLoopBatchFrames) : requestedParts

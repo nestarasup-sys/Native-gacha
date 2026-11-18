@@ -42,6 +42,7 @@ type Options = {
   waitForSvgImages: () => Promise<void> | undefined
   setPaintToken: (token: number) => void
   waitForPaintFrame: () => Promise<void>
+  setDiagnosticStage?: (stage: string) => void
   now?: () => number
 }
 
@@ -49,7 +50,8 @@ type Options = {
 export function createEditorV6ExportFrameRenderer(options: Options) {
   const {
     project, width, height, layeredVideo, nativeRenderer = false, hairAnimation, projectAssetIndex, assetsById,
-    hairRuntime, prepareAssets, commitSurface, onImageLoad, waitForSvgImages, setPaintToken, waitForPaintFrame
+    hairRuntime, prepareAssets, commitSurface, onImageLoad, waitForSvgImages, setPaintToken, waitForPaintFrame,
+    setDiagnosticStage = () => undefined
   } = options
   const now = options.now ?? (() => performance.now())
   const frameReuse = createEditorV6ExportFrameReuseState()
@@ -63,6 +65,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     const timings: EditorV6FrameTimings = {}
     const metrics: EditorV6FrameMetrics = {}
     const resolutionStarted = now()
+    setDiagnosticStage(`scene-resolution:${frame}`)
     // Layered captures of one frame share the cached, unmodified timeline scene.
     const rawScene = hairRuntime.resolveRawSceneAtFrame(frame)
     const scene = hairRuntime.applyMouthLoop(rawScene, frame)
@@ -80,6 +83,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
 
     const faceCompositionStarted = now()
+    setDiagnosticStage(`face-composition:${frame}`)
     let originalElements = EMPTY_ORIGINAL_ELEMENTS
     let hasRiggedMouthPatch = false
     if (activeHair) {
@@ -104,12 +108,14 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     // Keep them in this frame's registry only: sceneFaceComposition has its own
     // bounded cache, and promoting evicted PNGs would retain them for the export.
     const { current: renderAssetsById, resolve: resolveFrameAsset } = createEditorV6FrameAssetRegistry(assetsById, composed.assets)
+    setDiagnosticStage(`hair-composition:${frame}`)
     const { renderScene, rasterCanvases } = hairRuntime.composeHairScene({
       composedScene: composed.scene, originalElements, frame, activeHair, riggedElementIds: riggedIds, assetsById, renderAssetsById,
       hairSurfaceDataById: hairRuntime.hairSurfaceDataById, timings, metrics
     })
     // Pass only assets referenced by this layer/frame instead of rebuilding the whole catalog.
     const renderAssets = selectEditorV6RenderableAssets(renderScene, activeLayer ?? 'all', resolveFrameAsset)
+    setDiagnosticStage(`asset-selection:${frame}`)
     if (nativeRenderer) {
       const nativePlanStarted = now()
       const nativeFrame = await createEditorV6NativeFramePlan({
@@ -127,10 +133,12 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
       return { reused: false, nativeFrame, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
     }
     const assetPreparationStarted = now()
+    setDiagnosticStage(`asset-decode:${frame}`)
     await prepareAssets(renderAssets)
     timings.assetPreparationMs = now() - assetPreparationStarted
 
     const reactCommitStarted = now()
+    setDiagnosticStage(`react-commit:${frame}`)
     commitSurface({
       scene: renderScene, assets: renderAssets, resolveAssetById: resolveFrameAsset, outputWidth: width, outputHeight: height,
       renderLayer: layer === 'stacked' ? 'stacked' : activeLayer ?? 'all', onImageLoad, rasterCanvases
@@ -138,14 +146,17 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     timings.reactCommitMs = now() - reactCommitStarted
 
     const svgImageDecodeStarted = now()
+    setDiagnosticStage(`svg-image-decode:${frame}`)
     const pendingSvgImages = waitForSvgImages()
     if (pendingSvgImages) await pendingSvgImages
     timings.assetPreparationMs = (timings.assetPreparationMs ?? 0) + now() - svgImageDecodeStarted
     setPaintToken(paintToken)
     const rafStarted = now()
+    setDiagnosticStage(`paint-handoff:${frame}`)
     await waitForPaintFrame()
     timings.rafWaitMs = now() - rafStarted
     frameReuse.recordRendered(key, layerKeys, activeLayer)
+    setDiagnosticStage(`frame-ready:${frame}`)
     return { reused: false, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
   }
 }
