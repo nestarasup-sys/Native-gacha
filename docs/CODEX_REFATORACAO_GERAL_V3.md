@@ -14,7 +14,7 @@ Leia obrigatoriamente, antes de editar:
 - **docs/architecture/PROGRAMA_REFATORACAO_GERAL_NATIVE_GACHA.md**.
 - **docs/architecture/PROGRAMA_REFATORACAO_GERAL_V2_NATIVE_GACHA.md**.
 - **docs/architecture/ADR-001-modular-electron.md**, **ADR-002-fluxo-personagens.md** e **CHARACTER_PRODUCTION_CONTRACT.md**.
-- **docs/editor-v6/EXPORTACAO.md**, incluindo a seção sobre defeitos experimentais de cabelo.
+- **docs/lixo/editor-v6/EXPORTACAO.md**, incluindo a seção sobre defeitos experimentais de cabelo.
 - Contratos, testes, código e documentação dos outros módulos afetados.
 
 Desde a baseline V2 houve **71 commits** publicados até o SHA de referência: V2 de Logs Dev, extrações de Fabricador, sistemas de juntas/corpo, roupas, chroma, espelhamento, sapatos, ajustes de rosto no V6 e o novo motor de animação de cabelo. Não confunda as verificações executadas *antes* dessas mudanças com aprovação de tudo que veio depois.
@@ -277,7 +277,7 @@ Não marcar “concluído” se a CI hospedada ainda não foi executada, se imag
 
 Preserve o histórico de:
 - **docs/architecture/PROGRAMA_REFATORACAO_GERAL_V2_NATIVE_GACHA.md**
-- **docs/editor-v6/EXPORTACAO.md**
+- **docs/lixo/editor-v6/EXPORTACAO.md**
 
 Crie um **único** relatório conciso de progresso da V3 em **docs/architecture/PROGRAMA_REFATORACAO_GERAL_V3_NATIVE_GACHA.md**, sem copiar a V1/V2 inteira.
 

@@ -47,7 +47,7 @@ Consulte os scripts efetivamente disponíveis em `package.json`; escolha testes 
 - `tests/`: testes de domínio, contratos, regressão e verificações de render/export.
 - `scripts/`: gates de arquitetura, diagnósticos, benchmarks e harnesses autorizados.
 - `docs/architecture/`: ADRs e histórico de decisões arquiteturais.
-- `docs/editor-v6/`, `docs/EDITOR V6 MES 11/texto.md`: arquitetura, evolução, medições e plano vivo do V6.
+- `docs/editor-v6/atual/README.md`, `docs/lixo/editor-v6/origens-externas/EDITOR V6 MES 11/texto.md`: arquitetura, evolução, medições e plano vivo do V6.
 - `docs/editor-v7/EDITOR_V7.md`: pesquisa, estado, critérios e decisões provisórias do V7.
 
 Propriedade de dados: Fabricador é dono do catálogo-fonte; Customizador é dono da instância/personagem e personalizações; Studio é dono da cena/documento próprio; Editor V6 é dono do projeto/timeline V6. Consumidores devem ligar dados por IDs e contratos estáveis, sem copiar catálogos ou importar detalhes internos de outra feature.
@@ -70,7 +70,7 @@ Propriedade de dados: Fabricador é dono do catálogo-fonte; Customizador é don
 - O agendador usa 250 ms e sete amostras a 30 FPS. A transição de `test` existe e parece gradual nos quadros extraídos, mas sua curta duração pode ser percebida como abrupta. Não foi confirmada uma falha geral do scheduler.
 - Aumento vertical rápido durante algumas animações: causa **não reproduzida/confirmada**. Nos cinco pares de pose do documento, altura salva varia no máximo ~0,53% entre endpoints; escala do personagem e escala vertical explícita permanecem iguais. O bake usa recortes alfa dos endpoints e recortes das amostras intermediárias. Variação da silhueta é uma hipótese, ainda não evidência causal.
 - Defeitos A/B/C de animação dinâmica de cabelo: inspeção anterior é limitada, mas esta frente está suspensa pelo usuário. A aparência estática do cabelo continua parte da qualidade visual básica e deve permanecer preservada.
-- Notas e logs: `docs/EDITOR V6 MES 11/texto.md`, especialmente as seções finais sobre protocolo de benchmark e a investigação visual de 05/11/2026.
+- Notas e logs: `docs/lixo/editor-v6/origens-externas/EDITOR V6 MES 11/texto.md`, especialmente as seções finais sobre protocolo de benchmark e a investigação visual de 05/11/2026.
 
 ### Prioridade atual do usuário (05/11/2026)
 
@@ -110,7 +110,7 @@ Primeira validação básica sem cabelo dinâmico: quadros 443–922 (480 quadro
 
 - Código e histórico completo: https://github.com/nestarasup-sys/Native-gacha/tree/Dev-V2
 - Commit de referência deste pacote: https://github.com/nestarasup-sys/Native-gacha/commit/2b559233
-- Protocolo V6 e métricas: `docs/EDITOR V6 MES 11/texto.md`
-- Arquitetura V6: `docs/editor-v6/ARQUITETURA_E_INTEGRACAO.md`
-- Exportação V6: `docs/editor-v6/EXPORTACAO.md`
+- Protocolo V6 e métricas: `docs/lixo/editor-v6/origens-externas/EDITOR V6 MES 11/texto.md`
+- Arquitetura V6: `docs/lixo/editor-v6/ARQUITETURA_E_INTEGRACAO.md`
+- Exportação V6: `docs/lixo/editor-v6/EXPORTACAO.md`
 - Pesquisa/estado V7: `docs/editor-v7/EDITOR_V7.md`
