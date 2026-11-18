@@ -50,6 +50,9 @@ export function createEditorV6ExportExecutionPlan(
   if (stressWorkerOverride !== undefined && (!options.turbo || !/^([2-4])$/.test(stressWorkerOverride))) {
     throw Error('O benchmark isolado do Editor V6 aceita de 2 a 4 renderizadores Turbo.')
   }
+  if (stressWorkerOverride !== undefined && Number(stressWorkerOverride) > parts.length) {
+    throw Error(`O benchmark pediu ${stressWorkerOverride} renderizadores, mas o plano contém apenas ${parts.length} trechos. Reduza --mouth-batch-frames ou use menos renderizadores.`)
+  }
   if (platform !== 'win32') throw Error('Este exportador BGRA está preparado para Windows.')
   return { options, testSettings, requestedParts, parts, speechInRange, mouthLoopBatchFrames, ...(stressWorkerOverride !== undefined ? { stressWorkerOverride } : {}) }
 }

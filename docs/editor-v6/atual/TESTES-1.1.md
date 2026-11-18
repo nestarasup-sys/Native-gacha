@@ -44,3 +44,11 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - O comparador mostra revisão e dirty e impede comparar click→validado com soma estimada de fases. Use `--allow-mouth-batch-change` só quando aceitar explicitamente essa diferença de planejamento.
 - `analyze-export-performance.cjs` agora entende o agregado do harness e mostra tempo total com sua base, main, preparação, somas de worker, memória/CPU por processo, capturas e detalhe por parte. As somas paralelas são explicitamente rotuladas como sobrepostas.
 - Comparação curta de motion bake: concurrency 2→3 levou 44,318→45,151 s e passou a validação dos 1.200 quadros, áudio e emenda. Não é candidata para promoção.
+
+## Rodada — encoder, captura e workers
+
+- `tests/editor-v6/exportPlanning.test.ts`: garante que o harness recuse quatro workers com apenas dois trechos e aceite quatro trechos de 300 quadros. `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportPlanning.test.ts`: 13 testes passaram.
+- `npm run typecheck` e `npm run build` passaram após o ajuste. O comparador `tests/editor-v6/compareRunReports.test.cjs` também deve ser executado pelo runner Node (`node --test ...`), pois Vitest não descobre `.cjs` nessa configuração.
+- Quatro execuções curtas (duas por perfil) 4×300 vs 2×300 validaram 1.200 quadros H.264 1080p/30, AAC, emendas 300/600/900 e limpeza. Medianas: 43,857/46,951 s, −6,6%. Picos GPU ~1,27/0,95 GiB; a amostra ainda não autoriza mudança do padrão.
+- Reencode offline 40 s: Media Foundation 3,70 s, OpenH264 7,06 s; SSIM/PSNR quase iguais. Export real completo curto: 44,282/44,318 s, sem ganho de parede. Não promover encoder com base no microteste.
+- Captura `paint-event`: falhou por timeout com token em 63,79 s; não produziu MP4. O relatório de falha é evidência negativa, não aprovação de captura alternativa.

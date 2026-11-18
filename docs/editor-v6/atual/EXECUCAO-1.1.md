@@ -63,3 +63,13 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - A/B curto de concorrência de bake, 1.200 quadros, 2 workers de render, batch 600: concurrency 2 terminou em 44,318 s; concurrency 3 em 45,151 s (+0,833 s). Preparação subiu de 12,360 para 12,745 s e render de 22,724 para 23,364 s. Amostra única, sem ganho; não elevar a concorrência padrão.
 - Saídas: `out/editor-v6-stress/runs/actual-project-2026-11-18T09-06-07-709Z-16536/` (600), `.../actual-project-2026-11-18T09-22-59-852Z-4064/` (1.200) e falha C++ `.../actual-project-2026-11-18T09-27-48-073Z-20044/native-renderer-failure.report.json`. As duas execuções válidas ficaram só com MP4 e relatório; a falha, só com o relatório.
 - Decisão: não mudar o tamanho padrão. A próxima hipótese deve reduzir custo no renderer/captura ou bytes BGRA sem alterar pixels. Mais tuning de tamanho de trecho não tem sinal para reduzir 55% do tempo. Consulte [Pesquisa 1.1](PESQUISA-1.1.md).
+
+## Rodada — encoder Media Foundation e concorrência real
+
+- A captura experimental `paint-event` terminou sem quadro válido: o worker esperou 63,79 s e expirou em `aguardar quadro paint com token`. O relatório foi preservado como `paint-event-failure.report.json`; essa estratégia permanece desativada.
+- Reencodei offline 40 s do MP4 já validado: `h264_mf` levou 3,70 s e `libopenh264` 7,06 s. SSIM/PSNR contra a origem comprimida foram 0,997073/48,52 dB e 0,996593/47,89 dB. Isso mede apenas o encoder, não a captura.
+- No export real isolado de 40 s, `h264_mf` levou 44,282 s e OpenH264 44,318 s. O empate confirma que encoder não reduz o tempo de parede neste perfil; não alterei a seleção de produção.
+- Uma tentativa de quatro workers usou lotes de 600: havia só dois trechos e o export executou com paralelismo 2. Corrigi o plano para recusar workers em número maior que trechos disponíveis. O relatório foi retido para auditoria, mas não conta como teste de quatro workers.
+- Com lotes de 300 e quatro partes, dois pares curtos deram medianas de 46,951 s (2 workers) e 43,857 s (4), ganho de 6,6%. Em cada execução passaram 1.200 quadros 1080p/30, áudio, três emendas e limpeza. É um sinal reproduzido, ainda longe da meta de 90 s.
+- Quatro workers elevaram o pico do processo GPU de cerca de 0,95 GiB para 1,27 GiB (+0,3 GiB). Os picos dos demais processos variaram bastante entre rodadas; confirmar memória numa execução longa.
+- Próximo passo: medir 4 contra 6 workers no mesmo lote e corte curto; só depois considerar 6.000 quadros. Não misturar amostras de tamanho de lote diferente.

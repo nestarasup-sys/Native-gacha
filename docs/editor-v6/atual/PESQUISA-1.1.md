@@ -61,3 +61,11 @@ O relatório de 21.914 quadros de hoje tem outro intervalo e não serve sozinho 
 - Perfil exato ainda não verificável contra o relatório antigo: o fingerprint do cabelo não estava nele. Os dois novos candidatos usaram o mesmo preset de laboratório 2, fingerprint `2a0f0859...`; revisão/dirty aparecem no relatório de 1.200, mas faltam no relatório de 600.
 - Um corte pareado de 40 s com bake concurrency 2/3 não indicou ganho: 44,318/45,151 s. O terceiro bake aumentou preparação e render por frações pequenas; manter 2 até uma amostra maior contradizer o resultado.
 - Melhor oportunidade continua sendo reduzir custo de frame/captura e bytes transferidos sem mudar pixels. Medir roundtrip, captura, escrita FFmpeg, BGRA total e RSS/GPU. A meta 90 s exige aceleração de aproximadamente 2,23× sobre o melhor corte medido.
+
+## Experimentos adicionais — 18/11
+
+- `h264_mf` codifica uma fonte já renderizada 1,9× mais rápido que OpenH264 em 40 s e preserva SSIM/PSNR no trecho. Ao recolocar o encoder no export integral curto, a parede ficou praticamente idêntica: 44,282 s contra 44,318 s. A codificação acelera isoladamente, mas está escondida pelo custo de renderizar/capturar; não é alavanca do tempo total.
+- O experimento `paint-event` foi inválido operacionalmente: houve timeout por falta do token exato em 63,79 s. O teste R36 também documenta que callbacks podem ser coalescidos. Não usar esse modo para produção até existir transporte de quadro com token e paridade demonstrada.
+- Com 1.200 quadros, duas partes de 600 não permitem quatro processos concorrentes. O harness reportava quatro como solicitado sem comprovar paralelismo efetivo; agora o plano rejeita `workers > parts`. Em quatro partes de 300, dois pares deram medianas 46,951 s para dois workers e 43,857 s para quatro (−6,6%). Quadros, áudio, três emendas e limpeza passaram nos quatro exports.
+- Quatro workers usaram cerca de 0,3 GiB a mais de pico GPU (1,27 contra 0,95 GiB); memória principal variou entre rodadas. A mudança não foi promovida. A próxima triagem compara 4/6 no mesmo lote, antes de uma execução completa.
+- Para o corte de 200 s, o padrão de produção continua dois workers/lotes 300. O ganho mediano curto projetaria ~13 s sobre 201 s, ainda longe da meta; é necessário otimizar captura e custos antes dela.

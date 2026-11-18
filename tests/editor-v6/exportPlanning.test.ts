@@ -83,14 +83,25 @@ describe('planejamento da exportação do Editor V6', () => {
     expect(result.parts).toEqual(result.requestedParts)
   })
 
-  it('mantém trechos de boca de 300 quadros no modo isolado com quatro workers', () => {
+  it('recusa comparar quatro workers quando só existem dois trechos disponíveis', () => {
     const environment = { GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: '4' }
+
+    expect(() => createEditorV6ExportExecutionPlan(createProject(600, [speechTrack()]), createOptions(), environment, 'win32'))
+      .toThrow('o plano contém apenas 2 trechos')
+  })
+
+  it('planeja quatro trechos quando o harness solicita quatro workers', () => {
+    const environment = {
+      GACHA_VIDEO_STRESS_OFFSCREEN: '1', GACHA_EDITOR_V6_STRESS_EXPORT_WORKERS: '4',
+      GACHA_EDITOR_V6_STRESS_MOUTH_BATCH_FRAMES: '300'
+    }
     const result = createEditorV6ExportExecutionPlan(
-      createProject(600, [speechTrack()]), createOptions(), environment, 'win32'
+      createProject(1200, [speechTrack({ blocks: [{ characterId: 'character-synthetic', startFrame: 0, durationFrames: 1200 }] })]),
+      createOptions({ endFrame: 1200 }), environment, 'win32'
     )
 
     expect(result.stressWorkerOverride).toBe('4')
-    expect(result.parts).toHaveLength(2)
+    expect(result.parts).toHaveLength(4)
     expect(result.parts.every((part) => part.endFrame - part.startFrame === 300)).toBe(true)
   })
 

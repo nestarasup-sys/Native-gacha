@@ -153,6 +153,15 @@ test('requires explicit permission in the comparison when motion bake concurrenc
   assert.equal(compare(reference, candidate, { allowMotionConcurrencyChange: true }).comparable, true)
 })
 
+test('requires explicit permission when capture strategy differs', () => {
+  const reference = report()
+  const candidate = report()
+  reference.exportTestSettings = { captureMode: 'capturePage' }
+  candidate.exportTestSettings = { captureMode: 'paint-event' }
+  assert.equal(compare(reference, candidate).comparable, false)
+  assert.equal(compare(reference, candidate, { allowCaptureStrategyChange: true }).comparable, true)
+})
+
 test('analyzes the benchmark aggregate and keeps click wall time separate from worker sums', () => {
   const analyzed = analyzeEditorV6ExportReport({
     passed: true, projectId: 'project-fixture', sourceRevision: 'sha-fixture', workingTreeDirty: true, captureMode: 'capturePage',
