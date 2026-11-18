@@ -19,6 +19,8 @@ O código e os relatórios da execução são as fontes de verdade. O [arquivo h
 
 No perfil padrão sem simplificação, a exportação serial levou **163,760 s** para 200 s de vídeo, usando quatro workers CPU. Validou 6.000 quadros 1080p/30, H.264/AAC, nove emendas e limpeza. O A/B pareado stacked → serial reduziu o corte de 179,261 s para 162,689 s (−9,25%); a diferença entre medições reforça a variação entre execuções. O relatório mostra captura/roundtrip e escrita FFmpeg como o principal custo restante; a meta de 90 s não foi atingida. Nenhum teste C++ foi executado. Veja [Pesquisa 1.1](PESQUISA-1.1.md) e [Execução 1.1](EXECUCAO-1.1.md).
 
+O A/B curto no transporte de duas camadas separadas foi mais lento que o buffer combinado (+7,2%, uma amostra por lado). A tentativa foi removida; não usar o corte completo nela.
+
 ## Rotina para continuar sem supervisão
 
 1. Confira raiz, branch, commit e estado local. Leia o resultado mais recente da execução.
