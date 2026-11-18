@@ -62,8 +62,13 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     layer: 'background' | 'foreground' | 'stacked' | undefined,
     paintToken: number
   ): Promise<EditorV6RenderFrameResult> => {
+    const frameStarted = now()
     const timings: EditorV6FrameTimings = {}
     const metrics: EditorV6FrameMetrics = {}
+    const completeFrame = (result: Omit<EditorV6RenderFrameResult, 'timings'>): EditorV6RenderFrameResult => {
+      timings.rendererFrameWorkMs = now() - frameStarted
+      return { ...result, timings }
+    }
     const resolutionStarted = now()
     setDiagnosticStage(`scene-resolution:${frame}`)
     // Layered captures of one frame share the cached, unmodified timeline scene.
@@ -79,8 +84,8 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     // DOM paint. Frame reuse is evaluated for both layers together.
     timings.sceneResolutionMs = now() - resolutionStarted
     const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
-    if (reuseDecision === 'frame') return { reused: true, timings }
-    if (reuseDecision === 'background' || reuseDecision === 'foreground') return { reused: false, layerReused: true, timings }
+    if (reuseDecision === 'frame') return completeFrame({ reused: true })
+    if (reuseDecision === 'background' || reuseDecision === 'foreground') return completeFrame({ reused: false, layerReused: true })
 
     const faceCompositionStarted = now()
     setDiagnosticStage(`face-composition:${frame}`)
@@ -130,7 +135,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
       })
       timings.nativePlanMs = now() - nativePlanStarted
       frameReuse.recordRendered(key, layerKeys, activeLayer)
-      return { reused: false, nativeFrame, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
+      return completeFrame({ reused: false, nativeFrame, ...(Object.keys(metrics).length ? { metrics } : {}) })
     }
     const assetPreparationStarted = now()
     setDiagnosticStage(`asset-decode:${frame}`)
@@ -157,6 +162,6 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     timings.rafWaitMs = now() - rafStarted
     frameReuse.recordRendered(key, layerKeys, activeLayer)
     setDiagnosticStage(`frame-ready:${frame}`)
-    return { reused: false, timings, ...(Object.keys(metrics).length ? { metrics } : {}) }
+    return completeFrame({ reused: false, ...(Object.keys(metrics).length ? { metrics } : {}) })
   }
 }

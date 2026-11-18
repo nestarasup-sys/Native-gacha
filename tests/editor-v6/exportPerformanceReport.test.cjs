@@ -53,3 +53,35 @@ test('rejects malformed reports and keeps absent timings explicitly unmeasured',
   assert.equal(summary.wallMilliseconds, null)
   assert.equal(summary.realTimeFactor, null)
 })
+
+test('separa execução dentro do renderer, subfases medidas e espera restante do executeJavaScript', () => {
+  const summary = analyzeEditorV6ExportReport({
+    totalFrames: 30, fps: 30, state: 'completed',
+    attempts: [{ parts: [{ frameTiming: {
+      rendererFrameWorkMs: { totalMs: 1000, samples: 10 },
+      ipcDrawMs: { totalMs: 1500, samples: 10 },
+      sceneResolutionMs: { totalMs: 100, samples: 10 },
+      faceCompositionMs: { totalMs: 50, samples: 2 }
+    } }] }]
+  })
+
+  assert.deepEqual(summary.rendererFrameWork, {
+    rendererFrameWorkMs: 1000,
+    ipcDrawMs: 1500,
+    instrumentedFrameWorkMs: 150,
+    unclassifiedRendererFrameWorkMs: 850,
+    executeJavaScriptRemainderMs: 500,
+    rendererFrameSamples: 10,
+    ipcDrawSamples: 10
+  })
+  assert.match(formatAnalysis(summary), /trabalho interno ainda sem subfase 0\.85 s/)
+  assert.match(formatAnalysis(summary), /resíduo de ida\/volta executeJavaScript ≈0\.50 s/)
+})
+
+test('preserva o transporte de quadro informado pelo benchmark', () => {
+  const summary = analyzeEditorV6ExportReport({
+    totalFrames: 1, fps: 30, state: 'completed', frameTransport: 'worker-ipc', attempts: []
+  })
+  assert.equal(summary.frameTransport, 'worker-ipc')
+  assert.match(formatAnalysis(summary), /Transporte de quadro: worker-ipc/)
+})

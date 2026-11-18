@@ -148,3 +148,11 @@ Um yield de event loop em 40 s terminou em 40,248 s contra 40,631 s no controle,
 - O caminho existente `paint-event` no mesmo corte levou 40,020 s. A renderização ficou virtualmente igual (20,723 vs. 20,750 s); preparação variou 0,837 s para baixo. A soma `paintWait` foi 11,829 s contra 12,016 s de `capturePage`, mas bitmap e escrita FFmpeg subiram. O delta total de 0,611 s não prova aceleração: A/B anterior de 200 s piorou com `paint-event` e já havia comparação pixel a pixel.
 - Decisão: nenhum candidato altera o export padrão. Trocar a API de captura não resolveu o tempo total; `ipcDraw`/roundtrip, leitura/cópia e backpressure seguem como medidas correlacionadas. Próxima rodada deve instrumentar e reduzir trabalho sustentado dentro do desenho/renderer, sem eliminar animações, trocar a qualidade ou mudar para C++.
 - Relatórios isolados: `out/editor-v6-stress/runs/standard-variable-frame-40s-2026-11-18/` e `out/editor-v6-stress/runs/standard-paint-event-40s-2026-11-18/`. Nenhum MP4 de teste foi retido.
+
+## Transporte do resultado do renderer
+
+No relatório padrão de 80 s, a função renderer somou 10,62 s entre workers, quase todo o trabalho interno conhecido (10,46 s); `ipcDraw` somou 54,81 s. Subtrair renderer de `ipcDraw` deixa cerca de 44,19 s de resíduo associado ao caminho `executeJavaScript`, também somado e sobreposto. É uma pista de pesquisa, não prova de gargalo de parede.
+
+Uma tentativa curta substituiu a chamada JS por solicitação/resposta IPC. No perfil padrão completo de 40 s, o controle passou em 41,273 s e o candidato em 42,229 s (+2,3%). Os hashes amostrados dos quadros 0, 29 e 259 coincidiram; ambos validaram 1.200 quadros e a emenda. Sem ganho: rota por evento removida, sem export integral com ela.
+
+A próxima hipótese deve reduzir custo de captura/conversão ou backpressure de FFmpeg sem acrescentar roundtrip por quadro. Medir tempo de parede e validar as animações no perfil normal. A instrumentação do renderer permanece para distinguir execução interna de comunicação sem alterar o transporte de produção.

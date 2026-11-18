@@ -93,6 +93,7 @@ describe('createEditorV6ExportFrameRenderer', () => {
 
     const first = await renderFrame(10, undefined, 42)
     expect(first.reused).toBe(false)
+    expect(first.timings?.rendererFrameWorkMs).toBeGreaterThanOrEqual(first.timings?.sceneResolutionMs ?? 0)
     expect(commitSurface).toHaveBeenCalledWith(expect.objectContaining({
       scene: expect.objectContaining({ frame: 10 }), outputWidth: 1280, outputHeight: 720, renderLayer: 'all'
     }))
@@ -106,6 +107,7 @@ describe('createEditorV6ExportFrameRenderer', () => {
     operations.length = 0
     const reused = await renderFrame(10, undefined, 43)
     expect(reused).toMatchObject({ reused: true })
+    expect(reused.timings?.rendererFrameWorkMs).toBeGreaterThan(0)
     expect(operations).toEqual(['stage:scene-resolution:10'])
     expect(commitSurface).toHaveBeenCalledOnce()
   })

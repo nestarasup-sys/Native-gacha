@@ -84,3 +84,10 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - No candidato isolado de entrada PNG, typecheck, 9 testes focados, 5 testes do grafo FFmpeg, sintaxe do harness e build `electron-vite` passaram; o caminho candidate foi removido depois que o benchmark padrão de 40 s piorou de 40,631 para 60,422 s. Nenhum teste C++ foi executado.
 - O perfil `paint-event` validou um MP4 padrão de 40 s: 1.200 quadros, H.264/AAC, áudio, emenda no frame 600 e cleanup sem erros. O resultado de 40,020 s não é ganho conclusivo frente ao padrão; o teste integral anterior também foi mais lento. Não alterar a captura padrão.
 - Relatórios de cada execução estão em `out/editor-v6-stress/runs/standard-variable-frame-40s-2026-11-18/` e `out/editor-v6-stress/runs/standard-paint-event-40s-2026-11-18/`. Não foram retidos MP4s curtos.
+
+## Transporte do frame — 18/11
+
+- Perfil completo padrão, 40 s, 1080p/30, CPU OpenH264, duas partes/workers efetivos, boca, piscadas, transições, Preset 2 e áudio ativos: controle 41,273 s; transporte IPC experimental 42,229 s. Os dois relatórios passaram a validação de 1.200 quadros, áudio, duração, emenda e limpeza; hashes nos frames 0, 29 e 259 iguais. O candidato foi removido por +2,3% de tempo.
+- `npm run typecheck`: passou. `npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/exportFrameRenderer.test.ts`: 5 testes passaram. `node --test tests/editor-v6/exportPerformanceReport.test.cjs tests/editor-v6/compareRunReports.test.cjs`: 16 testes passaram.
+- `npx electron-vite build` passou, mas foi antes da remoção do transporte experimental. Repetir após a remoção para validar a versão final compilada. Não foi rodado C++.
+- Relatórios de controle e candidato em `out/editor-v6-stress/runs/standard-frame-ipc-control-40s-2026-11-18/` e `out/editor-v6-stress/runs/standard-frame-ipc-candidate-40s-2workers-2026-11-18/`.

@@ -21,7 +21,7 @@ function normalizeBenchmarkReport(report) {
     state: report.passed ? 'completed' : 'failed',
     totalFrames: run.totalFrames ?? report.durationFrames,
     fps: Number.parseInt(String(run.fps ?? report.fps), 10),
-    options: run.options ?? {},
+    options: { ...(run.options ?? {}), frameTransport: report.frameTransport ?? 'executeJavaScript' },
     milliseconds: run.mainExportWallMs ?? run.exportMilliseconds,
     clickToValidatedMilliseconds: run.clickToValidatedWallMs,
     hairPreparation: { totalMilliseconds: run.hairPreparationWallMs },
@@ -32,8 +32,33 @@ function normalizeBenchmarkReport(report) {
     validation: run.ffprobeValidation,
     cleanup: { errors: run.cleanupErrors ?? [] },
     processPeaks: run.processPeaks,
+    frameTransport: report.frameTransport,
     captureMode: report.captureMode,
     runtime: { buildSha: report.sourceRevision, workingTreeDirty: report.workingTreeDirty }
+  }
+}
+
+function summarizeRendererFrameWork(parts) {
+  const total = name => {
+    const values = parts.map(part => numberOrNull(part.frameTiming?.[name]?.totalMs)).filter(value => value !== null)
+    return values.length ? values.reduce((sum, value) => sum + value, 0) : null
+  }
+  const rendererFrameWorkMs = total('rendererFrameWorkMs')
+  const ipcDrawMs = total('ipcDrawMs')
+  const instrumentedStages = ['sceneResolutionMs', 'faceCompositionMs', 'hairCompositionMs', 'assetPreparationMs', 'reactCommitMs', 'rafWaitMs', 'nativePlanMs']
+    .map(total).filter(value => value !== null)
+  const instrumentedFrameWorkMs = instrumentedStages.length ? instrumentedStages.reduce((sum, value) => sum + value, 0) : null
+  const samples = name => parts.reduce((sum, part) => sum + (numberOrNull(part.frameTiming?.[name]?.samples) ?? 0), 0)
+  return rendererFrameWorkMs === null && ipcDrawMs === null ? null : {
+    rendererFrameWorkMs,
+    ipcDrawMs,
+    instrumentedFrameWorkMs,
+    unclassifiedRendererFrameWorkMs: rendererFrameWorkMs === null || instrumentedFrameWorkMs === null
+      ? null : Math.max(0, rendererFrameWorkMs - instrumentedFrameWorkMs),
+    executeJavaScriptRemainderMs: rendererFrameWorkMs === null || ipcDrawMs === null
+      ? null : Math.max(0, ipcDrawMs - rendererFrameWorkMs),
+    rendererFrameSamples: samples('rendererFrameWorkMs'),
+    ipcDrawSamples: samples('ipcDrawMs')
   }
 }
 
@@ -83,10 +108,12 @@ function analyzeEditorV6ExportReport(report) {
     motionPreparationMilliseconds: numberOrNull(report.motionPreparation?.milliseconds),
     phaseMilliseconds: phase,
     workerTimingTotalsMilliseconds,
+    rendererFrameWork: summarizeRendererFrameWork(parts),
     processPeaks: Array.isArray(report.processPeaks) ? report.processPeaks.map(item => ({
       role: item.role, peakWorkingSetBytes: item.peakWorkingSetBytes, peakCpuPercent: item.peakCpuPercent
     })) : [],
     captureMode: report.captureMode ?? null,
+    frameTransport: report.frameTransport ?? report.options?.frameTransport ?? null,
     validation: report.validation ?? null,
     metrics,
     parts: parts.map(part => ({
@@ -121,13 +148,17 @@ function formatAnalysis(result) {
     `Estado: ${result.state} · Encoder: ${result.encoder} · Quadros: ${result.totalFrames} (enviados: ${result.capturedFrames})`,
     `Duração: ${seconds(result.durationMilliseconds)} · Total: ${seconds(result.totalWithHairMilliseconds)} (${result.totalTimeBasis}) · Main: ${seconds(result.mainProcessMilliseconds)} · Cabelo: ${seconds(result.hairPreparationMilliseconds)}`,
     `Velocidade vs tempo real: ${result.realTimeFactor === null ? 'não medida' : result.realTimeFactor.toFixed(2) + 'x'} · Projeto: ${result.projectId ?? 'não informado'} · Revisão: ${result.sourceRevision ?? 'não informada'} · Dirty: ${result.workingTreeDirty ?? 'não informado'}`,
-    `Captura: ${result.captureMode ?? 'não informada'} · Picos do processo: ${result.processPeaks.map(item => `${item.role} ${gibibytes(item.peakWorkingSetBytes)}, CPU ${item.peakCpuPercent?.toFixed(0) ?? '?'}%`).join(' · ') || 'não medidos'}`,
+    `Captura: ${result.captureMode ?? 'não informada'} · Transporte de quadro: ${result.frameTransport ?? 'não informado'} · Picos do processo: ${result.processPeaks.map(item => `${item.role} ${gibibytes(item.peakWorkingSetBytes)}, CPU ${item.peakCpuPercent?.toFixed(0) ?? '?'}%`).join(' · ') || 'não medidos'}`,
     `Preparação de poses/expressões: ${seconds(result.motionPreparationMilliseconds)} · Fase de renderização: ${seconds(result.renderingMilliseconds)} · FPS efetivo (fase renderização): ${result.effectiveRenderFps === null ? 'não medido' : result.effectiveRenderFps.toFixed(1)}`,
     `Somas sobrepostas dos workers (não são tempo de parede): frame roundtrip ${seconds(result.workerTimingTotalsMilliseconds.frameRoundTripMs)} · capturePage ${seconds(result.workerTimingTotalsMilliseconds.capturePageMs)} · cópia BGRA ${seconds(result.workerTimingTotalsMilliseconds.captureBitmapMs)} · escrita FFmpeg ${seconds(result.workerTimingTotalsMilliseconds.ffmpegWriteMs)} · pipe descoberto ${seconds(result.workerTimingTotalsMilliseconds.ffmpegWriteUncoveredMs)}`,
     `Cabelo: ${result.metrics.hairRasterFrames} rasterizações, ${result.metrics.hairCompositeReuseFrames} recomposições evitadas; capturas antigas: ${result.metrics.captureStaleReadbacks}`
   ]
+  if (result.rendererFrameWork) {
+    const detail = result.rendererFrameWork
+    lines.push(`Renderer (somas de worker, sobrepostas): função ${seconds(detail.rendererFrameWorkMs)}; subfases instrumentadas ${seconds(detail.instrumentedFrameWorkMs)}; trabalho interno ainda sem subfase ${seconds(detail.unclassifiedRendererFrameWorkMs)}; resíduo de ida/volta executeJavaScript ≈${seconds(detail.executeJavaScriptRemainderMs)}; amostras renderer/IPC ${detail.rendererFrameSamples}/${detail.ipcDrawSamples}.`)
+  }
   for (const part of result.parts) {
-    const timings = ['frameRoundTripMs', 'rafWaitMs', 'capturePageMs', 'captureBitmapMs', 'ffmpegWriteMs', 'hairCompositionMs']
+    const timings = ['frameRoundTripMs', 'rendererFrameWorkMs', 'ipcDrawMs', 'rafWaitMs', 'capturePageMs', 'captureBitmapMs', 'ffmpegWriteMs', 'hairCompositionMs']
       .map(name => {
         const t = part.frameTiming[name]
         return t ? `${name}: p50 ${t.p50Ms}ms, p95 ${t.p95Ms}ms` : null
@@ -153,4 +184,4 @@ if (require.main === module) {
   main(process.argv.slice(2)).catch(error => { console.error(error.message); process.exitCode = 1 })
 }
 
-module.exports = { analyzeEditorV6ExportReport, compareEditorV6Exports, formatAnalysis, normalizeBenchmarkReport }
+module.exports = { analyzeEditorV6ExportReport, compareEditorV6Exports, formatAnalysis, normalizeBenchmarkReport, summarizeRendererFrameWork }
