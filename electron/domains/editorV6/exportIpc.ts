@@ -138,9 +138,9 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
         const snapshotMs = performance.now() - snapshotStarted
         const { assetSources, ...payloadData } = workerData
         const worker = await workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
-          // One paint/readback for both layers. Serial mode remains available
-          // for validation of pixel parity with the old layered compositor.
-          singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE !== 'serial',
+          // Separate 1080p readbacks avoid the tall 2160p surface on export.
+          // Keep the combined capture available for isolated A/B validation.
+          singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'stacked',
           nativeRenderer: options.nativeRenderer === true,
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
           reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',

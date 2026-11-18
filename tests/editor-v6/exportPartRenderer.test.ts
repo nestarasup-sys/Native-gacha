@@ -114,7 +114,7 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(result.frameLayerCapture).toBe('single')
   })
 
-  it('enables safe overlap for layered video but honors the serial A/B baseline', async () => {
+  it('uses serial layered capture by default and preserves the stacked A/B override', async () => {
     const process = mockProcess()
     vi.mocked(spawnExportProcess).mockReturnValue(process.value)
     vi.mocked(planEditorV6VideoOverlays).mockReturnValue([{
@@ -123,11 +123,11 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     }])
     const layered = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
     expect(layered.framePipelineOverlap).toBe(true)
-    expect(layered.frameLayerCapture).toBe('stacked')
+    expect(layered.frameLayerCapture).toBe('serial')
 
-    vi.stubEnv('GACHA_EDITOR_V6_LAYER_CAPTURE', 'serial')
-    const serial = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
-    expect(serial.frameLayerCapture).toBe('serial')
+    vi.stubEnv('GACHA_EDITOR_V6_LAYER_CAPTURE', 'stacked')
+    const stacked = await renderEditorV6ExportPart(createDependencies({ layeredVideo: true }))
+    expect(stacked.frameLayerCapture).toBe('stacked')
     vi.unstubAllEnvs()
 
     vi.stubEnv('GACHA_EDITOR_V6_FRAME_OVERLAP', '0')

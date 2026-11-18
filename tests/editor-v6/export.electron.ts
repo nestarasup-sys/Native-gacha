@@ -336,7 +336,7 @@ async function main() {
   const mediaOutput = join(folder, 'media-timeline.mp4')
   const mediaReport = await runEditorV6Export(mediaProject, { ...options, startFrame: 0, endFrame: 30 }, { ...base, id: randomUUID(), outputPath: mediaOutput, reportPath: join(folder, 'media-timeline.report.json'), audioPath: (clip) => join(folder, 'media', clip.fileName) })
   assert(!mediaReport.fallback && mediaReport.videoInputs === 1 && mediaReport.audioClips === 2, 'Mídias da timeline não chegaram ao exportador.')
-  assert(mediaReport.attempts[0].parts.map(part => part.frameLayerCapture).join(',') === 'stacked,single',
+  assert(mediaReport.attempts[0].parts.map(part => part.frameLayerCapture).join(',') === 'serial,single',
     'A emenda Turbo deve juntar um trecho com vídeo em camadas e outro em uma única camada.')
   const mediaRgb = run(['-i', mediaOutput, '-vf', "select='eq(n,0)+eq(n,10)'", '-fps_mode', 'passthrough', '-frames:v', '2', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const mediaFrameBytes = 320 * 180 * 3
@@ -658,8 +658,7 @@ async function main() {
       const outputPath = join(folder, `layer-capture-${mode}-${repetition}.mp4`)
       const reportPath = join(folder, `layer-capture-${mode}-${repetition}.report.json`)
       const previousMode = process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
-      if (mode === 'serial') process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = 'serial'
-      else delete process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
+      process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = mode
       const startedAt = performance.now()
       let profile: EditorV6ExportReport
       try {

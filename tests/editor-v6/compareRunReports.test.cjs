@@ -164,6 +164,20 @@ test('requires explicit permission when capture strategy differs', () => {
   assert.equal(compare(reference, candidate, { allowCaptureStrategyChange: true }).comparable, true)
 })
 
+test('records layered capture strategy and requires explicit permission for a serial versus stacked comparison', () => {
+  const reference = report()
+  const candidate = report()
+  reference.attempts[0].parts[0].frameLayerCapture = 'single'
+  reference.attempts[0].parts[1].frameLayerCapture = 'stacked'
+  candidate.attempts[0].parts[0].frameLayerCapture = 'single'
+  candidate.attempts[0].parts[1].frameLayerCapture = 'serial'
+  assert.equal(compare(reference, candidate).comparable, false)
+  const result = compare(reference, candidate, { allowLayerCaptureChange: true })
+  assert.equal(result.comparable, true)
+  assert.equal(result.reference.options.layerCaptureStrategy, 'single+stacked')
+  assert.equal(result.candidate.options.layerCaptureStrategy, 'serial+single')
+})
+
 test('requires an explicit comparator flag when the isolated encoder thread cap changes', () => {
   const reference = report()
   const candidate = report()

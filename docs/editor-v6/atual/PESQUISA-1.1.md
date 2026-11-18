@@ -70,6 +70,7 @@ O relatório de 21.914 quadros de hoje tem outro intervalo e não serve sozinho 
 - Com a evidência combinada, 600 passou a ser o padrão. 1.200 segue rejeitado por desempenho. Nenhum material de exportação é reutilizado entre jobs.
 - A fase de render ainda consome 125,563 s, acima do alvo total de 90 s. No relatório completo, as somas de worker foram 119,86 s em `capturePage`, 20,89 s em conversão BGRA e 200,99 s em escrita FFmpeg; são medidas sobrepostas, não parede. Resolução da cena (272 ms somados), face (8 ms) e commit React (175 ms) não justificam otimização neste momento.
 - Um teste `ffconcat` sintético reproduziu exatamente 3/2/4 quadros repetidos apenas com `option framerate 30`; sem taxa explícita quantizou 4/1/4. Rejeitado para produção porque não reduz a quantidade de quadros CFR que o H.264 precisa emitir e depende de timestamp/arquivos temporários sem benefício observado.
+
 - O scan de chaves visuais para emitir vários quadros repetidos em uma chamada reduziu trabalho IPC em partes, mas no corte completo ficou 194,773 s contra 194,502 s no controle de lote 300. Rejeitado e removido do código: simplificar chamadas sem reduzir captura nem escrita não acelerou a exportação.
 - `paint-event` inicialmente expirou sem localizar o token. Corrigi a leitura de padding e a amostra de 40 s passou, mas levou 46,078 s contra 42,632 s no controle de captura padrão. A correção experimental também foi removida; manter `capturePage` como captura padrão.
 - Próxima hipótese deve evitar a leitura integral por `capturePage` ou reduzir de forma verificável o custo de codificação/cópia de quadros. Começar por fixture e paridade pixel a pixel. Captura `paint-event`, encoder Media Foundation, mais workers, retry de 8 ms e concat não deram ganho robusto.
@@ -81,3 +82,19 @@ O relatório de 21.914 quadros de hoje tem outro intervalo e não serve sozinho 
 - Renderização: 145,97/130,30/128,22 s. Preparação global: 45,93/45,11/45,70 s. Os seis workers ganharam apenas 1,65 s sobre quatro, com pico GPU ~1,49 contra ~1,20 GiB. Decisão: Turbo CPU = quatro; encoder GPU = dois. O texto visual não anuncia fator “2×”.
 - A soma de bake de boca por worker cresceu de 25,02 para 84,44 e 155,84 s; não é parede e se sobrepõe ao render. Os mesmos 43 atlas foram preparados, sem estado ignorado ou obsoleto. Isso sugere fila/contenda do bake facial com o renderer, não geração duplicada. Instrumentar espera de fila e tempo de bake efetivo antes de otimizar/cachear.
 - As execuções de laboratório não retiveram MP4 nem compararam hashes de imagem; FFprobe confirmou 6.000 quadros H.264/1080p/30, AAC de 200 s e emendas. A paridade visual byte a byte entre workers ainda não está medida. A meta 90 s continua aberta: o melhor total é 192,850 s.
+
+## Resultado novo — captura serial das camadas
+
+O modo stacked capturava uma superfície de 1920×2160 nos trechos com vídeo. O serial captura cada camada em 1920×1080. No A/B curto, serial caiu de 42,639 para 39,659 s (−6,99%); ambos produziram 1.200 quadros H.264, AAC de 40 s e passaram emenda/limpeza. SSIM decodificado foi 0,999603. A fixture existente comparou 240 camadas: 225 exatas, 15 com diferença máxima de 1 LSB, sem diferença alpha ou amostras fora da tolerância.
+
+No A/B completo pareado, stacked levou 179,261 s e serial 162,689 s (−9,25%), ambos com 4 workers, 3 threads, 6.000 quadros, AAC por 200 s e 9 emendas. A renderização caiu de 124,655 para 108,670 s. O comparador registra `single+stacked` versus `single+serial`. Depois da medição, serial foi promovido como padrão nos trechos com vídeo; um export padrão curto sem variável de laboratório confirmou `single+serial`, 1.200 quadros, áudio e zero erros de limpeza.
+
+A meta de 90 s continua aberta. O próximo trabalho deve reduzir a captura/readback ou a composição por quadro. Descartar duplicatas dentro do FFmpeg não ajudou, pois todos os 94,56 GB de BGRA ainda passam pelo pipe antes do filtro.
+
+## Resultado novo — export UI padrão e custo após preparação
+
+O corte padrão sem simplificação levou 163,760 s em `[0,6000)`, com CPU OpenH264, quatro workers, boca/piscadas/transições, Preset 2 e áudio. Validou vídeo 1080p/30, 6.000 quadros, AAC por 200 s, nove emendas e limpeza. A fase de renderização foi 109,489 s; preparação global, 36,806 s. Serial já estava ativo; este resultado confirma o export real padrão, não constitui A/B contra stacked.
+
+As somas de timing por worker se sobrepõem: roundtrip 227,34 s; escrita FFmpeg 176,17 s; IPC de desenho 118,87 s; captura `capturePage` 82,07 s. Houve 1.654 quadros renderizados, 4.346 reutilizados e 280 readbacks obsoletos. O relatório aponta trabalho no caminho de captura, IPC e backpressure do pipe/encoder. A composição facial direta soma menos de 0,1 s. A preparação da boca criou 36 atlas e somou 49,49 s em workers, com 37,23 s de fila sobreposta; cache de movimento teve apenas um hit. A melhor hipótese seguinte é reduzir roundtrips e custo de cópia/backpressure sem mudar pixels ou contagem de quadros.
+
+O agregado indicava dois workers incorretamente; run e tentativa confirmaram quatro, a política de CPU Turbo. Corrigi o JSON com nota transparente e o agregador agora usa a contagem observada. A meta de 90 s segue sem atingir.

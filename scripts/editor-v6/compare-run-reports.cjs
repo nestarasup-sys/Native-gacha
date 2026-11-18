@@ -8,13 +8,18 @@ const SAME_PROFILE_OPTIONS = [
   'startFrame', 'endFrame', 'width', 'height', 'turbo', 'encoder', 'mouthLoop',
   'forceTurbo1080', 'singleWorker', 'mouthLoopCycleFrames', 'includeSpeechMouth',
   'hairPoseReactionOnly', 'hairPosteriorOnly', 'hairAnimationPresetSlot',
-  'hairAnimationPresetFingerprint', 'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'captureStrategy', 'testMode', 'mouthLoopBatchFrames', 'motionBakeConcurrency', 'encoderThreads'
+  'hairAnimationPresetFingerprint', 'hairAnimationLoopFrames', 'fps', 'nativeRenderer', 'captureStrategy', 'layerCaptureStrategy', 'testMode', 'mouthLoopBatchFrames', 'motionBakeConcurrency', 'encoderThreads'
 ]
 const sum = (items, select) => items.reduce((total, item) => total + (Number(select(item)) || 0), 0)
 const round = value => Number.isFinite(value) ? Number(value.toFixed(3)) : null
 const percentile = (values, fraction) => {
   const sorted = values.filter(Number.isFinite).sort((left, right) => left - right)
   return sorted.length ? round(sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * fraction) - 1)]) : null
+}
+
+function layerCaptureStrategy(parts) {
+  const modes = [...new Set((parts ?? []).map(part => part?.frameLayerCapture).filter(mode => mode === 'single' || mode === 'stacked' || mode === 'serial'))].sort()
+  return modes.length ? modes.join('+') : 'unknown'
 }
 
 function normalizeReport(report) {
@@ -27,6 +32,7 @@ function normalizeReport(report) {
       mouthLoopBatchFrames: report.options.mouthLoopBatchFrames ?? 300,
       nativeRenderer: Boolean(report.options.nativeRenderer),
       captureStrategy: report.options.captureStrategy ?? report.exportTestSettings?.captureMode ?? (report.options.nativeRenderer ? 'native-cpp' : 'capturePage'),
+      layerCaptureStrategy: report.options.layerCaptureStrategy ?? layerCaptureStrategy(report.attempts?.flatMap(attempt => attempt.parts ?? [])),
       motionBakeConcurrency: report.options.motionBakeConcurrency ?? report.exportTestSettings?.motionConcurrency ?? 2,
       encoderThreads: report.options.encoderThreads ?? report.attempts?.[0]?.parts?.[0]?.encoderThreads ?? null
     } }
@@ -56,6 +62,7 @@ function normalizeReport(report) {
       singleWorker: run.options?.singleWorker ?? false,
       nativeRenderer: report.nativeRenderer,
       captureStrategy: report.captureMode ?? (report.nativeRenderer ? 'native-cpp' : 'capturePage'),
+      layerCaptureStrategy: run.options?.layerCaptureStrategy ?? layerCaptureStrategy(run.attemptDiagnostics?.flatMap(attempt => attempt.parts ?? [])),
       testMode: `capture-retry-${run.captureRetryMilliseconds ?? report.captureRetryMilliseconds ?? 16}`,
       mouthLoopBatchFrames: report.mouthLoopBatchFrames ?? 300,
       motionBakeConcurrency: report.motionConcurrency ?? 2,
@@ -142,7 +149,7 @@ function summarize(report) {
   }
 }
 
-function compare(reference, candidate, { allowWorkerChange = false, allowMouthBatchChange = false, allowMotionConcurrencyChange = false, allowCaptureStrategyChange = false, allowEncoderThreadChange = false } = {}) {
+function compare(reference, candidate, { allowWorkerChange = false, allowMouthBatchChange = false, allowMotionConcurrencyChange = false, allowCaptureStrategyChange = false, allowLayerCaptureChange = false, allowEncoderThreadChange = false } = {}) {
   reference = normalizeReport(reference)
   candidate = normalizeReport(candidate)
   const before = summarize(reference), after = summarize(candidate)
@@ -155,6 +162,7 @@ function compare(reference, candidate, { allowWorkerChange = false, allowMouthBa
     if (allowMouthBatchChange && key === 'mouthLoopBatchFrames') continue
     if (allowMotionConcurrencyChange && key === 'motionBakeConcurrency') continue
     if (allowCaptureStrategyChange && key === 'captureStrategy') continue
+    if (allowLayerCaptureChange && key === 'layerCaptureStrategy') continue
     if (allowEncoderThreadChange && key === 'encoderThreads') continue
     if (before.options[key] !== after.options[key]) mismatches.push(`options.${key}`)
   }
@@ -215,15 +223,16 @@ async function main(args = process.argv.slice(2)) {
   const allowMouthBatchChange = args.includes('--allow-mouth-batch-change')
   const allowMotionConcurrencyChange = args.includes('--allow-motion-concurrency-change')
   const allowCaptureStrategyChange = args.includes('--allow-capture-strategy-change')
+  const allowLayerCaptureChange = args.includes('--allow-layer-capture-change')
   const allowEncoderThreadChange = args.includes('--allow-encoder-thread-change')
-  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change' && value !== '--allow-mouth-batch-change' && value !== '--allow-motion-concurrency-change' && value !== '--allow-capture-strategy-change' && value !== '--allow-encoder-thread-change')) {
-    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change] [--allow-mouth-batch-change] [--allow-motion-concurrency-change] [--allow-capture-strategy-change] [--allow-encoder-thread-change]')
+  if (!referenceArg || !candidateArg || args.some(value => !value.startsWith('--reference=') && !value.startsWith('--candidate=') && value !== '--allow-worker-change' && value !== '--allow-mouth-batch-change' && value !== '--allow-motion-concurrency-change' && value !== '--allow-capture-strategy-change' && value !== '--allow-layer-capture-change' && value !== '--allow-encoder-thread-change')) {
+    throw Error('Uso: node scripts/editor-v6/compare-run-reports.cjs --reference=<report.json> --candidate=<report.json> [--allow-worker-change] [--allow-mouth-batch-change] [--allow-motion-concurrency-change] [--allow-capture-strategy-change] [--allow-layer-capture-change] [--allow-encoder-thread-change]')
   }
   const [reference, candidate] = await Promise.all([
     fs.readFile(path.resolve(referenceArg), 'utf8').then(JSON.parse),
     fs.readFile(path.resolve(candidateArg), 'utf8').then(JSON.parse)
   ])
-  const result = compare(reference, candidate, { allowWorkerChange, allowMouthBatchChange, allowMotionConcurrencyChange, allowCaptureStrategyChange, allowEncoderThreadChange })
+  const result = compare(reference, candidate, { allowWorkerChange, allowMouthBatchChange, allowMotionConcurrencyChange, allowCaptureStrategyChange, allowLayerCaptureChange, allowEncoderThreadChange })
   console.log(JSON.stringify(result, null, 2))
   if (!result.comparable || !result.validation.passed) process.exitCode = 2
   return result

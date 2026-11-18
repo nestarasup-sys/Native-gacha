@@ -157,7 +157,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
     const videoClips = exportHasVideo ? planEditorV6VideoOverlays(project, part.startFrame, part.endFrame) : []
     const layeredVideo = videoClips.length > 0
     result.videoOverlayClips = videoClips.length
-    result.frameLayerCapture = !layeredVideo ? 'single' : nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'serial' ? 'serial' : 'stacked'
+    result.frameLayerCapture = !layeredVideo ? 'single' : nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'stacked' ? 'stacked' : 'serial'
     const videoPaths = await Promise.all(videoClips.map((clip) => mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
     const qualityFrames = qualityReferenceFolder
       ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.map(frame => editorV6OutputFrame(frame, options.startFrame, fps)).filter(index => index >= firstOutputFrame && index < firstOutputFrame + outputFrames).map(index => index - firstOutputFrame)

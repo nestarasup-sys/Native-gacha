@@ -15,6 +15,10 @@
 4. Verifique contagem e cadência dos quadros, emendas e áudio. Compare os quadros relevantes para a mudança, especialmente o início, meio e fim da troca de expressão, junto de transparência e composição sobre vídeo.
 5. Confirme sucesso, falha e cancelamento de acordo com o escopo. O relatório deve indicar a limpeza, e os temporários do diagnóstico ficam na área isolada do teste.
 
+Para comparar relatórios com diferentes layouts de captura das camadas, use `node scripts/editor-v6/compare-run-reports.cjs ... --allow-layer-capture-change`. O comparador exibe `single+stacked` ou `single+serial`; essa flag autoriza somente a diferença de layout e continua exigindo o mesmo intervalo, animações, encoder e validações.
+
+O padrão atual é serial para trechos com vídeo. A estratégia stacked fica para comparações isoladas por `GACHA_EDITOR_V6_LAYER_CAPTURE=stacked`. A fixture integrada compara os pixels das camadas com tolerância máxima de 1 LSB, sem diferença em alpha.
+
 O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças de agendamento ou amostragem, cubra ambos e cheque o primeiro e o último quadro de cada trecho.
 
 ## Como aproveitar um único export real
@@ -56,3 +60,10 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - `compare-run-reports.cjs` passou a exibir `phaseMilliseconds` do agregado do harness; teste garante fases de preparação/render. `node --test tests/editor-v6/compareRunReports.test.cjs`: 9 testes passaram.
 - Reencode offline 40 s: Media Foundation 3,70 s, OpenH264 7,06 s; SSIM/PSNR quase iguais. Export real completo curto: 44,282/44,318 s, sem ganho de parede. Não promover encoder com base no microteste.
 - Captura `paint-event`: falhou por timeout com token em 63,79 s; não produziu MP4. O relatório de falha é evidência negativa, não aprovação de captura alternativa.
+
+## Perfil UI padrão integral
+
+- Projeto autorizado `408a77d1-d964-4c04-a66b-f4e9fcfeee46`, intervalo `[0,6000)`, 200 s, 1080p/30, CPU OpenH264, Turbo, quatro workers, boca/piscadas/transições, Preset 2, áudio ativo e simplificação desligada.
+- Resultado: 163,760 s clique→validado; 6.000 quadros, AAC de 200 s, nove emendas; zero erros de limpeza. Só MP4 e relatório permaneceram.
+- Quatro workers confirmados pelo relatório da tentativa; o campo agregado de workers foi corrigido com anotação de origem. Nenhum teste C++ foi executado.
+- Relatório: `out/editor-v6-stress/runs/layer-serial-default-full200-2026-11-18/stress-export-validation.json`.
