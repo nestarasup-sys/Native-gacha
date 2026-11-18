@@ -72,6 +72,26 @@ function createDependencies(overrides: Partial<Parameters<typeof renderEditorV6E
 }
 
 describe('agendamento de tentativas do Editor V6', () => {
+  it('resume os custos dos workers em separado do tempo de parede', async () => {
+    const dependencies = createDependencies({
+      renderPart: async ({ part, encoder, onPartCreated }) => {
+        const result: EditorV6ExportPartReport = {
+          ...createPartReport(part, encoder), stage: 'completed', frameLayerCapture: 'stacked',
+          rawBytesPerFrame: 100, mouthPreparationMs: 12, frameMetrics: { captureReadbacks: 3, captureStaleReadbacks: 1 },
+          frameTiming: { captureMs: { totalMs: 20, samples: 2, p50Ms: 10, p95Ms: 10, maxMs: 10 } }
+        }
+        onPartCreated(result)
+        return result
+      }
+    })
+    await renderEditorV6ExportAttempt(dependencies)
+
+    expect(dependencies.report.attempts[0].summary).toMatchObject({
+      plannedParts: 1, startedParts: 1, completedParts: 1, framesWritten: 2, framesWithTwoLayers: 2,
+      rawBytesWritten: 200, captureStaleReadbacks: 1, wallMilliseconds: expect.any(Number),
+      summedWorkerMilliseconds: { mouthPreparation: 12, capture: 20 }
+    })
+  })
   it('limita a concorrência dinâmica, salva os lotes concluídos e devolve as partes ordenadas', async () => {
     let active = 0
     let peak = 0

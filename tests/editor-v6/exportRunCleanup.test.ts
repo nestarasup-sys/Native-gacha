@@ -31,7 +31,7 @@ function createDependencies(overrides: Partial<Parameters<typeof cleanupEditorV6
 }
 
 describe('encerramento de um job de exportação do Editor V6', () => {
-  it('grava o estado final e libera recursos antes de limpar os artefatos', async () => {
+  it('libera os recursos e grava o resultado da limpeza junto do estado final', async () => {
     const order: string[] = []
     const dependencies = createDependencies({
       releaseMotionCacheScope: vi.fn(() => order.push('release-cache')),
@@ -43,7 +43,7 @@ describe('encerramento de um job de exportação do Editor V6', () => {
 
     await cleanupEditorV6ExportRun(dependencies)
 
-    expect(order).toEqual(['release-cache', 'clear-sampler', 'save-report', 'remove-candidate', 'remove-folder'])
+    expect(order).toEqual(['release-cache', 'clear-sampler', 'remove-candidate', 'remove-folder', 'save-report'])
     expect(dependencies.report).toMatchObject({ endedAt: 'after-cleanup', milliseconds: 100, mainProcessMemory: { peakRssBytes: 200 } })
     expect(dependencies.releaseMotionCacheScope).toHaveBeenCalledWith('synthetic-scope')
     expect(dependencies.clearMemorySampler).toHaveBeenCalledWith(dependencies.memorySampler)
@@ -65,7 +65,8 @@ describe('encerramento de um job de exportação do Editor V6', () => {
     const error = await cleanupEditorV6ExportRun(dependencies).catch((reason: unknown) => reason)
 
     expect(error).toBeInstanceOf(AggregateError)
-    expect((error as AggregateError).errors).toEqual([primary, reportFailure, candidateFailure, folderFailure])
+    expect((error as AggregateError).errors).toEqual([primary, candidateFailure, folderFailure, reportFailure])
+    expect(dependencies.report).toMatchObject({ cleanup: { errors: ['candidato ocupado', 'pasta ocupada'] } })
     expect(dependencies.removeCandidate).toHaveBeenCalledOnce()
     expect(dependencies.removeTempFolder).toHaveBeenCalledOnce()
   })
@@ -92,12 +93,13 @@ describe('encerramento de um job de exportação do Editor V6', () => {
     expect(dependencies.warn).toHaveBeenCalledTimes(1)
   })
 
-  it('não regrava o relatório publicado quando todos os recursos temporários foram removidos', async () => {
+  it('registra no relatório publicado que a limpeza foi concluída', async () => {
     const dependencies = createDependencies({ published: true })
 
     await cleanupEditorV6ExportRun(dependencies)
 
-    expect(dependencies.saveReport).not.toHaveBeenCalled()
+    expect(dependencies.saveReport).toHaveBeenCalledOnce()
+    expect(dependencies.report).toMatchObject({ cleanup: { errors: [], milliseconds: 0 } })
     expect(dependencies.report.endedAt).toBe('before-cleanup')
     expect(dependencies.removeCandidate).toHaveBeenCalledOnce()
     expect(dependencies.removeTempFolder).toHaveBeenCalledOnce()

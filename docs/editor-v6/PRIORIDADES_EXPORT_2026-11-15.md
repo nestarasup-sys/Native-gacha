@@ -28,6 +28,10 @@ O checkpoint de 14/11 registrou **3,017 s para 60 quadros sintéticos únicos em
 
 ## 3. Usar o relatório das exportações normais
 
+O JSON registra um resumo por tentativa em `attempts[].summary`. Use `wallMilliseconds` e `effectiveFramesPerSecond` para comparar tentativas. Os valores de `summedWorkerMilliseconds` medem trabalho agregado que pode se sobrepor. Captura de página e conversão do bitmap já estão incluídas no tempo de captura. A espera da escrita no FFmpeg inclui a contrapressão do pipe.
+
+Os trechos registram o intervalo de saída, quadros previstos e escritos, dados brutos por quadro, camadas, clipes de vídeo sobrepostos, tempo e volume de preparação da boca, estado da etapa e erro quando aplicável. Uma tentativa interrompida pode conter trechos parciais. O campo `cleanup` registra o tempo e os erros de limpeza. A ausência desse campo indica que o relatório foi salvo antes da limpeza ou gerado por uma versão anterior.
+
 Primeira entrega proposta: registrar **por trecho** o tempo em fila, preparo de boca, abertura do worker, captura, escrita e encerramento. Separar quantidade de estados faciais, bytes vivos e pico de memória dos bytes totais enviados. A duração somada de etapas em paralelo não é o tempo que o usuário esperou. Incluir também contagem de capturas descartadas e resultado da limpeza. [Métricas](../../electron/domains/editorV6/exportMetrics.ts), [Relatório](../../electron/domains/editorV6/exportReport.ts).
 
 Com isso, os próximos ajustes podem ser escolhidos a partir de exports que o usuário já faria. Se boca e render competirem, ajustar primeiro o agendamento. Se a boca estiver pronta e a captura continuar pesada, focar no compositor. A junção já copia o H.264 sem recodificar. Preservar áudio, emendas e validação de saída. [Finalização](../../electron/domains/editorV6/exportFinalization.ts).

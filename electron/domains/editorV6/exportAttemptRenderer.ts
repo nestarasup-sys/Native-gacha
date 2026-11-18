@@ -7,6 +7,7 @@ import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
 import type { EditorV6ExportAttemptReport, EditorV6ExportReport } from './exportReport'
+import { summarizeEditorV6ExportAttempt } from './exportAttemptSummary'
 
 export type EditorV6ExportPartWorkerFactory = Parameters<typeof renderEditorV6ExportPart>[0]['createWorker']
 export type EditorV6ExportPartRenderer = typeof renderEditorV6ExportPart
@@ -176,6 +177,8 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
     throw error
   } finally {
     attempt.milliseconds = performance.now() - began
+    attempt.parts.sort((a, b) => a.index - b.index)
+    attempt.summary = summarizeEditorV6ExportAttempt(attempt.parts, parts.length, attempt.milliseconds)
     addEditorV6PhaseTime(report, 'rendering', began)
     signal.removeEventListener('abort', abort)
   }

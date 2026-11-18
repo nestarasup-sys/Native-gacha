@@ -191,7 +191,10 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     await expect(renderEditorV6ExportPart(dependencies)).rejects.toBe(failure)
 
     expect(dependencies.abort).toHaveBeenCalledWith(failure)
-    expect(dependencies.onPartCreated).not.toHaveBeenCalled()
+    expect(dependencies.onPartCreated).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'mouthPreparation', frames: 0, expectedFrames: 2, error: expect.stringContaining(failure.message),
+      mouthPreparationMs: expect.any(Number)
+    }))
     expect(spawnExportProcess).not.toHaveBeenCalled()
   })
 
@@ -207,5 +210,6 @@ describe('renderização de um trecho da exportação do Editor V6', () => {
     expect(process.child.kill).toHaveBeenCalledOnce()
     expect(dependencies.onPartCreated).toHaveBeenCalledTimes(1)
     expect(dependencies.onPartCreated.mock.calls[0]?.[0].finishedAtOffsetMs).toBeTypeOf('number')
+    expect(dependencies.onPartCreated.mock.calls[0]?.[0]).toMatchObject({ stage: 'workerStartup', error: expect.stringContaining(failure.message) })
   })
 })

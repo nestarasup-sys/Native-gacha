@@ -18,6 +18,7 @@ import { buildEditorV6VideoComposition, EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES }
 import { createEditorV6TimingAccumulators, recordEditorV6Timing, summarizeEditorV6Timings, type EditorV6FrameTimingReport } from './exportMetrics'
 import { renderAndWriteEditorV6Frames } from './exportFramePipeline'
 import type { EditorV6ExportFinalizationPart } from './exportFinalization'
+import { formatEditorV6Error } from '../../../src/shared/editorV6Error'
 
 export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinalizationPart & {
   rendered: number
@@ -27,6 +28,17 @@ export type EditorV6ExportPartReport = EditorV6ExportPart & EditorV6ExportFinali
   startedAtOffsetMs: number
   finishedAtOffsetMs?: number
   mouthPreparationMs?: number
+  mouthAtlases?: number
+  mouthAtlasPixels?: number
+  expectedFrames?: number
+  firstOutputFrame?: number
+  videoOverlayClips?: number
+  rawBytesPerFrame?: number
+  mediaPlanningMs?: number
+  probeMs?: number
+  failedOutputFrame?: number
+  stage?: 'mouthPreparation' | 'mediaPlanning' | 'encoderStart' | 'workerStartup' | 'streaming' | 'encoderDrain' | 'validation' | 'completed'
+  error?: string
   frameTiming?: EditorV6FrameTimingReport
   frameMetrics?: EditorV6FrameMetrics
   /** Whether one ordinary offscreen frame may render during FFmpeg backpressure. */
@@ -82,11 +94,24 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
   } = dependencies
 
   signal.throwIfAborted()
+  const fps = options.fps ?? 30
+  const firstOutputFrame = editorV6OutputFrame(part.startFrame, options.startFrame, fps)
+  const outputFrames = editorV6OutputFrame(part.endFrame, options.startFrame, fps) - firstOutputFrame
+  const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
+  const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
+  const partStarted = performance.now()
+  const result: EditorV6ExportPartReport = {
+    ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0,
+    startedAtOffsetMs: partStarted - exportStartedAt, expectedFrames: outputFrames, firstOutputFrame,
+    framePipelineOverlap, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
+    frameRestHairReuse: Boolean(options.hairPoseReactionOnly) && nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0'
+  }
+  onPartCreated(result)
   let renderProject = project
   let mouthLoops: EditorV6ExportMouthLoops | undefined
-  let mouthPreparationMs: number | undefined
   try {
     if (speechInRange && options.mouthLoop !== false) {
+      result.stage = 'mouthPreparation'
       const mouth = await prepareExportMouthLoops(project, part.startFrame, part.endFrame, options.mouthLoopCycleFrames ?? 30, {
         signal,
         characters,
@@ -95,34 +120,31 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       }, options.startFrame, Math.min(2, parallelism) as 1 | 2, testSettings.mouthConcurrency)
       renderProject = mouth.project
       mouthLoops = mouth.mouthLoops
-      mouthPreparationMs = mouth.stats.milliseconds
+      result.mouthPreparationMs = mouth.stats.milliseconds
+      result.mouthAtlases = mouth.stats.states
+      result.mouthAtlasPixels = mouth.stats.atlasPixels
       onMouthPrepared(mouth)
     }
   } catch (error) {
+    result.mouthPreparationMs ??= performance.now() - partStarted
+    result.finishedAtOffsetMs = performance.now() - exportStartedAt
+    result.error = formatEditorV6Error(error)
     abort(error)
     throw error
   }
 
-  const fps = options.fps ?? 30
-  const firstOutputFrame = editorV6OutputFrame(part.startFrame, options.startFrame, fps)
-  const outputFrames = editorV6OutputFrame(part.endFrame, options.startFrame, fps) - firstOutputFrame
   const sampleTimelineFrame = (index: number) => options.startFrame + Math.floor(index * 30 / fps)
   const beganPart = performance.now()
-  const videoClips = exportHasVideo ? planEditorV6VideoOverlays(project, part.startFrame, part.endFrame) : []
-  // Only a video between the scene layers requires two surfaces and twice the raw input height.
-  const layeredVideo = videoClips.length > 0
-  const path = join(folder, `attempt-${attemptNumber}-part-${part.index}.mp4`)
-  const framePipelineOverlap = nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0'
-  // All part jobs use this process's monotonic clock, so offsets expose actual overlap.
-  const result: EditorV6ExportPartReport = { ...part, path, encoder, rendered: 0, reused: 0, frames: 0, milliseconds: 0, startedAtOffsetMs: beganPart - exportStartedAt, framePipelineOverlap, frameRafGate: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1', frameRestHairReuse: Boolean(options.hairPoseReactionOnly) && nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0', frameLayerCapture: !layeredVideo ? 'single' : nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'serial' ? 'serial' : 'stacked' }
-  if (mouthPreparationMs !== undefined) result.mouthPreparationMs = mouthPreparationMs
   const timingAccumulators = createEditorV6TimingAccumulators()
   const frameMetrics: EditorV6FrameMetrics = {}
   let worker: EditorV6FrameWorker | undefined
   let process: ReturnType<typeof spawnExportProcess> | undefined
-  onPartCreated(result)
-
   try {
+    result.stage = 'mediaPlanning'
+    const videoClips = exportHasVideo ? planEditorV6VideoOverlays(project, part.startFrame, part.endFrame) : []
+    const layeredVideo = videoClips.length > 0
+    result.videoOverlayClips = videoClips.length
+    result.frameLayerCapture = !layeredVideo ? 'single' : nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'serial' ? 'serial' : 'stacked'
     const videoPaths = await Promise.all(videoClips.map((clip) => mediaPath(project.id, clip.fileName, clip.libraryVideoId)))
     const qualityFrames = qualityReferenceFolder
       ? EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES.map(frame => editorV6OutputFrame(frame, options.startFrame, fps)).filter(index => index >= firstOutputFrame && index < firstOutputFrame + outputFrames).map(index => index - firstOutputFrame)
@@ -134,13 +156,18 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       clips: videoClips, mediaPaths: videoPaths, partStartFrame: options.startFrame + firstOutputFrame * 30 / fps, width: options.width, height: options.height, layeredVideo,
       ...(qualityReferencePath ? { qualityReference: { frames: qualityFrames, outputPath: qualityReferencePath } } : {})
     })
+    result.mediaPlanningMs = performance.now() - beganPart
+    result.stage = 'encoderStart'
     process = spawnExportProcess(ffmpeg, ['-v', 'error', '-y', '-f', 'rawvideo', '-pixel_format', 'bgra', '-video_size', `${options.width}x${videoComposition.rawHeight}`, '-framerate', String(fps), '-i', 'pipe:0', ...videoComposition.videoInputs, ...videoComposition.filterArgs, '-an', ...encodingArgs(encoder, Math.max(1, Math.min(8, Math.floor(availableParallelism() / parallelism)))), '-frames:v', String(outputFrames), path, ...(videoComposition.qualityOutputArgs ?? [])], signal)
     if (process.child.pid) onFfmpegProcessStarted?.(process.child.pid)
+    result.rawBytesPerFrame = options.width * videoComposition.rawHeight * 4
+    result.stage = 'workerStartup'
     const workerStarted = performance.now()
     const frameWorker = await createWorker(renderProject, part, signal, layeredVideo, mouthLoops)
     worker = frameWorker
     recordEditorV6Timing(timingAccumulators, 'workerStartupMs', performance.now() - workerStarted)
 
+    result.stage = 'streaming'
     await renderAndWriteEditorV6Frames({
       worker: { frame: (index) => frameWorker.frame(sampleTimelineFrame(index)) },
       part: { startFrame: firstOutputFrame, endFrame: firstOutputFrame + outputFrames },
@@ -164,6 +191,7 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       onFrameWritten
     })
 
+    result.stage = 'encoderDrain'
     const finalizeStarted = performance.now()
     process.child.stdin.end()
     await waitForExport(process.done, signal, 120000, 'finalizar parte')
@@ -172,19 +200,25 @@ export async function renderEditorV6ExportPart(dependencies: Dependencies): Prom
       frames: absoluteQualityFrames, dataFile: `part-${part.index}.bgra`
     }), { flag: 'wx' })
     recordEditorV6Timing(timingAccumulators, 'ffmpegFinalizeMs', performance.now() - finalizeStarted)
-    result.probe = await probeExportMedia(ffprobe, path, signal)
+    result.stage = 'validation'
+    const probeStarted = performance.now()
+    try { result.probe = await probeExportMedia(ffprobe, path, signal) }
+    finally { result.probeMs = performance.now() - probeStarted }
     if (Number(result.probe.streams.find((stream) => stream.codec_type === 'video')?.nb_frames) !== outputFrames) throw Error('Uma parte não contém todos os quadros previstos.')
-    result.milliseconds = performance.now() - beganPart
+    result.stage = 'completed'
     result.finishedAtOffsetMs = performance.now() - exportStartedAt
     result.frameTiming = summarizeEditorV6Timings(timingAccumulators)
     if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics
     return result
   } catch (error) {
+    if (result.stage === 'streaming' && result.frames < outputFrames) result.failedOutputFrame = firstOutputFrame + result.frames
+    result.error = formatEditorV6Error(error)
     result.frameTiming = summarizeEditorV6Timings(timingAccumulators)
     if (Object.keys(frameMetrics).length) result.frameMetrics = frameMetrics
     abort(error)
     throw error
   } finally {
+    result.milliseconds = performance.now() - beganPart
     result.finishedAtOffsetMs ??= performance.now() - exportStartedAt
     worker?.close()
     if (process?.child.exitCode === null) process.child.kill()

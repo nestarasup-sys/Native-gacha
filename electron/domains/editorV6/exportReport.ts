@@ -9,6 +9,7 @@ import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import type { EditorV6ExportPhaseTimings } from './exportMetrics'
 import type { EditorV6ExportProcessMemoryReport } from './exportProcessMemory'
 import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
+import type { summarizeEditorV6ExportAttempt } from './exportAttemptSummary'
 
 declare const __NATIVE_GACHA_BUILD_SHA__: string
 declare const __NATIVE_GACHA_BUILD_DIRTY__: boolean
@@ -19,6 +20,7 @@ export type EditorV6ExportAttemptReport = {
   parallelism: number
   milliseconds?: number
   error?: string
+  summary?: ReturnType<typeof summarizeEditorV6ExportAttempt>
 }
 
 export type EditorV6ExportReport = {
@@ -53,6 +55,7 @@ export type EditorV6ExportReport = {
   milliseconds?: number
   outputPath: string
   deliveryWarning?: string
+  cleanup?: { milliseconds: number; errors: string[] }
   validation?: unknown
   error?: string
 }
