@@ -137,6 +137,8 @@ export const editorV6MotionResultSchema = z.object({
     profile: z.object({
       assetLoadingMs: finite.min(0), poseResolutionMs: finite.min(0), facePreparationMs: finite.min(0),
       endpointGeometryMs: finite.min(0), rigBuildMs: finite.min(0), sampleRenderingMs: finite.min(0),
+      endpointGeometryCacheHits: z.number().int().min(0).optional(),
+      endpointGeometryCacheMisses: z.number().int().min(0).optional(),
       cropDetectionMs: finite.min(0), facePatchPreparationMs: finite.min(0), atlasAssemblyMs: finite.min(0),
       faceAtlasMs: finite.min(0), atlasEncodingMs: finite.min(0), sampleRenderCalls: z.number().int().min(0),
       providerReadCalls: z.number().int().min(0).optional(), providerCacheHits: z.number().int().min(0).optional(),

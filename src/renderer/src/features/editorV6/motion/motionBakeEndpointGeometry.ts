@@ -8,7 +8,11 @@ export type CachedMotionBakeEndpointGeometry = { crop: MotionPixelCrop; width: n
 
 /** Exact visual inputs only; callers scope this key to the current export session. */
 export function editorV6MotionEndpointGeometryCacheKey(character: CustomizerCharacter, state: EditorV6Element): string {
-  return JSON.stringify([character.id, character.updatedAt, character.customization, state])
+  // The element ID identifies a timeline instance, not the rendered character
+  // geometry. Identical visual snapshots on separate clips can share one crop.
+  const { id, ...visualState } = state
+  void id
+  return JSON.stringify([character.id, character.updatedAt, character.customization, visualState])
 }
 
 export type MotionBakeEndpointFrame<Renderer> = {

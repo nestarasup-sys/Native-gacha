@@ -158,12 +158,15 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     const values = transitionProfiles.map((item) => item.profile?.[stage]).filter((value): value is number => typeof value === 'number')
     return [stage, { samples: values.length, totalMs: values.reduce((sum, value) => sum + value, 0), p50Ms: percentile(values, .5), p95Ms: percentile(values, .95) }]
   }))
+  const endpointGeometryCacheHits = transitionProfiles.reduce((sum, item) => sum + (item.profile?.endpointGeometryCacheHits ?? 0), 0)
+  const endpointGeometryCacheMisses = transitionProfiles.reduce((sum, item) => sum + (item.profile?.endpointGeometryCacheMisses ?? 0), 0)
   const characterSequences = new Set(groupedPlans.map((group) => group[0]?.characterId).filter((id): id is string => Boolean(id))).size
   const assignedLanes = laneAssignments.filter((lane) => lane.length > 0).length
   return { project, stats: {
     total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked,
     preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, maxConcurrentBakes,
     configuredConcurrency: concurrency, characterSequences, assignedLanes,
+    endpointGeometryCacheHits, endpointGeometryCacheMisses,
     milliseconds: performance.now() - began, requestMilliseconds: timings,
     stageSummary,
     transitionProfiles: transitionProfiles.map(({ milliseconds, preparedRigs, reusedRigs, profile }) => ({ milliseconds, preparedRigs, reusedRigs, profile }))

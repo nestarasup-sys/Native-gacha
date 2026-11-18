@@ -558,6 +558,21 @@ describe('transition preparation reuse', () => {
       expect(await cache.read(request)).toEqual(result)
     } finally { await rm(folder, { recursive: true, force: true }) }
   })
+  it('preserves endpoint-geometry cache counters across the motion result contract', () => {
+    const { request } = fixture()
+    const result = resultFor(request)
+    result.metrics.profile = {
+      assetLoadingMs: 0, poseResolutionMs: 0, facePreparationMs: 0, endpointGeometryMs: 1,
+      endpointGeometryCacheHits: 2, endpointGeometryCacheMisses: 3,
+      rigBuildMs: 0, sampleRenderingMs: 0, cropDetectionMs: 0, facePatchPreparationMs: 0,
+      atlasAssemblyMs: 0, faceAtlasMs: 0, atlasEncodingMs: 0, sampleRenderCalls: 0
+    }
+
+    expect(editorV6MotionResultSchema.parse(result).metrics.profile).toMatchObject({
+      endpointGeometryCacheHits: 2,
+      endpointGeometryCacheMisses: 3
+    })
+  })
   it('preserves mouth isolation mode through IPC and cache contracts', async () => {
     const { request: original } = fixture()
     const state = { ...original.plan.from, activeFaceMode: 'talk' as const }

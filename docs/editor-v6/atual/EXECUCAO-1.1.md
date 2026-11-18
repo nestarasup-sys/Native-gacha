@@ -148,3 +148,13 @@ O projeto real é fonte de leitura. Use o harness isolado e uma cópia verificad
 - A/B no mesmo HEAD `3aab4015` e duas partes/workers: preparação intercalada com render = 40,920 s; preparada antes = 41,617 s (+0,697 s / +1,7%). Renderização foi 21,001 s vs. 22,461 s; preparação global 10,494 s vs. 10,328 s. As somas das fases de boca foram 4,661 s vs. 4,311 s, com seis atlas nos dois casos.
 - Os dois exports validaram 1.200 quadros, áudio e limpeza. O candidato antecipado teve SSIM 0,999956 contra os primeiros 40 s do export integral. A mudança de fase não diminuiu o total e perdeu a sobreposição atual entre bake e renderização; removida sem rodar o corte de 200 s.
 - Relatórios: `mouth-interleaved-control-40s-2026-11-18` e `mouth-prepared-before-render-40s-2026-11-18`; o candidato contém MP4 + relatório. Próximo diagnóstico de boca deve reduzir trabalho por estado/crop ou deduplicação comprovável, não apenas mover o mesmo bake de fase.
+
+## Rodada — perfil padrão e relatório de geometria (18/11)
+
+- Todas as execuções mantiveram a exportação UI padrão, simplificação desligada, piscadas, transições de pose/expressão, boca, Preset 2, CPU OpenH264, áudio e 1080p/30. Nenhum build/teste C++ foi executado.
+- Corrigi o schema IPC para preservar contadores de cache de geometria e agregá-los no relatório. A chave do cache ignora `state.id`, que é identidade da instância e não muda pixels/recorte. O corte de 40 s mostrou 22 hits/28 misses; o integral, 117/95. Não atribuo ganho de tempo sem A/B conclusivo.
+- `paint-event` bateu `capturePage` pixel a pixel no modo de comparação de 40 s. No integral levou 165,836 s vs. 163,760 s do padrão. Não foi promovido.
+- 80 s, padrão: 2 workers 69,088 s; 4 workers 63,810 s. Em 120 s: 4 workers 104,417 s; 6 workers 105,781 s. A fila somada de boca subiu de 23,956 s para 49,278 s com 6. Manter 4.
+- Em 120 s, 4 workers com concorrência de boca 3 levou 102,517 s vs. 104,417 s com concorrência 2, mas o integral 3 levou 163,869 s vs. 163,760 s. Lote de boca 300 levou 104,713 s em 120 s. Manter concorrência 2/lote 600.
+- O integral paint-event concluiu e validou 6.000 quadros, 9 emendas, H.264/AAC de 200 s e zero falhas de limpeza; seu comando terminou com status 1 apenas porque o harness exigia 2 workers quando o argumento era omitido, apesar de a execução ter usado 4. Corrigi o guard para validar contagem somente quando `--render-workers` for explícito.
+- Relatórios: pastas `capture-paint-*`, `standard-workers*`, `standard-motion-concurrency3-*`, `standard-mouth-batch300-*` e `endpoint-geometry-schema-counters-40s-*` em `out/editor-v6-stress/runs/`. A meta de 90 s continua aberta; o custo principal permanece renderização e transporte dos quadros.

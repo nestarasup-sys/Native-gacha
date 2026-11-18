@@ -106,3 +106,11 @@ No corte padrão de 200 s, 10 trechos prepararam 36 atlas de boca: 49,49 s somad
 O próximo teste deve eliminar trabalho repetido no preparo por estado, crop ou codificação de atlas com evidência de identidade visual. Reduzir somente chamadas de IPC, mover o mesmo bake para outra fase ou desligar animações não é candidato. A estratégia de buffers de camadas independentes também foi medida e rejeitada (+7,2% no corte de 40 s); o padrão combinado continua intacto. Os relatórios das duas comparações estão nas pastas `mouth-*40s-2026-11-18` e `serial-buffer-*40s-2026-11-18`.
 
 O agregado indicava dois workers incorretamente; run e tentativa confirmaram quatro, a política de CPU Turbo. Corrigi o JSON com nota transparente e o agregador agora usa a contagem observada. A meta de 90 s segue sem atingir.
+
+## Evidência nova — perfil padrão (18/11)
+
+- `paint-event` preservou os pixels no A/B quadro a quadro, mas perdeu 2,077 s no corte integral frente ao padrão; manter `capturePage`.
+- 4 workers foram melhores que 2 em 80 s (−5,278 s). No mesmo corte de 120 s, 6 workers foram 1,365 s mais lentos que 4 e elevaram a fila de boca de 23,956 para 49,278 s; manter quatro.
+- Concorrência 3 de boca reduziu a fila no corte de 120 s e ganhou 1,900 s, mas no integral empatou/perdeu 0,110 s. Lote de boca 300 também ficou 0,296 s mais lento em 120 s. Não trocar os padrões.
+- Os contadores do cache de geometria agora atravessam o schema IPC: integral registrou 117 hits/95 misses. Ainda é necessário um A/B de parede para converter a taxa de reutilização em ganho demonstrado.
+- Nova prioridade: perfilar a captura do frame/roundtrip IPC/pipe a partir dos relatórios serializados; os testes de paralelismo e estratégia de captura não justificam alterar os padrões atuais.

@@ -67,3 +67,13 @@ O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças d
 - Resultado: 163,760 s clique→validado; 6.000 quadros, AAC de 200 s, nove emendas; zero erros de limpeza. Só MP4 e relatório permaneceram.
 - Quatro workers confirmados pelo relatório da tentativa; o campo agregado de workers foi corrigido com anotação de origem. Nenhum teste C++ foi executado.
 - Relatório: `out/editor-v6-stress/runs/layer-serial-default-full200-2026-11-18/stress-export-validation.json`.
+
+## Rodada de 18/11 — export padrão, sem C++
+
+- `npm run typecheck`, `npx electron-vite build` e Vitest em `exportWorkers`, `motionBakeEndpointGeometry` e `motionPreparation`: passaram, 60 testes.
+- A/B de captura 40 s: o modo `compare-paint` não encontrou divergência de pixels. `paint-event` no corte integral validou os 6.000 quadros H.264/AAC e 9 emendas, mas levou 165,836 s contra 163,760 s do controle `capturePage`.
+- 80 s: workers 2/4 = 69,088/63,810 s. 120 s, workers 4/6 = 104,417/105,781 s; a fila de boca somada cresceu 23,956/49,278 s.
+- 120 s, 4 workers: concorrência de boca 2/3 = 104,417/102,517 s; lote de boca 600/300 = 104,417/104,713 s. Integral com concorrência 3 levou 163,869 s, sem ganho frente aos 163,760 s padrão.
+- Os relatórios foram salvos em pastas `capture-paint-*`, `standard-*` e `endpoint-geometry-schema-counters-*` dentro de `out/editor-v6-stress/runs/`. Testes abaixo de 200 s guardam só o JSON; os cortes integrais ficam com MP4 e relatório.
+- Corrigi o guard do harness: sem `--render-workers`, agora aceita o paralelismo observado e só verifica igualdade se o usuário solicitar uma contagem explícita. Executar `node --check scripts/editor-v6/benchmark-project-export.cjs` para validar sintaxe.
+- `npm run bench:editor-v6:project` não foi usado; o build executado foi apenas `electron-vite`. Nenhum teste ou renderizador C++ foi executado. A meta 90 s permanece aberta.

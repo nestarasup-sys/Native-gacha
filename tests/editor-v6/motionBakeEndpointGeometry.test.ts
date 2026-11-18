@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { EditorV6FaceRenderMode } from '../../src/shared/editorV6'
-import { resolveMotionBakeEndpointGeometry, type MotionBakeEndpointFrame } from '../../src/renderer/src/features/editorV6/motion/motionBakeEndpointGeometry'
+import type { EditorV6FaceRenderMode, EditorV6Element } from '../../src/shared/editorV6'
+import type { CustomizerCharacter } from '../../src/shared/customizer'
+import { editorV6MotionEndpointGeometryCacheKey, resolveMotionBakeEndpointGeometry, type MotionBakeEndpointFrame } from '../../src/renderer/src/features/editorV6/motion/motionBakeEndpointGeometry'
 
 type Renderer = { id: string }
 type Frame = MotionBakeEndpointFrame<Renderer>
@@ -16,6 +17,15 @@ function frame(progress: number, mode?: EditorV6FaceRenderMode): Frame {
 }
 
 describe('Editor V6 motion endpoint geometry', () => {
+  it('shares cached crop geometry for identical snapshots on different timeline element IDs', () => {
+    const character = { id: 'character-1', updatedAt: 'revision-1', customization: { poseSlot: 2 } } as unknown as CustomizerCharacter
+    const state = { id: 'element-1', kind: 'character', characterId: character.id, poseSlot: 2, x: 10, y: 20 } as EditorV6Element
+    const duplicate = { ...state, id: 'element-2' }
+
+    expect(editorV6MotionEndpointGeometryCacheKey(character, duplicate)).toBe(editorV6MotionEndpointGeometryCacheKey(character, state))
+    expect(editorV6MotionEndpointGeometryCacheKey(character, { ...state, x: 11 })).not.toBe(editorV6MotionEndpointGeometryCacheKey(character, state))
+  })
+
   it('uses premeasured hair endpoint dimensions and crops without rendering again', async () => {
     const from = { ...crop(4, 8, 80, 120), outputWidth: 400, outputHeight: 600 }
     const to = { ...crop(2, 5, 90, 130), outputWidth: 440, outputHeight: 640 }

@@ -391,7 +391,7 @@ if (mouthBatchFrames !== undefined && (!uiExportProfile || !hairPresetSlot || ha
       || uiExportProfile && summary.profile !== 'editor-v6-ui-default-no-hair'
       || uiExportProfile && summary.x264Preset !== x264Preset
       || summary.motionConcurrency !== Number(motionConcurrency)
-      || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)
+      || renderWorkers !== undefined && summary.renderWorkers !== Number(renderWorkers)
       || summary.timelineDurationFrames !== manifest.timeline.durationFrames || summary.startFrame !== segmentStartFrame || summary.durationFrames !== segmentFrameCount || summary.runs?.length !== repeatCount
       || summary.requestedEncoder !== encoder
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
@@ -407,7 +407,7 @@ if (mouthBatchFrames !== undefined && (!uiExportProfile || !hairPresetSlot || ha
       || summary.nativeRenderer !== nativeRenderer
       || summary.requestedEncoder !== encoder
       || summary.motionConcurrency !== Number(motionConcurrency)
-      || summary.renderWorkers !== (renderWorkers ? Number(renderWorkers) : 2)
+      || renderWorkers !== undefined && summary.renderWorkers !== Number(renderWorkers)
       || uiExportProfile && (summary.profile !== 'editor-v6-ui-default' || summary.hairPoseReactionOnly !== true || summary.hairPosteriorOnly !== true)
       || summary.runs.some((run) => run.totalFrames !== segmentFrameCount || run.width !== 1920 || run.height !== 1080 || run.fps !== '30/1'
         || run.requestedEncoder !== encoder || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0 || run.audioOutput !== (run.audioClips > 0)
