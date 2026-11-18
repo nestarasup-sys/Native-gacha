@@ -17,6 +17,14 @@
 
 O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças de agendamento ou amostragem, cubra ambos e cheque o primeiro e o último quadro de cada trecho.
 
+## Como aproveitar um único export real
+
+- Na mesma execução, registre clique até MP4 validado, duração de cada fase, fila e rasterização das transições, prontidão do worker, capturas descartadas, escrita descoberta no FFmpeg e memória disponível. Use timestamps monotônicos dentro de cada processo e meça a duração da execução pelo coordenador.
+- No MP4 já produzido, rode em conjunto FFprobe, checagem de áudio e emendas e comparação dos quadros-chave de expressão. Use um conjunto pequeno e fixo de quadros que cubra corte, poses, boca e vídeo em camadas. Guarde resultados agregados no relatório. Remova PNGs, traces e arquivos intermediários do diagnóstico.
+- Pode testar candidatos lado a lado em amostras sintéticas ou em modo de diagnóstico nas mesmas entradas. Marque o custo do modo de diagnóstico separadamente. Uma execução que mistura candidatos por trecho serve para triagem, e um export inteiro com o mesmo candidato serve para validar a meta. Evite alterar várias opções sem registrar quais mudaram e por quê.
+- Implemente o comparador sobre o JSON existente, com estados para campo ausente e incompatibilidade de perfil. Registre tempo absoluto, diferença percentual, fases dominantes, quadros escritos, resultado visual, validação e limpeza. Use os relatórios já salvos sempre que eles responderem à pergunta.
+- Considere a meta atendida somente após concluir o corte real de 6.000 quadros em até 90 s do início da preparação do botão Exportar MP4 até a publicação, com as mesmas opções e verificações aprovadas. Se a carga da máquina tiver afetado a rodada ou se o valor ficar perto do limite, confirme com uma repetição fria.
+
 ## Evidência já disponível
 
 - A rodada `45e009f0` passou 70 testes focados, typecheck, auditoria e harness de export. O novo relatório de 18/11 comprova a conclusão do corte real, mas não fornece um controle pareado.

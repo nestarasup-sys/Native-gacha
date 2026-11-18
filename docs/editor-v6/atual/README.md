@@ -4,6 +4,8 @@
 
 O objetivo é diminuir o tempo entre clicar em Exportar MP4 e receber o vídeo validado. O último corte tinha 200 s de vídeo e levou 200,84 s no processo principal. O usuário também relatou tempos próximos da duração em outros projetos. Ainda não há comparação controlada suficiente para atribuir essa relação a um limite do app ou confirmar ganho das últimas mudanças.
 
+**Meta de aceitação: até 90 s do clique ao MP4 validado** para os mesmos 6.000 quadros, com a configuração de referência e qualidade preservada. O usuário autorizou repetir esse corte no próprio projeto. Use a autorização e o protocolo em [Execução 1.1](EXECUCAO-1.1.md) e [Testes 1.1](TESTES-1.1.md).
+
 ## Documentos ativos
 
 - [Pesquisa 1.1](PESQUISA-1.1.md) — evidência do export e hipóteses em ordem.

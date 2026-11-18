@@ -54,7 +54,7 @@ Não vasculhe dados pessoais, perfil local ou mídia do usuário sem necessidade
 ## Editor V6
 
 - Trabalhe na `Dev-V2` em `C:\TRABALHO 2\OUTROS\GACHA EM C++`. Comece pelo [documento mestre](docs/editor-v6/atual/README.md).
-- Use os relatórios existentes para escolher prioridades. Faça diagnóstico, implementação e verificações de forma autônoma com fixtures sintéticas e saídas isoladas. Registre o que ficou inconclusivo e siga pelas hipóteses verificáveis sem exigir acompanhamento ou um export manual do usuário.
+- Use os relatórios existentes para escolher prioridades. Faça diagnóstico, implementação e verificações de forma autônoma com fixtures sintéticas e saídas isoladas. Para medir a meta de 90 s, o corte real de 6.000 quadros autorizado em [Execução 1.1](docs/editor-v6/atual/EXECUCAO-1.1.md) pode ser repetido em cópia verificada. Registre o que ficou inconclusivo e siga pelas hipóteses verificáveis sem exigir acompanhamento ou um export manual do usuário.
 - Preserve o MP4 final, o relatório, a qualidade visual e o sincronismo. Descarte dados de trabalho no fim de cada job e inicie o seguinte com preparação nova.
 - Mantenha cada Markdown ativo em até 300 linhas físicas. Antes de ultrapassar o limite, crie a continuação da série com sufixo `1.2`, `1.3` e assim por diante, e atualize o índice. Consulte `docs/lixo/editor-v6/` apenas para recuperar histórico específico.
 
