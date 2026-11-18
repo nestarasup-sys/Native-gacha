@@ -4,6 +4,7 @@ const assert = require('node:assert/strict')
 const { analyze, format, partMetric, median } = require('../../scripts/editor-v6/analyze-hair-benchmark.cjs')
 const FRAMES = 2394
 const PROJECT_TITLE = 'Teste de Importação — Personagens do Pacote'
+const PROJECT_ID = '408a77d1-d964-4c04-a66b-f4e9fcfeee46'
 
 function sampleRun(run, cold = false) {
   const hairPreparationWallMs = cold ? 6000 : 2000
@@ -11,7 +12,8 @@ function sampleRun(run, cold = false) {
   return {
     run, cacheState: cold ? 'cold-motion-cache' : 'warm-motion-cache',
     totalFrames: FRAMES, width: 1920, height: 1080, fps: '30/1', hairPresetSlot: 2,
-    selectedEncoder: 'h264_amf', requestedEncoder: 'auto', workers: 2,
+    selectedEncoder: 'libopenh264', requestedEncoder: 'cpu', workers: 4,
+    mouthLoopDisabled: false, hairPoseReactionOnly: true, hairPosteriorOnly: true,
     hairPresetFingerprint: 'only-compared-not-printed', hairPreparationWallMs, mainExportWallMs,
     clickToValidatedWallMs: hairPreparationWallMs + mainExportWallMs, audioClips: 2, audioOutput: true,
     processSampleCount: 5,
@@ -23,7 +25,7 @@ function sampleRun(run, cold = false) {
   }
 }
 function sampleSummary() {
-  return { passed: true, benchmarkKind: 'real-project-hair-export', projectTitle: PROJECT_TITLE, startFrame: 0, endFrame: FRAMES, timelineDurationFrames: FRAMES, durationFrames: FRAMES, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
+  return { passed: true, benchmarkKind: 'real-project-hair-export', projectId: PROJECT_ID, projectTitle: PROJECT_TITLE, nativeRenderer: false, captureMode: 'capturePage', requestedEncoder: 'cpu', includeSpeechMouth: true, mouthLoopCycleFrames: 30, hairPoseReactionOnly: true, hairPosteriorOnly: true, startFrame: 0, endFrame: FRAMES, timelineDurationFrames: FRAMES, durationFrames: FRAMES, fps: '30/1', width: 1920, height: 1080, hairPresetSlot: 2, runs: [sampleRun(1, true), sampleRun(2), sampleRun(3)] }
 }
 test('tempo de parede separa preparo, export e comparação cache frio/quente', () => {
   const report = analyze(sampleSummary())
@@ -34,6 +36,7 @@ test('tempo de parede separa preparo, export e comparação cache frio/quente', 
   assert.equal(report.benchmark.targetMetWarm, true)
   assert.equal(report.benchmark.rankedByMedian[0].key, 'rendering')
   assert.equal(report.runs[1].fpsEffective, FRAMES * 1000 / 15000)
+  assert.equal(report.runs[1].unattributedWallMs, 0)
 })
 test('trabalho paralelo mostra máximo da parte e soma agregada separadamente', () => {
   const report = analyze(sampleSummary())
@@ -65,7 +68,7 @@ test('rejeita benchmark incompleto, áudio inconsistente e preset alterado', () 
 
 test('exige o projeto autorizado e valida a janela coberta em todos os takes', () => {
   const wrongProject = sampleSummary()
-  wrongProject.projectTitle = 'Outro projeto'
+  wrongProject.projectId = '00000000-0000-0000-0000-000000000000'
   assert.ok(analyze(wrongProject).errors.some(error => error.includes('projeto autorizado')))
   const partial = sampleSummary()
   partial.startFrame = 450
@@ -83,9 +86,29 @@ test('exige o projeto autorizado e valida a janela coberta em todos os takes', (
   partial.endFrame += 1
   assert.ok(analyze(partial).errors.some(error => error.includes('janela')))
 })
+test('exige export padrão com todas as animações e não aceita renderizador nativo', () => {
+  const simplified = sampleSummary()
+  simplified.includeSpeechMouth = false
+  assert.ok(analyze(simplified).errors.some(error => error.includes('perfil padrão')))
+  const native = sampleSummary()
+  native.nativeRenderer = true
+  native.captureMode = 'native-cpp'
+  assert.ok(analyze(native).errors.some(error => error.includes('captura padrão')))
+  const mouthOff = sampleSummary()
+  mouthOff.runs[0].mouthLoopDisabled = true
+  assert.ok(analyze(mouthOff).errors.some(error => error.includes('boca')))
+})
+test('expõe a parte do tempo ponta a ponta sem fase atribuída', () => {
+  const summary = sampleSummary()
+  summary.runs[0].clickToValidatedWallMs += 1200
+  const result = analyze(summary)
+  assert.equal(result.runs[0].unattributedWallMs, 1200)
+  assert.ok(result.warnings.some(error => error.includes('1.20 s do tempo ponta a ponta não está atribuído')))
+  assert.match(format(result), /fora das fases 1\.20 s/)
+})
 test('avisa sobre encoder variável e ausência de amostragem sem inventar medições', () => {
   const summary = sampleSummary()
-  summary.runs[2].selectedEncoder = 'libopenh264'
+  summary.runs[2].selectedEncoder = 'h264_amf'
   summary.runs[2].processSampleCount = 0
   summary.runs[2].partTiming = []
   const result = analyze(summary)

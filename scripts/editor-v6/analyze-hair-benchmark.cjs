@@ -6,6 +6,8 @@
  * Não abre MP4, assets, presets, pastas do projeto nem imprime IDs/caminhos.
  */
 const fs = require('node:fs')
+// Keep aligned with the explicit project allowlist in benchmark-project-export.cjs.
+const AUTHORIZED_PROJECT_ID = '408a77d1-d964-4c04-a66b-f4e9fcfeee46'
 
 const PHASES = [
   ['hairPreparationWallMs', 'Preparação do cabelo (antes do job)'],
@@ -64,7 +66,7 @@ function validate(summary) {
   const errors = []
   const warnings = []
   if (summary?.passed !== true || summary?.benchmarkKind !== 'real-project-hair-export') errors.push('Resumo não é um benchmark real de cabelo concluído.')
-  if (summary?.projectTitle !== 'Teste de Importação — Personagens do Pacote') errors.push('O benchmark não pertence ao projeto autorizado.')
+  if (summary?.projectId !== AUTHORIZED_PROJECT_ID) errors.push('O benchmark não pertence ao projeto autorizado.')
   if (!Array.isArray(summary?.runs) || summary.runs.length < 1 || summary.runs.length > 3) errors.push('O benchmark deve conter de uma a três execuções.')
   if (!Number.isSafeInteger(summary?.durationFrames) || summary.durationFrames < 1 || summary?.fps !== '30/1'
     || !Number.isSafeInteger(summary?.startFrame) || summary.startFrame < 0
@@ -72,6 +74,11 @@ function validate(summary) {
     || summary.endFrame !== summary.startFrame + summary.durationFrames) errors.push('A janela de quadros ou o FPS do benchmark são inválidos.')
   if (!Number.isSafeInteger(summary?.width) || summary.width < 1 || !Number.isSafeInteger(summary?.height) || summary.height < 1) errors.push('Dimensões inválidas.')
   if (!Number.isInteger(summary?.hairPresetSlot) || summary.hairPresetSlot < 1 || summary.hairPresetSlot > 5) errors.push('Slot de preset inválido.')
+  if (summary?.nativeRenderer !== false || summary?.captureMode !== 'capturePage') errors.push('O benchmark precisa usar a captura padrão do Chromium, sem o renderizador C++.')
+  if (summary?.requestedEncoder !== 'cpu' || summary?.includeSpeechMouth !== true || summary?.mouthLoopCycleFrames !== 30
+    || summary?.hairPresetSlot !== 2 || summary?.hairPoseReactionOnly !== true || summary?.hairPosteriorOnly !== true) {
+    errors.push('O benchmark não corresponde ao perfil padrão com animações habilitadas e preset 2.')
+  }
   if (Array.isArray(summary?.runs)) {
     const encoders = new Set()
     const fingerprints = new Set()
@@ -80,8 +87,9 @@ function validate(summary) {
       const prefix = `Execução ${index + 1}`
       if (run.totalFrames !== summary.durationFrames || run.fps !== '30/1' || run.width !== summary.width || run.height !== summary.height || run.hairPresetSlot !== summary.hairPresetSlot) errors.push(`${prefix}: quadros, FPS, dimensões ou preset inconsistentes.`)
       if (!finiteNonnegative(run.hairPreparationWallMs) || !finitePositive(run.mainExportWallMs) || !finitePositive(run.clickToValidatedWallMs)) errors.push(`${prefix}: tempos ponta a ponta ausentes ou inválidos.`)
-      else if (Math.abs(run.clickToValidatedWallMs - run.hairPreparationWallMs - run.mainExportWallMs) > 10) warnings.push(`${prefix}: soma dos relógios de preparação e export difere do total.`)
+      else if (Math.abs(run.clickToValidatedWallMs - run.hairPreparationWallMs - run.mainExportWallMs) > 10) warnings.push(`${prefix}: ${seconds(run.clickToValidatedWallMs - run.hairPreparationWallMs - run.mainExportWallMs)} do tempo ponta a ponta não está atribuído às métricas de preparo/export.`)
       if (run.audioOutput !== (run.audioClips > 0) || !Number.isSafeInteger(run.audioClips) || run.audioClips < 0) errors.push(`${prefix}: áudio não confere com a saída.`)
+      if (run.mouthLoopDisabled !== false || run.hairPoseReactionOnly !== true || run.hairPosteriorOnly !== true) errors.push(`${prefix}: boca ou animação padrão de cabelo foi desativada/alterada.`)
       if (!Array.isArray(run.partTiming) || !run.partTiming.length) warnings.push(`${prefix}: não há métricas por parte para aprofundar o diagnóstico.`)
       if (!run.processSampleCount) warnings.push(`${prefix}: medição externa de processos ausente.`)
       encoders.add(run.selectedEncoder)
@@ -105,6 +113,7 @@ function analyze(summary) {
     fpsEffective: summary.durationFrames * 1000 / run.clickToValidatedWallMs,
     preparationMs: run.hairPreparationWallMs,
     exportMs: run.mainExportWallMs,
+    unattributedWallMs: run.clickToValidatedWallMs - run.hairPreparationWallMs - run.mainExportWallMs,
     phases: PHASES.map(([key, label]) => ({ key, label, milliseconds: getPhaseMs(run, key) })).filter(p => p.milliseconds !== null),
     frameTopLevel: FRAME_TOP_LEVEL.map(([key, label]) => ({ key, label, ...partMetric(run, key) })).filter(p => p.parts),
     frameWithinWorker: FRAME_WITHIN_WORKER.map(([key, label]) => ({ key, label, ...partMetric(run, key) })).filter(p => p.parts)
@@ -139,7 +148,7 @@ function format(result) {
     'Editor V6 — diagnóstico sanitizado',
     `${b.frames} quadros (timeline ${b.timelineDurationFrames}; início ${b.startFrame}) · 30 FPS · ${b.resolution} · Preset ${b.preset}`,
     '',
-    ...result.runs.map(r => `Execução ${r.run} (${r.cacheState}): total ${seconds(r.totalMs)}, cabelo ${seconds(r.preparationMs)}, export ${seconds(r.exportMs)}, ${r.fpsEffective.toFixed(2)} FPS efetivos`),
+    ...result.runs.map(r => `Execução ${r.run} (${r.cacheState}): total ${seconds(r.totalMs)}, cabelo ${seconds(r.preparationMs)}, export ${seconds(r.exportMs)}, fora das fases ${seconds(r.unattributedWallMs)}, ${r.fpsEffective.toFixed(2)} FPS efetivos`),
     `Mediana ponta a ponta: ${seconds(b.medianAllMs)} · melhor ${seconds(b.fastestMs)} · pior ${seconds(b.slowestMs)}`,
     ...(b.medianWarmMs === null ? [] : [`Mediana aquecida: ${seconds(b.medianWarmMs)}`]),
     ...(b.segmentTargetSeconds === null ? [] : [`Meta local de exportação ≤${b.segmentTargetSeconds} s: ${b.segmentTargetMetAll ? 'atingida' : 'não atingida'}`]),
