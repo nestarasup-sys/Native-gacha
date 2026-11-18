@@ -3,6 +3,7 @@ import type { prepareSavedCharacterRenderer, GachaReusableMaterialCache } from '
 import type { StandardExpressionEffectsCache } from '../../../characters/standardExpressionEffects'
 import type { PreparedFaceCatalogItemCache } from '../../../characters/preparedFaceCatalogItems'
 import { cacheEditorV6MotionAssetProvider, type EditorV6MotionProviderReadStats } from './motionAssetProviderCache'
+import type { CachedMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 
 type Renderer = Awaited<ReturnType<typeof prepareSavedCharacterRenderer>>
 
@@ -14,6 +15,8 @@ export type EditorV6BakeSession = {
   faceCatalogItemsCache: PreparedFaceCatalogItemCache
   providerReadStats: EditorV6MotionProviderReadStats
   endpointRenderers: Map<string, Renderer>
+  /** Bounded endpoint crops reused only while one export bake session is alive. */
+  endpointGeometryCache: Map<string, CachedMotionBakeEndpointGeometry>
   /** Bounded history distinguishes a genuinely new rig from a rig evicted earlier. */
   hasSeenPose(key: string): boolean
   rememberPose(key: string): void
@@ -23,6 +26,7 @@ export type EditorV6BakeSession = {
 
 export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider, options: { providerCacheEntries?: number; providerCacheRefreshOnHit?: boolean } = {}): EditorV6BakeSession {
   const endpointRenderers = new Map<string, Renderer>()
+  const endpointGeometryCache = new Map<string, CachedMotionBakeEndpointGeometry>()
   const poseHistory = new Set<string>()
   const materials: GachaReusableMaterialCache = new Map()
   const faceCatalogItemsCache: PreparedFaceCatalogItemCache = new Map()
@@ -39,6 +43,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
     faceCatalogItemsCache,
     providerReadStats,
     endpointRenderers,
+    endpointGeometryCache,
     hasSeenPose(key) { return poseHistory.has(key) },
     rememberPose(key) {
       if (poseHistory.has(key)) poseHistory.delete(key)
@@ -60,6 +65,7 @@ export function createEditorV6BakeSession(provider: CharacterRenderAssetProvider
     dispose() {
       for (const renderer of endpointRenderers.values()) renderer.dispose()
       endpointRenderers.clear()
+      endpointGeometryCache.clear()
       poseHistory.clear()
       materials.clear()
       faceCatalogItemsCache.clear()

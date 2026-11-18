@@ -51,6 +51,7 @@ describe('Editor V6 motion bake session', () => {
     const session = createEditorV6BakeSession(provider())
     const dispose = vi.fn()
     session.endpointRenderers.set('rig', renderer(100, 100, dispose))
+    session.endpointGeometryCache.set('endpoint', { crop: { left: 1, top: 2, width: 3, height: 4 }, width: 10, height: 20 })
     session.rememberPose('pose')
     session.materials.set('material', {} as never)
 
@@ -58,6 +59,7 @@ describe('Editor V6 motion bake session', () => {
 
     expect(dispose).toHaveBeenCalledOnce()
     expect(session.endpointRenderers.size).toBe(0)
+    expect(session.endpointGeometryCache.size).toBe(0)
     expect(session.hasSeenPose('pose')).toBe(false)
     expect(session.materials.size).toBe(0)
   })

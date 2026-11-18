@@ -6,7 +6,7 @@ import type { GachaReusableMaterialCache } from '../../../characters/editorV6Cha
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import type { MotionPixelCrop as Crop } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
-import { resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
+import { editorV6MotionEndpointGeometryCacheKey, resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import type { EditorV6MotionProviderReadStats } from './motionAssetProviderCache'
@@ -112,14 +112,26 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       return staticMouthBake
     }
     const endpointStarted = performance.now()
-    const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = await resolveMotionBakeEndpointGeometry({
+    // Endpoint crops are exact properties of the character snapshot and visual
+    // state. Keep this small cache within the export-scoped bake session; never
+    // read or write the persistent project motion cache for these measurements.
+    const endpointGeometryCache = request.cacheScope ? session?.endpointGeometryCache : undefined
+    const endpointGeometry = await resolveMotionBakeEndpointGeometry({
       captureLayerAtlases: Boolean(captureLayerAtlases),
       endpointCrops,
+      endpointGeometryCache,
+      endpointCacheKeys: endpointGeometryCache ? {
+        from: editorV6MotionEndpointGeometryCacheKey(request.character, request.plan.from),
+        to: editorV6MotionEndpointGeometryCacheKey(request.character, request.plan.to)
+      } : undefined,
       staticMouthLoop: false,
       hasMouthScaleSamples: Boolean(request.mouthScaleSamples),
       firstFaceMode: from.activeFaceMode,
       render
     })
+    const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = endpointGeometry
+    profile.endpointGeometryCacheHits = endpointGeometry.endpointGeometryCacheHits
+    profile.endpointGeometryCacheMisses = endpointGeometry.endpointGeometryCacheMisses
     profile.endpointGeometryMs += performance.now() - endpointStarted
     const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(MAX_MOTION_ATLAS_PIXELS, request.maxAtlasPixels ?? MAX_MOTION_ATLAS_PIXELS)

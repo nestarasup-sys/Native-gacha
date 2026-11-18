@@ -23,7 +23,7 @@ describe('Editor V6 motion endpoint geometry', () => {
 
     const result = await resolveMotionBakeEndpointGeometry({ captureLayerAtlases: true, endpointCrops: { from, to }, staticMouthLoop: false, hasMouthScaleSamples: false, firstFaceMode: 'idle', render })
 
-    expect(result).toEqual({ fromCrop: from, toCrop: to, maximumCanvasWidth: 440, maximumCanvasHeight: 640 })
+    expect(result).toEqual({ fromCrop: from, toCrop: to, maximumCanvasWidth: 440, maximumCanvasHeight: 640, endpointGeometryCacheHits: 0, endpointGeometryCacheMisses: 0 })
     expect(render).not.toHaveBeenCalled()
   })
 
@@ -39,12 +39,31 @@ describe('Editor V6 motion endpoint geometry', () => {
 
     const result = await resolveMotionBakeEndpointGeometry({ captureLayerAtlases: false, staticMouthLoop: false, hasMouthScaleSamples: true, firstFaceMode: 'talk', render })
 
-    expect(result).toEqual({ fromCrop: crop(0, 15, 60, 75), toCrop: crop(0, 15, 60, 75), maximumCanvasWidth: 550, maximumCanvasHeight: 700 })
+    expect(result).toEqual({ fromCrop: crop(0, 15, 60, 75), toCrop: crop(0, 15, 60, 75), maximumCanvasWidth: 550, maximumCanvasHeight: 700, endpointGeometryCacheHits: 0, endpointGeometryCacheMisses: 0 })
     expect(calls[0]).toMatchObject({ progress: 0, mode: undefined })
     expect(calls.at(-5)).toMatchObject({ progress: 1, mode: undefined })
     expect(calls.filter(call => call.referenceMode)).toHaveLength(8)
     expect(disposed.length).toBe(6)
     disposed.forEach(dispose => expect(dispose).toHaveBeenCalledOnce())
+  })
+
+  it('reuses exact endpoint geometry within the supplied export session cache', async () => {
+    const cache = new Map()
+    const render = vi.fn(async (progress: number, mode?: EditorV6FaceRenderMode) => frame(progress, mode))
+    const base = { captureLayerAtlases: false, staticMouthLoop: false, hasMouthScaleSamples: false, render, endpointGeometryCache: cache }
+
+    const first = await resolveMotionBakeEndpointGeometry({ ...base, endpointCacheKeys: { from: 'same-from', to: 'first-to' } })
+    expect(render).toHaveBeenCalledTimes(10)
+
+    const second = await resolveMotionBakeEndpointGeometry({ ...base, endpointCacheKeys: { from: 'same-from', to: 'second-to' } })
+    expect(render).toHaveBeenCalledTimes(15)
+    expect(second.fromCrop).toEqual(first.fromCrop)
+    expect(second.maximumCanvasWidth).toBe(550)
+    expect(cache.size).toBe(3)
+    expect(first.endpointGeometryCacheHits).toBe(0)
+    expect(first.endpointGeometryCacheMisses).toBe(2)
+    expect(second.endpointGeometryCacheHits).toBe(1)
+    expect(second.endpointGeometryCacheMisses).toBe(1)
   })
 
   it('reuses supplied crops when dimensions are unmeasured and avoids duplicate face-mode renders', async () => {

@@ -20,6 +20,8 @@ export type EditorV6MotionBakeProfile = {
   poseResolutionMs: number
   facePreparationMs: number
   endpointGeometryMs: number
+  endpointGeometryCacheHits?: number
+  endpointGeometryCacheMisses?: number
   rigBuildMs: number
   sampleRenderingMs: number
   cropDetectionMs: number

@@ -1,6 +1,15 @@
 import type { EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
+import type { CustomizerCharacter } from '../../../../../shared/customizer'
+import type { EditorV6Element } from '../../../../../shared/editorV6'
 import type { MotionPixelCrop } from './motionPixelAnalysis'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
+
+export type CachedMotionBakeEndpointGeometry = { crop: MotionPixelCrop; width: number; height: number }
+
+/** Exact visual inputs only; callers scope this key to the current export session. */
+export function editorV6MotionEndpointGeometryCacheKey(character: CustomizerCharacter, state: EditorV6Element): string {
+  return JSON.stringify([character.id, character.updatedAt, character.customization, state])
+}
 
 export type MotionBakeEndpointFrame<Renderer> = {
   width: number
@@ -24,11 +33,15 @@ export type MotionBakeEndpointGeometry = {
   toCrop: MotionPixelCrop
   maximumCanvasWidth: number
   maximumCanvasHeight: number
+  endpointGeometryCacheHits: number
+  endpointGeometryCacheMisses: number
 }
 
 type ResolveMotionBakeEndpointGeometryOptions<Renderer> = {
   captureLayerAtlases: boolean
   endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }
+  endpointGeometryCache?: Map<string, CachedMotionBakeEndpointGeometry>
+  endpointCacheKeys?: { from: string; to: string }
   staticMouthLoop: boolean
   hasMouthScaleSamples: boolean
   firstFaceMode?: EditorV6FaceRenderMode
@@ -43,6 +56,8 @@ function isMissingBlinkAsset(error: unknown): boolean {
 export async function resolveMotionBakeEndpointGeometry<Renderer>({
   captureLayerAtlases,
   endpointCrops,
+  endpointGeometryCache,
+  endpointCacheKeys,
   staticMouthLoop,
   hasMouthScaleSamples,
   firstFaceMode,
@@ -55,12 +70,12 @@ export async function resolveMotionBakeEndpointGeometry<Renderer>({
       fromCrop: endpointCrops.from,
       toCrop: endpointCrops.to,
       maximumCanvasWidth: Math.max(endpointDimensions.firstWidth, endpointDimensions.lastWidth),
-      maximumCanvasHeight: Math.max(endpointDimensions.firstHeight, endpointDimensions.lastHeight)
+      maximumCanvasHeight: Math.max(endpointDimensions.firstHeight, endpointDimensions.lastHeight),
+      endpointGeometryCacheHits: 0,
+      endpointGeometryCacheMisses: 0
     }
   }
 
-  const first = await render(0, staticMouthLoop ? firstFaceMode : undefined, 1, hasMouthScaleSamples)
-  const fullWidth = first.width, fullHeight = first.height
   const endpointCrop = async (progress: number, initial: MotionPixelCrop, renderer: Renderer): Promise<MotionPixelCrop> => {
     let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
     for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
@@ -80,17 +95,45 @@ export async function resolveMotionBakeEndpointGeometry<Renderer>({
     return { left, top, width: right - left, height: bottom - top }
   }
 
-  let fromCrop: MotionPixelCrop, toCrop: MotionPixelCrop
-  try { fromCrop = endpointCrops?.from ?? await endpointCrop(0, first.crop, first.renderer) }
-  finally { first.dispose() }
-  const last = staticMouthLoop ? null : await render(1)
-  try { toCrop = endpointCrops?.to ?? (last ? await endpointCrop(1, last.crop, last.renderer) : fromCrop) }
-  finally { last?.dispose() }
+  const cachedEndpoint = (key: string | undefined): CachedMotionBakeEndpointGeometry | undefined => {
+    if (!key || !endpointGeometryCache) return undefined
+    const cached = endpointGeometryCache.get(key)
+    if (!cached) return undefined
+    endpointGeometryCache.delete(key)
+    endpointGeometryCache.set(key, cached)
+    return cached
+  }
+  let endpointGeometryCacheHits = 0, endpointGeometryCacheMisses = 0
+  const rememberEndpoint = (key: string | undefined, value: CachedMotionBakeEndpointGeometry) => {
+    if (!key || !endpointGeometryCache) return
+    endpointGeometryCache.delete(key)
+    endpointGeometryCache.set(key, value)
+    while (endpointGeometryCache.size > 128) endpointGeometryCache.delete(endpointGeometryCache.keys().next().value!)
+  }
+  const resolveEndpoint = async (progress: number, key: string | undefined, measuredCrop?: MotionPixelCrop): Promise<CachedMotionBakeEndpointGeometry> => {
+    const cached = cachedEndpoint(key)
+    if (cached) { endpointGeometryCacheHits++; return cached }
+    if (key && endpointGeometryCache) endpointGeometryCacheMisses++
+    const initial = await render(progress, staticMouthLoop && progress === 0 ? firstFaceMode : undefined, 1, hasMouthScaleSamples)
+    try {
+      const crop = measuredCrop ?? await endpointCrop(progress, initial.crop, initial.renderer)
+      const resolved = { crop, width: initial.width, height: initial.height }
+      rememberEndpoint(key, resolved)
+      return resolved
+    } finally { initial.dispose() }
+  }
+
+  const from = await resolveEndpoint(0, endpointCacheKeys?.from, endpointCrops?.from)
+  const to = staticMouthLoop
+    ? from
+    : await resolveEndpoint(1, endpointCacheKeys?.to, endpointCrops?.to)
 
   return {
-    fromCrop,
-    toCrop,
-    maximumCanvasWidth: Math.max(fullWidth, last?.width ?? fullWidth),
-    maximumCanvasHeight: Math.max(fullHeight, last?.height ?? fullHeight)
+    fromCrop: from.crop,
+    toCrop: to.crop,
+    maximumCanvasWidth: Math.max(from.width, to.width),
+    maximumCanvasHeight: Math.max(from.height, to.height),
+    endpointGeometryCacheHits,
+    endpointGeometryCacheMisses
   }
 }
