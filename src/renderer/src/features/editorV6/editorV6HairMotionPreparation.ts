@@ -2,6 +2,7 @@ import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { HairMotionPreset } from '../../../../shared/hairMotionEngine'
 import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
+import { hasEditorV6CharacterSpeechOverlap } from '../../../../shared/editorV6FaceSchedule'
 import { resolveSavedCharacterSource } from '../../characters/characterSourceResolver'
 import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
@@ -109,7 +110,8 @@ export async function prepareEditorV6HairMotionBundle(
         group: prepared,
         targets: group.targets,
         layers: descriptors,
-        mouthLoop: exportOptions.mouthLoop,
+        prepareMouthlessFace: exportOptions.mouthLoop !== false && exportOptions.includeSpeechMouth !== false
+          && hasEditorV6CharacterSpeechOverlap(project.timeline, character.id, exportOptions.startFrame, exportOptions.endFrame),
         encodeFaceCropPng: testSettings.encodeFaceCropPng,
         addSurface,
         encodeCanvas: canvasDataUrl,

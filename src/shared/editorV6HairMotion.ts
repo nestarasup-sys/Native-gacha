@@ -26,6 +26,8 @@ export type EditorV6HairMotionRig = {
   poseSlot: number | null
   baseSurfaceId: string
   faceSurfaceId: string
+  /** Paired face surface used only with an isolated speech mouth overlay. */
+  mouthlessFaceSurfaceId?: string
   /** Optional eye layer composited after posterior hair and before the fringe. */
   eyesAboveRearHairSurfaceId?: string | null
   overlaySurfaceId: string | null
@@ -285,7 +287,7 @@ const layer = z.object({
   flipX: z.boolean(), phase: finite.min(-1000).max(1000)
 }).strict()
 const rig = z.object({
-  elementId: id, assetId: id, characterId: id, baseSurfaceId: id, faceSurfaceId: id,
+  elementId: id, assetId: id, characterId: id, baseSurfaceId: id, faceSurfaceId: id, mouthlessFaceSurfaceId: id.optional(),
   eyesAboveRearHairSurfaceId: id.nullable().optional(), overlaySurfaceId: id.nullable(),
   poseSlot: z.number().int().nullable(),
   artworkWidth: dimension, artworkHeight: dimension, outputWidth: dimension, outputHeight: dimension,
@@ -371,7 +373,7 @@ export function parseEditorV6HairMotionBundle(value: unknown): EditorV6HairMotio
     const key = `${item.elementId}:${item.assetId}`
     if (rigKeys.has(key)) throw Error('A exportação contém um personagem repetido nas camadas de cabelo.')
     rigKeys.add(key)
-    if (!surfaces.has(item.baseSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.eyesAboveRearHairSurfaceId && !surfaces.has(item.eyesAboveRearHairSurfaceId)) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId))) throw Error('A exportação não encontrou uma camada preparada do personagem.')
+    if (!surfaces.has(item.baseSurfaceId) || !surfaces.has(item.faceSurfaceId) || (item.mouthlessFaceSurfaceId && !surfaces.has(item.mouthlessFaceSurfaceId)) || (item.eyesAboveRearHairSurfaceId && !surfaces.has(item.eyesAboveRearHairSurfaceId)) || (item.overlaySurfaceId && !surfaces.has(item.overlaySurfaceId))) throw Error('A exportação não encontrou uma camada preparada do personagem.')
     if (item.layers.some(piece => !textures.has(piece.textureId))) throw Error('A exportação não encontrou uma imagem de cabelo preparada.')
     if (item.sourceCrop.left + item.sourceCrop.width > item.outputWidth + 1 || item.sourceCrop.top + item.sourceCrop.height > item.outputHeight + 1) throw Error('O enquadramento preparado do cabelo é inválido.')
   }

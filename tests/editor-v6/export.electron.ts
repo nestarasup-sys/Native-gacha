@@ -534,6 +534,67 @@ async function main() {
   })
   assert(motionBodyDimensions.every(([width, height]) => Math.abs(width - motionBodyDimensions[0][0]) <= 2 && Math.abs(height - motionBodyDimensions[0][1]) <= 2),
     `O corpo mudou de tamanho antes, durante ou depois da transição no MP4: ${JSON.stringify(motionBodyDimensions)}.`)
+  const mouthImages: Record<string, string> = await owner.webContents.executeJavaScript(`(() => {
+    const png = (color, position, body = false) => {
+      const c = document.createElement('canvas'); c.width = c.height = 32; const ctx = c.getContext('2d');
+      if (body) { ctx.fillStyle = '#595959'; ctx.fillRect(0, 0, 32, 32); }
+      if (color) { ctx.fillStyle = color; ctx.fillRect(position - 2, 16, 4, 4); }
+      return c.toDataURL();
+    };
+    return { body: png(null, 0, true), clear: png(), red: png('#ff0000', 6), blue: png('#0000ff', 26),
+      closedFirst: png('#ff0000', 6, true), closedLast: png('#0000ff', 26, true), green: png('#00ff00', 16), cyan: png('#00ffff', 16) };
+  })()`)
+  const mouthActor = { ...actor, x: 0, y: 0, width: 50, height: 80, assetId: randomUUID() }
+  const mouthActorLast = { ...mouthActor, assetId: randomUUID(), activeExpressionPresetId: 'expression-b' }
+  const imageAsset = (id: string, dataUrl: string) => ({ id, dataUrl, category: 'character' as const, name: id, mimeType: 'image/png' as const })
+  const mouthTimeline = createEditorV6Timeline([mouthActor])
+  const doubleMouthProject: EditorV6Document = { ...silent, elements: [mouthActor], assets: [imageAsset(mouthActor.assetId, mouthImages.closedFirst), imageAsset(mouthActorLast.assetId, mouthImages.closedLast)],
+    timeline: { ...mouthTimeline, durationFrames: 10, tracks: mouthTimeline.tracks.map(track => track.kind === 'character'
+      ? { ...track, motionEnabled: false, blocks: [
+        { ...track.blocks[0], state: mouthActor, durationFrames: 5 },
+        { ...track.blocks[0], id: randomUUID(), state: mouthActorLast, startFrame: 5, durationFrames: 5 }
+      ] } : track.kind === 'speech' ? { ...track, blocks: [{ id: randomUUID(), characterId: character.id, label: 'Fala', startFrame: 2, durationFrames: 6 }] } : track) }
+  }
+  const doubleMouthHair: EditorV6HairMotionBundle = { presetSlot: 1, preset: FIRST_HAIR_MOTION_PRESET, poseReactionOnly: true, posteriorOnly: true,
+    surfaces: ['body', 'clear', 'red', 'blue'].map(id => ({ id, dataUrl: mouthImages[id] })), textures: [{ id: 'strand', dataUrl: mouthImages.clear }],
+    rigs: [mouthActor, mouthActorLast].map((state, index) => ({ elementId: state.id, characterId: character.id, assetId: state.assetId,
+      poseSlot: null, baseSurfaceId: 'body', faceSurfaceId: index ? 'blue' : 'red', mouthlessFaceSurfaceId: 'clear', overlaySurfaceId: null,
+      artworkWidth: 32, artworkHeight: 32, outputWidth: 32, outputHeight: 32, shapeScaleX: 1, shapeScaleY: 1,
+      sourceCrop: { left: 0, top: 0, width: 32, height: 32 }, sourceHead: { width: 32, height: 32 }, targetHead: { x: 0, y: 0, width: 32, height: 32, rotation: 0 },
+      layers: [{ id: 'strand', textureId: 'strand', side: 'front', width: 32, height: 32, x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0, flipX: false, phase: 0 }]
+    }))
+  }
+  const doubleMouthOutput = join(folder, 'isolated-mouth-with-hair.mp4')
+  const doubleMouthReport = await runEditorV6Export(doubleMouthProject, { ...options, startFrame: 0, endFrame: 10, turbo: false, mouthLoop: true }, {
+    ...base, id: randomUUID(), outputPath: doubleMouthOutput, reportPath: join(folder, 'isolated-mouth-with-hair.report.json'),
+    getCharacters: async () => [character],
+    bakeMotion: async request => {
+      const asset = imageAsset(randomUUID(), mouthImages[request.plan.from.activeExpressionPresetId ? 'cyan' : 'green'])
+      const sprite = { x: 0, y: 0, width: 32, height: 32, atlasWidth: 32, atlasHeight: 32 }
+      const frames = request.plan.samples.map(sample => ({ offset: sample.offset, sprite, x: 0, y: 0, width: 1, height: 1, rotation: 0, flipX: false,
+        facePatch: { sprite, x: 0, y: 0, width: 1, height: 1 } }))
+      return { asset, mouthIsolationMode: 'isolated-piece', facePatchSourceCrop: { left: 0, top: 0, width: 32, height: 32 },
+        mouthlessBaseAssets: (['talk', 'talk-blink'] as const).map(faceMode => ({ faceMode, asset: imageAsset(randomUUID(), mouthImages.body) })),
+        motion: { version: 1, key: request.plan.key, assetId: asset.id, frames }, metrics: { milliseconds: 1, preparedRigs: 1, samples: frames.length, atlasPixels: 1024 } }
+    },
+    createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
+      const data = createEditorV6ExportWorkerData(renderProject, part, mouthLoops, doubleMouthHair)
+      return factory.create({ project: data.project, width: 320, height: 180, layeredVideo, mouthLoops, hairAnimation: data.hairAnimation }, signal, data.assetSources)
+    }
+  })
+  assert(doubleMouthReport.mouthAnimation?.isolatedStates === 2 && (doubleMouthReport.attempts[0].parts[0].frameMetrics?.hairRasterFrames ?? 0) >= 4, 'A verificação da boca precisa compor os dois estados de expressão com cabelo.')
+  const doubleMouthRgb = run(['-i', doubleMouthOutput, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  const checkMouthPixel = (frame: number, x: number, expected: string) => {
+    const offset = frame * frameBytes + (99 * 320 + x) * 3
+    const rgb = [...doubleMouthRgb.subarray(offset, offset + 3)]
+    const result = rgb.every(value => value > 60 && value < 120) ? 'body' : rgb.map(value => value > 150 ? '1' : '0').join('')
+    assert(result === expected, `Boca incorreta no quadro ${frame}, x=${x}: RGB ${rgb.join(',')}, esperado ${expected}.`)
+  }
+  for (let frame = 0; frame < 10; frame++) {
+    checkMouthPixel(frame, 110, frame < 2 ? '100' : 'body')
+    checkMouthPixel(frame, 160, frame < 2 || frame >= 8 ? 'body' : frame < 5 ? '010' : '011')
+    checkMouthPixel(frame, 210, frame >= 8 ? '001' : 'body')
+  }
   const uniqueCaptureFrameCount = 60
   let uniqueCaptureProject = silent
   for (let frame = 0; frame < uniqueCaptureFrameCount; frame++) {

@@ -1,8 +1,8 @@
-import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
 import type { EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import type { EditorV6HairMotionTarget } from './editorV6HairMotionTargets'
 import type { PreparedEditorV6HairMotionCharacterGroup } from './editorV6HairMotionCharacterGroup'
 import { editorV6HairFaceSurfaceKey } from './motion/hairPreparationReuse'
+import { isEditorV6BlinkRenderMode } from '../../../../shared/editorV6FaceSchedule'
 
 type MeasureFaceModeCrop = typeof import('./faceModeAssets').measureFaceModeCrop
 type CanvasEncoder = (canvas: HTMLCanvasElement) => string
@@ -11,7 +11,7 @@ export type EditorV6HairMotionGroupSurfaceDependencies = {
   group: PreparedEditorV6HairMotionCharacterGroup
   targets: readonly EditorV6HairMotionTarget[]
   layers: EditorV6HairMotionLayer[]
-  mouthLoop: EditorV6ExportOptions['mouthLoop']
+  prepareMouthlessFace: boolean
   encodeFaceCropPng: boolean
   addSurface: (key: string, dataUrl: string) => string
   encodeCanvas: CanvasEncoder
@@ -33,6 +33,7 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
   const cropByFace = new Map<string, { left: number; top: number; width: number; height: number }>()
   // Encoded surfaces are immutable and reusable only within this pose group.
   const faceSurfacesByInput = new Map<string, string>()
+  const mouthlessSurfacesByInput = new Map<string, string>()
   const overlaySurfacesByInput = new Map<string, string | null>()
   const eyesSurfacesByInput = new Map<string, string | null>()
   let preparedGeometry: Pick<EditorV6HairMotionRig, 'artworkWidth' | 'artworkHeight' | 'outputWidth' | 'outputHeight' | 'shapeScaleX' | 'shapeScaleY'> | undefined
@@ -45,9 +46,8 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
     const faceTransforms = state.faceTransforms ?? state.expressionBase?.transforms
     const effects = state.activeExpressionEffects
     const mode = target.faceMode
-    const hideMouthForExportLoop = Boolean(dependencies.mouthLoop && (mode === 'talk' || mode === 'talk-blink') && hairlessRenderer.canIsolateMouth(currentAppearance))
     const faceKey = JSON.stringify([currentAppearance, faceTransforms, effects])
-    const faceRenderKey = editorV6HairFaceSurfaceKey(faceKey, mode, hideMouthForExportLoop)
+    const faceRenderKey = editorV6HairFaceSurfaceKey(faceKey, mode, false)
     const poseKey = JSON.stringify([poseSurfaceKey, state.poseSlot, sourceHeadPart.width, sourceHeadPart.height, targetHeadPart.x, targetHeadPart.y, targetHeadPart.width, targetHeadPart.height, targetHeadPart.rotation])
     const faceSurfaceKey = JSON.stringify([poseKey, faceRenderKey])
     const existingFaceSurfaceId = faceSurfacesByInput.get(faceSurfaceKey)
@@ -59,7 +59,7 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
       sourceCrop ? Promise.resolve(null) : originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),
       existingFaceSurfaceId && hasOverlaySurface && hasEyesSurface
         ? Promise.resolve(null)
-        : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode, hideMouthForExportLoop ? { mouthLayer: 'without-mouth' } : undefined)
+        : hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mode)
     ])
     reportStage('renderHairlessFaceTarget', stageStarted)
     if (!sourceCrop) {
@@ -92,9 +92,19 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
     if (!faceSurfaceId) {
       if (!splitFrame) throw Error('A camada do rosto não foi preparada.')
       stageStarted = now()
-      faceSurfaceId = addSurface(`${poseKey}:face:${target.assetId}`, encodeCanvas(splitFrame.face))
+      faceSurfaceId = addSurface(`${faceSurfaceKey}:face`, encodeCanvas(splitFrame.face))
       faceSurfacesByInput.set(faceSurfaceKey, faceSurfaceId)
       reportStage('serializeFaceSurface', stageStarted)
+    }
+    const mouthlessMode = isEditorV6BlinkRenderMode(mode) ? 'blink' : 'idle'
+    const mouthlessKey = JSON.stringify([poseKey, editorV6HairFaceSurfaceKey(faceKey, mouthlessMode, true)])
+    let mouthlessFaceSurfaceId = mouthlessSurfacesByInput.get(mouthlessKey)
+    if (!mouthlessFaceSurfaceId && dependencies.prepareMouthlessFace && hairlessRenderer.canIsolateMouth(currentAppearance)) {
+      // A missing talk portrait can resolve to an idle rig. Keep its full
+      // face for silence and prepare a separate surface for the speech overlay.
+      const mouthlessFrame = await hairlessRenderer.renderLayersToCanvas(currentAppearance, faceTransforms, effects, mouthlessMode, { mouthLayer: 'without-mouth' })
+      mouthlessFaceSurfaceId = addSurface(`${mouthlessKey}:face`, encodeCanvas(mouthlessFrame.face))
+      mouthlessSurfacesByInput.set(mouthlessKey, mouthlessFaceSurfaceId)
     }
     const overlaySurfaceId = overlaySurfacesByInput.get(faceSurfaceKey) ?? null
     const eyesAboveRearHairSurfaceId = eyesSurfacesByInput.get(faceSurfaceKey) ?? null
@@ -102,6 +112,7 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
       elementId: target.elementId, assetId: target.assetId, characterId: target.state.characterId!,
       poseSlot: character.customization.poseSlot ?? null,
       baseSurfaceId, faceSurfaceId, eyesAboveRearHairSurfaceId: eyesAboveRearHairSurfaceId ?? null, overlaySurfaceId: overlaySurfaceId ?? null,
+      ...(mouthlessFaceSurfaceId ? { mouthlessFaceSurfaceId } : {}),
       ...preparedGeometry,
       sourceCrop, sourceHead: { width: sourceHeadPart.width, height: sourceHeadPart.height },
       targetHead: { x: targetHeadPart.x, y: targetHeadPart.y, width: targetHeadPart.width, height: targetHeadPart.height, rotation: targetHeadPart.rotation },

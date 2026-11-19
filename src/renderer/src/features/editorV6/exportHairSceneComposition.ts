@@ -54,6 +54,15 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
   const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
   const rigInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionRig>()
 
+  const resolveStaticHairRig = (element: SceneElement): EditorV6HairMotionRig | undefined => {
+    const assetId = hairSourceAssetId(element)
+    const rig = assetId ? hairRigs.get(`${element.id}:${assetId}`) : undefined
+    if (!rig || assetId === element.assetId || !element.mouthPatch || element.mouthPatch.replace) return rig
+    // The asset alias identifies the pose. Only a paired face can safely
+    // replace that mouthless portrait beneath an isolated speech overlay.
+    return rig.mouthlessFaceSurfaceId ? { ...rig, faceSurfaceId: rig.mouthlessFaceSurfaceId } : undefined
+  }
+
   const hasAnimatedHair = (element: SceneElement, frame: number): boolean => {
     if (element.kind !== 'character') return false
     if (element.motionSprite) {
@@ -67,8 +76,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
       }
       return Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
     }
-    const sourceAssetId = hairSourceAssetId(element)
-    return Boolean(sourceAssetId && (hairRigs.get(`${element.id}:${sourceAssetId}`)?.layers.length ?? 0) > 0)
+    return Boolean(resolveStaticHairRig(element)?.layers.length)
   }
 
   const compose = ({ composedScene, originalElements, frame, activeHair, riggedElementIds, assetsById, renderAssetsById, hairSurfaceDataById, timings, metrics }: ComposeInput) => {
@@ -141,8 +149,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
         continue
       }
 
-      const sourceAssetId = hairSourceAssetId(original)
-      const rig = sourceAssetId ? hairRigs.get(`${element.id}:${sourceAssetId}`) : undefined
+      const rig = resolveStaticHairRig(original)
       if (!rig) { animatedElements.push(element); continue }
       rasterCanvases.set(element.id, options.composeHairFrame(rig, original, frame, timings, metrics))
       const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)

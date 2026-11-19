@@ -92,7 +92,7 @@ export async function bakeEditorV6StaticMouthLoop({
       // Both base images and mouth atlas must reference this same expanded
       // crop; keep the strict atlas bounds validation in place.
       const { sourceCrop, assets: mouthlessBaseAssets } = await prepareMouthlessBaseAssets({
-        from, baseline, render, isolatedBaseline, requiredCrop: mouthUnion
+        from, baseline, render, requiredCrop: mouthUnion
       })
       const packed = buildIsolatedMouthAtlas({
         patches: isolatedPatches,

@@ -17,7 +17,7 @@ function frame(renderer: Renderer, dataUrl = 'data:frame'): Frame {
 const from = { activeFaceMode: 'talk', faceAppearance: { expressionIndex: 0 }, faceTransforms: {}, activeExpressionEffects: undefined } as unknown as EditorV6Element
 
 describe('Editor V6 mouthless base assets', () => {
-  it('unions talk and talk-blink crops, writes both assets and returns the isolated baseline', async () => {
+  it('unions talk and talk-blink crops, writes both assets and preserves borrowed Canvases', async () => {
     const fullTalkCanvas = canvas(30, 40), fullBlinkCanvas = canvas(32, 45)
     const renderToCanvas = vi.fn().mockResolvedValueOnce({ canvas: fullTalkCanvas }).mockResolvedValueOnce({ canvas: fullBlinkCanvas })
     const renderer = { renderToCanvas } as unknown as Renderer
@@ -43,15 +43,14 @@ describe('Editor V6 mouthless base assets', () => {
     expect(result.assets.map(({ faceMode, asset }) => [faceMode, asset.id, asset.dataUrl])).toEqual([
       ['talk', 'talk-id', 'data:talk-base'], ['talk-blink', 'blink-id', 'data:blink-base']
     ])
-    expect(result.isolatedBaseline).toBe(isolated)
-    expect(isolated.dispose).not.toHaveBeenCalled()
+    expect(isolated.dispose).toHaveBeenCalledOnce()
     expect(talkBlink.dispose).toHaveBeenCalledOnce()
-    expect([fullTalkCanvas.width, fullTalkCanvas.height, fullBlinkCanvas.width, fullBlinkCanvas.height]).toEqual([1, 1, 1, 1])
+    expect([fullTalkCanvas.width, fullTalkCanvas.height, fullBlinkCanvas.width, fullBlinkCanvas.height]).toEqual([30, 40, 32, 45])
     expect(cropCalls.map(call => [call.result.width, call.result.height])).toEqual([[1, 1], [1, 1]])
     expect(createId).toHaveBeenCalledTimes(2)
   })
 
-  it('expands mouthless base crops to cover enlarged mouth pixels while keeping the reference frame', async () => {
+  it('expands mouthless base crops to cover enlarged mouth pixels', async () => {
     const talkCanvas = canvas(80, 80), blinkCanvas = canvas(80, 80)
     const renderer = { renderToCanvas: vi.fn()
       .mockResolvedValueOnce({ canvas: talkCanvas })
@@ -63,23 +62,18 @@ describe('Editor V6 mouthless base assets', () => {
       return canvas(bounds.width, bounds.height)
     })
     const blink = frame(renderer)
-    const render = vi.fn(async (_progress: number, mode?: string) => {
-      if (mode !== 'talk-blink') throw Error('A imagem de referência não deve ser renderizada duas vezes.')
-      return blink
-    })
+    const render = vi.fn(async (_progress: number, mode?: string) => mode === 'talk-blink' ? blink : isolated)
     const result = await prepareEditorV6MouthlessBaseAssets({
-      from, baseline, render, isolatedBaseline: isolated,
+      from, baseline, render,
       requiredCrop: { left: 14, top: 15, width: 12, height: 9 },
       readCrop: () => ({ left: 2, top: 3, width: 20, height: 24 }),
       cropCanvas
     })
     expect(result.sourceCrop).toEqual({ left: 2, top: 3, width: 24, height: 24 })
     expect(cropCalls).toEqual([result.sourceCrop, result.sourceCrop])
-    expect(result.isolatedBaseline).toBe(isolated)
-    expect(render).toHaveBeenCalledOnce()
-    expect(render.mock.calls[0][1]).toBe('talk-blink')
+    expect(render.mock.calls.map(([, mode]) => mode)).toEqual(['talk', 'talk-blink'])
     expect(blink.dispose).toHaveBeenCalledOnce()
-    expect(isolated.dispose).not.toHaveBeenCalled()
+    expect(isolated.dispose).toHaveBeenCalledOnce()
     expect(baseline.dispose).not.toHaveBeenCalled()
   })
 
@@ -87,8 +81,10 @@ describe('Editor V6 mouthless base assets', () => {
     const renderToCanvas = vi.fn().mockResolvedValueOnce({ canvas: canvas(30, 40) }).mockRejectedValueOnce(Error('Blink precisa de olhos fechados correspondentes'))
     const renderer = { renderToCanvas } as unknown as Renderer
     const baseline = frame(renderer), isolated = frame(renderer, 'data:talk-base')
-    const talkBlink = frame(renderer, 'data:talk-blink')
-    const render = vi.fn(async (_progress: number, mode?: string) => mode === 'talk-blink' ? talkBlink : isolated)
+    const render = vi.fn(async (_progress: number, mode?: string) => {
+      if (mode === 'talk-blink') throw Error('Blink precisa de olhos fechados correspondentes')
+      return isolated
+    })
     const cropCanvas = vi.fn(() => canvas(8, 9, 'data:mouthless-talk'))
     const createId = vi.fn().mockReturnValueOnce('talk-id').mockReturnValueOnce('fallback-blink-id')
 
@@ -97,9 +93,7 @@ describe('Editor V6 mouthless base assets', () => {
     expect(result.assets.map(({ faceMode, asset }) => [faceMode, asset.dataUrl])).toEqual([
       ['talk', 'data:mouthless-talk'], ['talk-blink', 'data:mouthless-talk']
     ])
-    expect(result.isolatedBaseline).toBe(isolated)
-    expect(isolated.dispose).not.toHaveBeenCalled()
-    expect(talkBlink.dispose).toHaveBeenCalledOnce()
+    expect(isolated.dispose).toHaveBeenCalledOnce()
     expect(createId).toHaveBeenCalledTimes(2)
   })
 
@@ -115,6 +109,6 @@ describe('Editor V6 mouthless base assets', () => {
     await expect(prepareEditorV6MouthlessBaseAssets({ from, baseline, render, readCrop: () => ({ left: 0, top: 0, width: 8, height: 9 }), cropCanvas: () => canvas(8, 9) }))
       .rejects.toThrow('Falha sintética ao renderizar a base com piscada')
     expect(isolated.dispose).toHaveBeenCalledOnce()
-    expect(baseline.dispose).toHaveBeenCalledOnce()
+    expect(baseline.dispose).not.toHaveBeenCalled()
   })
 })

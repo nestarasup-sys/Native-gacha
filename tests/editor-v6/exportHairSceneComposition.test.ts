@@ -115,6 +115,19 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     expect(result.renderScene.elements[0].mouthPatch).toMatchObject({ x: 0.34, y: 0.09375, width: 0.02, height: 0.01875 })
   })
 
+  it('does not draw the canonical closed mouth under an isolated speech patch when the talk portrait is missing', () => {
+    const fallbackRig = { ...motionRig, mouthlessFaceSurfaceId: 'face-without-mouth' }
+    const planIndex = { hairRigs: new Map([['actor:hair', fallbackRig]]) } as unknown as MotionPlanIndex
+    const factory = makeComposer({ planIndex, hairSourceAssetId: value => value.assetId === 'isolated-base' ? 'hair' : value.assetId })
+    const speaking = element({ assetId: 'isolated-base' })
+    const silent = element({ mouthPatch: undefined })
+    for (const original of [speaking, silent]) {
+      expect(factory.hasAnimatedHair(original, 12)).toBe(true)
+      factory.compose({ composedScene: scene([original]), originalElements: new Map([['actor', original]]), frame: 12, activeHair: true, riggedElementIds: new Set(['actor']), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings: {}, metrics: {} })
+    }
+    expect(vi.mocked(factory.composeHairFrame).mock.calls.map(([rig]) => rig.faceSurfaceId)).toEqual(['face-without-mouth', 'face'])
+  })
+
   it('reuses a face atlas across transition frames and preserves expanded transition geometry', () => {
     const factory = makeComposer()
     const original = element({ assetId: 'transition-body', motionSprite: { sprite: { x: 0, y: 0, width: 10, height: 10, atlasWidth: 10, atlasHeight: 10 }, x: 0, y: 0, width: 1, height: 1, rotation: 0, flipX: false } })

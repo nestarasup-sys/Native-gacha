@@ -320,6 +320,15 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const mouthSamples = [-3, -2, -1].map((offset, index) => ({ offset, progress: .6 + index * .13, faceMode: 'talk' as const }))
   const mouthPlan = { blockId: crypto.randomUUID(), elementId: actor.id, characterId: character.id, key: 'synthetic-mouth-loop', startFrame: .5, endFrame: 8, from: mouthState, to: { ...mouthState }, samples: mouthSamples }
   const mouthOptimized = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthPlan, character: facialCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, facialProvider)
+  for (const { asset } of mouthOptimized.mouthlessBaseAssets ?? []) {
+    const baseImage = await image(asset.dataUrl)
+    const bodyCanvas = document.createElement('canvas'); bodyCanvas.width = baseImage.width; bodyCanvas.height = baseImage.height
+    const context = bodyCanvas.getContext('2d')!
+    context.drawImage(baseImage, 0, 0)
+    const pixels = context.getImageData(0, 0, bodyCanvas.width, bodyCanvas.height).data
+    assert(pixels.some((value, index) => index % 4 === 3 && value === 255), 'A base isolada do MP4 perdeu o corpo ao reutilizar o Canvas do personagem.')
+    assert(!pixels.some((value, index) => index % 4 === 1 && value > 200 && pixels[index - 1] < 40 && pixels[index + 1] < 40 && pixels[index + 2] > 200), 'A base isolada ainda contém a boca do catálogo.')
+  }
   const mouthReferencePlan = { ...mouthPlan, key: 'synthetic-mouth-reference', to: { ...mouthState, text: 'Alice reference' } }
   const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, facialProvider)
   const localizedAtlas = mouthOptimized.motion.frames[0].facePatch!.sprite
@@ -443,7 +452,19 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     { id: crypto.randomUUID(), elementId: exportBase.id, label: 'Base', startFrame: 0, durationFrames: 23, state: exportBase },
     { id: crypto.randomUUID(), elementId: exportBase.id, label: 'Expression', startFrame: 23, durationFrames: 17, state: exportTarget }
   ]
+  const hairSpeechTrack = hairTimeline.tracks.find(item => item.kind === 'speech')!
+  hairSpeechTrack.blocks = [{ id: crypto.randomUUID(), label: 'Fala', characterId: exportBase.characterId, startFrame: 8, durationFrames: 20 }]
   const hairProject = { id: crypto.randomUUID(), elements: [exportBase], timeline: hairTimeline } as EditorV6Document
+  const speechPreview = { ...hairProject, timeline: { ...hairTimeline, tracks: hairTimeline.tracks.map(track => track.kind !== 'character' ? track : {
+    ...track, blocks: track.blocks.map(block => ({ ...block, state: { ...block.state!, faceModeAssetIds: block.startFrame === 0 ? baseModes.assetIds : targetModes.assetIds } }))
+  }) } }
+  for (const frame of [7, 8, 23, 27, 28]) {
+    const current = resolveEditorV6SceneAtFrame(speechPreview, frame).elements.find(element => element.id === exportBase.id)!
+    const expected = frame < 23 ? exportBase : exportTarget
+    const variants = frame < 23 ? baseModes.assetIds : targetModes.assetIds
+    const allowed = frame >= 8 && frame < 28 ? [variants.talk, variants['talk-blink']] : [expected.assetId, variants.blink]
+    assert(allowed.includes(current.assetId) && !current.mouthPatch, `A prévia deve usar um único retrato da expressão ativa no quadro ${frame}.`)
+  }
   const hairPlan = editorV6MotionPlans(hairProject)[0]
   assert(hairPlan?.samples.length === 7, 'The hair export fixture must contain an expression transition')
   const previousDesktop = Object.getOwnPropertyDescriptor(window, 'desktop')
@@ -453,6 +474,17 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     const baseRig = prepared.rigs.find(rig => rig.assetId === exportBase.assetId)!
     const targetRig = prepared.rigs.find(rig => rig.assetId === exportTarget.assetId)!
     const raisedEyeSurface = prepared.surfaces.find(surface => surface.id === baseRig.eyesAboveRearHairSurfaceId)
+    const countGreen = async (id: string | undefined) => {
+      const item = prepared.surfaces.find(surface => surface.id === id)
+      if (!item) throw Error('A fala sem retrato Talk precisa da superfície facial sem boca.')
+      const decoded = await image(item.dataUrl)
+      const canvas = document.createElement('canvas'); canvas.width = decoded.width; canvas.height = decoded.height
+      const context = canvas.getContext('2d')!; context.drawImage(decoded, 0, 0)
+      const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data
+      return pixels.reduce((count, value, index) => count + Number(index % 4 === 1 && value > 200 && pixels[index - 1] < 40 && pixels[index + 1] < 40 && pixels[index + 2] > 200), 0)
+    }
+    assert(await countGreen(baseRig.faceSurfaceId) > 100 && await countGreen(baseRig.mouthlessFaceSurfaceId) === 0,
+      'O preparo do cabelo deve manter a boca estática só na face completa.')
     assert(Boolean(raisedEyeSurface), 'The Editor V6 hair rig did not prepare a surface above posterior hair')
     const raisedEyeImage = await image(raisedEyeSurface!.dataUrl)
     const raisedEyeCanvas = document.createElement('canvas'); raisedEyeCanvas.width = raisedEyeImage.naturalWidth; raisedEyeCanvas.height = raisedEyeImage.naturalHeight

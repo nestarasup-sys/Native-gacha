@@ -49,7 +49,7 @@ describe('pipeline de boca em pose estática', () => {
       renderedFrames[renderedFrameIndex++]) as unknown as EditorV6MotionFrameRenderer
     const sourceCrop = { left: 0, top: 0, width: 40, height: 50 }
     const baseAssets = [{ faceMode: 'talk', asset: { id: 'base-mouthless' } }]
-    const prepareMouthlessBaseAssets = vi.fn(async () => ({ sourceCrop, isolatedBaseline, assets: baseAssets } as never))
+    const prepareMouthlessBaseAssets = vi.fn(async () => ({ sourceCrop, assets: baseAssets } as never))
     const createPatch = vi.fn((_canvas: HTMLCanvasElement, crop: { width: number; height: number }) => ({ width: crop.width, height: crop.height, getContext: () => ({}) } as unknown as HTMLCanvasElement))
     const normalizedCanvas = () => ({ width: 0, height: 0, getContext: () => ({ drawImage: vi.fn() }) } as unknown as HTMLCanvasElement)
     const canvases = [normalizedCanvas(), normalizedCanvas(), normalizedCanvas()]
@@ -68,7 +68,7 @@ describe('pipeline de boca em pose estática', () => {
 
     expect(result).toMatchObject({ asset, assetRole: 'face-atlas', mouthIsolationMode: 'isolated-piece', facePatchSourceCrop: sourceCrop, mouthlessBaseAssets: baseAssets, motion: packed.motion,
       metrics: { milliseconds: 25, ...rigMetrics, samples: 3, atlasPixels: 96 } })
-    expect(prepareMouthlessBaseAssets).toHaveBeenCalledWith({ from: pose, baseline, render, isolatedBaseline, requiredCrop: { left: 8, top: 9, width: 7, height: 6 } })
+    expect(prepareMouthlessBaseAssets).toHaveBeenCalledWith({ from: pose, baseline, render, requiredCrop: { left: 8, top: 9, width: 7, height: 6 } })
     expect(render).toHaveBeenCalledTimes(4)
     expect(comparisons.every((item) => item.dispose.mock.calls.length === 1)).toBe(true)
     expect(buildIsolatedMouthAtlas).toHaveBeenCalledWith(expect.objectContaining({ sourceCrop, key: 'static-mouth', rotation: 0, flipX: false }))

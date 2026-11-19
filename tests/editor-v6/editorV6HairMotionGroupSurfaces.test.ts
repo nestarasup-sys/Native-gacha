@@ -42,7 +42,7 @@ function fixture(overrides: Partial<EditorV6HairMotionGroupSurfaceDependencies> 
   } as unknown as PreparedEditorV6HairMotionCharacterGroup
   const addedSurfaces: Array<{ key: string; dataUrl: string }> = []
   const dependencies = {
-    group, targets: [], layers: [], mouthLoop: true, encodeFaceCropPng: true,
+    group, targets: [], layers: [], prepareMouthlessFace: true, encodeFaceCropPng: true,
     addSurface: vi.fn((key: string, dataUrl: string) => {
       addedSurfaces.push({ key, dataUrl })
       return `surface:${key}`
@@ -69,13 +69,17 @@ describe('superfícies faciais dos grupos de movimento de cabelo', () => {
     expect(rigs[0].baseSurfaceId).toBe(rigs[1].baseSurfaceId)
     expect(rigs[0].faceSurfaceId).toBe(rigs[1].faceSurfaceId)
     expect(rigs[0].faceSurfaceId).not.toBe(rigs[2].faceSurfaceId)
+    expect(rigs[0].mouthlessFaceSurfaceId).toBe(rigs[1].mouthlessFaceSurfaceId)
+    expect(rigs[0].mouthlessFaceSurfaceId).toBe(rigs[2].mouthlessFaceSurfaceId)
+    expect(rigs[0].mouthlessFaceSurfaceId).not.toBe(rigs[0].faceSurfaceId)
     expect(rigs[0].sourceCrop).toEqual(crop)
     expect(rigs[2].sourceCrop).toEqual(crop)
     expect(rigs[0].eyesAboveRearHairSurfaceId).toContain('raised-eyes')
     expect(rigs[0].overlaySurfaceId).toContain('overlay')
     expect(fx.originalRenderer.renderToCanvas).toHaveBeenCalledOnce()
-    expect(fx.hairlessRenderer.renderLayersToCanvas).toHaveBeenCalledTimes(2)
-    expect(fx.hairlessRenderer.renderLayersToCanvas.mock.calls[1]?.[4]).toEqual({ mouthLayer: 'without-mouth' })
+    expect(fx.hairlessRenderer.renderLayersToCanvas.mock.calls.map(args => [args[3], args[4]])).toEqual([
+      ['idle', undefined], ['idle', { mouthLayer: 'without-mouth' }], ['talk', undefined]
+    ])
     expect(fx.dependencies.measureFaceModeCrop).toHaveBeenCalledOnce()
     expect(fx.dependencies.measureFaceModeCrop).toHaveBeenCalledWith(
       character.name, fx.dependencies.group.originalRenderer, faceAppearance, {}, undefined,

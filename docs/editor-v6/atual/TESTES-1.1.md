@@ -5,6 +5,7 @@
 - Para módulo puro, execute apenas o teste focado com `npx vitest run --config vitest.editor-v6.config.ts <arquivo>`. Encontre o teste pelo nome com `rg --files tests/editor-v6`.
 - Para contrato TypeScript, execute `npm run typecheck`. Para dependências ou fronteiras entre módulos, execute `npm run audit:architecture`.
 - Para alteração em captura, vídeo em camadas, pipe, finalização ou emendas, use `npm run test:editor-v6:export`. Esse harness usa fixtures próprias. Verifique o JSON do harness em `out/editor-v6-export-check/result.json` e diferencie teste de correção de benchmark.
+- Para rosto e boca, `npm run test:editor-v6:face-export-silent` verifica a prévia facial e MP4s sintéticos. `npm run test:editor-v6:export` cobre também fala com cabelo e troca de expressão sem retrato Talk salvo. No bundle temporário do cabelo, cada rig pode ter uma superfície facial sem boca para usar com a amostra isolada. O worker preserva a superfície completa nos quadros sem amostra e recebe as duas por referência de asset quando necessário.
 - Para a pausa de atualizações com o app em segundo plano, verifique que retornar o foco durante o job preserva o export ativo e que o editor retoma a sincronização ao terminar.
 
 ## Comparação de desempenho

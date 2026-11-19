@@ -37,6 +37,7 @@ function collectStateAssets(state: EditorV6Element | undefined, assetIds: Set<st
 function collectRigImageIds(rig: EditorV6HairMotionRig, surfaceIds: Set<string>, textureIds: Set<string>) {
   surfaceIds.add(rig.baseSurfaceId)
   surfaceIds.add(rig.faceSurfaceId)
+  if (rig.mouthlessFaceSurfaceId) surfaceIds.add(rig.mouthlessFaceSurfaceId)
   if (rig.eyesAboveRearHairSurfaceId) surfaceIds.add(rig.eyesAboveRearHairSurfaceId)
   if (rig.overlaySurfaceId) surfaceIds.add(rig.overlaySurfaceId)
   for (const layer of rig.layers) textureIds.add(layer.textureId)
