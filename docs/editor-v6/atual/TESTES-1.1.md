@@ -22,6 +22,12 @@ O padrão atual é serial para trechos com vídeo. A estratégia stacked fica pa
 
 O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças de agendamento ou amostragem, cubra ambos e cheque o primeiro e o último quadro de cada trecho.
 
+## Projetos legados e atuais
+
+Os `x` e `y` gravados representam o centro do retrato de cada estado. Poses com recortes diferentes podem ter centros distintos e manter o mesmo ponto visível no palco. A leitura preserva esses centros. O recorte de um retrato com transparência usa a escala exibida para calcular o deslocamento do centro e conserva as dimensões de base separadas da escala. A chave de transição já inclui a geometria e permite regenerar atlas quando o recorte altera o estado.
+
+O [teste de paridade](../../../tests/editor-v6/legacyProjectParity.electron.ts), executado por `npm run test:editor-v6:export`, cria duas fixtures com o mesmo personagem, as mesmas poses e expressões e a mesma configuração de MP4. A antiga usa retratos com margens transparentes e omite campos opcionais mais recentes. O teste lê as duas pelo repositório, aplica o recorte à antiga, reabre uma cópia e compara os estados da timeline, as sete amostras do atlas e os pixels dos 40 quadros decodificados. Também verifica que ler e preparar a fixture antiga preservam os bytes do manifesto original.
+
 ## Como aproveitar um único export real
 
 - Na mesma execução, registre clique até MP4 validado, duração de cada fase, fila e rasterização das transições, prontidão do worker, capturas descartadas, escrita descoberta no FFmpeg e memória disponível. Use timestamps monotônicos dentro de cada processo e meça a duração da execução pelo coordenador.

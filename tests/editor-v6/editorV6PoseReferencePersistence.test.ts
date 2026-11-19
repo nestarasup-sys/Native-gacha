@@ -2,7 +2,8 @@ import { afterEach, describe, expect, it } from 'vitest'
 import * as fs from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createEditorV6Timeline } from '../../src/shared/editorV6'
+import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
+import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { createEditorV6DocumentPersistence } from '../../electron/domains/editorV6/documentPersistence'
 import { createEditorV6LibraryIndex } from '../../electron/domains/editorV6/libraryIndex'
 
@@ -14,6 +15,32 @@ afterEach(async () => {
 })
 
 describe('inventário leve de poses do Editor V6', () => {
+  it('preserva ao reabrir os centros salvos por bloco mesmo sem metadados atuais de recorte', async () => {
+    const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-v6-saved-centers-'))
+    roots.push(root)
+    const assetId = crypto.randomUUID()
+    const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', assetId, characterId: 'alice', text: 'Alice', x: 4, y: -1, width: 25, height: 38, rotation: 17, zIndex: 1, poseSlot: 1 }
+    const timeline = createEditorV6Timeline([actor])
+    delete timeline.knownElementIds
+    const track = timeline.tracks.find(item => item.kind === 'character')!
+    const first = { ...track.blocks[0], durationFrames: 150 }
+    const second = { ...first, id: crypto.randomUUID(), startFrame: 150, state: { ...actor, x: 9, y: 3, poseSlot: 2, activeExpressionPresetId: 'surprise' } }
+    track.blocks = [first, second]
+    const date = '2026-10-25T12:00:00.000Z'
+    const document: EditorV6Document = { schemaVersion: 1, id: projectId, title: 'Centros por recorte', color: '#ffffff', createdAt: date, updatedAt: date,
+      backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0,
+      elements: [actor], assets: [{ id: assetId, category: 'character', name: 'Alice', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }], timeline }
+    const persistence = createEditorV6DocumentPersistence({
+      files: fs, editorV6Path: id => join(root, `editorV6-${id}`), editorV6LibraryPath: () => root,
+      validate: (value): value is EditorV6Document => editorV6DocumentSchema.safeParse(value).success,
+      assertLibraryVideoReferencesAvailable: async () => {}, assertLibraryBackgroundReferencesAvailable: async () => {}, assertLibraryMediaReferencesAvailable: async () => {},
+      coordinateLibraryReferenceChange: operation => operation(), decodeImage: () => Buffer.from([0]), normalizeImage: async bytes => ({ bytes })
+    })
+    await persistence.writeEditorV6(document)
+    const reopened = await persistence.readEditorV6(projectId)
+    expect(reopened?.timeline.tracks.find(item => item.kind === 'character')?.blocks).toEqual([first, second])
+  })
+
   it('grava fundos, objetos e áudios compartilhados só como IDs e resolve os IDs ao reabrir', async () => {
     const root = await fs.mkdtemp(join(tmpdir(), 'native-editor-v6-library-refs-'))
     roots.push(root)

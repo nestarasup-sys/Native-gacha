@@ -4,7 +4,6 @@ import type * as nodeFs from 'node:fs/promises'
 import { createEditorV6Timeline, editorV6LibraryAssetUrl, syncEditorV6TimelineElements, type EditorV6Asset, type EditorV6Document, type EditorV6ProjectSummary, type EditorV6Timeline } from '../../../src/shared/editorV6'
 import { createKeyedOperationQueue } from '../storage/keyedOperationQueue.ts'
 import { publishEditorV6AssetsAndManifest, recoverEditorV6AssetTransaction } from './assetTransaction.ts'
-import { normalizeEditorV6CharacterPositions } from '../../../src/shared/editorV6TimelineEdits'
 import { invalidateIncompleteEditorV6Motions } from '../../../src/shared/editorV6Motion'
 import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6TimelineCore'
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
@@ -72,7 +71,9 @@ export function createEditorV6DocumentPersistence(deps: {
       const folder = deps.editorV6Path(id)
       await recoverEditorV6AssetTransaction(deps.files, folder)
       const raw = JSON.parse(await readFile(join(folder, 'editorV6.json'), 'utf8')) as Record<string, unknown>
-      const normalized = normalizeEditorV6CharacterPositions(normalizeEditorV6(raw, id))
+      // Centers belong to the saved portraits. Different crops of the same
+      // actor can have different centers while keeping their visible anchor.
+      const normalized = normalizeEditorV6(raw, id)
       const states = [...normalized.elements, ...normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))]
       const visibleAssets = new Set([normalized.backgroundAssetId, ...states.flatMap(state => [state.assetId, ...Object.values(state.faceModeAssetIds ?? {})])])
       const derivedMotionAssets = new Set(normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.incomingMotion ? [block.incomingMotion.assetId, block.incomingMotion.faceAssetId] : [])))

@@ -1,4 +1,5 @@
 import type { StudioElement } from '../../../shared/studio'
+import { studioElementSize } from '../../../shared/studioSceneModel.ts'
 import type { TrimmedImage } from './transparentImageTrim'
 
 export function faceRenderGeometry(
@@ -39,8 +40,11 @@ export function faceRenderGeometry(
 
 
 export function fitElementToTrim(element: StudioElement, crop: TrimmedImage): StudioElement {
-  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * element.width * (element.flipX ? -1 : 1)
-  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * element.height
+  // The new center is a displacement on the stage, where the character's
+  // scale and axis adjustments already apply. The stored dimensions stay raw.
+  const size = studioElementSize(element)
+  const offsetX = ((crop.left + crop.width / 2) / crop.sourceWidth - 0.5) * size.width * (element.flipX ? -1 : 1)
+  const offsetY = ((crop.top + crop.height / 2) / crop.sourceHeight - 0.5) * size.height
   const radians = element.rotation * Math.PI / 180
   const x = offsetX * Math.cos(radians) - offsetY * (9 / 16) * Math.sin(radians)
   const y = offsetX * (16 / 9) * Math.sin(radians) + offsetY * Math.cos(radians)

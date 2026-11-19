@@ -10,42 +10,6 @@ export function moveEditorV6ElementInPeriod(document: EditorV6Document, blockId:
   return editEditorV6DocumentAtBlock(document, blockId, (working) => ({ ...working, elements: working.elements.map((element) => element.id === clip.block.elementId ? { ...element, x, y } : element) }))
 }
 
-/** Aligns a legacy project's character blocks to the actor's earliest saved position. */
-export function normalizeEditorV6CharacterPositions(document: EditorV6Document): EditorV6Document {
-  const positions = new Map<string, { x: number; y: number }>()
-  for (const track of document.timeline.tracks) {
-    if (track.kind !== 'character' || !track.characterId || positions.has(track.characterId)) continue
-    const first = [...track.blocks].filter((block) => block.state?.kind === 'character').sort(compareEditorV6TimelineBlocks)[0]
-    const base = document.elements.find((element) => element.kind === 'character' && element.characterId === track.characterId)
-    const source = first?.state ?? base
-    if (source && Number.isFinite(source.x) && Number.isFinite(source.y)) positions.set(track.characterId, { x: source.x, y: source.y })
-  }
-  if (!positions.size) return document
-
-  let changed = false
-  const elements = document.elements.map((element) => {
-    const position = element.kind === 'character' && element.characterId ? positions.get(element.characterId) : undefined
-    if (!position || (element.x === position.x && element.y === position.y)) return element
-    changed = true
-    return { ...element, ...position }
-  })
-  const tracks = document.timeline.tracks.map((track) => {
-    const position = track.kind === 'character' && track.characterId ? positions.get(track.characterId) : undefined
-    if (!position) return track
-    let trackChanged = false
-    const blocks = track.blocks.map((block) => {
-      const state = block.state
-      if (!state || state.kind !== 'character' || (state.x === position.x && state.y === position.y)) return block
-      trackChanged = true
-      return { ...block, state: { ...state, ...position } }
-    })
-    if (!trackChanged) return track
-    changed = true
-    return { ...track, blocks }
-  })
-  return changed ? pruneEditorV6TimelineSnapshots({ ...document, elements, timeline: { ...document.timeline, tracks } }) : document
-}
-
 /** Position is actor-level data: every pose/expression block uses the same scene coordinates. */
 export function setEditorV6CharacterPosition(document: EditorV6Document, elementId: string, position: { x?: number; y?: number }): EditorV6Document {
   if ((position.x !== undefined && !Number.isFinite(position.x)) || (position.y !== undefined && !Number.isFinite(position.y))) return document

@@ -21,6 +21,7 @@ import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEdit
 import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import { faceRenderGeometry } from '../../src/renderer/src/characters/characterGeometry'
+import { checkLegacyProjectParity, type LegacyParityCatalog } from './legacyProjectParity.electron'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
 const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
@@ -458,8 +459,11 @@ async function main() {
     { ...source.parts[0], dataUrl: softImages.body },
     { id: 'edge', name: 'Soft edge', x: 5, y: 5, width: 10, height: 10, rotation: 0, dataUrl: softImages.edge }
   ] }
-  ipcMain.handle('fabricator:load-slot', (_event, slot) => slot === 2 ? scaleSource : source)
-  ipcMain.handle('fabricator:poses:load', (_event, _slot, pose) => pose === 1 ? source : target)
+  let legacyCatalog: LegacyParityCatalog | undefined
+  ipcMain.handle('fabricator:load-slot', (_event, slot) => slot === 3 ? legacyCatalog?.poses[0] : slot === 2 ? scaleSource : source)
+  ipcMain.handle('fabricator:poses:load', (_event, slot, pose) => slot === 3 ? legacyCatalog?.poses[pose - 1] : pose === 1 ? source : target)
+  ipcMain.handle('fabricator:face-catalog:load', (_event, slot, id) => slot === 3 ? legacyCatalog?.mouths.find(mouth => mouth.id === id) ?? null : null)
+  ipcMain.handle('fabricator:expression-presets:list', () => [])
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: any[]) => any>()
   const service = createEditorV6MotionService({ ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler); ipcMain.handle(channel, handler) } }, assertTrustedSender: () => {}, html: join(root, 'out/renderer/index.html'), preload: join(root, 'out/preload/editorV6MotionPreload.cjs') })
   let motionProject = prepareEditorV6PositionAtFrame(project, actor.id, 50)!.document
@@ -595,6 +599,15 @@ async function main() {
     checkMouthPixel(frame, 160, frame < 2 || frame >= 8 ? 'body' : frame < 5 ? '010' : '011')
     checkMouthPixel(frame, 210, frame >= 8 ? '001' : 'body')
   }
+  const legacyProjectParity = await checkLegacyProjectParity({
+    folder, owner, source: scaleSource, arm: source.parts[1], character, setCatalog: catalog => { legacyCatalog = catalog },
+    bake: (request, signal) => service.bakeForExport(request, signal),
+    exportProject: (document, label, bakeMotion) => runEditorV6Export(document, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
+      ...base, id: randomUUID(), outputPath: join(folder, `${label}.mp4`), reportPath: join(folder, `${label}.report.json`),
+      getCharacters: async () => [{ ...character, customization: { ...character.customization, modelSlot: 3 } }], bakeMotion
+    }),
+    decode: label => run(['-i', join(folder, `${label}.mp4`), '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  })
   const uniqueCaptureFrameCount = 60
   let uniqueCaptureProject = silent
   for (let frame = 0; frame < uniqueCaptureFrameCount; frame++) {
@@ -849,7 +862,7 @@ async function main() {
   })))
   assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
   assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
-  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, motionBodyDimensions, output,
+  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, motionBodyDimensions, legacyProjectParity, output,
     nativeRendererParity,
     native1080Benchmark,
     nativeFullExport: { state: nativeExport.state, frames: nativeExport.totalFrames, rendered: nativePart?.rendered, reused: nativePart?.reused, timings: nativePart?.frameTiming },

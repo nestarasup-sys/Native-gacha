@@ -28,6 +28,22 @@ test('recorte de personagem preserva proporções dos Studios, incluindo rotaç�
   }
  }
 })
+test('recorte legado mantém o mesmo ponto visível com escala, espelhamento e rotação', () => {
+ const original = { kind: 'character', x: 20, y: 30, width: 30, height: 50, rotation: 25, flipX: true,
+  characterScale: 125, characterWidthScale: 120, characterHeightScale: 80 }
+ const crop = { dataUrl: '', left: 12, top: 8, width: 60, height: 70, sourceWidth: 100, sourceHeight: 100 }
+ const landmark = { x: 45, y: 50 }
+ const stagePoint = (element, localX, localY) => {
+  const dx = -(localX - .5) * element.width * 1.25 * 1.2 * 19.2
+  const dy = (localY - .5) * element.height * 1.25 * .8 * 10.8
+  const rotation = element.rotation * Math.PI / 180
+  return [(50 + element.x) * 19.2 + dx * Math.cos(rotation) - dy * Math.sin(rotation),
+   (50 + element.y) * 10.8 + dx * Math.sin(rotation) + dy * Math.cos(rotation)]
+ }
+ const before = stagePoint(original, landmark.x / 100, landmark.y / 100)
+ const after = stagePoint(fitElementToTrim(original, crop), (landmark.x - crop.left) / crop.width, (landmark.y - crop.top) / crop.height)
+ assert.ok(before.every((value, axis) => Math.abs(value - after[axis]) < 1e-9), `O recorte moveu o ponto de ${before} para ${after}`)
+})
 test('geometria de rosto idêntica para elementos em 16:9',()=>{
  const element={width:25,characterCanvasWidth:40}
  const result=faceRenderGeometry(element,{width:400,height:600},{width:280,height:480},1920,1080)
