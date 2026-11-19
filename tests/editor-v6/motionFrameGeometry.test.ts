@@ -8,22 +8,10 @@ function character(overrides: Record<string, unknown> = {}): EditorV6Element {
 
 describe('Editor V6 motion frame geometry', () => {
   it('retains source endpoint scale for legacy characters whose saved rectangle is unchanged', () => {
-    const from = character({ poseSlot: 1 }), to = character({ poseSlot: 2 })
+    const from = character(), to = character()
     const scales = resolveEditorV6MotionElementScales(from, to, { left: 0, top: 0, width: 100, height: 100 }, { left: 20, top: 10, width: 200, height: 80 })
 
     expect(scales).toEqual({ from: { x: 19.2, y: 10.8 }, to: { x: 19.2, y: 10.8 } })
-  })
-
-  it('matches both saved rectangles for legacy expression changes with different face crops', () => {
-    const from = character({ poseSlot: 1 }), to = character({ poseSlot: 1 })
-    const fromCrop = { left: 0, top: 0, width: 100, height: 100 }
-    const toCrop = { left: 0, top: 0, width: 100, height: 105 }
-    const endpointScales = resolveEditorV6MotionElementScales(from, to, fromCrop, toCrop)
-    const start = interpolateEditorV6MotionFrameGeometry({ from, to, fromCrop, toCrop, endpointScales, crop: fromCrop, progress: 0 })
-    const end = interpolateEditorV6MotionFrameGeometry({ from, to, fromCrop, toCrop, endpointScales, crop: toCrop, progress: 1 })
-    expect(start.height).toBeCloseTo(100)
-    expect(end.height).toBeCloseTo(100)
-    expect(end.y).toBeCloseTo(to.y)
   })
 
   it('uses the target scale when the actor size changes or a source canvas width exists', () => {

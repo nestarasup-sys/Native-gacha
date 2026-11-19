@@ -6,7 +6,7 @@ import type { MotionPixelCrop } from './motionPixelAnalysis'
 export type MotionElementScale = { x: number; y: number }
 export type MotionElementScalePair = { from: MotionElementScale; to: MotionElementScale }
 
-/** Preserve legacy pose scale while matching each expression snapshot at its endpoint. */
+/** Resolves endpoint scales and preserves the historical fallback for legacy actors without source-canvas width. */
 export function resolveEditorV6MotionElementScales(
   from: EditorV6Element,
   to: EditorV6Element,
@@ -16,7 +16,7 @@ export function resolveEditorV6MotionElementScales(
   const sharedCharacterCanvasWidth = from.characterCanvasWidth ?? to.characterCanvasWidth
   const fromScale = motionEndpointScale(from, fromCrop)
   let toScale = motionEndpointScale(to, toCrop)
-  const sameLegacyElementSize = !sharedCharacterCanvasWidth && from.poseSlot !== to.poseSlot
+  const sameLegacyElementSize = !sharedCharacterCanvasWidth
     && from.width === to.width && from.height === to.height
     && (from.characterScale ?? 100) === (to.characterScale ?? 100)
     && (from.characterWidthScale ?? 100) === (to.characterWidthScale ?? 100)
