@@ -7,11 +7,18 @@ function character(overrides: Record<string, unknown> = {}): EditorV6Element {
 }
 
 describe('Editor V6 motion frame geometry', () => {
-  it('retains source endpoint scale for legacy characters whose saved rectangle is unchanged', () => {
-    const from = character(), to = character()
+  it('keeps body scale stable through expression transitions with different crop heights', () => {
+    const from = character({ poseSlot: 1, characterCanvasWidth: 400 }), to = character({ poseSlot: 1, characterCanvasWidth: 400 })
     const scales = resolveEditorV6MotionElementScales(from, to, { left: 0, top: 0, width: 100, height: 100 }, { left: 20, top: 10, width: 200, height: 80 })
 
     expect(scales).toEqual({ from: { x: 19.2, y: 10.8 }, to: { x: 19.2, y: 10.8 } })
+  })
+
+  it('preserves deliberate scale changes between expression endpoints', () => {
+    const from = character({ poseSlot: 1 }), to = character({ poseSlot: 1, characterHeightScale: 110 })
+    const crops = [{ left: 0, top: 0, width: 100, height: 100 }, { left: 0, top: 0, width: 100, height: 105 }]
+    expect(resolveEditorV6MotionElementScales(from, to, ...crops).to.x).toBeCloseTo(19.2)
+    expect(resolveEditorV6MotionElementScales(from, to, ...crops).to.y).toBeCloseTo(11.3142857143)
   })
 
   it('uses the target scale when the actor size changes or a source canvas width exists', () => {
