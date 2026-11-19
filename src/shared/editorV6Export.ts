@@ -42,7 +42,7 @@ export function editorV6ExportContentEndFrame(project: Pick<EditorV6Document, 't
   return Math.max(Math.min(project.timeline.durationFrames, EDITOR_V6_DEFAULT_DURATION_FRAMES), ...contentEnds)
 }
 
-export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.05, 1.05 * 1.05] as const
+export const EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES = [1, 1.08, 1.1325] as const
 export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number, cycleFrames: number): number {
   const phase = ((frame - startFrame) % cycleFrames + cycleFrames) % cycleFrames / cycleFrames
   const travel = phase <= .5 ? phase * 2 : (1 - phase) * 2

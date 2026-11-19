@@ -197,7 +197,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const talkTo = { ...next, state: { ...actor, poseSlot: 2, faceAppearance: appearance, activeFaceMode: 'talk' as const } }
   const talkPlanBase = editorV6MotionPlan(track, talkFrom, talkTo)!
   const talkPlan = { ...talkPlanBase, key: 'synthetic-talking-pose-transition', samples: talkPlanBase.samples.map((sample) => ({ ...sample, faceMode: 'talk' as const })) }
-  const talkScales = [1, 1.05, 1.1025, 1.05, 1.1025, 1.05, 1.1025]
+  const talkScales = [1, 1.08, 1.1325, 1.08, 1.1325, 1.08, 1.1325]
   const talkingTransition = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: talkPlan, character: facialCharacter, mouthScaleSamples: talkScales }, facialProvider)
   assert(talkingTransition.metrics.preparedRigs === 9, 'Talking mouth samples prepared duplicate pose rigs during a transition')
   assert(talkingTransition.motion.frames.slice(1).every((frame) => Boolean(frame.facePatch)), 'Talking mouth samples lost their local facial patches during a pose transition')
@@ -278,9 +278,9 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const mouthState: EditorV6Element = { ...actor, faceAppearance: appearance, activeFaceMode: 'talk' }
   const mouthSamples = [-3, -2, -1].map((offset, index) => ({ offset, progress: .6 + index * .13, faceMode: 'talk' as const }))
   const mouthPlan = { blockId: crypto.randomUUID(), elementId: actor.id, characterId: character.id, key: 'synthetic-mouth-loop', startFrame: .5, endFrame: 8, from: mouthState, to: { ...mouthState }, samples: mouthSamples }
-  const mouthOptimized = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthPlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
+  const mouthOptimized = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthPlan, character: facialCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, facialProvider)
   const mouthReferencePlan = { ...mouthPlan, key: 'synthetic-mouth-reference', to: { ...mouthState, text: 'Alice reference' } }
-  const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, facialProvider)
+  const mouthReference = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: mouthReferencePlan, character: facialCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, facialProvider)
   const localizedAtlas = mouthOptimized.motion.frames[0].facePatch!.sprite
   assert(mouthOptimized.metrics.samples === 3 && mouthOptimized.motion.frames.every(frame => Boolean(frame.facePatch))
     && mouthOptimized.mouthlessBaseAssets?.length === 2
@@ -338,7 +338,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   } }
   const hiActor: EditorV6Element = { ...actor, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
   const hiPlan = { ...mouthPlan, elementId: hiActor.id, characterId: hiCharacter.id, key: 'native-resolution-mouth-patch', from: hiActor, to: { ...hiActor }, samples: mouthSamples }
-  const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025], maxAtlasPixels: 8_000_000 }, hiProvider)
+  const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, hiProvider)
   const hiPatchAtlas = await image(hiMouthBake.asset.dataUrl)
   const hiPatchSprite = hiMouthBake.motion.frames[2].facePatch!.sprite
   const hiPatchCanvas = document.createElement('canvas'); hiPatchCanvas.width = hiPatchSprite.width; hiPatchCanvas.height = hiPatchSprite.height
@@ -363,7 +363,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(targetTransforms['expression-component:pupil-left']?.sourceTransformOverride?.x !== pupil.defaultTransform.x, 'PT did not change pupil position')
   const targetModes = await bakeFaceModeAssets('Synthetic expression target', hiBodyRenderer, hiAppearance, targetTransforms, undefined, 'idle')
   const targetMouthState = { ...hiActor, faceTransforms: targetTransforms }
-  const targetMouth = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: { ...hiPlan, key: 'target-mouth', from: targetMouthState, to: { ...targetMouthState } }, character: hiCharacter, mouthScaleSamples: [1, 1.05, 1.1025] }, hiProvider)
+  const targetMouth = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: { ...hiPlan, key: 'target-mouth', from: targetMouthState, to: { ...targetMouthState } }, character: hiCharacter, mouthScaleSamples: [1, 1.08, 1.1325] }, hiProvider)
   const expressionFrom = { ...hiActor, x: -32, width: 20, height: 20 * 1920 / 1080 * (hiBodyCrop?.height ?? hiBody.height) / (hiBodyCrop?.width ?? hiBody.width), activeFaceMode: 'idle' as const,
     characterCanvasWidth: 20 * hiBody.width / (hiBodyCrop?.width ?? hiBody.width) }
   const expressionTo = { ...expressionFrom, activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
