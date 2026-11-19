@@ -13,18 +13,15 @@ export function resolveEditorV6MotionElementScales(
   fromCrop: MotionPixelCrop,
   toCrop: MotionPixelCrop
 ): MotionElementScalePair {
+  const sharedCharacterCanvasWidth = from.characterCanvasWidth ?? to.characterCanvasWidth
   const fromScale = motionEndpointScale(from, fromCrop)
   let toScale = motionEndpointScale(to, toCrop)
-  const sameExpressionElementSize = from.poseSlot === to.poseSlot
-    && from.characterCanvasWidth === to.characterCanvasWidth
+  const sameLegacyElementSize = !sharedCharacterCanvasWidth
     && from.width === to.width && from.height === to.height
     && (from.characterScale ?? 100) === (to.characterScale ?? 100)
     && (from.characterWidthScale ?? 100) === (to.characterWidthScale ?? 100)
     && (from.characterHeightScale ?? 100) === (to.characterHeightScale ?? 100)
-  // An expression crop may have a different alpha height even though the
-  // underlying pose and authored character rectangle are unchanged. Keep the
-  // body scale fixed through that transition; interpolate only the crop.
-  if (sameExpressionElementSize) toScale = fromScale
+  if (sameLegacyElementSize) toScale = fromScale
   return { from: fromScale, to: toScale }
 }
 
