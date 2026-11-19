@@ -6,7 +6,7 @@ import type { GachaReusableMaterialCache } from '../../../characters/editorV6Cha
 import { chooseMotionAtlasLayout, MAX_MOTION_ATLAS_PIXELS } from './motionAtlasLayout'
 import type { MotionPixelCrop as Crop } from './motionPixelAnalysis'
 import { createMotionPoseResolver } from './motionPoseResolver'
-import { editorV6MotionEndpointGeometryCacheKey, resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
+import { editorV6MotionEndpointGeometryCacheKey, measureEditorV6MotionSnapshot, resolveMotionBakeEndpointGeometry } from './motionBakeEndpointGeometry'
 import type { HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 import { cacheEditorV6MotionAssetProvider } from './motionAssetProviderCache'
 import type { EditorV6MotionProviderReadStats } from './motionAssetProviderCache'
@@ -124,10 +124,13 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         from: editorV6MotionEndpointGeometryCacheKey(request.character, request.plan.from),
         to: editorV6MotionEndpointGeometryCacheKey(request.character, request.plan.to)
       } : undefined,
-      staticMouthLoop: false,
-      hasMouthScaleSamples: Boolean(request.mouthScaleSamples),
-      firstFaceMode: from.activeFaceMode,
-      render
+      measure: async (endpoint, crop) => {
+        const renderer = await prepare(endpoint === 'from' ? 0 : 1)
+        try {
+          if (crop) return { crop, width: renderer.width, height: renderer.height }
+          return await measureEditorV6MotionSnapshot(renderer, request.plan[endpoint], request.character)
+        } finally { rigPreparer.disposeTransientRenderer(renderer) }
+      }
     })
     const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = endpointGeometry
     profile.endpointGeometryCacheHits = endpointGeometry.endpointGeometryCacheHits

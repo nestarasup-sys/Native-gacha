@@ -20,6 +20,7 @@ import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } f
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
 import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
+import { faceRenderGeometry } from '../../src/renderer/src/characters/characterGeometry'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3])
 const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
@@ -440,7 +441,24 @@ async function main() {
   const source: FabricatorProject = { schemaVersion: 1, slot: 1, name: 'Synthetic', sourceName: 'test', sourceAssetName: 'test', sourceDataUrl: '', width: 100, height: 100, tolerance: 0, updatedAt: new Date().toISOString(), joints: [], layerOrder: ['head','arm'], parts: [{ id: 'head', name: 'head', x: 35,y: 20,width: 30,height: 60,rotation: 0,dataUrl: project.assets[0].dataUrl },{id: 'arm',name: 'arm',x: 10,y: 50,width: 10,height: 10,rotation: 0,dataUrl: blue}] }
   const target = { ...source, parts: source.parts.map(p => p.id === 'arm' ? { ...p, x: 80 } : p) }
   const character: CustomizerCharacter = { id: 'alice',name: 'Alice',hair: '#000000',outfit: '#000000',skin: '#ffffff',createdAt: source.updatedAt,updatedAt: source.updatedAt,customization: { modelSlot: 1,poseSlot: null,partOverrides: {},layerOrder: [] } }
-  ipcMain.handle('fabricator:load-slot', () => source)
+  const softImages: { body: string; edge: string; snapshot: string } = await owner.webContents.executeJavaScript(`(() => {
+    const png = (width, height, paint) => {
+      const canvas = document.createElement('canvas'); canvas.width = width; canvas.height = height;
+      paint(canvas.getContext('2d')); return canvas.toDataURL('image/png');
+    };
+    const fill = (context, color, x, y, width, height) => { context.fillStyle = color; context.fillRect(x, y, width, height); };
+    const red = '#ff0000', edge = 'rgba(255,255,255,.02)';
+    return {
+      body: png(30, 60, c => fill(c, red, 0, 0, 30, 60)),
+      edge: png(10, 10, c => fill(c, edge, 0, 0, 10, 10)),
+      snapshot: png(60, 75, c => { fill(c, red, 30, 15, 30, 60); fill(c, edge, 0, 0, 10, 10); })
+    };
+  })()`)
+  const scaleSource: FabricatorProject = { ...source, slot: 2, layerOrder: ['head', 'edge'], parts: [
+    { ...source.parts[0], dataUrl: softImages.body },
+    { id: 'edge', name: 'Soft edge', x: 5, y: 5, width: 10, height: 10, rotation: 0, dataUrl: softImages.edge }
+  ] }
+  ipcMain.handle('fabricator:load-slot', (_event, slot) => slot === 2 ? scaleSource : source)
   ipcMain.handle('fabricator:poses:load', (_event, _slot, pose) => pose === 1 ? source : target)
   const handlers = new Map<string, (event: IpcMainInvokeEvent, ...args: any[]) => any>()
   const service = createEditorV6MotionService({ ipcMain: { handle: (channel, handler) => { handlers.set(channel, handler); ipcMain.handle(channel, handler) } }, assertTrustedSender: () => {}, html: join(root, 'out/renderer/index.html'), preload: join(root, 'out/preload/editorV6MotionPreload.cjs') })
@@ -488,6 +506,34 @@ async function main() {
     }
     assert(characterPixels > 50, `O personagem sumiu durante a troca de pose no quadro ${index} (${characterPixels} pixels detectados).`)
   }
+  const scaleCharacter = { ...character, customization: { ...character.customization, modelSlot: 2 } }
+  const scaleActorBase = { ...actor, x: 0, y: 0, poseSlot: null, characterCanvasWidth: 30 }
+  const scaleActor = { ...scaleActorBase, ...faceRenderGeometry(scaleActorBase, scaleSource, { left: 5, top: 5, width: 60, height: 75 }, 1920, 1080) }
+  let scaleProject = { ...silent, elements: [scaleActor], assets: [{ ...silent.assets[0], dataUrl: softImages.snapshot }], timeline: createEditorV6Timeline([scaleActor]) }
+  scaleProject = prepareEditorV6PositionAtFrame(scaleProject, scaleActor.id, 30)!.document
+  scaleProject = { ...scaleProject, timeline: { ...scaleProject.timeline, tracks: scaleProject.timeline.tracks.map(track => track.kind !== 'character' ? track : { ...track,
+    blocks: track.blocks.map(block => block.startFrame !== 30 ? block : { ...block, state: { ...block.state!, activeExpressionPresetId: 'scale-check' } })
+  }) } }
+  const scaleOutput = join(folder, 'motion-scale.mp4')
+  const scaleExport = await runEditorV6Export(scaleProject, { ...options, startFrame: 22, endFrame: 31, turbo: false }, {
+    ...base, id: randomUUID(), outputPath: scaleOutput, reportPath: join(folder, 'motion-scale.report.json'),
+    getCharacters: async () => [scaleCharacter], bakeMotion: (request, signal) => service.bakeForExport(request, signal)
+  })
+  assert(scaleExport.motionTransitionsPrepared === 1, 'O MP4 de escala precisa preparar a transição real.')
+  const scaleRgb = run(['-i', scaleOutput, '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  assert(scaleRgb.length === 9 * frameBytes, 'O MP4 de escala não entregou os nove quadros esperados.')
+  const motionBodyDimensions = Array.from({ length: 9 }, (_, frame) => {
+    let left = 320, right = -1, top = 180, bottom = -1
+    for (let y = 0; y < 180; y++) for (let x = 0; x < 320; x++) {
+      const offset = frame * frameBytes + (y * 320 + x) * 3
+      if (scaleRgb[offset] < 190 || scaleRgb[offset + 1] > 55 || scaleRgb[offset + 2] > 55) continue
+      left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y)
+    }
+    assert(right > left && bottom > top, `O corpo de referência sumiu no quadro ${frame + 22} do MP4.`)
+    return [right - left + 1, bottom - top + 1]
+  })
+  assert(motionBodyDimensions.every(([width, height]) => Math.abs(width - motionBodyDimensions[0][0]) <= 2 && Math.abs(height - motionBodyDimensions[0][1]) <= 2),
+    `O corpo mudou de tamanho antes, durante ou depois da transição no MP4: ${JSON.stringify(motionBodyDimensions)}.`)
   const uniqueCaptureFrameCount = 60
   let uniqueCaptureProject = silent
   for (let frame = 0; frame < uniqueCaptureFrameCount; frame++) {
@@ -742,7 +788,7 @@ async function main() {
   })))
   assert(captureProfile(fullHd).every((part) => (part.captureBitmapMs?.samples ?? 0) > 0), 'O teste 1080p não registrou custo de conversão/cópia do bitmap.')
   assert(captureProfile(videoMotion).every((part) => (part.backgroundCaptureMs?.samples ?? 0) > 0 && (part.foregroundCaptureMs?.samples ?? 0) > 0), 'O teste com vídeo em camadas não separou a captura do fundo e do primeiro plano.')
-  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, output,
+  const summary = { passed: true, peakWorkers: peak, frames: 81, reused: report.attempts[0].parts.reduce((sum, part) => sum + part.reused, 0), audioContinuousAtSeam: true, fallback: fallback.fallback, cancelledDestinationPreserved: true, singleFrame: true, fullHd: true, fullHdActorPixels: actorPixels, sandboxPreloads: true, motionAcrossTurboSeam: true, motionCancelled: true, motionBodyDimensions, output,
     nativeRendererParity,
     native1080Benchmark,
     nativeFullExport: { state: nativeExport.state, frames: nativeExport.totalFrames, rendered: nativePart?.rendered, reused: nativePart?.reused, timings: nativePart?.frameTiming },

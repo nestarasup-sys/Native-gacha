@@ -79,6 +79,9 @@ export function createEditorV6MotionRigPreparer({
     samePose,
     prepare,
     metrics: () => ({ preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds }),
+    disposeTransientRenderer(renderer: Renderer) {
+      if (renderer !== reusable && !(session && [...session.endpointRenderers.values()].includes(renderer))) renderer.dispose()
+    },
     disposeTransientReusable() {
       if (reusable && !(session && [...session.endpointRenderers.values()].includes(reusable))) reusable.dispose()
       reusable = undefined

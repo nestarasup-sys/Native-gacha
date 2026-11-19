@@ -14,7 +14,8 @@ import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FaceCatalogItem, FabricatorProject } from '../../src/shared/fabricator'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
-import { editorV6MotionPlan, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { attachEditorV6Motion, editorV6MotionPlan, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import { FIRST_HAIR_MOTION_PRESET } from '../../src/shared/hairMotionEngine'
 import { prepareSavedCharacterRenderer } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 import { bakeEditorV6Motion } from '../../src/renderer/src/features/editorV6/motion/bakeMotion'
@@ -157,6 +158,46 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   const facialProvider = { ...Object.fromEntries(['loadFabricatorSlot','loadFabricatorPose','loadHairStyle','loadWardrobeSet','loadFaceSet','listFaceComponentAssets','loadFaceComponentAsset','listFaceCatalog','listFaceExpressionPresets','loadFaceExpressionPreset'].map(name => [name, provider[name as keyof typeof provider]])), loadFaceCatalogItem: async (_modelSlot: number, id: string) => id === openMouth.id ? openMouth : mouth } as CharacterRenderAssetProvider
   const appearance = { modelSlot: 1,mouthClosedCatalogId: mouth.id,mouthOpenCatalogId: openMouth.id,eyeState: 0 as const,eyebrows: false,noseIndex: 0,expressionIndex: 0,mouthOpen: false }
   const facialCharacter = { ...character, customization: { ...character.customization, faceAppearance: appearance } }
+  // Alpha below 8 in each image can cross the crop threshold when the saved
+  // face variants are composited. Measure the opaque body through the real stage.
+  const softSource: FabricatorProject = { ...source, layerOrder: [...source.layerOrder, 'soft-edge'], parts: [...source.parts,
+    { id: 'soft-edge', name: 'Soft edge', x: 5, y: 5, width: 10, height: 10, rotation: 0, dataUrl: png('rgba(255, 255, 255, 0.02)') }] }
+  const softProvider = { ...facialProvider, loadFabricatorPose: async () => null, loadFabricatorSlot: async () => softSource }
+  const softRenderer = await prepareSavedCharacterRenderer(facialCharacter, { source: softSource, artwork: softSource, assetProvider: softProvider })
+  const softAssetId = crypto.randomUUID()
+  const softActor = { ...actor, assetId: softAssetId, poseSlot: null, faceAppearance: appearance, characterCanvasWidth: 28, activeFaceMode: 'idle' as const }
+  const softVariants = await bakeFaceModeAssets(softActor.text, softRenderer, appearance, undefined, undefined, 'idle')
+  const softGeometry = faceRenderGeometry(softActor, softRenderer, softVariants.crop, 1920, 1080)
+  softRenderer.dispose()
+  assert(softVariants.crop?.left === 5 && softVariants.crop.top === 5, 'A fixture precisa incluir a borda suave no recorte salvo.')
+  const softState = { ...softActor, ...softGeometry, faceModeAssetIds: softVariants.assetIds }
+  const softDocument = {
+    id: crypto.randomUUID(), backgroundColor: '#000000', elements: [softState],
+    assets: [{ id: softAssetId, dataUrl: softVariants.dataUrl, mimeType: 'image/png', category: 'character', name: 'Soft edge' }, ...softVariants.extraAssets],
+    timeline: { fps: 30, durationFrames: 60, tracks: [{ ...track, blocks: [
+      { ...previous, state: softState },
+      { ...next, state: { ...softState, activeExpressionPresetId: 'synthetic-expression' } }
+    ] }] }
+  } as EditorV6Document
+  const softPlan = editorV6MotionPlans(softDocument)[0]
+  const softMotion = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: softPlan, character: facialCharacter }, softProvider)
+  const softPlayback = attachEditorV6Motion(softDocument, softPlan.blockId, softMotion)
+  const redSpans: number[][] = []
+  for (const frame of [22, 23, 26, 29, 30]) {
+    const scene = resolveEditorV6SceneAtFrame(softPlayback, frame)
+    assert(Boolean(scene.elements[0].motionSprite) === (frame > 22 && frame < 30), `Quadro ${frame} não exercitou o caminho esperado.`)
+    const pixels = await captureScene(scene, softPlayback.assets, 'all')
+    let left = 384, top = 216, right = -1, bottom = -1
+    for (let y = 0; y < 216; y++) for (let x = 0; x < 384; x++) {
+      const offset = (y * 384 + x) * 4
+      if (pixels[offset] < 200 || pixels[offset + 1] > 40 || pixels[offset + 2] > 40) continue
+      left = Math.min(left, x); top = Math.min(top, y); right = Math.max(right, x); bottom = Math.max(bottom, y)
+    }
+    assert(right > left && bottom > top, `O corpo de referência sumiu no quadro ${frame}.`)
+    redSpans.push([right - left + 1, bottom - top + 1])
+  }
+  assert(redSpans.every(([width, height]) => Math.abs(width - redSpans[0][0]) <= 1 && Math.abs(height - redSpans[0][1]) <= 1),
+    `O corpo mudou de tamanho na prévia antes, durante ou depois da transição: ${JSON.stringify(redSpans)}.`)
   // The export-only hair bake previously drew the entire face twice: once
   // into the body and again into a separate face layer. Assert exact native
   // RGBA equality before relying on the new single-pass dual-output route.
@@ -506,11 +547,8 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(Array.from(videoLane?.querySelectorAll('.editor-v6-timeline-block')??[]).some(block=>block.textContent?.includes('Vídeo de teste')),'Regular video clips disappeared from the video lane')
   assert(Array.from(backgroundLane?.querySelectorAll('.editor-v6-timeline-block')??[]).some(block=>block.textContent?.includes('Fundo: teste.png')),'Background state was not shown in its dedicated lane')
   const tick=()=>new Promise(resolve=>requestAnimationFrame(()=>resolve(undefined)))
-  const toggle=()=>mount.querySelector<HTMLButtonElement>('button[title="Animar trocas de pose e expressão nesta faixa (250 ms)"]')!
   assert(mount.querySelectorAll('.v6-motion-range').length===1,'Timeline did not mark the anticipatory transition')
-  toggle().click();await tick()
-  assert(toggle().getAttribute('aria-pressed')==='false' && !mount.querySelector('.v6-motion-range'),'Character motion switch failed')
-  toggle().click();await tick()
+  assert(!editorV6MotionPlan({ ...track, motionEnabled: false }, previous, next), 'Character track motion opt-out was ignored')
   const destinationBlock=mount.querySelectorAll<HTMLElement>('.editor-v6-timeline-block.kind-character')[1]
   destinationBlock.click();await tick()
   assert(destinationBlock.classList.contains('selected'),'Destination block selection failed')
@@ -518,7 +556,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   uiRoot.unmount();mount.remove()
   return {
     passed: true, metrics: result.metrics, concurrentSourceRefresh, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
-    facialGeometry: { maxBodyLandmarkDriftPixels: maxLandmarkDrift, exactAnchorThresholdPixels: 1 },
+    facialGeometry: { maxBodyLandmarkDriftPixels: maxLandmarkDrift, exactAnchorThresholdPixels: 1, softCropPreviewBodyDimensions: redSpans },
     faceComposition: { backgrounds: compositionComparisons, assetRevisionInvalidation: true, characterRotationDegrees: compositeActor.rotation, mirrored: compositeActor.flipX },
     highResolutionMouth: { source: '640x960', atlasPixels: hiMouthBake.metrics.atlasPixels, patchPixels: hiPatch!.sprite.width * hiPatch!.sprite.height, patch: { width: hiPatch!.sprite.width, height: hiPatch!.sprite.height, x: hiPatch!.x, y: hiPatch!.y, widthRatio: hiPatch!.width, heightRatio: hiPatch!.height } },
     mouthExportFixture: {

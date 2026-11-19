@@ -1,6 +1,6 @@
-import type { EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { CustomizerCharacter } from '../../../../../shared/customizer'
 import type { EditorV6Element } from '../../../../../shared/editorV6'
+import { editorV6FaceModeForElement, measureFaceModeCrop, type PreparedEditorV6FaceRenderer } from '../faceModeAssets'
 import type { MotionPixelCrop } from './motionPixelAnalysis'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 
@@ -15,22 +15,18 @@ export function editorV6MotionEndpointGeometryCacheKey(character: CustomizerChar
   return JSON.stringify([character.id, character.updatedAt, character.customization, visualState])
 }
 
-export type MotionBakeEndpointFrame<Renderer> = {
-  width: number
-  height: number
-  crop: MotionPixelCrop
-  renderer: Renderer
-  dispose: () => void
+/** The displayed rectangle belongs to the authored snapshot's composite crop. */
+export async function measureEditorV6MotionSnapshot(
+  renderer: PreparedEditorV6FaceRenderer,
+  state: EditorV6Element,
+  character: CustomizerCharacter
+): Promise<CachedMotionBakeEndpointGeometry> {
+  const appearance = state.faceAppearance ?? character.customization.faceAppearance
+  const mode = editorV6FaceModeForElement(state, appearance)
+  const { width, height } = renderer
+  const crop = await measureFaceModeCrop(state.text, renderer, appearance, state.faceTransforms, state.activeExpressionEffects, mode)
+  return { width, height, crop: crop ?? { left: 0, top: 0, width, height } }
 }
-
-type MotionEndpointRender<Renderer> = (
-  progress: number,
-  faceMode?: EditorV6FaceRenderMode,
-  mouthScale?: number,
-  fingerprint?: boolean,
-  preparedRenderer?: Renderer,
-  referenceMode?: boolean
-) => Promise<MotionBakeEndpointFrame<Renderer>>
 
 export type MotionBakeEndpointGeometry = {
   fromCrop: MotionPixelCrop
@@ -41,32 +37,22 @@ export type MotionBakeEndpointGeometry = {
   endpointGeometryCacheMisses: number
 }
 
-type ResolveMotionBakeEndpointGeometryOptions<Renderer> = {
+type ResolveMotionBakeEndpointGeometryOptions = {
   captureLayerAtlases: boolean
   endpointCrops?: { from: HairBakeEndpointCrop; to: HairBakeEndpointCrop }
   endpointGeometryCache?: Map<string, CachedMotionBakeEndpointGeometry>
   endpointCacheKeys?: { from: string; to: string }
-  staticMouthLoop: boolean
-  hasMouthScaleSamples: boolean
-  firstFaceMode?: EditorV6FaceRenderMode
-  render: MotionEndpointRender<Renderer>
-}
-
-function isMissingBlinkAsset(error: unknown): boolean {
-  return error instanceof Error && error.message.includes('Selecione olhos do catálogo ou assets de Olhos Dev')
+  measure: (endpoint: 'from' | 'to', crop?: MotionPixelCrop) => Promise<CachedMotionBakeEndpointGeometry>
 }
 
 /** Resolves native endpoint sizes and union face crops, reusing premeasured hair endpoints when valid. */
-export async function resolveMotionBakeEndpointGeometry<Renderer>({
+export async function resolveMotionBakeEndpointGeometry({
   captureLayerAtlases,
   endpointCrops,
   endpointGeometryCache,
   endpointCacheKeys,
-  staticMouthLoop,
-  hasMouthScaleSamples,
-  firstFaceMode,
-  render
-}: ResolveMotionBakeEndpointGeometryOptions<Renderer>): Promise<MotionBakeEndpointGeometry> {
+  measure
+}: ResolveMotionBakeEndpointGeometryOptions): Promise<MotionBakeEndpointGeometry> {
   // Hair preparation already measured both untrimmed endpoint sizes and all face-mode crops.
   const endpointDimensions = captureLayerAtlases ? resolvedHairBakeEndpointDimensions(endpointCrops) : null
   if (endpointDimensions && endpointCrops) {
@@ -78,25 +64,6 @@ export async function resolveMotionBakeEndpointGeometry<Renderer>({
       endpointGeometryCacheHits: 0,
       endpointGeometryCacheMisses: 0
     }
-  }
-
-  const endpointCrop = async (progress: number, initial: MotionPixelCrop, renderer: Renderer): Promise<MotionPixelCrop> => {
-    let left = initial.left, top = initial.top, right = left + initial.width, bottom = top + initial.height
-    for (const mode of ['idle', 'blink', 'talk', 'talk-blink'] as const) {
-      try {
-        const frame = await render(progress, mode, 1, false, renderer, true)
-        try {
-          left = Math.min(left, frame.crop.left)
-          top = Math.min(top, frame.crop.top)
-          right = Math.max(right, frame.crop.left + frame.crop.width)
-          bottom = Math.max(bottom, frame.crop.top + frame.crop.height)
-        } finally { frame.dispose() }
-      } catch (error) {
-        const missingBlink = isMissingBlinkAsset(error)
-        if (!missingBlink || (mode !== 'blink' && mode !== 'talk-blink')) throw error
-      }
-    }
-    return { left, top, width: right - left, height: bottom - top }
   }
 
   const cachedEndpoint = (key: string | undefined): CachedMotionBakeEndpointGeometry | undefined => {
@@ -114,23 +81,19 @@ export async function resolveMotionBakeEndpointGeometry<Renderer>({
     endpointGeometryCache.set(key, value)
     while (endpointGeometryCache.size > 128) endpointGeometryCache.delete(endpointGeometryCache.keys().next().value!)
   }
-  const resolveEndpoint = async (progress: number, key: string | undefined, measuredCrop?: MotionPixelCrop): Promise<CachedMotionBakeEndpointGeometry> => {
+  const resolveEndpoint = async (endpoint: 'from' | 'to'): Promise<CachedMotionBakeEndpointGeometry> => {
+    const knownCrop = endpointCrops?.[endpoint]
+    const key = knownCrop ? undefined : endpointCacheKeys?.[endpoint]
     const cached = cachedEndpoint(key)
     if (cached) { endpointGeometryCacheHits++; return cached }
     if (key && endpointGeometryCache) endpointGeometryCacheMisses++
-    const initial = await render(progress, staticMouthLoop && progress === 0 ? firstFaceMode : undefined, 1, hasMouthScaleSamples)
-    try {
-      const crop = measuredCrop ?? await endpointCrop(progress, initial.crop, initial.renderer)
-      const resolved = { crop, width: initial.width, height: initial.height }
-      rememberEndpoint(key, resolved)
-      return resolved
-    } finally { initial.dispose() }
+    const resolved = await measure(endpoint, knownCrop)
+    rememberEndpoint(key, resolved)
+    return resolved
   }
 
-  const from = await resolveEndpoint(0, endpointCacheKeys?.from, endpointCrops?.from)
-  const to = staticMouthLoop
-    ? from
-    : await resolveEndpoint(1, endpointCacheKeys?.to, endpointCrops?.to)
+  const from = await resolveEndpoint('from')
+  const to = await resolveEndpoint('to')
 
   return {
     fromCrop: from.crop,
