@@ -6,13 +6,13 @@ import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, resolveEditorV
 import { compileEditorV6ReactImport, prepareEditorV6ReactSources } from './editorV6ReactImportCompiler'
 
 type Props={
-  characters: CustomizerCharacter[]
   onClose:()=>void
   onSave:(document:EditorV6Document)=>Promise<void>
   onImported:(document:EditorV6Document)=>void
 }
-export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}:Props){
+export function EditorV6ReactImportDialog({onClose,onSave,onImported}:Props){
   const input=useRef<HTMLInputElement>(null)
+  const [characters,setCharacters]=useState<CustomizerCharacter[]>([])
   const [source,setSource]=useState<EditorV6ReactImport|null>(null)
   const [projectArchive,setProjectArchive]=useState<unknown>(null)
   const [filename,setFilename]=useState('')
@@ -33,7 +33,11 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
       if(file.size>2_000_000)throw Error('O JSON de roteiro excede o limite de 2 MB.')
       const parsed=parseEditorV6ReactImport(contents)
       setChecking(true)
-      const [library,details]=await Promise.all([window.desktop.mediaLibrary.list(),window.desktop.baseVideos.listDetails()])
+      const [library,details,localCharacters]=await Promise.all([
+        window.desktop.mediaLibrary.list(),window.desktop.baseVideos.listDetails(),
+        window.desktop.customizer.listCustomizerCharacters()
+      ])
+      setCharacters(localCharacters)
       const resolved=resolveEditorV6ReactVideos(parsed,library,details)
       setSource(resolved)
       const ids=new Set(library.filter((item)=>item.available).map((item)=>item.id))
@@ -42,7 +46,7 @@ export function EditorV6ReactImportDialog({characters,onClose,onSave,onImported}
       const missingVideos=[...new Set(resolved.videos.map((item)=>item.videoId))].filter((id)=>!id||!ids.has(id))
       const missingCharacters=parsed.cast.filter((actor)=>{
         const key=actor.character.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
-        return !characters.some((item)=>item.id.toLowerCase()===key||item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()===key)
+        return !localCharacters.some((item)=>item.id.toLowerCase()===key||item.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()===key)
       })
       if(missingVideos.length||missingCharacters.length||missingBackground){
         setError([

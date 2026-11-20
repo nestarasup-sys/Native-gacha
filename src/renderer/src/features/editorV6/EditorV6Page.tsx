@@ -734,8 +734,6 @@ export function EditorV6Page() {
     selectedProjectId={selectedId}
     error={error}
     importOpen={reactImportOpen}
-    characters={availableCharacters}
-    charactersReady={availableCharactersReady}
     onCreateProject={createStudio}
     onOpenImport={() => setReactImportOpen(true)}
     onCloseImport={() => setReactImportOpen(false)}

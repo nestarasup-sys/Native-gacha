@@ -1,4 +1,3 @@
-import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { Icon } from '../../ui/components/Icon'
 import { EditorV6ReactImportDialog } from './EditorV6ReactImportDialog'
@@ -12,8 +11,6 @@ type Props = {
   selectedProjectId: string | null
   error: string | null
   importOpen: boolean
-  characters: CustomizerCharacter[]
-  charactersReady: boolean
   onCreateProject: () => Promise<void>
   onOpenImport: () => void
   onCloseImport: () => void
@@ -33,8 +30,6 @@ export function EditorV6ProjectBrowser({
   selectedProjectId,
   error,
   importOpen,
-  characters,
-  charactersReady,
   onCreateProject,
   onOpenImport,
   onCloseImport,
@@ -58,9 +53,9 @@ export function EditorV6ProjectBrowser({
       <header className="studio-page-header"><h1>EDITOR V6</h1>{folder && <small>Dados locais: {folder}</small>}</header>
       <div className="studio-toolbar" aria-label="Ações do Editor V6">
         <button className="studio-action studio-action-primary" onClick={() => void onCreateProject()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
-        <button className="studio-action" onClick={onOpenImport} disabled={loading || !charactersReady} type="button"><Icon name="download" />Importar JSON</button>
+        <button className="studio-action" onClick={onOpenImport} type="button"><Icon name="download" />Importar JSON</button>
       </div>
-      {importOpen && <EditorV6ReactImportDialog characters={characters} onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} />}
+      {importOpen && <EditorV6ReactImportDialog onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} />}
       {error && <p className="studio-error-message" role="alert">{error}</p>}
       {jsonError && <p className="studio-error-message" role="alert">{jsonError}</p>}
       {jsonStatus && <p role="status" style={{ whiteSpace: 'pre-line' }}>{jsonStatus}</p>}
