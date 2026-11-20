@@ -42,7 +42,8 @@ atualizado: 2026-11-20
 - Saída do laboratório fica em pasta temporária independente. Não lê nem grava projetos do usuário.
 - Comparação: o C++ experimental anterior registrou **183,7 ms** medianos por round-trip Full HD contra **34,6 ms** no Chromium em fixture simples e falhou em projeto curto; não considerar esse C++ backend pronto. Ver `docs/lixo/editor-v6/RENDERIZADOR_NATIVO_CPP.md`.
 - **Lacunas:** sem cabelo, boca real, texto, vídeo sobreposto ou áudio no protótipo; sem validação de Windows empacotado; sem golden/benchmark reproduzido; não promoveu `Sharp` como backend final.
-- Nova verificação CI de Windows foi adicionada; resultado de CI precisa ser consultado no GitHub antes de ser declarado aprovado.
+- Prova Full HD local adicional: `--frames=30 --width=1920 --height=1080` → 30 frames H.264 validados por `ffprobe`, cerca de **2.649 ms** de parede nesta máquina Linux, ainda em fixture sintética e sem comparação justa.
+- CI Windows em commit `76e6cde`: **aprovada** ([execução 44835472773](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44835472773)); passou `typecheck`, auditoria de arquitetura, 15 testes de compositor e os testes focados do Editor V6. Não incluiu smoke com FFmpeg nem comparação visual real.
 
 ## Próxima tarefa concreta [NEXT-002]
 
