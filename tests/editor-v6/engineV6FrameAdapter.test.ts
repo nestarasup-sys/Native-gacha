@@ -56,9 +56,15 @@ describe('Engine V6 — contrato de frame 1.0', () => {
     }
     const planned = planEngineV6ResolvedScene(doc, withAtlas, { width: 1920, height: 1080 })
     expect(planned.requiredAssetIds).toEqual(['base'])
-    expect(planned.commands[0]).toMatchObject({ kind: 'image', x: 1152, y: 486,
-      width: 288, height: 486, rotation: 45, flipX: true,
+    expect(planned.commands[0]).toMatchObject({ kind: 'image', x: 1152,
+      width: 288, rotation: 45, flipX: true,
       source: { x: 8, y: 1, width: 8, height: 16 } })
+    // Geometry uses floating-point logical units; compare without assuming exact decimal representation.
+    expect(planned.commands[0].kind).toBe('image')
+    if (planned.commands[0].kind === 'image') {
+      expect(planned.commands[0].y).toBeCloseTo(486, 10)
+      expect(planned.commands[0].height).toBeCloseTo(486, 10)
+    }
   })
 
   it('plans a background and independent foreground without duplicating resource IDs', () => {
