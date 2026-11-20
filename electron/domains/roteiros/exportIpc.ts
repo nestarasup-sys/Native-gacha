@@ -15,7 +15,7 @@ export function registerRoteiroExportHandlers(deps: {
   ipcMain: Pick<IpcMain, 'handle'>
   assertTrustedSender: (event: IpcMainInvokeEvent) => void
   openPath: (path: string) => Promise<string>
-  saveV6Text: (event: IpcMainInvokeEvent, content: string) => Promise<string | null>
+  saveV6Text: (event: IpcMainInvokeEvent, content: string, roteiroTitle: string) => Promise<string | null>
   revealV6Text: (path: string) => void
   service: RoteiroExportService
 }): { drain: () => Promise<void>; resumeAfterFailedShutdown: () => void } {
@@ -103,13 +103,14 @@ export function registerRoteiroExportHandlers(deps: {
     return track(() => deps.service.exportAssets(request))
   })
 
-  deps.ipcMain.handle('roteiros:export-v6-text', async (event, content: unknown) => {
+  deps.ipcMain.handle('roteiros:export-v6-text', async (event, content: unknown, roteiroTitle: unknown) => {
     deps.assertTrustedSender(event)
     assertAvailable()
     if (typeof content !== 'string' || !content.trim() || content.includes('\0') || Buffer.byteLength(content, 'utf8') > 25 * 1024 * 1024) throw new Error('O roteiro está vazio ou excede o limite de 25 MB.')
+    if (typeof roteiroTitle !== 'string' || !roteiroTitle.trim() || roteiroTitle.length > 200 || roteiroTitle.includes('\0')) throw new Error('O título do roteiro é inválido.')
     return track(async () => {
       watchSender(event)
-      const path = await deps.saveV6Text(event, content)
+      const path = await deps.saveV6Text(event, content, roteiroTitle)
       if (path && !event.sender.isDestroyed()) savedV6Files.set(event.sender.id, path)
       return path
     })

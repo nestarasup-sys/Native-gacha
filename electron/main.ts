@@ -709,14 +709,25 @@ async function registerFabricatorHandlers(): Promise<void> {
     resolvePhysicalPath: (path) => dataFileSystem.resolvePhysicalPath(path),
     openPath: (path) => shell.openPath(path),
     revealV6Text: (path) => shell.showItemInFolder(path),
-    saveV6Text: async (event, content) => {
+    saveV6Text: async (event, content, roteiroTitle) => {
       const owner = BrowserWindow.fromWebContents(event.sender)
-      const options = { title: 'Exportar roteiro para Editor V6', defaultPath: 'roteiro-editor-v6.txt', filters: [{ name: 'Arquivo de texto', extensions: ['txt'] }] }
+      const safeTitle = roteiroTitle.trim().replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/g, '').slice(0, 160) || 'Roteiro'
+      const baseName = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i.test(safeTitle) ? `_${safeTitle}` : safeTitle
+      const options = { title: 'Exportar roteiro para Editor V6', defaultPath: `${baseName}.txt`, filters: [{ name: 'Arquivo de texto', extensions: ['txt'] }], showOverwriteConfirmation: false }
       const result = owner ? await dialog.showSaveDialog(owner, options) : await dialog.showSaveDialog(options)
       if (result.canceled || !result.filePath) return null
-      const destination = result.filePath.toLowerCase().endsWith('.txt') ? result.filePath : `${result.filePath}.txt`
-      await nativeWriteFile(destination, content, 'utf8')
-      return destination
+      const directory = dirname(result.filePath)
+      for (let index = 0; index < 1000; index += 1) {
+        const suffix = index === 0 ? '' : ` ${String(index).padStart(2, '0')}`
+        const destination = join(directory, `${baseName}${suffix}.txt`)
+        try {
+          await nativeWriteFile(destination, content, { encoding: 'utf8', flag: 'wx' })
+          return destination
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+        }
+      }
+      throw new Error('Não foi possível encontrar um nome livre para exportar o roteiro.')
     },
     openImportFile: async (kind) => {
       const selection = kind === 'video'

@@ -34,7 +34,7 @@ export type RegisterRoteirosIpcDependencies = {
   resolvePhysicalPath: (path: string) => Promise<string | null>
   openImportFile: (kind: RoteirosImportKind) => Promise<string | null>
   openPath: (path: string) => Promise<string>
-  saveV6Text: (event: IpcMainInvokeEvent, content: string) => Promise<string | null>
+  saveV6Text: (event: IpcMainInvokeEvent, content: string, roteiroTitle: string) => Promise<string | null>
   revealV6Text: (path: string) => void
   enqueueWrite: <T>(operation: () => Promise<T> | T) => Promise<T>
   waitForPendingWrites: () => Promise<void>

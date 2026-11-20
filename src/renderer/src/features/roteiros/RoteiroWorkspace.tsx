@@ -211,7 +211,7 @@ export function RoteiroWorkspace({ roteiro, onBack, onUpdate, onDeleteDraftVideo
           }))
         ])
         const text = buildRoteiroEditorV6Text({ roteiro, characters, sheets, videos, details, backgrounds, models })
-        const path = await window.desktop.roteiros.exportRoteiroV6Text(text)
+        const path = await window.desktop.roteiros.exportRoteiroV6Text(text, roteiro.title)
         if (path) { setExportedV6Text(true); setRoteiroExportMessage(`Roteiro para Editor V6 salvo em: ${path}`); addExportLog('Exportar roteiro para Editor V6', 'success', path) }
         return
       }
