@@ -7,6 +7,7 @@ import { planEditorV6VideoOverlays } from '../../src/shared/editorV6VideoComposi
 import { attachEditorV6Motion, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
 import { splitEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { renderEditorV6FrameSvg } from '../../src/renderer/src/features/editorV6/sceneCapture'
+import { editorV6VideoTargetSeconds } from '../../src/renderer/src/features/editorV6/SceneVideoLayer'
 
 vi.mock('../../src/renderer/src/features/editorV6/editorV6PlaybackClock', () => ({
   useEditorV6PlaybackFrame: () => 83
@@ -61,6 +62,7 @@ describe('paridade da seleção visual prévia ↔ exportação', () => {
         if (visible && preview) {
           const sourceAtFrame = visible.mediaInFrame + frame - visible.startFrame
           expect(sourceAtFrame).toBe(preview.sourceInFrame + frame - preview.startFrame)
+          expect(editorV6VideoTargetSeconds(preview, frame)).toBeCloseTo(sourceAtFrame / 30, 12)
           expect(visible.layout).toEqual(preview.layout)
         }
       }
