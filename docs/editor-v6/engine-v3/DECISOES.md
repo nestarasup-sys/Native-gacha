@@ -27,6 +27,8 @@ atualizado: 2026-11-20
 | DEC-010 | Proposta | Avaliar cabelos por H0–H4, sem portar custo atual automaticamente | Simulação e raster podem ser redesenhados |
 | DEC-011 | Proposta | Medir tempo total e qualidade antes de eleger backend | Objetivo é MP4 final, não microbenchmark |
 | DEC-012 | Aceita | Plano evolui por evidência; não exigir preservar implementações atuais | Usuário autorizou explorar com liberdade |
+| DEC-013 | Em teste | Usar Sharp como primeiro laboratório offline sobre `EditorV6NativeFramePlan` | Smoke sintético H.264 e 15 testes locais passaram; sem paridade real, 1080p ou Windows empacotado |
+| DEC-014 | Proposta | Avaliar backend novo antes de portar a simulação de cabelo | Experimento C++ anterior foi mais lento no fixture simples e falhou em projeto curto; custo de animação ainda precisa ser medido |
 
 ## Critérios para mudar decisão
 
