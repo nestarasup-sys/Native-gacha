@@ -8,6 +8,7 @@ O objetivo é diminuir o tempo entre clicar em Exportar MP4 e receber o vídeo v
 
 ## Documentos ativos
 
+- [Direção técnica 1.1](DIRECAO-TECNICA-1.1.md) — recomendação de arquitetura e primeiro experimento para decidir onde investir.
 - [Pesquisa 1.1](PESQUISA-1.1.md) — evidência do export e hipóteses em ordem.
 - [Execução 1.1](EXECUCAO-1.1.md) — próxima rodada, decisões e registro do trabalho.
 - [Testes 1.1](TESTES-1.1.md) — como verificar desempenho, qualidade, emendas e limpeza.
