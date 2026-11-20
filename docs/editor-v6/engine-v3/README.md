@@ -69,4 +69,4 @@ Só marcar `VALIDADO` após testes/artefatos verificáveis.
 ## Primeiro trabalho a ser executado
 
 **Fundação do Plano 1.0 concluída:** política de preview + IR v1 + render de uma cena V6 sintética via Sharp, com CI Windows aprovada. Ver [Plano 1.0](PLANO-1.0.md#10-estado-comprovado-da-fundação-10--20112026).
-**Próximo foco F0/G0 e F1/G1:** comparar o mesmo frame Chromium vs Sharp, validar fidelidade, cobertura de mídia e desempenho representativo. A fundação não fecha os gates do motor completo.
+**Plano 1.1 em execução parcial:** CI Windows aprovou comparação SceneSurface SVG/librsvg, perfil 1080p sintético e timebase determinística 24/30. **Próximo foco F0/G0 e F1/G1:** capturar o mesmo frame pelo Chromium real, verificar fidelidade, cobertura de mídia e desempenho comparável. Nenhum gate F0–F8 está fechado.

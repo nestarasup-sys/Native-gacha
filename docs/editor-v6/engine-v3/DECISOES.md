@@ -30,6 +30,8 @@ atualizado: 2026-11-20
 | DEC-013 | Em teste | Usar Sharp como primeiro laboratório offline sobre `EditorV6NativeFramePlan` | Smoke sintético H.264 e 15 testes locais passaram; sem paridade real, 1080p ou Windows empacotado |
 | DEC-014 | Proposta | Avaliar backend novo antes de portar a simulação de cabelo | Experimento C++ anterior foi mais lento no fixture simples e falhou em projeto curto; custo de animação ainda precisa ser medido |
 | DEC-015 | Em teste | Adaptador puro V6 -> IR de frame v1 e materialização de assets apenas no compositor | 7 testes novos no Windows aprovados; contrato F1 não cobre texto, boca, cabelo ou vídeo |
+| DEC-016 | Em teste | Timebase puro de 24/30 fps preserva bordas `editorV6OutputFrame` e seek absoluto | CI 44838231747 passou; ainda não integrado ao exportador |
+| DEC-017 | Aceita | SVG/librsvg é uma referência gráfica intermediária, não golden Chromium | Cenas V6 atuais sintéticas comparadas em CI; avaliação real por Chromium continua obrigatória |
 
 ## Critérios para mudar decisão
 

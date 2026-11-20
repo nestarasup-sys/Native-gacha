@@ -17,15 +17,15 @@ atualizado: 2026-11-20
 - Histórico reproduzível na Dev-V2: **163,760 s para export padrão de 200 s**; objetivo exploratório **<=90 s**.
 - **Fundação do Plano 1.0 implementada:** política de prévia com piscadas, adaptador V6 -> IR versionado e materialização de assets na fronteira do compositor. O laboratório offline ainda não é a exportação padrão.
 - Trabalhos anteriores já commitados na `Dev-v3`: isolamentos de cache por projeto, regra temporal de vídeo, testes e CI focado. Eles não constituem a nova engine.
-- Laboratório F1 executou testes e MP4 sintético no Linux. O novo adaptador passou CI Windows; **nenhum gate F0–F8 foi fechado** e não há benchmark comparável ao export padrão.
+- Laboratório F1, referência SVG independente e perfil sintético passaram CI Windows. Uma base temporal F2 também foi testada; **nenhum gate F0–F8 foi fechado** e ainda não existe benchmark comparável à exportação padrão.
 
 ## Quadro de gates
 
 | Fase/gate | Status | Evidência exigida para concluir |
 | --- | --- | --- |
-| F0 / G0 | EM_ANDAMENTO | fixture V6 sintética liga timeline -> IR -> pixels; falta golden e baseline comparável |
-| F1 / G1 | EM_ANDAMENTO | frame do modelo V6 renderizado via Sharp e testado em CI Windows; falta paridade/golden e pacote |
-| F2 / G2 | PENDENTE | IR versionado e resolver determinístico |
+| F0 / G0 | EM_ANDAMENTO | referência SceneSurface SVG/librsvg aprovada; falta golden Chromium e baseline de MP4 |
+| F1 / G1 | EM_ANDAMENTO | perfil 1080p e paridade SVG aprovados no Windows; falta Chromium/empacotamento |
+| F2 / G2 | EM_ANDAMENTO | IR v1 e timebase racional 24/30 aprovados; falta normalização/avaliação integral |
 | F3 / G3 | PENDENTE | poses/expressões corretas em PNGs comparáveis |
 | F4 / G4 | PENDENTE | boca/cabelo completos + A/B H0–H4 |
 | F5 / G5 | PENDENTE | vídeo/áudio/MP4 fim a fim com validação |
@@ -54,14 +54,24 @@ atualizado: 2026-11-20
 - [CI Windows validada em b957b42](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44836460029): typecheck, auditoria, 15 testes offline CJS e 42 testes Vitest focados passaram.
 - **Escopo do aceite:** arquitetura e primeira fatia de frame; exportação de produção segue antiga. Sem golden/benchmark de cenas complexas.
 
-## Próxima tarefa concreta [NEXT-003]
+## Plano 1.1 — execução parcial verificada em 20/11/2026
 
-**F0/G0 + F1/G1: comparação de pixels de uma cena V6 sintética atual e verificação de backend.**
+- `tests/editor-v6/engineV6SvgReference.test.ts`: quatro casos de comparação entre SceneSurface SVG/librsvg e compositor Sharp para cenas V6 atuais e sintéticas, **sem equivalência comprovada ao Chromium**.
+- `scripts/editor-v6/engine-v3/profileOffline.cjs` + `engineV3Profile.test.cjs`: medição reproduzível de raster/atlas, hashes, input bounds e RSS observado.
+- `src/engine-v6/engineTimebase.ts` + `engineV6Timebase.test.ts`: tempo racional 24/30 fps com partições e seek independente de ordem; contrato conforme `editorV6OutputFrame` legado.
+- [CI Windows **44838231747** aprovada](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44838231747): typecheck, auditoria, 18 testes Node e 51 Vitest.
+- Perfil sintético 4 frames 1080p/atlas 512: 656,444 ms de parede, P50 143,178 ms/frame, RSS observado 111.910.912 B. **Não comparar** com 163,760 s de MP4 real.
+- Mapa de pipeline, matriz FIX e gates incompletos em [Plano 1.1](PLANO-1.1.md#execução-11--evidências-e-limites-20112026).
+- Projetos antigos não são golden visual da engine nova; casos de compatibilidade usarão leitura e snapshot, não edição destrutiva.
 
-1. Capturar o mesmo frame de fixture V6 pelos dois caminhos, Chromium e Sharp, antes de H.264; testar alpha, crop, flip, rotação, z-order e bordas.
-2. Adicionar fixtures sintéticas atuais para texto, rosto/boca e cabelo; medir cada limitação sem usar projetos antigos como referência visual.
-3. Medir pico de memória e tempo a 1080p sob cenário equivalente e testar Windows empacotado.
-4. Fechar G0/G1 **somente** com golden/paridade/benchmark reproduzíveis; se Sharp falhar, testar outro backend sem refazer o editor.
+## Próxima tarefa concreta [NEXT-004]
+
+**Capturar a mesma fixture do V6 em Chromium real, comparar pixels pré-encode e avaliar backend sem tocar no export de produção.**
+
+1. Produzir artefatos verificáveis PNG/JSON/sha256 para o mesmo frame via SceneSurface Chromium e o IR offline.
+2. Definir critérios visuais por região: alpha, limites de máscara, geometria, crop e cores; registrar divergências sem aumentar tolerância às cegas.
+3. Implementar casos de texto/boca/cabelo, vídeo e áudio **sem depender de projetos antigos**; perfilar tempo total incluindo preparação.
+4. Medir Windows empacotado e MP4 equivalente; só então fechar G0/G1 e decidir tecnologia. F2–F8 permanecem em andamento ou pendentes.
 
 ## Bloqueios/hipóteses em aberto
 
