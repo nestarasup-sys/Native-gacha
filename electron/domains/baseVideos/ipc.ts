@@ -60,8 +60,8 @@ export function registerBaseVideoHandlers(
     }
     if (purpose !== undefined && purpose !== 'simple' && purpose !== 'ai-package' && purpose !== 'editor-v6-json') throw new Error('Tipo de exportação inválido.')
     const result = await exportDependencies.showSaveDialog(event.sender, {
-      title: purpose === 'ai-package' ? 'Exportar pacote completo para IA' : purpose === 'editor-v6-json' ? 'Exportar JSON V6 original' : 'Exportar dados simples dos vídeos',
-      defaultPath: purpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : purpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'dados-simples-dos-videos.txt',
+      title: purpose === 'ai-package' ? 'Exportar Guia para o ROT export' : purpose === 'editor-v6-json' ? 'Exportar JSON V6 original' : 'Exportar dados simples dos vídeos',
+      defaultPath: purpose === 'ai-package' ? 'Guia para o ROT export.txt' : purpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'Dados simples.txt',
       filters: [purpose === 'editor-v6-json' ? { name: 'JSON', extensions: ['json'] } : { name: 'Arquivo de texto', extensions: ['txt'] }]
     })
     if (result.canceled || !result.filePath) return false
@@ -76,7 +76,7 @@ export function registerBaseVideoHandlers(
       throw new Error('O guia Markdown é inválido ou excede 2 MB.')
     }
     const directory = exportDependencies.downloadsPath()
-    const baseName = 'Guia_V14.1_Editor_V6'
+    const baseName = 'Guia para chat editor v6'
     for (let index = 1; index <= 100; index += 1) {
       const suffix = index === 1 ? '' : ` (${index})`
       const fileName = `${baseName}${suffix}.md`
