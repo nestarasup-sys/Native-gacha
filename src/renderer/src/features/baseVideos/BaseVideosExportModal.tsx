@@ -62,31 +62,44 @@ export function BaseVideosExportModal({ items, detailsById, categories, onClose,
 
   return <div className="roteiro-modal-backdrop base-videos-export-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !exporting) onClose() }}>
     <section className="base-videos-export-modal" role="dialog" aria-modal="true" aria-labelledby="base-videos-export-title">
-      <header><div><span className="base-videos-export-eyebrow">BASE DE VÍDEOS</span><h2 id="base-videos-export-title">Exports</h2><p>Escolha o formato e os vídeos que deseja levar para fora do aplicativo.</p></div><button type="button" aria-label="Fechar" disabled={exporting} onClick={onClose}>×</button></header>
+      <header className="base-videos-export-header">
+        <div className="base-videos-export-heading">
+          <span className="base-videos-export-mark">TXT</span>
+          <div><span className="base-videos-export-eyebrow">BASE DE VÍDEOS · EXPORTAÇÃO</span><h2 id="base-videos-export-title">Dados simples</h2><p>Monte um arquivo organizado com os dados que você quer levar.</p></div>
+        </div>
+        <button type="button" aria-label="Fechar" disabled={exporting} onClick={onClose}>×</button>
+      </header>
       <div className="base-videos-export-body">
         <div className="base-videos-export-controls">
-          <span className="base-videos-export-section-label">TIPO DE EXPORTAÇÃO</span>
-          <button className="base-videos-export-type active" type="button"><span className="base-videos-export-type-icon">TXT</span><span><strong>Dados simples</strong><small>Descrição, tempos, categoria e contexto</small></span><i>✓</i></button>
-          <button className="base-videos-export-characters-button" type="button" disabled={charactersLoading || Boolean(characterLoadError) || exporting} aria-expanded={characterPickerOpen} onClick={() => setCharacterPickerOpen((open) => !open)}>
-            <span><strong>Selecionar personagens</strong><small>{selectedCharacterIds.length} selecionado{selectedCharacterIds.length === 1 ? '' : 's'}</small></span><i>{characterPickerOpen ? '−' : '+'}</i>
-          </button>
-          {characterPickerOpen && <div className="base-videos-export-character-list" aria-label="Personagens do Customizador">
-            {charactersLoading ? <p>Carregando personagens…</p> : characterLoadError ? <p role="alert">{characterLoadError}</p> : characters.length ? characters.map((character) => {
-              const checked = selectedCharacterIds.includes(character.id)
-              return <label key={character.id} className="base-videos-export-character-option"><input type="checkbox" checked={checked} disabled={exporting} onChange={() => setSelectedCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} /><span><strong>{character.name}</strong><small>{characterSheets.some((sheet) => sheet.characterId === character.id) ? 'Ficha local incluída no TXT' : 'Sem ficha — será exportado com campos vazios'}</small></span></label>
-            }) : <p>O Customizador ainda não tem personagens.</p>}
-          </div>}
-          <label className="base-videos-export-category"><span>Vídeos para exportar</span><select value={categoryId} disabled={exporting} onChange={(event) => setCategoryId(event.target.value)}>
-            <option value="all">Todos os vídeos</option>
-            <option value="uncategorized">Sem categoria</option>
-            {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
-          </select></label>
-          <p className="base-videos-export-count">{entries.length} vídeo{entries.length === 1 ? '' : 's'} publicado{entries.length === 1 ? '' : 's'} com descrição principal incluído{entries.length === 1 ? '' : 's'}.</p>
+          <div className="base-videos-export-file-card"><span className="base-videos-export-file-icon">TXT</span><span><strong>Dados simples.txt</strong><small>Arquivo de texto · pronto para compartilhar</small></span><i>✓</i></div>
+
+          <section className="base-videos-export-section">
+            <div className="base-videos-export-section-heading"><span className="base-videos-export-step">1</span><div><strong>Escolha os vídeos</strong><small>Filtre por categoria ou leve todos.</small></div></div>
+            <label className="base-videos-export-category"><span>Categoria</span><select value={categoryId} disabled={exporting} onChange={(event) => setCategoryId(event.target.value)}>
+              <option value="all">Todas as categorias</option>
+              <option value="uncategorized">Sem categoria</option>
+              {categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+            </select></label>
+            <div className="base-videos-export-count"><strong>{entries.length}</strong><span>vídeo{entries.length === 1 ? '' : 's'} incluído{entries.length === 1 ? '' : 's'}<small>Somente vídeos publicados com descrição principal.</small></span></div>
+          </section>
+
+          <section className="base-videos-export-section">
+            <div className="base-videos-export-section-heading"><span className="base-videos-export-step">2</span><div><strong>Personagens <small>opcional</small></strong><small>Inclua fichas narrativas no arquivo.</small></div></div>
+            <button className="base-videos-export-characters-button" type="button" disabled={charactersLoading || Boolean(characterLoadError) || exporting} aria-expanded={characterPickerOpen} onClick={() => setCharacterPickerOpen((open) => !open)}>
+              <span><strong>{selectedCharacterIds.length ? `${selectedCharacterIds.length} personagem(ns) selecionado(s)` : 'Nenhum personagem selecionado'}</strong><small>{characterLoadError || (charactersLoading ? 'Carregando lista…' : characters.length ? 'Clique para escolher personagens' : 'Não há personagens no Customizador')}</small></span><i>{characterPickerOpen ? '−' : '+'}</i>
+            </button>
+            {characterPickerOpen && <div className="base-videos-export-character-list" aria-label="Personagens do Customizador">
+              {charactersLoading ? <p>Carregando personagens…</p> : characterLoadError ? <p role="alert">{characterLoadError}</p> : characters.length ? characters.map((character) => {
+                const checked = selectedCharacterIds.includes(character.id)
+                return <label key={character.id} className="base-videos-export-character-option"><input type="checkbox" checked={checked} disabled={exporting} onChange={() => setSelectedCharacterIds((current) => checked ? current.filter((id) => id !== character.id) : [...current, character.id])} /><span><strong>{character.name}</strong><small>{characterSheets.some((sheet) => sheet.characterId === character.id) ? 'Ficha narrativa será incluída' : 'Sem ficha narrativa salva'}</small></span></label>
+              }) : <p>O Customizador ainda não tem personagens.</p>}
+            </div>}
+          </section>
           {error && <p className="base-videos-export-error" role="alert">{error}</p>}
-          <footer><button type="button" disabled={exporting} onClick={onClose}>Cancelar</button><button className="primary" type="button" disabled={exporting || !entries.length} onClick={() => void exportData()}>{exporting ? 'Preparando…' : 'Exportar TXT'}</button></footer>
         </div>
-        <aside className="base-videos-export-info"><span className="base-videos-export-info-icon">i</span><h3>Sobre este export</h3><strong>Dados simples (.txt)</strong><p>Gera um arquivo de texto organizado para consulta e preparação de roteiros. Você pode exportar todos os vídeos ou somente os de uma categoria.</p><ul><li>Descrição e duração do vídeo</li><li>Tempos da cena e das reações</li><li>Categoria e linha do tempo</li><li>Contexto adicional para IA</li></ul><small>Somente vídeos publicados com descrição principal preenchida entram no TXT. O arquivo não inclui a mídia dos vídeos.</small></aside>
+        <aside className="base-videos-export-info"><span className="base-videos-export-info-eyebrow">O ARQUIVO VAI INCLUIR</span><h3>Informações úteis, em um só lugar.</h3><ul><li><i>✓</i><span><strong>Dados do vídeo</strong><small>Descrição e duração</small></span></li><li><i>✓</i><span><strong>Tempos de cena</strong><small>Reações e linha do tempo</small></span></li><li><i>✓</i><span><strong>Contexto</strong><small>Categoria e observações adicionais</small></span></li><li><i>＋</i><span><strong>Fichas de personagens</strong><small>Quando selecionadas acima</small></span></li></ul><div className="base-videos-export-info-note">Os arquivos dos vídeos não são copiados para o TXT.</div></aside>
       </div>
+      <footer className="base-videos-export-footer"><span>O arquivo será salvo com o nome <strong>Dados simples.txt</strong>.</span><div><button type="button" disabled={exporting} onClick={onClose}>Cancelar</button><button className="primary" type="button" disabled={exporting || !entries.length} onClick={() => void exportData()}>{exporting ? 'Preparando arquivo…' : '↓  Exportar TXT'}</button></div></footer>
     </section>
   </div>
 }
