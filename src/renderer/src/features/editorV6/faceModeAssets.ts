@@ -60,15 +60,31 @@ export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage |
   return { dataUrl: canvas.toDataURL('image/png'), width, height, left, top, sourceWidth: source.width, sourceHeight: source.height }
 }
 
-function cropCharacterCanvas(source: HTMLCanvasElement, crop: Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null): string {
-  if (!crop) return source.toDataURL('image/png')
+function encodeFaceCanvasPng(canvas: HTMLCanvasElement): Promise<string> {
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Não foi possível codificar a expressão em PNG.'))
+        return
+      }
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error ?? new Error('Não foi possível ler a expressão em PNG.'))
+      reader.readAsDataURL(blob)
+    }, 'image/png')
+  })
+}
+
+async function cropCharacterCanvas(source: HTMLCanvasElement, crop: Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null): Promise<string> {
+  if (!crop) return encodeFaceCanvasPng(source)
   const canvas = document.createElement('canvas')
   canvas.width = crop.width
   canvas.height = crop.height
   const context = canvas.getContext('2d')
   if (!context) throw new Error('Não foi possível preparar uma imagem facial para o Editor V6.')
   context.drawImage(source, crop.left, crop.top, crop.width, crop.height, 0, 0, crop.width, crop.height)
-  return canvas.toDataURL('image/png')
+  try { return await encodeFaceCanvasPng(canvas) }
+  finally { canvas.width = canvas.height = 1 }
 }
 
 async function forEachFaceMode(
@@ -150,15 +166,17 @@ export async function bakeFaceModeAssets(
     if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
     for (const frame of frames.values()) context.drawImage(frame, 0, 0)
     const bounds = canvasFaceAlphaBounds(union)
-    const dataUrl = cropCharacterCanvas(frames.get(baseMode)!, bounds)
-    const crop = bounds ? { ...bounds, dataUrl, sourceWidth: union.width, sourceHeight: union.height } : null
+    const { width: sourceWidth, height: sourceHeight } = union
+    union.width = union.height = 1
+    const dataUrl = await cropCharacterCanvas(frames.get(baseMode)!, bounds)
+    const crop = bounds ? { ...bounds, dataUrl, sourceWidth, sourceHeight } : null
     const assetIds: Partial<Record<EditorV6FaceRenderMode, string>> = {}
     const extraAssets: EditorV6Asset[] = []
     for (const [mode, frame] of frames) {
       if (mode === baseMode) continue
       const id = crypto.randomUUID()
       assetIds[mode] = id
-      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: cropCharacterCanvas(frame, crop), timelineSnapshot: true })
+      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: await cropCharacterCanvas(frame, crop), timelineSnapshot: true })
     }
     union.width = union.height = 1
     return { dataUrl, crop, assetIds, extraAssets }

@@ -5,7 +5,7 @@ import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
 import { compareEditorV6TimelineBlocks, editorV6ClipAtFrame, resolveEditorV6StaticElementsAtFrame, timelineClips, type TimelineClip } from './editorV6TimelineCore'
 
-export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
+export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; libraryVideoId?: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
 const defaultBackgroundsCache = new WeakMap<EditorV6Document, EditorV6BackgroundState>()
 type VideoClipIndex = { clips: TimelineClip[]; maximumEnds: number[] }
@@ -70,7 +70,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
       if (normalizedFrame < candidate.startFrame + candidate.durationFrames) { video = candidate; break }
     }
     const media = video?.mediaId && document.media ? videoMediaIndex(document.media).get(video.mediaId) : undefined
-    if (video && media) mediaVideo = { blockId: video.id, mediaId: media.id, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 }
+    if (video && media) mediaVideo = { blockId: video.id, mediaId: media.id, libraryVideoId: media.libraryVideoId, url: editorV6MediaUrl(document.id, media.fileName, media.libraryVideoId), layout: video.mediaLayout ?? editorV6DefaultVideoLayout(media.width, media.height), startFrame: video.startFrame, sourceInFrame: video.mediaInFrame ?? 0, durationFrames: video.durationFrames, hasAudio: media.hasAudio, audioEnabled: video.audioEnabled !== false, gain: video.gain ?? 1 }
   }
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(mediaVideo ? { mediaVideo } : {}) }
 }

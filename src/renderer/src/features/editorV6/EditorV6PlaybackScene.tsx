@@ -15,7 +15,12 @@ export function EditorV6PlaybackScene({ project, selectedId, interaction, playin
   fullView: boolean
 }) {
   const frame = useEditorV6PlaybackFrame()
-  const scene = useMemo(() => measureEditorV6SceneResolution(() => resolveEditorV6SceneAtFrame(project, frame)), [project, frame])
+  const scene = useMemo(() => measureEditorV6SceneResolution(() => {
+    const resolved = resolveEditorV6SceneAtFrame(project, frame)
+    const media = resolved.mediaVideo
+    if (!media?.libraryVideoId) return resolved
+    return { ...resolved, mediaVideo: { ...media, url: `gacha-video://library/${media.libraryVideoId}` } }
+  }), [project, frame])
   const hasFaceReplacement = scene.elements.some((element) => element.mouthPatch?.replace)
   const [faceComposition, setFaceComposition] = useState<{ source: typeof scene; scene: typeof scene; assets: EditorV6Document['assets']; error?: string } | null>(null)
   useEffect(() => {
