@@ -1,5 +1,6 @@
 import { memo, useEffect, useRef, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
+import { editorV6VideoSecondsFromFrames, editorV6VideoSourceFrameAtTimelineFrame } from '../../../../shared/editorV6VideoComposition'
 
 export type ScenePointerEvent = ReactPointerEvent<SVGElement>
 export type SceneSurfaceInteraction = {
@@ -12,7 +13,7 @@ type ResolvedVideo = NonNullable<EditorV6ResolvedScene['mediaVideo']>
 type VideoPlaybackPort = Pick<HTMLVideoElement, 'volume' | 'pause' | 'currentTime' | 'paused' | 'play'>
 
 export function editorV6VideoTargetSeconds(media: ResolvedVideo, frame: number): number {
-  return (media.sourceInFrame + frame - media.startFrame) / 30
+  return editorV6VideoSecondsFromFrames(editorV6VideoSourceFrameAtTimelineFrame(media.sourceInFrame, media.startFrame, frame))
 }
 
 /** Applies the Editor V6 preview's drift thresholds to a video element. */
