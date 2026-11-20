@@ -1,7 +1,7 @@
 import type { EditorV6Asset, EditorV6Document, EditorV6MediaAsset, EditorV6TimelineBlock } from '../../../../shared/editorV6.ts'
 
 type ProjectLoader = () => Promise<EditorV6Document | null>
-type PersistDocument = (source: EditorV6Document, next: EditorV6Document) => Promise<boolean>
+type PersistDocument = (source: EditorV6Document, next: EditorV6Document, onPublished?: () => void) => Promise<boolean>
 type AddImageAsset = (document: EditorV6Document, asset: EditorV6Asset, category: 'background' | 'object', frame: number, createId: () => string) => EditorV6Document
 type AddTimelineMedia = (document: EditorV6Document, media: EditorV6MediaAsset, frame: number, createId: () => string) => { document: EditorV6Document; block: EditorV6TimelineBlock; startFrame: number }
 type FindClipAtFrame = (timeline: EditorV6Document['timeline'], elementId: string, frame: number) => { block: EditorV6TimelineBlock } | undefined
@@ -51,7 +51,7 @@ export type EditorV6TimelineMediaImportResult = {
 
 /** Coordinates audio/video import and linking through the same document persistence path. */
 export async function importEditorV6MediaToTimeline({
-  frame, requestMedia, loadProject, persistDocument, createId, addTimelineMedia
+  frame, requestMedia, loadProject, persistDocument, createId, addTimelineMedia, onPublished
 }: {
   frame: number
   requestMedia: () => Promise<EditorV6MediaAsset | null>
@@ -59,12 +59,14 @@ export async function importEditorV6MediaToTimeline({
   persistDocument: PersistDocument
   createId: () => string
   addTimelineMedia: AddTimelineMedia
+  onPublished?: (result: EditorV6TimelineMediaImportResult) => void
 }): Promise<EditorV6TimelineMediaImportResult | null> {
   const media = await requestMedia()
   if (!media) return null
   const current = await loadProject()
   if (!current) throw new Error('Não foi possível carregar o projeto para adicionar a mídia.')
   const result = addTimelineMedia(current, media, frame, createId)
-  if (!await persistDocument(current, result.document)) return null
-  return { blockId: result.block.id, startFrame: result.startFrame }
+  const selection = { blockId: result.block.id, startFrame: result.startFrame }
+  if (!await persistDocument(current, result.document, onPublished && (() => onPublished(selection)))) return null
+  return selection
 }

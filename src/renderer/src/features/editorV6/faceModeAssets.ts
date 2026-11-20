@@ -60,7 +60,7 @@ export function trimTransparentCanvas(source: HTMLCanvasElement): TrimmedImage |
   return { dataUrl: canvas.toDataURL('image/png'), width, height, left, top, sourceWidth: source.width, sourceHeight: source.height }
 }
 
-function cropCharacterCanvas(source: HTMLCanvasElement, crop: TrimmedImage | null): string {
+function cropCharacterCanvas(source: HTMLCanvasElement, crop: Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null): string {
   if (!crop) return source.toDataURL('image/png')
   const canvas = document.createElement('canvas')
   canvas.width = crop.width
@@ -149,9 +149,9 @@ export async function bakeFaceModeAssets(
     const context = union.getContext('2d')
     if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
     for (const frame of frames.values()) context.drawImage(frame, 0, 0)
-    const crop = trimTransparentCanvas(union)
-    const dataUrl = cropCharacterCanvas(frames.get(baseMode)!, crop)
-    if (crop) crop.dataUrl = dataUrl
+    const bounds = canvasFaceAlphaBounds(union)
+    const dataUrl = cropCharacterCanvas(frames.get(baseMode)!, bounds)
+    const crop = bounds ? { ...bounds, dataUrl, sourceWidth: union.width, sourceHeight: union.height } : null
     const assetIds: Partial<Record<EditorV6FaceRenderMode, string>> = {}
     const extraAssets: EditorV6Asset[] = []
     for (const [mode, frame] of frames) {

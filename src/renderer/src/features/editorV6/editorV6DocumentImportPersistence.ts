@@ -20,13 +20,14 @@ export function createEditorV6DocumentImportPersistence(dependencies: Dependenci
     return current?.id === projectId ? current : dependencies.loadProject(projectId)
   }
 
-  const persistImportedDocument = async (source: EditorV6Document, next: EditorV6Document) => {
+  const persistImportedDocument = async (source: EditorV6Document, next: EditorV6Document, onPublished?: () => void) => {
     const isActive = dependencies.activeProjectIdRef.current === source.id
       && dependencies.getActiveProject()?.id === source.id
     if (isActive) {
       dependencies.recordHistory(source)
       dependencies.setActiveProject(next)
       dependencies.markUnsaved()
+      onPublished?.()
     }
 
     await dependencies.writeDocumentInOrder(next)

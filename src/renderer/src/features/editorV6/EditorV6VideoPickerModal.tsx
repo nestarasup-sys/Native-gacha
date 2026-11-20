@@ -78,7 +78,7 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
 
   const choose = async (item: VideoLibraryItem) => {
     setBusy(true); setError('')
-    try { await onSelect(await recognizeDuration(item)) }
+    try { await onSelect(item) }
     catch (reason) { setError(reason instanceof Error ? reason.message : 'Não foi possível vincular este vídeo.') }
     finally { setBusy(false) }
   }

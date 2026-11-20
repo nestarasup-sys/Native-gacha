@@ -32,7 +32,7 @@ export type EditorV6MediaCommandDependencies = {
   publishPlayheadFrame: (frame: number) => void
   getFrame: () => number
   loadLatestProject: (projectId: string) => Promise<EditorV6Document | null>
-  persistImportedDocument: (source: EditorV6Document, next: EditorV6Document) => Promise<boolean>
+  persistImportedDocument: (source: EditorV6Document, next: EditorV6Document, onPublished?: () => void) => Promise<boolean>
   setError: (message: string | null) => void
   setVideoPickerOpen: (open: boolean) => void
   setAudioPickerOpen: (open: boolean) => void

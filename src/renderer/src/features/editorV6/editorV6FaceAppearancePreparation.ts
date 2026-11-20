@@ -56,7 +56,7 @@ export async function prepareEditorV6FaceAppearance(
     element.text, renderer, element.faceAppearance ?? character.customization.faceAppearance,
     element.faceTransforms, element.activeExpressionEffects,
     element.activeFaceMode ?? dependencies.faceModeForElement(element, element.faceAppearance ?? character.customization.faceAppearance),
-    previousRendered, true
+    previousRendered
   )
   const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
   const baked = await dependencies.bakeAssets(

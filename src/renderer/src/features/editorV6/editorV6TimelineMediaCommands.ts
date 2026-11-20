@@ -59,22 +59,28 @@ export function createEditorV6TimelineMediaCommands(dependencies: Dependencies) 
     if (track?.locked) throw new Error('Desbloqueie a faixa Vídeo antes de adicionar um vídeo.')
     dependencies.pausePlayback()
     const frameAtImport = getFrame()
-    const result = await dependencies.importMediaToTimeline({
-      frame: frameAtImport,
-      requestMedia: () => dependencies.bridge.linkEditorV6LibraryVideo(projectId, item.id),
-      loadProject: () => dependencies.loadLatestProject(projectId),
-      persistDocument: dependencies.persistImportedDocument,
-      createId,
-      addTimelineMedia: dependencies.addTimelineMedia
-    })
-    if (!result) return
-    dependencies.publishPlayheadFrame(result.startFrame)
-    dependencies.setSelectedTimelineBlockId(result.blockId)
-    dependencies.setSelectedElementId(null)
-    dependencies.setActiveTool(null)
-    dependencies.setInspectorOpen(true)
-    dependencies.setInspectorTab('editor')
-    dependencies.setVideoPickerOpen(false)
+    try {
+      await dependencies.importMediaToTimeline({
+        frame: frameAtImport,
+        requestMedia: () => dependencies.bridge.linkEditorV6LibraryVideo(projectId, item.id),
+        loadProject: () => dependencies.loadLatestProject(projectId),
+        persistDocument: dependencies.persistImportedDocument,
+        createId,
+        addTimelineMedia: dependencies.addTimelineMedia,
+        onPublished: (result) => {
+          dependencies.publishPlayheadFrame(result.startFrame)
+          dependencies.setSelectedTimelineBlockId(result.blockId)
+          dependencies.setSelectedElementId(null)
+          dependencies.setActiveTool(null)
+          dependencies.setInspectorOpen(true)
+          dependencies.setInspectorTab('editor')
+          dependencies.setVideoPickerOpen(false)
+        }
+      })
+    } catch (reason) {
+      dependencies.setError(reason instanceof Error ? reason.message : 'Não foi possível vincular o vídeo.')
+      throw reason
+    }
   })
 
   return { importTimelineMedia, linkAudioLibraryItem, linkVideoLibraryItem }
