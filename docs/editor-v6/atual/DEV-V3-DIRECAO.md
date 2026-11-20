@@ -1,4 +1,6 @@
-> **Documento histórico de arranque da Dev-v3.** O plano principal agora é [Engine V6 / Dev-v3](../engine-v3/README.md). Em caso de divergência, seguir o plano novo e as decisões explícitas do usuário, especialmente a prévia com somente piscadas.\n\n# Dev-v3 — direcao de engenharia exclusiva do Editor V6
+> **Documento histórico de arranque da Dev-v3.** O plano principal agora é [Engine V6 / Dev-v3](../engine-v3/README.md). Em caso de divergência, seguir o plano novo e as decisões explícitas do usuário, especialmente a prévia com somente piscadas.
+
+# Dev-v3 — direcao de engenharia exclusiva do Editor V6
 
 **Origem:** `Dev-V2` no commit `25efe9bccf253c4e374a1f4eb6729745e9c3c3fb`.
 **Escopo:** somente Editor V6. Editor V7 permanece experimental, fora deste plano.
