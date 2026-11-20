@@ -16,5 +16,12 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 10 | Localizar o clipe pai do bloco arrastado diretamente, sem construir um mapa de todos os blocos. | Testes de arraste e timeline. |
 | 11 | Reusar a prévia quando o movimento do ponteiro não muda o quadro arredondado nem as entradas do encaixe. | Teste de ponteiro confirma uma única atualização de prévia para movimentos equivalentes. |
 | 12 | Evitar publicar a mesma posição de reprodução ao mover o ponteiro dentro de um único quadro da régua. | Teste de ponteiro confirma uma única publicação por quadro. |
+| 13 | Compartilhar a composição facial em andamento entre pedidos idênticos. | Doze pedidos simultâneos codificaram um único PNG em teste. O teste no Electron conferiu cinco fundos sem diferença de pixels. |
+| 14 | Manter as composições faciais mais usadas no cache, renovando a posição a cada acesso. | Revisão da política e teste de composição. Sem medição isolada de taxa de acerto. |
+| 15 | Liberar os canvases de composição também quando a rasterização falha. | Caminho de limpeza em `finally`, typecheck e teste de composição no Electron. |
+| 16 | Abrir o vídeo da miniatura somente quando o cartão estiver visível no seletor. | Inspeção do ciclo de observação. Contagem de pedidos no seletor real pendente. |
+| 17 | Ordenar os candidatos do seletor uma vez por mudança de seção, filtro ou ordem, em vez de repetir a ordenação a cada tecla. | Cinquenta consultas em 10 mil itens produziram resultados iguais e passaram de 85,26 ms para 28,21 ms com os candidatos preparados, incluindo o item 18. |
+| 18 | Reaproveitar nome, ID, número e descrição normalizados entre buscas. | Comparação acima e testes do modelo de busca. |
+| 19 | Dar prioridade à digitação e adiar a atualização dos resultados da busca. | Typecheck. Latência de digitação no seletor real pendente. |
 
 Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O MP4 não foi cronometrado nesta rodada.

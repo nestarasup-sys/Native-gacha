@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Icon } from '../../ui/components/Icon'
 import './editorV6VideoPicker.css'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { BaseVideoDetails } from '../../../../shared/baseVideos'
-import { editorV6VideoPickerEmptyState, filterAndSortEditorV6Videos, type EditorV6VideoPickerSort, type EditorV6VideoPickerTimeline, type EditorV6VideoPickerView } from './editorV6VideoPickerModel'
+import { editorV6VideoPickerEmptyState, prepareEditorV6VideoPickerItems, searchEditorV6VideoPickerItems, type EditorV6VideoPickerSort, type EditorV6VideoPickerTimeline, type EditorV6VideoPickerView } from './editorV6VideoPickerModel'
 import { recognizeEditorV6VideoDuration } from './editorV6VideoDuration'
 
 const emptyDetails = (videoId: string): BaseVideoDetails => ({ videoId, categoryId: null, description: '', additionalContext: '', timeline: 'unspecified' })
@@ -15,6 +15,19 @@ const recognizeDuration = (item: VideoLibraryItem) => recognizeEditorV6VideoDura
   setTimeout: (callback, milliseconds) => window.setTimeout(callback, milliseconds),
   clearTimeout: (timer) => window.clearTimeout(timer)
 })
+
+function EditorV6VideoThumbnail({ id }: { id: string }) {
+  const ref = useRef<HTMLVideoElement>(null)
+  const [nearViewport, setNearViewport] = useState(false)
+  useEffect(() => {
+    const node = ref.current
+    if (!node) return
+    const observer = new IntersectionObserver(([entry]) => setNearViewport(entry.isIntersecting), { rootMargin: '180px' })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  return <video ref={ref} src={nearViewport ? `gacha-video://library/${id}` : undefined} muted playsInline preload="metadata" tabIndex={-1} />
+}
 
 export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () => void; onSelect: (item: VideoLibraryItem) => Promise<void> }) {
   const [items, setItems] = useState<VideoLibraryItem[]>([])
@@ -49,7 +62,9 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [busy, onClose, previewId])
 
-  const visible = useMemo(() => filterAndSortEditorV6Videos(items, details, { view, query, timeline, sort }), [items, details, query, timeline, sort, view])
+  const deferredQuery = useDeferredValue(query)
+  const candidates = useMemo(() => prepareEditorV6VideoPickerItems(items, details, { view, timeline, sort }), [items, details, timeline, sort, view])
+  const visible = useMemo(() => searchEditorV6VideoPickerItems(candidates, deferredQuery), [candidates, deferredQuery])
   const emptyState = editorV6VideoPickerEmptyState(items, details, view)
   const previewItem = previewId ? visible.find((item) => item.id === previewId) ?? null : null
 
@@ -103,11 +118,11 @@ export function EditorV6VideoPickerModal({ onClose, onSelect }: { onClose: () =>
           <button className="v6-picker-add" type="button" disabled={busy} onClick={() => void addVideo()}>＋ Adicionar vídeo</button>
         </div>
         {error && <p className="v6-library-picker-error" role="alert">{error}</p>}
-        <div className="v6-video-picker-grid" aria-busy={loading || busy}>
+        <div className="v6-video-picker-grid" aria-busy={loading || busy || query !== deferredQuery}>
           {loading ? <div className="v6-picker-skeleton-grid" aria-label="Carregando vídeos">{Array.from({ length: 6 }, (_, index) => <div className="v6-picker-skeleton" key={index}><i /><span /><span /></div>)}</div> : visible.length ? visible.map((item) => {
             const number = details[item.id]?.videoNumber
             return <article className="v6-picker-card" key={item.id} onDoubleClick={() => void choose(item)}>
-              <button className="v6-picker-thumb" type="button" disabled={busy} onClick={() => setPreviewId(item.id)} aria-label={`Abrir prévia de ${item.name}`}><video src={`gacha-video://library/${item.id}`} muted playsInline preload="metadata" tabIndex={-1} /><span className="v6-picker-play">▶</span><small>{item.durationFrames === null ? '—' : `${(item.durationFrames / 30).toFixed(1)} s`}</small></button>
+              <button className="v6-picker-thumb" type="button" disabled={busy} onClick={() => setPreviewId(item.id)} aria-label={`Abrir prévia de ${item.name}`}><EditorV6VideoThumbnail id={item.id} /><span className="v6-picker-play">▶</span><small>{item.durationFrames === null ? '—' : `${(item.durationFrames / 30).toFixed(1)} s`}</small></button>
               <div className="v6-picker-card-info"><div><span className="v6-picker-number">{number === undefined ? 'RASCUNHO' : `VÍDEO ${String(number).padStart(2, '0')}`}</span><strong title={item.name}>{item.name}</strong></div><small>{item.durationFrames === null ? 'Duração pendente' : `${(item.durationFrames / 30).toFixed(2)} s`} · {(item.size / 1024 ** 2).toFixed(1)} MB · ID {item.id.slice(0, 8).toUpperCase()}</small><div className="v6-picker-card-actions"><button type="button" disabled={busy} onClick={() => setPreviewId(item.id)}>▶ Prévia</button><button className="primary" type="button" disabled={busy} onClick={() => void choose(item)}>{busy ? 'Aguarde…' : 'Selecionar'}</button></div></div>
             </article>
           }) : <div className="v6-picker-empty"><Icon name="frame" /><strong>{emptyState.title}</strong><span>{emptyState.hint}</span></div>}
