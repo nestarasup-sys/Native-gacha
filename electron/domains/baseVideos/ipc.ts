@@ -76,7 +76,8 @@ export function registerBaseVideoHandlers(
       throw new Error('O guia Markdown é inválido ou excede 2 MB.')
     }
     const directory = exportDependencies.downloadsPath()
-    const baseName = 'Guia para chat editor v6'
+    const version = /^# GUIA V(\d{1,4}(?:\.\d{1,4}){1,3})(?=\s|$)/.exec(content)?.[1]
+    const baseName = version ? `Guia para chat editor v6 ${version}` : 'Guia para chat editor v6'
     for (let index = 1; index <= 100; index += 1) {
       const suffix = index === 1 ? '' : ` (${index})`
       const fileName = `${baseName}${suffix}.md`
