@@ -43,7 +43,7 @@ async function syntheticProjectAssets() {
   const blink = await syntheticAsset(`<svg xmlns="http://www.w3.org/2000/svg" width="128" height="160" viewBox="0 0 128 160">
     <path fill="#804b8a" d="M14 148 Q15 88 63 84 Q116 88 115 148Z"/>
     <ellipse cx="64" cy="65" rx="46" ry="55" fill="#f4cfa8"/>
-    <path d="M18 44 Q20 -6 65 4 Q105 -3 110 46 Q88 20 67 26 Q37 18 44" fill="#46305d"/>
+    <path d="M18 44 Q20 -6 65 4 Q105 -3 110 46 Q88 20 67 26 Q37 18 18 44" fill="#46305d"/>
     <path d="M38 73 h16 M75 73 h16" stroke="#21213d" stroke-width="4"/>
     <path d="M56 98 Q64 105 72 98" stroke="#ad556b" stroke-width="3" fill="none"/>
   </svg>`)
