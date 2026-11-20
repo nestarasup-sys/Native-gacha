@@ -7,28 +7,31 @@ if errorlevel 1 (
   exit /b 1
 )
 
-rem Sempre inicia a versao da branch local Dev-V2.
-for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "NATIVE_GACHA_BRANCH=%%B"
-if not defined NATIVE_GACHA_BRANCH (
-  echo Nao foi possivel identificar a branch atual. Verifique se o Git esta instalado.
+rem A branch experimental ativa e Dev-v3. Nunca trocar silenciosamente.
+where git >nul 2>&1
+if errorlevel 1 (
+  echo ERRO: Git for Windows nao foi encontrado.
   pause
   exit /b 1
 )
-if /i not "%NATIVE_GACHA_BRANCH%"=="Dev-V2" (
-  for /f "delims=" %%S in ('git status --porcelain 2^>nul') do set "NATIVE_GACHA_DIRTY=1"
-  if defined NATIVE_GACHA_DIRTY (
-    echo Ha alteracoes locais. Salve-as antes de trocar para Dev-V2.
-    pause
-    exit /b 1
-  )
-  echo Trocando da branch %NATIVE_GACHA_BRANCH% para Dev-V2...
-  git switch Dev-V2
-  if errorlevel 1 (
-    echo Nao foi possivel trocar para Dev-V2. Suas alteracoes locais foram preservadas.
-    pause
-    exit /b 1
-  )
+for /f "delims=" %%B in ('git branch --show-current 2^>nul') do set "NATIVE_GACHA_BRANCH=%%B"
+if not defined NATIVE_GACHA_BRANCH (
+  echo ERRO: Nao foi possivel identificar a branch Git atual.
+  pause
+  exit /b 1
 )
+if /i not "%NATIVE_GACHA_BRANCH%"=="Dev-v3" (
+  echo.
+  echo Esta copia esta na branch "%NATIVE_GACHA_BRANCH%".
+  echo Para usar a nova engine, atualize e selecione Dev-v3:
+  echo   ATUALIZAR_DESENVOLVIMENTO.bat
+  echo O aplicativo NAO vai mudar sua branch automaticamente.
+  echo.
+  pause
+  exit /b 1
+)
+echo Branch ativa: Dev-v3
+echo.
 
 rem Native Gacha usa uma porta diferente do G-V5 legado (Vite: 5173).
 set "NATIVE_GACHA_DEV_PORT=5188"
@@ -53,34 +56,28 @@ if errorlevel 1 (
   exit /b 1
 )
 
-if not exist "node_modules\electron\install.js" (
-  echo Preparando as dependencias do Native Gacha...
-  call npm install
-  if errorlevel 1 (
-    echo Nao foi possivel instalar as dependencias.
-    pause
-    exit /b 1
-  )
-)
-
-if not exist "node_modules\electron\dist\electron.exe" (
-  echo Instalando o executavel do Electron...
-  call node scripts\install-electron.cjs
-  if errorlevel 1 (
-    echo Nao foi possivel instalar o executavel do Electron.
-    pause
-    exit /b 1
-  )
-)
-
-if not exist "node_modules\electron\dist\electron.exe" (
-  echo O Electron continua sem o executavel esperado em node_modules\electron\dist.
+rem Nao executar npm run dev: seu predev migra dados do perfil legado.
+rem O helper faz npm ci SOMENTE quando o lockfile/runtime mudou.
+if not exist "scripts\windows\ensure-dev-deps.cjs" (
+  echo ERRO: Helper de dependencias Dev-v3 ausente nesta copia.
+  echo Execute ATUALIZAR_DESENVOLVIMENTO.bat primeiro.
   pause
   exit /b 1
 )
-
+node "scripts\windows\ensure-dev-deps.cjs"
+if errorlevel 1 (
+  echo ERRO: Nao foi possivel sincronizar dependencias da Dev-v3.
+  echo Confira o npm e o log acima. Nenhum dado de app-data foi alterado.
+  pause
+  exit /b 1
+)
+if not exist "node_modules\electron\dist\electron.exe" (
+  echo ERRO: Electron nao instalado corretamente.
+  pause
+  exit /b 1
+)
 if not exist "node_modules\.bin\electron-vite.cmd" (
-  echo Electron-Vite nao foi encontrado. Instale as dependencias com npm install.
+  echo ERRO: Electron-Vite ausente apos atualizar dependencias.
   pause
   exit /b 1
 )
@@ -134,7 +131,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Iniciando Native Gacha em modo de desenvolvimento...
+echo Iniciando Native Gacha Dev-v3 em modo de desenvolvimento...
 echo Servidor exclusivo: http://127.0.0.1:%NATIVE_GACHA_DEV_PORT%
 echo O G-V5 legado pode continuar usando localhost:5173.
 echo.

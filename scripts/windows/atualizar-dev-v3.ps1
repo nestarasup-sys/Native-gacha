@@ -45,21 +45,21 @@ try {
     if ($LASTEXITCODE -ne 0 -or -not $current) { throw 'HEAD destacado. Selecione uma branch antes de atualizar.' }
     Write-Host ("Branch local antes da atualizacao: " + ([string]$current).Trim())
     Write-Host ("Buscando somente origin/" + $branch + "...")
-    GitChecked @('fetch', '--no-tags', 'origin', ('refs/heads/' + $branch + ':refs/remotes/origin/' + $branch))
+    GitChecked -Arguments @('fetch', '--no-tags', 'origin', ('refs/heads/' + $branch + ':refs/remotes/origin/' + $branch))
 
     & git show-ref --verify --quiet ('refs/heads/' + $branch)
     $localExists = ($LASTEXITCODE -eq 0)
     if ($localExists) {
       Write-Host ("Selecionando a branch local " + $branch + "...")
-      GitChecked @('switch', $branch)
+      GitChecked -Arguments @('switch', $branch)
     } else {
       Write-Host ("Criando a branch local " + $branch + " sem alterar a historica...")
-      GitChecked @('switch', '--track', '-c', $branch, ('origin/' + $branch))
+      GitChecked -Arguments @('switch', '--track', '-c', $branch, ('origin/' + $branch))
     }
 
     Write-Host 'Aplicando somente fast-forward; nenhum merge/rebase/reset automatico.'
-    GitChecked @('merge', '--ff-only', ('origin/' + $branch))
-    GitChecked @('branch', '--set-upstream-to', ('origin/' + $branch), $branch)
+    GitChecked -Arguments @('merge', '--ff-only', ('origin/' + $branch))
+    GitChecked -Arguments @('branch', '--set-upstream-to', ('origin/' + $branch), $branch)
     $head = (& git rev-parse --short HEAD)
     if ($LASTEXITCODE -ne 0) { throw 'Falha ao obter o HEAD atualizado.' }
     Write-Host ''
