@@ -40,8 +40,34 @@ export function createEditorV6TimelineTransitionMap(
   return new Map(rows.map(({ key, track }) => [key, editorV6VisibleMotionPlans(track, sortedBlocks.get(key)!, range)]))
 }
 
+const maximumBlockEnds = new WeakMap<readonly Block[], number[]>()
+
+/** Blocks are sorted by start frame. The prefix maximum includes long overlapping clips. */
 export function getEditorV6TimelineVisibleBlocks(blocks: readonly Block[], [startFrame, endFrame]: [number, number]) {
-  return blocks.filter((block) => !block.emptyGap && block.startFrame <= endFrame && block.startFrame + block.durationFrames >= startFrame)
+  if (endFrame < startFrame) return []
+  let ends = maximumBlockEnds.get(blocks)
+  if (!ends) {
+    let maximumEnd = -Infinity
+    ends = blocks.map((block) => {
+      if (!block.emptyGap) maximumEnd = Math.max(maximumEnd, block.startFrame + block.durationFrames)
+      return maximumEnd
+    })
+    maximumBlockEnds.set(blocks, ends)
+  }
+
+  let left = 0, right = blocks.length
+  while (left < right) {
+    const middle = (left + right) >>> 1
+    if (ends[middle] < startFrame) left = middle + 1
+    else right = middle
+  }
+
+  const visible: Block[] = []
+  for (let index = left; index < blocks.length && blocks[index].startFrame <= endFrame; index++) {
+    const block = blocks[index]
+    if (!block.emptyGap && block.startFrame + block.durationFrames >= startFrame) visible.push(block)
+  }
+  return visible
 }
 
 export function getEditorV6TimelineBlockPixels(block: Block, pixelsPerSecond: number): EditorV6TimelineBlockPixels {

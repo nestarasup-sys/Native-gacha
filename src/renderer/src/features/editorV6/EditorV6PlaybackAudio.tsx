@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { editorV6MediaUrl } from '../../../../shared/editorV6'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
@@ -6,88 +6,104 @@ import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 type AudioClip = {
   id: string
   startFrame: number
-  durationFrames: number
+  endFrame: number
   mediaInFrame: number
-  gain: number
-  muted: boolean
-  trackMuted: boolean
-  audio: HTMLAudioElement
+  volume: number
+  url: string
+}
+
+type AudioNode = { url: string; audio: HTMLAudioElement }
+const AUDIO_PRELOAD_FRAMES = 12
+
+function releaseAudio(audio: HTMLAudioElement) {
+  audio.pause()
+  audio.removeAttribute('src')
+  audio.load()
+}
+
+function indexAudioClips(projectId: string, media: EditorV6Document['media'], timeline: EditorV6Document['timeline']) {
+  const mediaById = new Map((media ?? []).map((item) => [item.id, item]))
+  const clips: AudioClip[] = []
+  for (const track of timeline.tracks) {
+    if (track.hidden || track.muted || (track.kind !== 'audio' && track.kind !== 'video')) continue
+    for (const block of track.blocks) {
+      const volume = Math.max(0, Math.min(1, block.gain ?? 1))
+      if (block.audioEnabled === false || volume === 0) continue
+      const source = block.mediaId ? mediaById.get(block.mediaId) : undefined
+      if (!source || (track.kind === 'video' && (source.kind !== 'video' || !source.hasAudio))) continue
+      const url = source.libraryVideoId
+        ? `gacha-video://library/${source.libraryVideoId}`
+        : editorV6MediaUrl(projectId, source.fileName, undefined, source.libraryAudioId)
+      clips.push({
+        id: block.id, startFrame: block.startFrame, endFrame: block.startFrame + block.durationFrames,
+        mediaInFrame: block.mediaInFrame ?? 0, volume, url
+      })
+    }
+  }
+  clips.sort((left, right) => left.startFrame - right.startFrame)
+  let lastEnd = 0
+  const maximumEnds = clips.map(({ endFrame }) => (lastEnd = Math.max(lastEnd, endFrame)))
+  return { clips, maximumEnds }
 }
 
 export function EditorV6PlaybackAudio({ project, playing }: { project: EditorV6Document | null; playing: boolean }) {
   const frame = useEditorV6PlaybackFrame()
-  const audioNodes = useRef<Map<string, HTMLAudioElement>>(new Map())
-  const clips = useRef<AudioClip[]>([])
-
-  useEffect(() => {
-    const previous = audioNodes.current
-    const next = new Map<string, HTMLAudioElement>()
-    const nextClips: AudioClip[] = []
-    if (project) {
-      const mediaById = new Map((project.media ?? []).map((media) => [media.id, media]))
-      for (const track of project.timeline.tracks) {
-        if (track.kind !== 'audio' && track.kind !== 'video') continue
-        for (const block of track.blocks) {
-          const media = block.mediaId ? mediaById.get(block.mediaId) : undefined
-          if (!media || (track.kind === 'video' && (media.kind !== 'video' || !media.hasAudio))) continue
-          const audio = previous.get(block.id) ?? new Audio(editorV6MediaUrl(project.id, media.fileName, media.libraryVideoId, media.libraryAudioId))
-          audio.preload = 'auto'
-          audio.volume = Math.max(0, Math.min(1, block.gain ?? 1))
-          next.set(block.id, audio)
-          nextClips.push({
-            id: block.id,
-            startFrame: block.startFrame,
-            durationFrames: block.durationFrames,
-            mediaInFrame: block.mediaInFrame ?? 0,
-            gain: block.gain ?? 1,
-            muted: block.audioEnabled === false || (block.gain ?? 1) === 0,
-            trackMuted: track.muted || Boolean(track.hidden),
-            audio
-          })
-        }
-      }
-    }
-    for (const [id, audio] of previous) {
-      if (next.has(id)) continue
-      audio.pause()
-      audio.removeAttribute('src')
-      audio.load()
-    }
-    audioNodes.current = next
-    clips.current = nextClips
-  }, [project?.id, project?.media, project?.timeline])
-
-  useEffect(() => {
-    for (const clip of clips.current) {
-      const active = frame >= clip.startFrame && frame < clip.startFrame + clip.durationFrames
-      const shouldPlay = playing && active && !clip.muted && !clip.trackMuted
-      const target = (clip.mediaInFrame + frame - clip.startFrame) / 30
-      clip.audio.volume = Math.max(0, Math.min(1, clip.gain))
-      if (shouldPlay) {
-        if (clip.audio.paused || Math.abs(clip.audio.currentTime - target) > .18) {
-          if (Math.abs(clip.audio.currentTime - target) > .18) {
-            try { clip.audio.currentTime = target } catch { /* metadata is still loading */ }
-          }
-          if (clip.audio.paused) void clip.audio.play().catch(() => {})
-        }
-      } else {
-        clip.audio.pause()
-        if (!playing && active && Math.abs(clip.audio.currentTime - target) > .03) {
-          try { clip.audio.currentTime = target } catch { /* metadata is still loading */ }
-        }
-      }
-    }
-  }, [playing, frame, project?.id])
+  const audioNodes = useRef(new Map<string, AudioNode>())
+  const projectId = project?.id
+  const media = project?.media
+  const timeline = project?.timeline
+  const index = useMemo(() => projectId && timeline ? indexAudioClips(projectId, media, timeline) : null, [projectId, media, timeline])
 
   useEffect(() => () => {
-    for (const audio of audioNodes.current.values()) {
-      audio.pause()
-      audio.removeAttribute('src')
-      audio.load()
+    const nodes = audioNodes.current
+    for (const { audio } of nodes.values()) releaseAudio(audio)
+    nodes.clear()
+  }, [projectId])
+
+  useEffect(() => {
+    const nodes = audioNodes.current
+    const active = new Set<string>()
+    if (index) {
+      const preloadThrough = playing ? frame + AUDIO_PRELOAD_FRAMES : frame
+      const { clips, maximumEnds } = index
+      let left = 0, right = clips.length
+      while (left < right) {
+        const middle = (left + right) >>> 1
+        if (clips[middle].startFrame <= preloadThrough) left = middle + 1
+        else right = middle
+      }
+      for (let position = left - 1; position >= 0 && maximumEnds[position] > frame; position--) {
+        const clip = clips[position]
+        if (clip.endFrame <= frame) continue
+        let node = nodes.get(clip.id)
+        if (node && node.url !== clip.url) {
+          releaseAudio(node.audio)
+          nodes.delete(clip.id)
+          node = undefined
+        }
+        if (!node) {
+          if (!playing) continue
+          node = { url: clip.url, audio: new Audio(clip.url) }
+          nodes.set(clip.id, node)
+        }
+        active.add(clip.id)
+        const { audio } = node
+        if (audio.volume !== clip.volume) audio.volume = clip.volume
+        const inClip = frame >= clip.startFrame
+        const target = (clip.mediaInFrame + Math.max(0, frame - clip.startFrame)) / 30
+        if (Math.abs(audio.currentTime - target) > (playing ? .18 : .03)) {
+          try { audio.currentTime = target } catch { /* The next playback update retries after metadata. */ }
+        }
+        if (playing && inClip && audio.paused) void audio.play().catch(() => {})
+        else if ((!playing || !inClip) && !audio.paused) audio.pause()
+      }
     }
-    audioNodes.current.clear()
-    clips.current = []
-  }, [])
+    for (const [id, node] of nodes) {
+      if (active.has(id)) continue
+      releaseAudio(node.audio)
+      nodes.delete(id)
+    }
+  }, [playing, frame, index])
 
   return null
 }
