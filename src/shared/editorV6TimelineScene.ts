@@ -75,7 +75,10 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
   return { frame: normalizedFrame, background: resolveEditorV6BackgroundAtFrame(document, normalizedFrame), elements: resolveEditorV6ElementsAtFrame(document, normalizedFrame, options), ...(mediaVideo ? { mediaVideo } : {}) }
 }
 
-const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>>()
+type MotionPlanIndex = Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>
+// The motion plan contains project-scoped facial schedules; share by timeline only
+// within the same project, never between two documents that reuse that timeline.
+const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<string, MotionPlanIndex>>()
 type BaseCharacterIndex = { byElementId: Map<string, EditorV6Element>; byCharacterId: Map<string | undefined, EditorV6Element> }
 const baseCharacterIndexCache = new WeakMap<EditorV6Document['elements'], BaseCharacterIndex>()
 
@@ -162,7 +165,8 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
   }
   if (options.includeMotion === false) return attachLinkedBalloons(document, resolved.map(applyAutomaticFace), frame)
   const includeSpeechMouth = options.includeSpeechMouth !== false
-  const indexes = motionIndex.get(document.timeline) ?? new Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
+  const indexesByProject = motionIndex.get(document.timeline) ?? new Map<string, MotionPlanIndex>()
+  const indexes = indexesByProject.get(document.id) ?? new Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
   let index = indexes.get(includeSpeechMouth)
   if (!index) {
     index = new Map()
@@ -173,7 +177,8 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     }
     for (const entries of index.values()) entries.sort((a, b) => a.plan.endFrame - b.plan.endFrame)
     indexes.set(includeSpeechMouth, index)
-    motionIndex.set(document.timeline, indexes)
+    indexesByProject.set(document.id, indexes)
+    motionIndex.set(document.timeline, indexesByProject)
   }
   return attachLinkedBalloons(document, resolved.map((source) => {
     let element = applyAutomaticFace(source)
