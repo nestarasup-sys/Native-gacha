@@ -47,7 +47,9 @@ async function compareScene(project: EditorV6Document, scene: EditorV6ResolvedSc
     scene, assets: project.assets, outputWidth: SIZE.width, outputHeight: SIZE.height, renderLayer: layer
   }))
   // Sharp's SVG input uses librsvg here; it is only an independent 2D layout oracle.
-  const reference = await sharp(Buffer.from(svg)).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+  // SceneSurface uses CSS width:100% with a logical 1920x1080 viewBox; librsvg
+  // exposes that logical size. Resize explicitly to the same test-output pixels.
+  const reference = await sharp(Buffer.from(svg)).resize(SIZE.width, SIZE.height).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
   expect(reference.info.width).toBe(SIZE.width)
   expect(reference.info.height).toBe(SIZE.height)
   const ir = planEngineV6ResolvedScene(project, scene, { ...SIZE, layer })
