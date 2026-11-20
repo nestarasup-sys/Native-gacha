@@ -1,7 +1,7 @@
 import { Profiler, useEffect, useMemo, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
-import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
+import { resolveEditorV6PreviewSceneAtFrame } from '../../../../shared/editorV6PreviewScene'
 import { SceneSurface, type SceneSurfaceInteraction } from './SceneSurface'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { measureEditorV6SceneResolution, recordUiCommit } from '../../ui/performanceDiagnostics'
@@ -16,7 +16,7 @@ export function EditorV6PlaybackScene({ project, selectedId, interaction, playin
 }) {
   const frame = useEditorV6PlaybackFrame()
   const scene = useMemo(() => measureEditorV6SceneResolution(() => {
-    const resolved = resolveEditorV6SceneAtFrame(project, frame)
+    const resolved = resolveEditorV6PreviewSceneAtFrame(project, frame)
     const media = resolved.mediaVideo
     if (!media?.libraryVideoId) return resolved
     return { ...resolved, mediaVideo: { ...media, url: `gacha-video://library/${media.libraryVideoId}` } }
