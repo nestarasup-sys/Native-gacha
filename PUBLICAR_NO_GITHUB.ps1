@@ -1,30 +1,10 @@
-# Execute a partir do diretorio descompactado, com Git instalado e autenticado.
-# Cria um clone limpo e envia o CODIGO (nao o ZIP) ao repositorio existente.
+# Este atalho historico foi usado para o primeiro upload da base na branch main.
+# Ele NAO serve para atualizar um clone local e foi desativado para proteger
+# Main/Dev-V2/Dev-v3 de publicacoes acidentais.
 $ErrorActionPreference = 'Stop'
-$source = Split-Path -Parent $MyInvocation.MyCommand.Path
-$remote = 'https://github.com/nestarasup-sys/Native-gacha.git'
-$repo = Join-Path (Split-Path -Parent $source) 'Native-gacha-publicacao'
-if (Test-Path $repo) { throw "Pasta de destino ja existe: $repo. Nao apague dados automaticamente." }
-if (-not (Get-Command git -ErrorAction SilentlyContinue)) { throw 'Git nao instalado. Instale Git for Windows.' }
-Write-Host 'ATENCAO: o repositorio e PUBLICO. Nao envie documentos privados, bancos de dados ou tokens.'
-$answer = Read-Host 'Digite PUBLICAR para prosseguir'
-if ($answer -cne 'PUBLICAR') { throw 'Cancelado pelo usuario.' }
-& git clone $remote $repo
-if ($LASTEXITCODE -ne 0) { throw 'Falha no clone/autenticacao do GitHub.' }
-Get-ChildItem -LiteralPath $source -Force | Where-Object { $_.Name -notin @('.git', 'node_modules', 'out', 'dist', 'release', 'app-data') } | ForEach-Object {
-  Copy-Item -LiteralPath $_.FullName -Destination $repo -Recurse -Force
-}
-Push-Location $repo
-try {
-  & git add -A
-  if ($LASTEXITCODE -ne 0) { throw 'Falha no git add.' }
-  $files = & git diff --cached --name-only
-  $suspect = @($files | Where-Object { $_ -match '(^|/)(\.env($|\.)|app-data/|node_modules/|.*\.(sqlite|db|key|pem)$)' })
-  if ($suspect.Count -gt 0) { $suspect | Write-Warning; throw 'Encontrados arquivos potencialmente confidenciais no staging.' }
-  if (-not $files) { Write-Host 'Nenhuma mudanca para publicar.'; exit 0 }
-  & git commit -m 'feat: importar codigo G-V5 e base arquitetural Native Gacha'
-  if ($LASTEXITCODE -ne 0) { throw 'Falha no commit (confira git config user.name/email).' }
-  & git push origin main
-  if ($LASTEXITCODE -ne 0) { throw 'Falha no push (confira credenciais/permissoes).' }
-  Write-Host "Codigo enviado: https://github.com/nestarasup-sys/Native-gacha"
-} finally { Pop-Location }
+Write-Host ''
+Write-Host 'PUBLICAR_NO_GITHUB.ps1 foi desativado por seguranca.' -ForegroundColor Yellow
+Write-Host 'Para TRAZER atualizacoes GitHub -> computador, use ATUALIZAR_DESENVOLVIMENTO.bat.'
+Write-Host 'Para enviar commits locais, use um fluxo Git explicito e revise a branch de destino.'
+Write-Host 'Nenhum push, copia, exclusao ou alteracao foi executado.'
+exit 1
