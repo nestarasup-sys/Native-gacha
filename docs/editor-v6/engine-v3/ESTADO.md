@@ -15,16 +15,16 @@ atualizado: 2026-11-20
 - Produto desejado: prévia leve com piscadas; animação completa **somente no export**.
 - Meta de engenharia: engine offline independente da UI, com liberdade de substituir a renderização/animações atuais.
 - Histórico reproduzível na Dev-V2: **163,760 s para export padrão de 200 s**; objetivo exploratório **<=90 s**.
-- Além do plano, existe um **laboratório F1 de composição offline**, ainda não conectado à exportação V6 real.
+- **Fundação do Plano 1.0 implementada:** política de prévia com piscadas, adaptador V6 -> IR versionado e materialização de assets na fronteira do compositor. O laboratório offline ainda não é a exportação padrão.
 - Trabalhos anteriores já commitados na `Dev-v3`: isolamentos de cache por projeto, regra temporal de vídeo, testes e CI focado. Eles não constituem a nova engine.
-- O laboratório F1 executou testes locais e MP4 sintético no Linux; **nenhum gate completo foi validado**, nem existe benchmark comparável ao export padrão.
+- Laboratório F1 executou testes e MP4 sintético no Linux. O novo adaptador passou CI Windows; **nenhum gate F0–F8 foi fechado** e não há benchmark comparável ao export padrão.
 
 ## Quadro de gates
 
 | Fase/gate | Status | Evidência exigida para concluir |
 | --- | --- | --- |
-| F0 / G0 | EM_ANDAMENTO | inventário parcial e fixture inicial; falta golden real e baseline medido |
-| F1 / G1 | EM_ANDAMENTO | smoke offline sintético passou; falta frame V6 real, paridade e Windows |
+| F0 / G0 | EM_ANDAMENTO | fixture V6 sintética liga timeline -> IR -> pixels; falta golden e baseline comparável |
+| F1 / G1 | EM_ANDAMENTO | frame do modelo V6 renderizado via Sharp e testado em CI Windows; falta paridade/golden e pacote |
 | F2 / G2 | PENDENTE | IR versionado e resolver determinístico |
 | F3 / G3 | PENDENTE | poses/expressões corretas em PNGs comparáveis |
 | F4 / G4 | PENDENTE | boca/cabelo completos + A/B H0–H4 |
@@ -45,21 +45,30 @@ atualizado: 2026-11-20
 - Prova Full HD local adicional: `--frames=30 --width=1920 --height=1080` → 30 frames H.264 validados por `ffprobe`, cerca de **2.649 ms** de parede nesta máquina Linux, ainda em fixture sintética e sem comparação justa.
 - CI Windows em commit `76e6cde`: **aprovada** ([execução 44835472773](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44835472773)); passou `typecheck`, auditoria de arquitetura, 15 testes de compositor e os testes focados do Editor V6. Não incluiu smoke com FFmpeg nem comparação visual real.
 
-## Próxima tarefa concreta [NEXT-002]
+## Fundação 1.0 — entrega verificada
 
-**Conectar a fixture sintética V6 ao contrato de comandos do novo compositor, mantendo o export antigo intacto.**
+- `src/shared/editorV6PreviewScene.ts`: reprodução leve sem interpolação de pose nem boca falada; apenas piscada automática.
+- `src/engine-v6/v6FrameAdapter.ts`: IR `contractVersion: 1` e `requiredAssetIds`, com plano de frames puro e independente de mídia/DOM.
+- `tests/editor-v6/engineV6FrameAdapter.test.ts`: 7 testes de geometria, assets, fail-fast, reprodução e geração RGBA de cena V6 sintética.
+- Regressão `tests/editor-v6/editorV6ExportParity.test.ts` atualizada: o export mantém atlas de movimento; prévia não o renderiza.
+- [CI Windows validada em b957b42](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44836460029): typecheck, auditoria, 15 testes offline CJS e 42 testes Vitest focados passaram.
+- **Escopo do aceite:** arquitetura e primeira fatia de frame; exportação de produção segue antiga. Sem golden/benchmark de cenas complexas.
 
-1. Materializar um `EditorV6NativeFramePlan` de **uma cena V6 sintética real** (não apenas comandos manuais).
-2. Confrontar quadro pixel a pixel com a saída antiga antes do codec; registrar diferenças de máscara, escala, flip, rotação, texto e alpha.
-3. Medir cenário 1080p e memória/transferências e acrescentar fixture de assets grandes; **decidir continuar com Sharp ou testar outro backend**.
-4. Fechar G0 somente com golden e baseline; fechar G1 somente após qualidade, protocolo e Windows. Até lá, ambos `EM_ANDAMENTO`.
+## Próxima tarefa concreta [NEXT-003]
+
+**F0/G0 + F1/G1: comparação de pixels de uma cena V6 sintética atual e verificação de backend.**
+
+1. Capturar o mesmo frame de fixture V6 pelos dois caminhos, Chromium e Sharp, antes de H.264; testar alpha, crop, flip, rotação, z-order e bordas.
+2. Adicionar fixtures sintéticas atuais para texto, rosto/boca e cabelo; medir cada limitação sem usar projetos antigos como referência visual.
+3. Medir pico de memória e tempo a 1080p sob cenário equivalente e testar Windows empacotado.
+4. Fechar G0/G1 **somente** com golden/paridade/benchmark reproduzíveis; se Sharp falhar, testar outro backend sem refazer o editor.
 
 ## Bloqueios/hipóteses em aberto
 
 - [RISCO] Nenhum backend gráfico novo foi escolhido ou validado.
 - [RISCO] Cabelo pode dominar preparo, simulação, composição ou memória; distinguir com medição.
 - [RISCO] Vídeos sobrepostos diferem potencialmente entre prévia e export; definir contrato autoral.
-- [RISCO] O atual preview pode mostrar atlas de pose/face preparados; política-alvo é **só piscada** e ainda requer implementação/checagem.
+- [CONCLUÍDO 1.0] Playback do Editor V6 agora usa resolução estática e apenas piscadas automáticas; testes de regressão em CI Windows aprovados.
 - [RISCO] A autorização histórica para usar corte real refere-se ao escopo e cuidados do relatório antigo; usar cópia verificada, nunca original como alvo destrutivo.
 
 ## Atualização deste arquivo

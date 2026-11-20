@@ -1,7 +1,7 @@
 ---
 id: V6-ENGINE-PLAN-1.0
 tipo: plano
-status: direcao-acordada
+status: fundacao-validada
 branch: Dev-v3
 atualizado: 2026-11-20
 proximo: PLANO-1.1.md
@@ -109,5 +109,20 @@ As interfaces devem nascer de **uma fatia vertical funcionando**, não de uma hi
 O motor novo só vira padrão quando cumpre os gates de fidelidade, dados, crash/cancelamento e distribuição;
 depois deve demonstrar benefício mensurável de desempenho ou manutenção que justifique substituir o pipeline.
 Se um backend falhar, substituí-lo. Se o IR estiver inadequado, revisá-lo. **Não proteger uma decisão só porque já foi codificada.**
+
+## 10. Estado comprovado da fundação 1.0 — 20/11/2026
+
+O capítulo 1.0 estabelece **decisões e fronteiras**, não exige que o motor de export já substitua a produção.
+A primeira fatia vertical dessa arquitetura foi concluída e verificada na branch `Dev-v3`:
+
+- [x] **Política de prévia independente:** `src/shared/editorV6PreviewScene.ts` usa estado estático e somente piscadas automáticas; o componente de playback consome essa política.
+- [x] **Adaptador V6 -> IR 1:** `src/engine-v6/v6FrameAdapter.ts` resolve cena/transformações em comandos de frame sem React, DOM, Electron, filesystem ou FFmpeg.
+- [x] **Recursos por referência:** `requiredAssetIds` identifica as imagens; `materializeEngineV6LegacyFrame` entrega seus bytes apenas na fronteira de renderização e recusa referências inválidas.
+- [x] **Fatia de pixels real do modelo V6:** teste sintético usa `createEditorV6Timeline`, resolvedor de cena, adaptador e compositor offline Sharp para produzir RGBA.
+- [x] **Contratos e segurança:** 7 testes do novo adaptador, 15 testes do compositor, mais regressões existentes; falha explícita em texto, patches faciais e vídeo ainda não suportados.
+- [x] **CI Windows de referência:** `npm run typecheck`, `npm run audit:architecture`, 15 testes CJS e 42 testes Vitest focados aprovados no [run 44836460029](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44836460029).
+
+**Não foi concluído:** Golden visual comparando Chromium vs Sharp em cena representativa, cabelo e boca completos, texto, vídeo/áudio, seleção automática do novo export, Windows empacotado e benchmark clique -> MP4. Esses trabalhos continuam nos gates F0–F8 do [Plano 1.1](PLANO-1.1.md).
+A aprovação da **fundação 1.0** não significa aprovação de G0, G1 nem do motor completo.
 
 **Continua:** [Plano 1.1 — execução e gates](PLANO-1.1.md).

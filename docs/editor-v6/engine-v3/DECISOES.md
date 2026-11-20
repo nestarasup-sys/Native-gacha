@@ -29,6 +29,7 @@ atualizado: 2026-11-20
 | DEC-012 | Aceita | Plano evolui por evidência; não exigir preservar implementações atuais | Usuário autorizou explorar com liberdade |
 | DEC-013 | Em teste | Usar Sharp como primeiro laboratório offline sobre `EditorV6NativeFramePlan` | Smoke sintético H.264 e 15 testes locais passaram; sem paridade real, 1080p ou Windows empacotado |
 | DEC-014 | Proposta | Avaliar backend novo antes de portar a simulação de cabelo | Experimento C++ anterior foi mais lento no fixture simples e falhou em projeto curto; custo de animação ainda precisa ser medido |
+| DEC-015 | Em teste | Adaptador puro V6 -> IR de frame v1 e materialização de assets apenas no compositor | 7 testes novos no Windows aprovados; contrato F1 não cobre texto, boca, cabelo ou vídeo |
 
 ## Critérios para mudar decisão
 

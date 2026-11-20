@@ -68,6 +68,5 @@ Só marcar `VALIDADO` após testes/artefatos verificáveis.
 
 ## Primeiro trabalho a ser executado
 
-**F0/G0: inventário + fixtures sintéticas + controle mensurado do export.**
-Depois: F1 — prova curta de composição offline com uma imagem/personagem, sem `capturePage` por frame.
-Nenhum desses gates está validado apenas porque o plano foi escrito.
+**Fundação do Plano 1.0 concluída:** política de preview + IR v1 + render de uma cena V6 sintética via Sharp, com CI Windows aprovada. Ver [Plano 1.0](PLANO-1.0.md#10-estado-comprovado-da-fundação-10--20112026).
+**Próximo foco F0/G0 e F1/G1:** comparar o mesmo frame Chromium vs Sharp, validar fidelidade, cobertura de mídia e desempenho representativo. A fundação não fecha os gates do motor completo.
