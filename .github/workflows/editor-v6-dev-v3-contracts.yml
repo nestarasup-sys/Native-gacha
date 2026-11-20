@@ -36,4 +36,4 @@ jobs:
       - name: Profile offline synthetic full HD raster and memory (non-benchmark)
         run: npm run profile:editor-v6:engine-v3 -- --width=1920 --height=1080 --frames=4 --atlas=512
       - name: Verify V6 motion cache, overlay timebase and preview parity
-        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/editorV6Motion.test.ts tests/editor-v6/editorV6ExportParity.test.ts tests/editor-v6/editorV6VideoTimebase.test.ts tests/editor-v6/sceneVideoLayer.test.ts tests/editor-v6/engineV6FrameAdapter.test.ts tests/editor-v6/engineV6SvgReference.test.ts
+        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/editorV6Motion.test.ts tests/editor-v6/editorV6ExportParity.test.ts tests/editor-v6/editorV6VideoTimebase.test.ts tests/editor-v6/sceneVideoLayer.test.ts tests/editor-v6/engineV6FrameAdapter.test.ts tests/editor-v6/engineV6SvgReference.test.ts tests/editor-v6/engineV6Timebase.test.ts
