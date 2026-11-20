@@ -108,8 +108,12 @@ export function createAssetManifestTransaction(config: AssetManifestTransactionC
     const entries: Journal['entries'] = []
     try {
       let index = 0
-      for (const path of unique.keys()) {
+      for (const [path, bytes] of unique) {
         const original = await maybeRead(files, assetPath(folder, path))
+        if (original?.equals(bytes)) {
+          unique.delete(path)
+          continue
+        }
         if (original) await files.writeFile(join(root, `${index}.bak`), original)
         entries.push({ relativePath: path, backedUp: original !== null })
         index++
