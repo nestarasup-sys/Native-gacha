@@ -1,0 +1,35 @@
+name: Editor V6 - Dev-v3 focused contracts
+
+on:
+  push:
+    branches: [Dev-v3]
+  pull_request:
+    branches: [Dev-v3]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: editor-v6-dev-v3-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  focused-contracts:
+    name: V6 / types, boundaries and preview-export contracts
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.23.5'
+          cache: npm
+      - name: Install without Electron postinstall hooks
+        run: npm ci --ignore-scripts
+      - name: Check TypeScript contracts
+        run: npm run typecheck
+      - name: Check architecture boundaries
+        run: npm run audit:architecture
+      - name: Verify V6 motion cache, overlay timebase and preview parity
+        run: npx vitest run --config vitest.editor-v6.config.ts tests/editor-v6/editorV6Motion.test.ts tests/editor-v6/editorV6ExportParity.test.ts tests/editor-v6/editorV6VideoTimebase.test.ts tests/editor-v6/sceneVideoLayer.test.ts
