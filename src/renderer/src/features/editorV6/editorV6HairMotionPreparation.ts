@@ -8,7 +8,7 @@ import { measureFaceModeCrop } from './faceModeAssets'
 import { editorV6ExportTestSettings } from '../../../../shared/editorV6ExportTestModes'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairPreparationReuse } from './motion/hairPreparationReuse'
-import { createEditorV6HairSourceBatch } from './motion/hairSourceBatch'
+import { createEditorV6CharacterSourceBatch } from './motion/characterSourceBatch'
 import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
 import type { StandardExpressionEffectsCache } from '../../characters/standardExpressionEffects'
 import { collectEditorV6HairMotionTargets } from './editorV6HairMotionTargets'
@@ -59,7 +59,7 @@ export async function prepareEditorV6HairMotionBundle(
   const materialCache: GachaReusableMaterialCache = new Map()
   const expressionEffectsCache: StandardExpressionEffectsCache = new WeakMap()
   const currentExportReuse = createEditorV6HairPreparationReuse()
-  const rawSources = createEditorV6HairSourceBatch(window.desktop.fabricator)
+  const rawSources = createEditorV6CharacterSourceBatch(window.desktop.fabricator)
   const [{ prepareSavedCharacterRenderer, createPreparedGachaWardrobePair }, { loadCharacterTintedImage, resolvedHairColors }] = await Promise.all([
     import('../../characters/editorV6CharacterRenderer'), import('../../characters/characterRenderer')
   ])

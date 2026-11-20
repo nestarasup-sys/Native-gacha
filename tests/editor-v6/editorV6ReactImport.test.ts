@@ -1,7 +1,8 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6MediaAsset } from '../../src/shared/editorV6'
 import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, planEditorV6ReactImport, resolveEditorV6ReactVideos, secondsToFrame } from '../../src/shared/editorV6ReactImport'
+import { compileEditorV6ReactImport } from '../../src/renderer/src/features/editorV6/editorV6ReactImportCompiler'
 
 const idA='123e4567-e89b-42d3-a456-426614174001'
 const idB='123e4567-e89b-42d3-a456-426614174002'
@@ -28,6 +29,33 @@ const references=()=>({
   media:[video]
 })
 describe('JSON portátil do Editor V6',()=>{
+  it('verifica vídeos únicos com no máximo três análises simultâneas antes de validar sobreposição', async () => {
+    const ids = Array.from({ length: 6 }, () => crypto.randomUUID())
+    let active = 0
+    let peak = 0
+    const linkEditorV6LibraryVideo = vi.fn(async (_projectId: string, id: string) => {
+      peak = Math.max(peak, ++active)
+      await new Promise((resolve) => setImmediate(resolve))
+      active--
+      return { ...video, id, libraryVideoId: id, fileName: id + '.mp4' }
+    })
+    vi.stubGlobal('window', { desktop: { editorV6: { linkEditorV6LibraryVideo } } })
+    try {
+      const source = { ...sample(), videos: [...ids, ids[0]].map((id) => ({ videoId: id, startSeconds: 0 })) }
+      const refs = references()
+      const progress: string[] = []
+      await expect(compileEditorV6ReactImport(source, {
+        characters: refs.characters, poseSlots: refs.posesByCharacter, poseRevisions: new Map(), presets: refs.presetsByModel
+      }, (message) => progress.push(message))).rejects.toThrow(/sobrepõem/)
+      expect(peak).toBe(3)
+      expect(active).toBe(0)
+      expect(linkEditorV6LibraryVideo.mock.calls.map(([, id]) => id)).toEqual(ids)
+      expect(progress.at(-1)).toBe('Verificando mídia 6/6')
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('identifica vídeo pelo número ou nome real da Base de Vídeos',()=>{
     const parsed=sample()
     const library=[{id:videoId,name:'Clipe Principal.mp4',mimeType:'video/mp4' as const,extension:'mp4' as const,size:20000,durationFrames:180,createdAt:'2026-01-01T00:00:00.000Z',available:true}]

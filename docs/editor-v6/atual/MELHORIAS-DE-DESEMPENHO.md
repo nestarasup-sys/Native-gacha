@@ -27,5 +27,12 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 21 | Compartilhar a leitura e o índice temporário do catálogo entre pedidos de mídia concorrentes. | Doze pedidos simultâneos fizeram uma única leitura do catálogo. Teste de protocolo confirmou os bytes retornados por intervalo. |
 | 22 | Compartilhar o `ffprobe` entre vínculos concorrentes do mesmo vídeo e da mesma revisão. | Typecheck e inspeção da remoção da operação após sucesso ou falha. Medição no Electron pendente. |
 | 23 | Solicitar somente os campos usados ao vincular vídeos no Editor V6. | MP4 sintético com vídeo e áudio. A saída do `ffprobe` caiu de 4.743 para 393 caracteres, com duração, dimensões e faixas equivalentes. Sem medição isolada do tempo de processo. |
+| 24 | Verificar até três vídeos únicos em paralelo durante a importação JSON. | O teste com seis IDs e uma repetição confirmou seis chamadas, pico de três operações e validação de sobreposição depois da análise. |
+| 25 | Reusar a fonte do modelo entre estados importados, inclusive no preparo da referência neutra. | Teste do lote confirma uma leitura de modelo para várias poses e personagens do mesmo slot. |
+| 26 | Reusar fontes de poses já carregadas na importação, com limite de oito entradas. | Teste do lote confirma reaproveitamento por modelo e pose, separação de slots e nova tentativa após falha. |
+| 27 | Reaproveitar materiais de roupa e cabelo entre os renderizadores criados durante a importação. | Typecheck e inspeção do cache limitado ao trabalho de importação. Ganho no projeto real pendente. |
+| 28 | Compartilhar as leituras do catálogo facial entre aplicação de preset, cálculo de transformações e renderização. | Testes do cache cobrem reutilização, isolamento por slot e limite de memória. |
+| 29 | Reusar a carga dos efeitos padrão de expressão entre estados importados. | Typecheck e inspeção da sessão de importação. Ganho no projeto real pendente. |
+| 30 | Medir o recorte da referência neutra diretamente no canvas, evitando codificar a imagem, decodificá-la e gerar outro PNG só para medir largura e altura. | Mesmo limiar de alfa da rotina anterior. Passaram os testes de elenco e o teste geral de geometria no Electron. Comparação isolada da referência neutra pendente. |
 
 Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O MP4 não foi cronometrado nesta rodada.
