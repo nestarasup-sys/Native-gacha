@@ -112,7 +112,6 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
     finally { setBusy(false) }
   }
 
-  const [animateHair, setAnimateHair] = useState(true)
   const selectedHairPreset = presetDraft?.slot === hairPresetSlot ? presetDraft.value : hairPresets[hairPresetSlot - 1]
   const beginEditingHairPreset = () => {
     setPresetDraft({ slot: hairPresetSlot, value: structuredClone(selectedHairPreset ?? FIRST_HAIR_MOTION_PRESET) })
@@ -134,8 +133,8 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
 
   const start = async () => {
     if (characterSourceRefreshRequired) { setError('Aguarde a sincronização da aparência do personagem com o Customizador antes de exportar.'); return }
-    if (!simplifiedAnimation && animateHair && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
-    const preparedHairPreset = !simplifiedAnimation && animateHair && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
+    if (!simplifiedAnimation && !selectedHairPreset) { setError(`O Preset ${hairPresetSlot} está vazio. Escolha ou configure um preset de cabelo antes de exportar.`); return }
+    const preparedHairPreset = !simplifiedAnimation && selectedHairPreset ? hairMotionPosteriorOnlyPreset(selectedHairPreset) : null
     // Block focus events and pending refresh results before starting async work.
     onActivity?.(true)
     setExportStartedAt(Date.now()); setStartingExport(true)
@@ -180,7 +179,7 @@ export function useEditorV6ExportPanelController({ project, open, characterSourc
   }
 
   return {
-    job, exportFolder, options, setOptions, simplifiedAnimation, setSimplifiedAnimation, animateHair, setAnimateHair, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
+    job, exportFolder, options, setOptions, simplifiedAnimation, setSimplifiedAnimation, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
     editingHairPreset, setEditingHairPreset, hairPresetMessage, setHairPresetMessage, preparingHair, startingExport,
     exportStartedAt, busy, audioPickerOpen, setAudioPickerOpen, error, setError, active, updateAudio, linkAudio,
     chooseExportFolder, clearExportFolder, selectedHairPreset, beginEditingHairPreset, saveHairPreset, start, cancel

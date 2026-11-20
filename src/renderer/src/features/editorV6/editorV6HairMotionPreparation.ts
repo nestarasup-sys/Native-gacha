@@ -133,7 +133,7 @@ export async function prepareEditorV6HairMotionBundle(
     recordStage, captureTransitionLayers
   })
   const totalDataUrlCharacters = [...surfaces, ...textures].reduce((sum, item) => sum + item.dataUrl.length, 0)
-  if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação. Desmarque “Animar cabelo no MP4” ou exporte um trecho menor.')
+  if (totalDataUrlCharacters > 96_000_000) throw Error('As poses sem cabelo preparadas para a animação excedem o limite seguro de memória da exportação.')
   const sourceReuse = rawSources.stats()
   const materialReuse = currentExportReuse.stats()
   const preparationProfile = {

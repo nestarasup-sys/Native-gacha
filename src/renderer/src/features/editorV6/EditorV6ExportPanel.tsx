@@ -19,7 +19,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
     return () => { if (previous instanceof HTMLElement && previous.isConnected) previous.focus() }
   }, [open])
   const {
-    job, exportFolder, options, setOptions, simplifiedAnimation, setSimplifiedAnimation, animateHair, setAnimateHair, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
+    job, exportFolder, options, setOptions, simplifiedAnimation, setSimplifiedAnimation, hairPresetSlot, setHairPresetSlot, hairPresets, presetDraft, setPresetDraft,
     editingHairPreset, setEditingHairPreset, hairPresetMessage, setHairPresetMessage, preparingHair, startingExport,
     exportStartedAt, busy, audioPickerOpen, setAudioPickerOpen, error, setError, active, updateAudio, linkAudio,
     chooseExportFolder, clearExportFolder, selectedHairPreset, beginEditingHairPreset, saveHairPreset, start, cancel
@@ -49,8 +49,7 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
           {options.nativeRenderer === true && <small>Experimental: usa um processo nativo separado para compor imagens. Texto é rasterizado pelo Chromium; compare o resultado visual antes de usar em um projeto final.</small>}
           <label>Codificador<select value={options.encoder} onChange={(event) => setOptions({ ...options, encoder: event.target.value as 'cpu' | 'amf' })}><option value="cpu">CPU · H.264</option><option value="amf">AMD AMF · H.264</option></select></label>
           {options.encoder === 'amf' && <small>AMF usa somente h264_amf, sem fallback. A disponibilidade depende do driver AMD.</small>}
-          {!simplifiedAnimation && <label className="v6-export-check"><input type="checkbox" checked={animateHair} onChange={(event) => setAnimateHair(event.target.checked)} /><span><strong>Animar cabelo no MP4</strong><small>Desative para exportar sem preparar as camadas do cabelo. A boca continua animada.</small></span></label>}
-          {!simplifiedAnimation && animateHair && <><p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
+          {!simplifiedAnimation && <><p><strong>Cabelo posterior animado após cada troca de pose</strong><br /><small>Uma reação por troca, sem loop; o cabelo volta à posição original. A animação é exclusiva do MP4.</small></p>
           <label>Preset de cabelo<select value={hairPresetSlot} onChange={(event) => { setHairPresetSlot(Number(event.target.value)); setPresetDraft(null); setEditingHairPreset(false); setHairPresetMessage('') }}>{hairPresets.map((preset, index) => <option key={index} value={index + 1}>Preset {index + 1}{preset ? '' : ' · vazio'}</option>)}</select></label>
           {!selectedHairPreset && <small role="status">O preset selecionado está vazio. Crie ou selecione um preset para exportar.</small>}
           <button type="button" aria-expanded={editingHairPreset} onClick={() => editingHairPreset ? setEditingHairPreset(false) : beginEditingHairPreset()}>{editingHairPreset ? 'Recolher controles' : selectedHairPreset ? 'Editar preset no Editor V6' : 'Criar preset neste slot'}</button>
