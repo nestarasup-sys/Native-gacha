@@ -15,12 +15,19 @@ export function createEditorV6HairMotionBundleAssets() {
   const textures: EditorV6HairMotionBundle['textures'] = []
   const motionTransitions: EditorV6HairMotionTransition[] = []
   const surfaceIds = new Map<string, string>(), textureIds = new Map<string, string>()
+  const surfaceIdsByPng = new Map<string, string>()
 
   const addSurface = (key: string, dataUrl: string) => {
     const existing = surfaceIds.get(key)
     if (existing) return existing
+    const identicalSurface = surfaceIdsByPng.get(dataUrl)
+    if (identicalSurface) {
+      surfaceIds.set(key, identicalSurface)
+      return identicalSurface
+    }
     const id = `surface-${surfaces.length + 1}`
     surfaceIds.set(key, id)
+    surfaceIdsByPng.set(dataUrl, id)
     surfaces.push({ id, dataUrl })
     return id
   }
