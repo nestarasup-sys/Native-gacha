@@ -1,4 +1,4 @@
-import type { EditorV6VideoOverlay } from '../../../src/shared/editorV6VideoComposition'
+import { editorV6VideoSecondsFromFrames, type EditorV6VideoOverlay } from '../../../src/shared/editorV6VideoComposition'
 
 export const editorV6OutputColorFilter = 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,setparams=range=tv:colorspace=bt709:color_primaries=bt709:color_trc=bt709'
 export const EDITOR_V6_EXPORT_QUALITY_SAMPLE_FRAMES = [0, 29, 30, 149, 259, 300, 518, 599, 1199, 2393] as const
@@ -22,15 +22,15 @@ export type EditorV6VideoComposition = {
 
 /** Builds FFmpeg inputs and filters in the same z-order as the timeline video plan. */
 export function buildEditorV6VideoComposition({ clips, mediaPaths, partStartFrame, width, height, layeredVideo, qualityReference }: EditorV6VideoCompositionInput): EditorV6VideoComposition {
-  const videoInputs = clips.flatMap((clip, index) => ['-ss', String(clip.mediaInFrame / 30), '-t', String((clip.endFrame - clip.startFrame) / 30), '-i', mediaPaths[index]])
+  const videoInputs = clips.flatMap((clip, index) => ['-ss', String(editorV6VideoSecondsFromFrames(clip.mediaInFrame)), '-t', String(editorV6VideoSecondsFromFrames(clip.endFrame - clip.startFrame)), '-i', mediaPaths[index]])
   const filters = layeredVideo
     ? ['[0:v]crop=iw:ih/2:0:0,format=rgba,setsar=1[base]', '[0:v]crop=iw:ih/2:0:ih/2,format=rgba,setsar=1[fg]']
     : ['[0:v]setsar=1[base]']
   let lastVideo = 'base'
 
   clips.forEach((clip, index) => {
-    const offset = (clip.startFrame - partStartFrame) / 30
-    const end = (clip.endFrame - partStartFrame) / 30
+    const offset = editorV6VideoSecondsFromFrames(clip.startFrame - partStartFrame)
+    const end = editorV6VideoSecondsFromFrames(clip.endFrame - partStartFrame)
     const output = `mix${index}`
     const boxWidth = clip.layout.width * width / 100
     const boxHeight = clip.layout.height * height / 100
