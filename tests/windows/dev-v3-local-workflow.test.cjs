@@ -105,7 +105,7 @@ test('old clone switches to Dev-v3 by real fast-forward, preserving Dev-V2 and p
     assert.equal(git(f.clone, 'rev-parse', 'HEAD'), f.remoteSha)
     assert.equal(git(f.clone, 'rev-parse', 'Dev-V2'), f.oldSha)
     assert.equal(fs.readFileSync(path.join(f.clone, 'app-data', 'private-project.txt'), 'utf8'), 'never mutate')
-    assert.equal(fs.readFileSync(path.join(f.clone, 'engine.txt'), 'utf8'), 'new engine code\n')
+    assert.equal(fs.readFileSync(path.join(f.clone, 'engine.txt'), 'utf8').replace(/\r\n/g, '\n'), 'new engine code\n')
     // A modified tracked file must stop updates without discarding edits.
     fs.writeFileSync(path.join(f.clone, 'engine.txt'), 'my local changes')
     const rejected = update(f.clone)

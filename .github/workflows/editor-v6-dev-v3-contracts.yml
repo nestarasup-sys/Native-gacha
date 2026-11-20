@@ -33,7 +33,8 @@ jobs:
         shell: pwsh
         run: |
           $errors = $null
-          [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/windows/atualizar-dev-v3.ps1', [ref]$null, [ref]$errors)
+          $tokens = $null
+          [void][System.Management.Automation.Language.Parser]::ParseFile('scripts/windows/atualizar-dev-v3.ps1', [ref]$tokens, [ref]$errors)
           if ($errors.Count -gt 0) { $errors | Out-String | Write-Host; throw 'PowerShell de update tem erros de sintaxe.' }
       - name: Check TypeScript contracts
         run: npm run typecheck

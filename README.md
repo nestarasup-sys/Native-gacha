@@ -30,7 +30,8 @@ npm run audit:architecture
 npm run test:refactor
 npm run typecheck
 npm run build
-npm run dev
+# Para iniciar no Windows, use ABRIR_DESENVOLVIMENTO.bat.
+# Evite npm run dev: predev executa a migracao historica do perfil.
 ```
 
 > Algumas dependências são nativas e `postinstall` instala Electron; o setup completo deve ser executado no ambiente de desenvolvimento. Os testes de arquitetura e refatoração podem ser executados sem iniciar o desktop.
