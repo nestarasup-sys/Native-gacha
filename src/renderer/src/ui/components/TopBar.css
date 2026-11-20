@@ -5,9 +5,9 @@
   flex: none;
   min-height: 67px;
   padding-inline: clamp(12px, 1.5vw, 28px);
-  border-bottom: 1px solid #573047;
-  background: radial-gradient(ellipse at 0 0, #482439, transparent 44%), #211922;
-  color: #fff6fb;
+  border-bottom: 1px solid #eadfe9;
+  background: linear-gradient(110deg, #fff1f7, #fffdfd 38%, #f7f7fc);
+  color: #322738;
   user-select: none;
 }
 
@@ -20,7 +20,7 @@
 .top-brand-mark {
   width: 37px;
   height: 37px;
-  border: 1px solid #aa698e;
+  border: 1px solid #e5a9c5;
   border-radius: 12px;
   object-fit: cover;
 }
@@ -29,15 +29,15 @@
   letter-spacing: -.06em;
   white-space: nowrap;
 }
-.top-brand-name strong { color: #ffa5cb; }
+.top-brand-name strong { color: #a1346b; }
 
 .top-navigation {
   min-width: 0;
   flex: 1;
-  gap: 3px;
+  gap: 10px;
   overflow-x: auto;
   scrollbar-width: thin;
-  scrollbar-color: #79516c transparent;
+  scrollbar-color: #b98da8 transparent;
   padding-inline: 3px;
 }
 
@@ -50,7 +50,7 @@
   min-height: 38px;
   padding-inline: clamp(8px, .72vw, 14px);
   border-radius: 8px;
-  color: #e3d3df;
+  color: var(--group-ink);
   font-size: 13px;
   font-weight: 650;
   text-decoration: none;
@@ -58,27 +58,52 @@
   transition: background-color 150ms, color 150ms;
 }
 
-.top-nav-link svg { width: 16px; height: 16px; color: #c2a3b7; }
-.top-nav-link:hover { background: #ffffff12; color: white; }
-.top-nav-link.active { background: #503048; color: #fff3fa; }
-.top-nav-link.active svg { color: #ffa5cb; }
+.top-nav-link svg { width: 16px; height: 16px; color: var(--group-accent); }
+.top-nav-link:hover { background: var(--group-active); color: var(--group-ink); }
+.top-nav-link.active { background: #fff; color: var(--group-ink); }
+.top-nav-link.active svg { color: #a1346b; }
 .top-nav-link.active::after {
   position: absolute;
   inset: auto 10px 0;
   height: 2px;
   border-radius: 2px;
-  background: #ff96c5;
+  background: var(--group-accent, #bd447e);
   content: '';
 }
 
-.top-nav-dev { color: #cdbbd3; }
-.top-nav-link:not(.top-nav-dev) + .top-nav-dev { margin-inline-start: 13px; }
-.top-nav-link:not(.top-nav-dev) + .top-nav-dev::before {
-  position: absolute;
-  inset: 8px auto 8px -8px;
-  border-left: 1px solid #674c61;
-  content: '';
+/* Each group uses a pastel surface and a stronger accent for the active route. */
+.top-nav-group {
+  display: flex;
+  flex: none;
+  gap: 2px;
+  padding: 3px;
+  border: 1px solid var(--group-border);
+  border-radius: 13px;
+  background: var(--group-surface);
 }
+.top-nav-group.rose {
+  --group-surface: #fbe8f1;
+  --group-border: #f0d2e1;
+  --group-ink: #63354f;
+  --group-accent: #a1346b;
+  --group-active: #f5d8e7;
+}
+.top-nav-group.violet {
+  --group-surface: #eee8fb;
+  --group-border: #dfd4f2;
+  --group-ink: #4e3a70;
+  --group-accent: #7048a2;
+  --group-active: #e5dbf7;
+}
+.top-nav-group.slate {
+  margin-inline-start: auto;
+  --group-surface: #e9eff7;
+  --group-border: #d8e1ef;
+  --group-ink: #354c65;
+  --group-accent: #42688e;
+  --group-active: #dae6f3;
+}
+.top-nav-link.active { box-shadow: 0 1px 4px #37243e20; }
 
 .top-utilities { flex: none; gap: 9px; }
 .top-bar .save-status {
@@ -86,22 +111,22 @@
   align-items: center;
   gap: 8px;
   margin-inline-end: 7px;
-  color: #d8c9d5;
+  color: #6e6173;
   font-size: 12px;
   white-space: nowrap;
 }
-.top-bar .save-dot { background: #8addb1; box-shadow: 0 0 0 3px #8addb123; }
+.top-bar .save-dot { background: #399268; box-shadow: 0 0 0 3px #39926820; }
 
 .top-icon-button, .account-button {
   display: grid;
   place-items: center;
   width: 35px;
   height: 35px;
-  border: 1px solid #65475d;
+  border: 1px solid #e4d6e1;
   border-radius: 10px;
   cursor: pointer;
 }
-.top-icon-button { position: relative; background: #332633; color: #f1ddeb; }
+.top-icon-button { position: relative; background: #fff; color: #68465e; }
 .top-icon-button svg { width: 17px; height: 17px; }
 .top-icon-button i {
   position: absolute;
@@ -109,12 +134,12 @@
   right: 6px;
   width: 6px;
   height: 6px;
-  background: #ff96c5;
+  background: var(--group-accent, #bd447e);
   border-radius: 50%;
 }
 .account-button { background: #f6c6df; color: #55223e; font-weight: 800; }
 .top-utilities button:hover { filter: brightness(1.15); }
-.top-bar :is(a, button):focus-visible { outline: 2px solid #ffafda; outline-offset: 2px; }
+.top-bar :is(a, button):focus-visible { outline: 2px solid #a1346b; outline-offset: 2px; }
 
 @media (max-width: 1450px) {
   .top-bar .save-status { display: none; }

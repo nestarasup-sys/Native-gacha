@@ -6,16 +6,22 @@ import { flushPendingRendererWrites } from '../pendingPersistence'
 import { APPLICATION_ROUTES } from '../../../../shared/applicationRoutes'
 import './TopBar.css'
 
-const sections = [
-  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },
-  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
-  { label: 'Editor V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
-  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
-  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
-  { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box' },
-  { label: 'Editor V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
-  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings', developer: true },
-  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box', developer: true }
+const groups = [
+  { tone: 'rose', label: 'Produção', sections: [
+    { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },
+    { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
+    { label: 'Editor V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
+    { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
+  ] },
+  { tone: 'violet', label: 'Studio e biblioteca', sections: [
+    { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
+    { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box' },
+  ] },
+  { tone: 'slate', label: 'Desenvolvimento', sections: [
+    { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings' },
+    { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box' },
+    { label: 'Editor V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
+  ] },
 ] as const
 
 export function TopBar() {
@@ -43,16 +49,20 @@ export function TopBar() {
         <span className="top-brand-name">Gacha <strong>Nymi</strong></span>
       </div>
       <nav className="top-navigation" aria-label="Áreas do aplicativo">
-        {sections.map((section) => (
-          <NavLink
-            className={({ isActive }) => `top-nav-link${'developer' in section ? ' top-nav-dev' : ''}${isActive ? ' active' : ''}`}
-            key={section.path}
-            onClick={(event) => navigateAfterFlush(event, section.path)}
-            to={section.path}
-          >
-            <Icon name={section.icon} />
-            <span>{section.label}</span>
-          </NavLink>
+        {groups.map((group) => (
+          <div className={`top-nav-group ${group.tone}`} key={group.tone} role="group" aria-label={group.label}>
+            {group.sections.map((section) => (
+              <NavLink
+                className={({ isActive }) => `top-nav-link${isActive ? ' active' : ''}`}
+                key={section.path}
+                onClick={(event) => navigateAfterFlush(event, section.path)}
+                to={section.path}
+              >
+                <Icon name={section.icon} />
+                <span>{section.label}</span>
+              </NavLink>
+            ))}
+          </div>
         ))}
       </nav>
       <div className="top-utilities">
