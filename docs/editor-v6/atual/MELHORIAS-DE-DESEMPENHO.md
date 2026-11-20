@@ -23,5 +23,9 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 17 | Ordenar os candidatos do seletor uma vez por mudança de seção, filtro ou ordem, em vez de repetir a ordenação a cada tecla. | Cinquenta consultas em 10 mil itens produziram resultados iguais e passaram de 85,26 ms para 28,21 ms com os candidatos preparados, incluindo o item 18. |
 | 18 | Reaproveitar nome, ID, número e descrição normalizados entre buscas. | Comparação acima e testes do modelo de busca. |
 | 19 | Dar prioridade à digitação e adiar a atualização dos resultados da busca. | Typecheck. Latência de digitação no seletor real pendente. |
+| 20 | Atender pedidos de prévia a partir do catálogo confirmado mesmo enquanto a fila de escrita da Base está ocupada. | Teste com a publicação do catálogo suspensa em uma biblioteca isolada com armazenamento ativo. A prévia resolveu o vídeo existente antes da gravação terminar. |
+| 21 | Compartilhar a leitura e o índice temporário do catálogo entre pedidos de mídia concorrentes. | Doze pedidos simultâneos fizeram uma única leitura do catálogo. Teste de protocolo confirmou os bytes retornados por intervalo. |
+| 22 | Compartilhar o `ffprobe` entre vínculos concorrentes do mesmo vídeo e da mesma revisão. | Typecheck e inspeção da remoção da operação após sucesso ou falha. Medição no Electron pendente. |
+| 23 | Solicitar somente os campos usados ao vincular vídeos no Editor V6. | MP4 sintético com vídeo e áudio. A saída do `ffprobe` caiu de 4.743 para 393 caracteres, com duração, dimensões e faixas equivalentes. Sem medição isolada do tempo de processo. |
 
 Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O MP4 não foi cronometrado nesta rodada.

@@ -7,7 +7,7 @@ import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { editorV6ExportAudioSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
-import { probeExportMedia } from './exportMediaProbe'
+import { probeEditorV6VideoLink, probeExportMedia } from './exportMediaProbe'
 
 type LibraryVideo = {
   path: string
@@ -59,6 +59,7 @@ export function createEditorV6ExportAudioPathResolver(deps: ExportAudioPathDepen
 export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependencies): void {
   const uuid = z.string().uuid()
   const linkedVideos = new Map<string, { revision: string; asset: EditorV6MediaAsset }>()
+  const pendingVideoProbes = new Map<string, Promise<EditorV6MediaAsset>>()
   const audioPath = createEditorV6ExportAudioPathResolver(deps)
 
   const inspectLibraryAudio = async (audioId: string) => {
@@ -173,17 +174,24 @@ export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependen
     const revision = JSON.stringify([source.path, source.name, source.extension, source.mimeType, fileStats.size, fileStats.mtimeMs, fileStats.ctimeMs])
     const cached = linkedVideos.get(libraryVideoId)
     if (cached?.revision === revision) return cached.asset
-    const probe = await probeExportMedia(deps.ffprobe, source.path, new AbortController().signal)
-    const video = probe.streams.find((stream) => stream.codec_type === 'video')
-    const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
-    if (!video) throw Error('O vídeo selecionado não contém uma faixa de vídeo válida.')
-    const duration = Number(probe.format.duration ?? video.duration ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
-    if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração do vídeo é inválida para o Editor V6.')
-    const asset = editorV6MediaAssetSchema.parse({ id: libraryVideoId, libraryVideoId, name: source.name, fileName: `${libraryVideoId}.${source.extension}`, kind: 'video', mimeType: source.mimeType, sourceFrames, hasAudio: Boolean(audio), ...(video.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
-    linkedVideos.delete(libraryVideoId)
-    linkedVideos.set(libraryVideoId, { revision, asset })
-    if (linkedVideos.size > 128) linkedVideos.delete(linkedVideos.keys().next().value!)
-    return asset
+    const probeKey = JSON.stringify([libraryVideoId, revision])
+    const existingProbe = pendingVideoProbes.get(probeKey)
+    if (existingProbe) return existingProbe
+    const pending = (async () => {
+      const probe = await probeEditorV6VideoLink(deps.ffprobe, source.path, new AbortController().signal)
+      const video = probe.streams.find((stream) => stream.codec_type === 'video')
+      const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
+      if (!video) throw Error('O vídeo selecionado não contém uma faixa de vídeo válida.')
+      const duration = Number(probe.format.duration ?? video.duration ?? 0)
+      const sourceFrames = Math.max(1, Math.floor(duration * 30))
+      if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração do vídeo é inválida para o Editor V6.')
+      const asset = editorV6MediaAssetSchema.parse({ id: libraryVideoId, libraryVideoId, name: source.name, fileName: `${libraryVideoId}.${source.extension}`, kind: 'video', mimeType: source.mimeType, sourceFrames, hasAudio: Boolean(audio), ...(video.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
+      linkedVideos.delete(libraryVideoId)
+      linkedVideos.set(libraryVideoId, { revision, asset })
+      if (linkedVideos.size > 128) linkedVideos.delete(linkedVideos.keys().next().value!)
+      return asset
+    })().finally(() => pendingVideoProbes.delete(probeKey))
+    pendingVideoProbes.set(probeKey, pending)
+    return pending
   })
 }

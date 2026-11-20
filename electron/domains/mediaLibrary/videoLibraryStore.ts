@@ -51,6 +51,7 @@ function validEntry(value: unknown): value is Entry {
 /** Owns shared video originals and their stable IDs for all consuming areas. */
 export class VideoLibraryStore {
   private queue: Promise<unknown> = Promise.resolve()
+  private readonly streamCatalogReads = new Map<string, Promise<Map<string, Entry>>>()
   private readonly pendingOperations = createPendingOperationTracker()
   constructor(private readonly workspacePath: () => string) {}
   private libraryPath() { return join(this.workspacePath(), 'media-library') }
@@ -70,9 +71,9 @@ export class VideoLibraryStore {
     return next
   }
   getPendingWrites(): Promise<unknown>[] { return this.pendingOperations.getPending() }
-  private async readCatalog(): Promise<Catalog> {
+  private async readCatalog(libraryPath = this.libraryPath()): Promise<Catalog> {
     try {
-      const catalog = JSON.parse(await readFile(join(this.libraryPath(), 'catalog.json'), 'utf8')) as Catalog
+      const catalog = JSON.parse(await readFile(join(libraryPath, 'catalog.json'), 'utf8')) as Catalog
       if (catalog.schemaVersion !== 1 || !Array.isArray(catalog.items) || !catalog.items.every(validEntry)
         || new Set(catalog.items.map((item) => item.id)).size !== catalog.items.length
         || !Array.isArray(catalog.deleted) || !catalog.deleted.every((item) => validId(item?.id) && Object.hasOwn(formats, item.extension))) throw new Error('O catálogo da biblioteca de vídeos está inválido.')
@@ -187,5 +188,21 @@ export class VideoLibraryStore {
       if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
       return { path: this.mediaPath(item), name: item.name, mimeType: item.mimeType, extension: item.extension, size: item.size, durationFrames: item.durationFrames }
     })
+  }
+
+  /** Range requests can read the committed catalog while a new import is copying or hashing. */
+  async resolveStreamMedia(id: string): Promise<{ path: string; mimeType: Entry['mimeType'] }> {
+    requireId(id)
+    const root = this.libraryPath()
+    let pending = this.streamCatalogReads.get(root)
+    if (!pending) {
+      pending = this.readCatalog(root)
+        .then(({ items }) => new Map(items.map((item) => [item.id, item])))
+        .finally(() => this.streamCatalogReads.delete(root))
+      this.streamCatalogReads.set(root, pending)
+    }
+    const item = (await pending).get(id)
+    if (!item) throw new Error('Vídeo não encontrado na biblioteca.')
+    return { path: join(root, 'videos', `${item.id}.${item.extension}`), mimeType: item.mimeType }
   }
 }
