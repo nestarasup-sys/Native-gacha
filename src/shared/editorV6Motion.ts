@@ -146,10 +146,12 @@ export function editorV6MotionHasCompleteFaceAtlas(
   return Boolean(motion?.faceAssetId && plan.samples.every(sample => motion.frames.some(frame => frame.offset === sample.offset && frame.facePatch)))
 }
 
-const plansCache = new WeakMap<EditorV6Document['timeline'], Map<boolean, EditorV6MotionPlan[]>>()
+// Blink scheduling is project-specific. A timeline object can be reused by a duplicated
+// project, so the derived plans must not leak through a timeline-only cache.
+const plansCache = new WeakMap<EditorV6Document['timeline'], Map<string, Map<boolean, EditorV6MotionPlan[]>>>()
 export function editorV6MotionPlans(document: EditorV6Document, options: { includeSpeechMouth?: boolean } = {}): EditorV6MotionPlan[] {
   const includeSpeechMouth = options.includeSpeechMouth !== false
-  const cached = plansCache.get(document.timeline)?.get(includeSpeechMouth)
+  const cached = plansCache.get(document.timeline)?.get(document.id)?.get(includeSpeechMouth)
   if (cached) return cached
   const plans: EditorV6MotionPlan[] = []
   for (const track of document.timeline.tracks) {
@@ -167,9 +169,11 @@ export function editorV6MotionPlans(document: EditorV6Document, options: { inclu
       }
     }
   }
-  const variants = plansCache.get(document.timeline) ?? new Map<boolean, EditorV6MotionPlan[]>()
+  const byProject = plansCache.get(document.timeline) ?? new Map<string, Map<boolean, EditorV6MotionPlan[]>>()
+  const variants = byProject.get(document.id) ?? new Map<boolean, EditorV6MotionPlan[]>()
   variants.set(includeSpeechMouth, plans)
-  plansCache.set(document.timeline, variants)
+  byProject.set(document.id, variants)
+  plansCache.set(document.timeline, byProject)
   return plans
 }
 export function missingEditorV6Motions(document: EditorV6Document, startFrame = 0, endFrame = document.timeline.durationFrames, options: { includeSpeechMouth?: boolean } = {}): EditorV6MotionPlan[] {
