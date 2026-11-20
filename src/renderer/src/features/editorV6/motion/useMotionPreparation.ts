@@ -39,12 +39,13 @@ export function useMotionPreparation(project: EditorV6Document | null, character
     }
     const schedule = () => {
       cancelRequest()
-      if (disposed || pointerHeld) return
+      if (disposed || pointerHeld || document.hidden) return
       const epoch = generation
       timer = window.setTimeout(() => { void prepare(epoch) }, 2500)
     }
     const pointerDown = () => { pointerHeld = true; cancelRequest() }
     const pointerUp = () => { pointerHeld = false; schedule() }
+    document.addEventListener('visibilitychange', schedule)
     document.addEventListener('pointerdown', pointerDown, true)
     document.addEventListener('pointerup', pointerUp, true)
     document.addEventListener('pointercancel', pointerUp, true)
@@ -53,6 +54,7 @@ export function useMotionPreparation(project: EditorV6Document | null, character
     schedule()
     return () => {
       disposed = true; cancelRequest()
+      document.removeEventListener('visibilitychange', schedule)
       document.removeEventListener('pointerdown', pointerDown, true)
       document.removeEventListener('pointerup', pointerUp, true)
       document.removeEventListener('pointercancel', pointerUp, true)

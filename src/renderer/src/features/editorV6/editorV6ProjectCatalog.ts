@@ -77,6 +77,6 @@ export async function loadEditorV6ProjectCatalog({
   const pending = legacyCatalog.filter((entry) => !knownIds.has(entry.id) && isLegacySceneCatalogId(entry.id))
   if (pending.length) await writeLegacyDocuments(pending, writeDocument, createTimeline, now(), concurrency)
 
-  const [projects, folder] = await Promise.all([listProjects(), getFolder()])
+  const [projects, folder] = await Promise.all([pending.length ? listProjects() : existing, getFolder()])
   return { projects, folder, clearLegacyCatalog: legacyCatalog.length > 0 }
 }

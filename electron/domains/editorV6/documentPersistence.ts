@@ -77,7 +77,7 @@ export function createEditorV6DocumentPersistence(deps: {
       const states = [...normalized.elements, ...normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))]
       const visibleAssets = new Set([normalized.backgroundAssetId, ...states.flatMap(state => [state.assetId, ...Object.values(state.faceModeAssetIds ?? {})])])
       const derivedMotionAssets = new Set(normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.incomingMotion ? [block.incomingMotion.assetId, block.incomingMotion.faceAssetId] : [])))
-      const assets = await Promise.all(normalized.assets.map(async (asset) => {
+      const readAsset = async (asset: EditorV6Document['assets'][number]) => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
           || !['background', 'object', 'character'].includes(asset.category)
           || !['image/png', 'image/jpeg', 'image/webp'].includes(asset.mimeType)) throw new Error('Biblioteca de imagens do EditorV6 inválida.')
@@ -94,7 +94,14 @@ export function createEditorV6DocumentPersistence(deps: {
           if ((error as NodeJS.ErrnoException).code === 'ENOENT' && derivedMotionAssets.has(asset.id) && !visibleAssets.has(asset.id)) return null
           throw error
         }
-      }))
+      }
+      const assets: Array<EditorV6Document['assets'][number] | null> = []
+      // Bound temporary file buffers while preserving asset order.
+      const readBatchSize = 8
+      for (let index = 0; index < normalized.assets.length; index += readBatchSize) {
+        const batch = normalized.assets.slice(index, index + readBatchSize)
+        assets.push(...await Promise.all(batch.map(readAsset)))
+      }
       const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
       await Promise.all(media.filter((item) => !item.libraryVideoId && !item.libraryAudioId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
       const document = invalidateIncompleteEditorV6Motions({ ...normalized, assets: assets.filter(asset => asset !== null), media })
