@@ -8,6 +8,18 @@
 import { editorV6DefaultVideoLayout, type EditorV6Document, type EditorV6VideoLayout } from './editorV6'
 import { compareEditorV6TimelineBlocks } from './editorV6TimelineCore'
 
+/** V6 timeline and media use 30 source frames per second, independent of output FPS. */
+export const EDITOR_V6_TIMELINE_FRAMES_PER_SECOND = 30
+
+/** Frame-accurate media sampling shared by preview, export planning and frame reuse. */
+export function editorV6VideoSourceFrameAtTimelineFrame(sourceInFrame: number, clipStartFrame: number, timelineFrame: number): number {
+  return sourceInFrame + timelineFrame - clipStartFrame
+}
+
+export function editorV6VideoSecondsFromFrames(frameCount: number): number {
+  return frameCount / EDITOR_V6_TIMELINE_FRAMES_PER_SECOND
+}
+
 export type EditorV6VideoOverlay = {
   blockId: string
   fileName: string
@@ -36,7 +48,7 @@ export function planEditorV6VideoOverlays(project: EditorV6Document, startFrame:
       blockId: block.id,
       fileName: asset.fileName,
       ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}),
-      mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame,
+      mediaInFrame: editorV6VideoSourceFrameAtTimelineFrame(block.mediaInFrame ?? 0, block.startFrame, start),
       startFrame: start,
       endFrame: end,
       layout: block.mediaLayout ?? editorV6DefaultVideoLayout(asset.width, asset.height)
