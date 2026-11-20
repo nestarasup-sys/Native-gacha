@@ -35,11 +35,9 @@ test('node_modules fingerprint invalidates after lockfile or ABI change; no npm 
     fs.writeFileSync(path.join(root, 'package-lock.json'), '{"lockfileVersion":3}')
     const state = dependencyState(root)
     assert.equal(state.needsInstall, true)
-    const deps = [
-      'electron/dist/electron.exe',
-      '.bin/electron-vite.cmd',
-      'sharp/package.json'
-    ]
+    const deps = process.platform === 'win32'
+      ? ['electron/dist/electron.exe', '.bin/electron-vite.cmd', 'sharp/package.json']
+      : ['electron/package.json', '.bin/electron-vite', 'sharp/package.json']
     for (const dep of deps) {
       const target = path.join(root, 'node_modules', dep)
       fs.mkdirSync(path.dirname(target), { recursive: true })
@@ -98,7 +96,7 @@ function update(root) {
   ], { encoding: 'utf8', windowsHide: true, timeout: 60000 })
 }
 
-test.skipIf(process.platform !== 'win32')('old clone switches to Dev-v3 by real fast-forward, preserving Dev-V2 and private data', () => {
+test('old clone switches to Dev-v3 by real fast-forward, preserving Dev-V2 and private data', { skip: process.platform !== 'win32' }, () => {
   const f = fixture()
   try {
     const result = update(f.clone)
