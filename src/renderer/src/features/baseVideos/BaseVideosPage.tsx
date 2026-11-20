@@ -422,11 +422,13 @@ export function BaseVideosPage() {
     <header className="base-videos-subbar">
       <div className="base-videos-heading"><span className="base-videos-heading-icon"><Icon name="frame" /></span><div><h1>Base de vídeos</h1><small>Descrições e tempos compartilhados com os roteiros</small></div></div>
       <div className="base-videos-actions">
-        <button className="base-videos-ai-package" type="button" onClick={() => setAiPackageOpen(true)} disabled={!loaded || Boolean(loadError) || !items.some((item) => detailsById[item.id]?.videoNumber !== undefined) || busy}>✦ Pacote completo para IA</button>
-        <button className="base-videos-ai-package" type="button" onClick={() => void downloadEditorV6Guide()} disabled={busy}>Baixar guia V6 · V14.1</button>
+        <div className="base-videos-resource-actions">
+          <button className="base-videos-ai-package" type="button" onClick={() => setAiPackageOpen(true)} disabled={!loaded || Boolean(loadError) || !items.some((item) => detailsById[item.id]?.videoNumber !== undefined) || busy}>✦ Pacote completo para IA</button>
+          <button className="base-videos-ai-package" type="button" onClick={() => void downloadEditorV6Guide()} disabled={busy}>Baixar guia V6 · V14.1</button>
+          <button className="base-videos-exports" type="button" onClick={() => setExportModalOpen(true)} disabled={!loaded || Boolean(loadError) || busy}>Exports</button>
+        </div>
         <button className="base-videos-ai-import" type="button" onClick={() => importAiRef.current?.click()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>{aiImportBusy ? 'Importando…' : '↑ Importar roteiro da IA'}</button>
         <button className="base-videos-ai-imported" type="button" onClick={() => void openImportedRoteiros()} disabled={!loaded || Boolean(loadError) || busy || aiImportBusy}>♙ Roteiros importados</button>
-        <button className="base-videos-exports" type="button" onClick={() => setExportModalOpen(true)} disabled={!loaded || Boolean(loadError) || busy}>Exports</button>
         <button className="base-videos-add" type="button" onClick={() => void addVideo()} disabled={busy || !loaded || Boolean(loadError)}>{busy ? 'Importando…' : 'Adicionar'}</button>
         <button className={deleteMode ? 'base-videos-cancel-delete' : 'base-videos-delete'} type="button" onClick={() => void handleDelete()} disabled={!loaded || Boolean(loadError) || busy || (!deleteMode && !items.length) || (deleteMode && !selectedIds.length)}>{deleteMode ? `Confirmar (${selectedIds.length})` : 'Excluir'}</button>
         {deleteMode && <button className="base-videos-cancel" type="button" disabled={busy || !loaded} onClick={() => { setDeleteMode(false); setSelectedIds([]) }}>Cancelar</button>}

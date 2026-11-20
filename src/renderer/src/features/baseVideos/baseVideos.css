@@ -101,6 +101,7 @@
 .base-videos-heading h1 { margin:0;color:#342e36;font:800 25px/1.1 Manrope,sans-serif;letter-spacing:-.35px; }
 .base-videos-heading small { display:block;margin-top:5px;color:#817587;font-size:13px; }
 .base-videos-actions { display:flex;align-items:center;gap:9px; }
+.base-videos-resource-actions { display:flex;align-items:center;gap:9px;flex:none; }
 .base-videos-actions>button { min-height:42px;padding:0 17px;border:1px solid transparent;border-radius:10px;font-size:15px;font-weight:800;cursor:pointer;transition:transform .15s ease,box-shadow .15s ease,background .15s ease; }
 .base-videos-actions>button:hover:not(:disabled) { transform:translateY(-1px);box-shadow:0 4px 11px #38233d1c; }
 .base-videos-add { background:linear-gradient(180deg,#4389f2,#3474dc);box-shadow:0 2px 5px #3478e52e;color:#fff; }
