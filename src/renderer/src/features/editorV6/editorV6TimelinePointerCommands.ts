@@ -25,6 +25,8 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
   const drag: Ref<Drag | null> = { current: null }
   const scrub: Ref<number | null> = { current: null }
   const draft: Ref<Timeline | null> = { current: null }
+  let lastScrubFrame: number | undefined
+  let lastDragInput: Omit<Parameters<typeof previewEditorV6TimelineDrag>[0], 'snapshot'> | undefined
 
   const onPointer: EditorV6TimelineRowsProps['onPointer'] = (event, track, block, mode) => {
     event.stopPropagation()
@@ -32,6 +34,7 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
     dependencies.select(block)
     dependencies.closeMenu()
     dependencies.didDrag.current = false
+    lastDragInput = undefined
     const snapshot = createEditorV6TimelineDragSnapshot({ initial: dependencies.document().timeline, track, block, mode })
     drag.current = { ...snapshot, pointerId: event.pointerId, x: event.clientX }
     event.currentTarget.setPointerCapture(event.pointerId)
@@ -40,19 +43,27 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
   const onScrub = (event: ReactPointerEvent<HTMLElement>) => {
     if (event.type === 'pointerdown' && event.button !== 0) return
     scrub.current = event.pointerId
-    if (event.type === 'pointerdown') event.currentTarget.setPointerCapture(event.pointerId)
+    if (event.type === 'pointerdown') {
+      lastScrubFrame = undefined
+      event.currentTarget.setPointerCapture(event.pointerId)
+    }
     const node = dependencies.scrollNode()
     if (!node) return
     const { pps, heading } = dependencies.settings()
-    dependencies.seek(Math.min(dependencies.document().timeline.durationFrames, Math.max(0, Math.round(
+    const frame = Math.min(dependencies.document().timeline.durationFrames, Math.max(0, Math.round(
       (event.clientX - node.getBoundingClientRect().left + node.scrollLeft - heading) / pps * 30
-    ))))
+    )))
+    if (frame === lastScrubFrame) return
+    lastScrubFrame = frame
+    dependencies.seek(frame)
   }
 
   const cancel = () => {
     drag.current = null
     scrub.current = null
     draft.current = null
+    lastDragInput = undefined
+    lastScrubFrame = undefined
     dependencies.setDraft(null)
     dependencies.setGuide(undefined)
     dependencies.setReadout(null)
@@ -66,15 +77,21 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
     const deltaFrames = Math.round((event.clientX - operation.x) / pps * 30)
     if (!deltaFrames && !dependencies.didDrag.current) return
     dependencies.didDrag.current = true
-    const preview = previewEditorV6TimelineDrag({
-      snapshot: operation,
+    const input = {
       deltaFrames,
       playheadFrame: dependencies.frame(),
       pixelsPerSecond: pps,
       snap,
       altKey: event.altKey,
-      media: dependencies.document().media
-    })
+      media: operation.mode === 'resize' ? dependencies.document().media : undefined
+    }
+    if (lastDragInput && input.deltaFrames === lastDragInput.deltaFrames
+      && input.playheadFrame === lastDragInput.playheadFrame
+      && input.pixelsPerSecond === lastDragInput.pixelsPerSecond
+      && input.snap === lastDragInput.snap && input.altKey === lastDragInput.altKey
+      && input.media === lastDragInput.media) return
+    const preview = previewEditorV6TimelineDrag({ snapshot: operation, ...input })
+    lastDragInput = input
     draft.current = preview.timeline
     dependencies.setDraft(preview.timeline)
     dependencies.setGuide(preview.guide)

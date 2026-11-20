@@ -4,7 +4,7 @@ import type {
   EditorV6TimelineBlock as Block,
   EditorV6TimelineTrack as Track
 } from '../../../../shared/editorV6'
-import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { snapEditorV6Frame } from '../../../../shared/editorV6TimelineEdits'
 
 export type EditorV6TimelineDragSnapshot = {
@@ -16,7 +16,7 @@ export type EditorV6TimelineDragSnapshot = {
   next?: Block
   afterNext?: Block
   parent?: Block
-  snapPoints: Array<{ frame: number; order: number }>
+  getSnapPoints: () => Array<{ frame: number; order: number }>
 }
 
 export type EditorV6TimelineDragPreview = {
@@ -32,17 +32,17 @@ export type EditorV6TimelineDragPreview = {
 /** Calculates a transient timeline drag without persisting or mutating its source. */
 export function previewEditorV6TimelineDrag(input: EditorV6TimelineDragPreview): { timeline: Timeline; block: Block; guide?: number } {
   const { snapshot } = input
-  const { block, track, mode, initial, previous, next, afterNext, parent, snapPoints } = snapshot
+  const { block, track, mode, initial, previous, next, afterNext, parent, getSnapPoints } = snapshot
   let value = mode === 'move' ? block.startFrame + input.deltaFrames : block.startFrame + block.durationFrames + input.deltaFrames
   const snapped = input.snap && !input.altKey
-    ? snapEditorV6Frame(initial, value, input.playheadFrame, block.id, 7 / input.pixelsPerSecond * 30, mode === 'move' ? block.durationFrames : 0, snapPoints)
+    ? snapEditorV6Frame(initial, value, input.playheadFrame, block.id, 7 / input.pixelsPerSecond * 30, mode === 'move' ? block.durationFrames : 0, getSnapPoints())
     : { frame: Math.round(value), guide: undefined }
   value = Math.max(mode === 'resize' ? block.startFrame + 1 : 0, Math.min(MAX_TIMELINE_FRAME - (mode === 'move' ? block.durationFrames : 0), snapped.frame))
 
   let startFrame = mode === 'move' ? value : block.startFrame
   let durationFrames = mode === 'resize' ? value - block.startFrame : block.durationFrames
-  const media = block.mediaId ? input.media?.find((item) => item.id === block.mediaId) : undefined
-  if (mode === 'resize' && media) durationFrames = Math.min(durationFrames, media.sourceFrames - (block.mediaInFrame ?? 0))
+  const media = mode === 'resize' && block.mediaId ? input.media?.find((item) => item.id === block.mediaId) : undefined
+  if (media) durationFrames = Math.min(durationFrames, media.sourceFrames - (block.mediaInFrame ?? 0))
 
   const persistent = track.kind === 'character' || Boolean(block.background)
   if (persistent) {
@@ -82,12 +82,22 @@ export function createEditorV6TimelineDragSnapshot(input: {
   const { initial, track, block, mode } = input
   const sorted = track.blocks.filter((clip) => !block.background || clip.background).sort(compareEditorV6TimelineBlocks)
   const index = sorted.findIndex((candidate) => candidate.id === block.id)
-  const blocksById = new Map(timelineClips(initial).map(({ block: clip }) => [clip.id, clip] as const))
-  const snapPoints = timelineClips(initial)
-    .flatMap(({ block: clip }, order) => clip.id === block.id || clip.parentBlockId === block.id
-      ? []
-      : [{ frame: clip.startFrame, order: order * 2 }, { frame: clip.startFrame + clip.durationFrames, order: order * 2 + 1 }])
-    .sort((a, b) => a.frame - b.frame || a.order - b.order)
+  let snapPoints: ReturnType<EditorV6TimelineDragSnapshot['getSnapPoints']> | undefined
+  const getSnapPoints = () => {
+    if (snapPoints) return snapPoints
+    const points: ReturnType<EditorV6TimelineDragSnapshot['getSnapPoints']> = []
+    let order = 0
+    for (const lane of initial.tracks) {
+      for (const clip of lane.blocks) {
+        if (clip.id !== block.id && clip.parentBlockId !== block.id) {
+          points.push({ frame: clip.startFrame, order }, { frame: clip.startFrame + clip.durationFrames, order: order + 1 })
+        }
+        order += 2
+      }
+    }
+    snapPoints = points.sort((first, second) => first.frame - second.frame || first.order - second.order)
+    return snapPoints
+  }
 
   return {
     initial,
@@ -97,7 +107,7 @@ export function createEditorV6TimelineDragSnapshot(input: {
     previous: sorted[index - 1],
     next: sorted[index + 1],
     afterNext: sorted[index + 2],
-    parent: block.parentBlockId ? blocksById.get(block.parentBlockId) : undefined,
-    snapPoints
+    parent: findEditorV6TimelineClip(initial, block.parentBlockId)?.block,
+    getSnapPoints
   }
 }
