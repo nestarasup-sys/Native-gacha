@@ -82,7 +82,7 @@ describe('paridade da seleção visual prévia ↔ exportação', () => {
     expect(planEditorV6VideoOverlays(doc, 60, 70)).toEqual([])
   })
 
-  it('usa na prévia o mesmo atlas de transição de pose utilizado no SVG da exportação', () => {
+  it('mantém atlas animado na exportação, mas não na prévia leve', () => {
     const doc = fixture(), assetId = crypto.randomUUID()
     const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice',
       assetId, text: 'Alice', x: 0, y: 0, width: 20, height: 30, rotation: 0, zIndex: 1, poseSlot: 1 }
@@ -112,8 +112,10 @@ describe('paridade da seleção visual prévia ↔ exportação', () => {
       project: ready, selectedId: null, playing: false, fullView: true
     }))
     const exportSvg = renderEditorV6FrameSvg(ready, frame)
-    expect(preview).toContain('viewBox="0 0 10 10"')
-    expect(preview).toContain('data:image/png;base64,AQ==')
+    // O atlas ainda existe na exportação, mas a prévia mostra somente o estado estático + piscadas.
+    expect(preview).not.toContain('viewBox="0 0 10 10"')
+    expect(preview).not.toContain('data:image/png;base64,AQ==')
+    expect(preview).toContain('data:image/png;base64,AA==')
     expect(exportSvg).toContain('viewBox="0 0 10 10"')
     expect(exportSvg).toContain('data:image/png;base64,AQ==')
   })
