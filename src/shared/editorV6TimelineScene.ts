@@ -3,7 +3,7 @@ import type { EditorV6BackgroundState, EditorV6Document, EditorV6Element, Editor
 import { editorV6DefaultVideoLayout, editorV6MediaUrl, videoCharacterTrackColor } from './editorV6'
 import { editorV6MotionPlans, type EditorV6MotionPlan } from './editorV6Motion'
 import { editorV6FaceModeAtFrame } from './editorV6FaceSchedule'
-import { compareEditorV6TimelineBlocks, editorV6ClipAtFrame, resolveEditorV6StaticElementsAtFrame, timelineClips, type TimelineClip } from './editorV6TimelineCore'
+import { compareEditorV6TimelineBlocks, editorV6ClipAtFrame, resolveEditorV6StaticElementsAtFrame, type TimelineClip } from './editorV6TimelineCore'
 
 export type EditorV6ResolvedScene = { frame: number; background: EditorV6BackgroundState; elements: EditorV6SceneElement[]; mediaVideo?: { blockId: string; mediaId: string; libraryVideoId?: string; url: string; layout: EditorV6VideoLayout; startFrame: number; sourceInFrame: number; durationFrames: number; hasAudio: boolean; audioEnabled: boolean; gain: number } }
 const backgroundsCache = new WeakMap<EditorV6Timeline, TimelineClip[]>()
@@ -22,10 +22,21 @@ function videoMediaIndex(media: EditorV6MediaCollection): Map<string, EditorV6Me
   return index
 }
 
+function collectVisibleMediaClips(timeline: EditorV6Timeline, kind: 'background' | 'video'): TimelineClip[] {
+  const clips: TimelineClip[] = []
+  for (const track of timeline.tracks) {
+    if (track.hidden || track.muted || (kind === 'video' && track.kind !== 'video')) continue
+    for (const block of track.blocks) {
+      if (kind === 'background' ? block.background : block.mediaId) clips.push({ track, block })
+    }
+  }
+  return clips.sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+}
+
 export function resolveEditorV6BackgroundAtFrame(document: EditorV6Document, frame: number): EditorV6BackgroundState {
   let backgrounds = backgroundsCache.get(document.timeline)
   if (!backgrounds) {
-    backgrounds = timelineClips(document.timeline).filter(({ track, block }) => block.background && !track.hidden && !track.muted).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+    backgrounds = collectVisibleMediaClips(document.timeline, 'background')
     backgroundsCache.set(document.timeline, backgrounds)
   }
   let left = 0, right = backgrounds.length
@@ -55,7 +66,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
   if (options.includeVideo !== false) {
     let videoIndex = videoClipsCache.get(document.timeline)
     if (!videoIndex) {
-      const clips = timelineClips(document.timeline).filter(({ track, block }) => track.kind === 'video' && !track.hidden && !track.muted && block.mediaId).sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+      const clips = collectVisibleMediaClips(document.timeline, 'video')
       let maximumEnd = 0
       const maximumEnds = clips.map(({ block }) => { maximumEnd = Math.max(maximumEnd, block.startFrame + block.durationFrames); return maximumEnd })
       videoIndex = { clips, maximumEnds }

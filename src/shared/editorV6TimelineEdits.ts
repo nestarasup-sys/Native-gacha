@@ -1,11 +1,11 @@
 /** Timeline editing, position persistence, and asset repair operations. */
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6Timeline } from './editorV6'
 import { editorV6MotionPlans } from './editorV6Motion'
-import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, timelineClips } from './editorV6TimelineCore'
+import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, findEditorV6TimelineClip, timelineClips } from './editorV6TimelineCore'
 
 export function moveEditorV6ElementInPeriod(document: EditorV6Document, blockId: string, x: number, y: number): EditorV6Document {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return document
-  const clip = timelineClips(document.timeline).find(({ block }) => block.id === blockId)
+  const clip = findEditorV6TimelineClip(document.timeline, blockId)
   if (!clip?.block.elementId || clip.track.kind !== 'character' || clip.track.locked) return document
   return editEditorV6DocumentAtBlock(document, blockId, (working) => ({ ...working, elements: working.elements.map((element) => element.id === clip.block.elementId ? { ...element, x, y } : element) }))
 }
@@ -43,7 +43,7 @@ export function setEditorV6CharacterPosition(document: EditorV6Document, element
 
 /** Make an inspector edit affect only its selected period; rendered images use copy-on-write. */
 export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId: string | null, transform: (document: EditorV6Document) => EditorV6Document): EditorV6Document {
-  const clip = blockId ? timelineClips(document.timeline).find(({ block }) => block.id === blockId) : undefined
+  const clip = blockId ? findEditorV6TimelineClip(document.timeline, blockId) : undefined
   const base = clip?.block.elementId ? document.elements.find((element) => element.id === clip.block.elementId) : undefined
   if (!clip || !base) return transform(document)
   const before = clip.block.state ?? base
@@ -195,7 +195,7 @@ export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cur
 
 /** Numeric edits obey the same one-frame boundaries as dragging. */
 export function setEditorV6BlockTiming(timeline: EditorV6Timeline, blockId: string, values: { startFrame?: number; durationFrames?: number }): EditorV6Timeline {
-  const clip = timelineClips(timeline).find(({ block }) => block.id === blockId)
+  const clip = findEditorV6TimelineClip(timeline, blockId)
   if (!clip || clip.track.locked) return timeline
   const persistent = clip.track.kind === 'character' || Boolean(clip.block.background)
   const sorted = clip.track.blocks.filter((block) => !clip.block.background || block.background).sort(compareEditorV6TimelineBlocks), index = sorted.findIndex((block) => block.id === blockId)
@@ -207,13 +207,13 @@ export function setEditorV6BlockTiming(timeline: EditorV6Timeline, blockId: stri
     durationFrames = Math.max(1, Math.min(durationFrames, MAX_TIMELINE_FRAME - startFrame))
     if (values.durationFrames !== undefined && sorted[index + 1]) nextStart = Math.max(startFrame + 1, Math.min(startFrame + durationFrames, sorted[index + 2] ? sorted[index + 2].startFrame - 1 : MAX_TIMELINE_FRAME - 1))
   }
-  const parent = clip.block.parentBlockId ? timelineClips(timeline).find(({ block }) => block.id === clip.block.parentBlockId)?.block : undefined
+  const parent = clip.block.parentBlockId ? findEditorV6TimelineClip(timeline, clip.block.parentBlockId)?.block : undefined
   const tracks = timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, startFrame, durationFrames, ...(parent ? { relativeStartFrame: Math.max(0, startFrame - parent.startFrame) } : {}) } : block.id === sorted[index + 1]?.id && nextStart !== undefined ? { ...block, startFrame: nextStart } : block) }))
   return normalizeEditorV6Timeline({ ...timeline, tracks, durationFrames: persistent && values.durationFrames !== undefined && !sorted[index + 1] ? startFrame + durationFrames : Math.max(timeline.durationFrames, startFrame + durationFrames) })
 }
 
 export function splitEditorV6Block(timeline: EditorV6Timeline, blockId: string, frame: number): EditorV6Timeline {
-  const clip = timelineClips(timeline).find(({ block }) => block.id === blockId)
+  const clip = findEditorV6TimelineClip(timeline, blockId)
   if (!clip || clip.track.locked || frame <= clip.block.startFrame || frame >= clip.block.startFrame + clip.block.durationFrames) return timeline
   const cut = frame - clip.block.startFrame
   const right = { ...clip.block, id: crypto.randomUUID(), startFrame: frame, durationFrames: clip.block.durationFrames - cut,
@@ -231,7 +231,7 @@ export function splitEditorV6Block(timeline: EditorV6Timeline, blockId: string, 
 }
 
 export function duplicateEditorV6Block(timeline: EditorV6Timeline, blockId: string): EditorV6Timeline {
-  const clip = timelineClips(timeline).find(({ block }) => block.id === blockId)
+  const clip = findEditorV6TimelineClip(timeline, blockId)
   if (!clip || clip.track.locked) return timeline
   const persistent = clip.track.kind === 'character' || Boolean(clip.block.background)
   const copyId = crypto.randomUUID(), startFrame = clip.block.startFrame + clip.block.durationFrames

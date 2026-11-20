@@ -11,6 +11,17 @@ export const frameTimecode = (frame: number): string => {
 export const compareEditorV6TimelineBlocks = (a: EditorV6TimelineBlock, b: EditorV6TimelineBlock) => a.startFrame - b.startFrame || a.id.localeCompare(b.id)
 export const timelineClips = (timeline: EditorV6Timeline): TimelineClip[] => timeline.tracks.flatMap((track) => track.blocks.map((block) => ({ track, block })))
 
+/** Finds one block without allocating a flattened copy of the timeline. */
+export function findEditorV6TimelineClip(timeline: EditorV6Timeline, blockId: string | null | undefined): TimelineClip | undefined {
+  if (!blockId) return undefined
+  for (const track of timeline.tracks) {
+    const block = track.blocks.find((candidate) => candidate.id === blockId)
+    if (block) return { track, block }
+  }
+  return undefined
+}
+
+
 export function addEditorV6ElementAtFrame(document: EditorV6Document, element: EditorV6Element, frame: number, blockId: string = crypto.randomUUID()): EditorV6Document {
   const kind = editorV6TrackKindForElement(element)
   const startFrame = Math.max(0, Math.min(MAX_TIMELINE_FRAME - 1, Math.round(frame)))
@@ -63,7 +74,7 @@ function compile(timeline: EditorV6Timeline): CompiledTimeline {
   if (cached) return cached
   const result: CompiledTimeline = { byElement: new Map(), managed: new Set(timeline.knownElementIds) }
   for (const track of timeline.tracks) {
-    for (const block of [...track.blocks].sort(compareEditorV6TimelineBlocks)) {
+    for (const block of track.blocks) {
       if (!block.elementId) continue
       const entry = result.byElement.get(block.elementId) ?? { clips: [], maximumEnds: [], character: track.kind === 'character' }
       entry.clips.push({ track, block })

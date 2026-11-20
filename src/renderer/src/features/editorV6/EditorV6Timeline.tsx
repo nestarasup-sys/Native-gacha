@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block } from '../../../../shared/editorV6'
-import { frameTimecode, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { frameTimecode, findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
@@ -58,7 +58,7 @@ export function EditorV6Timeline(props: Props) {
     requestFrame: (callback) => { requestAnimationFrame(callback) }
   }), [])
   const width = getEditorV6TimelineContentWidth({ viewportWidth: viewport.width, heading, durationFrames: timeline.durationFrames, pixelsPerSecond: pps })
-  const selected = useMemo(() => timelineClips(timeline).find(({ block }) => block.id === props.selectedId), [timeline, props.selectedId])
+  const selected = useMemo(() => findEditorV6TimelineClip(timeline, props.selectedId), [timeline, props.selectedId])
   const range = useMemo<[number, number]>(() => getEditorV6TimelineVisibleFrameRange({ scrollLeft: viewport.left, viewportWidth: viewport.width, heading, pixelsPerSecond: pps, durationFrames: timeline.durationFrames }), [viewport, heading, pps, timeline.durationFrames])
 
   const changeTimeline = useCallback((update: (timeline: Timeline) => Timeline) => {

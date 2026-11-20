@@ -1,5 +1,5 @@
 import type { EditorV6Timeline as Timeline } from '../../../../shared/editorV6'
-import { timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { duplicateEditorV6Block, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 
 type Dependencies = {
@@ -12,7 +12,7 @@ type Dependencies = {
 /** Owns block editing actions while the timeline component maps input and renders menus. */
 export function createEditorV6TimelineBlockCommands(dependencies: Dependencies) {
   const remove = (id: string) => {
-    const found = timelineClips(dependencies.getTimeline()).find(({ block }) => block.id === id)
+    const found = findEditorV6TimelineClip(dependencies.getTimeline(), id)
     if (!found || found.track.locked) return
     const removedEndFrame = found.block.startFrame + found.block.durationFrames
     const removedDurationFrames = found.block.durationFrames
