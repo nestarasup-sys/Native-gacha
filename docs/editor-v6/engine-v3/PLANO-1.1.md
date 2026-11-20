@@ -158,7 +158,7 @@ EditorV6ExportPanel.tsx
 
 | FIX | Prova atual | Limitação |
 | --- | --- | --- |
-| FIX-01 | Cena V6 sintética, cores, ordem Z, alpha, comparação com SVG do SceneSurface | Referência rasterizada pelo librsvg; **não é captura Chromium** |
+| FIX-01 | Cenas V6 sintéticas, cores, ordem Z, alpha via librsvg e três amostras opacas no Edge/Chromium real | Falta golden RGBA integral e máscaras complexas |
 | FIX-02 | Transformações do adaptador, crop de atlas e flip | Falta sequência de pose e expressão real |
 | FIX-03 | Política de piscada na prévia e agenda facial existente | Não comprova boca completa na engine |
 | FIX-04/05/06 | Não implementados na engine offline | Boca/cabelo/mais personagens animados |
@@ -169,25 +169,24 @@ EditorV6ExportPanel.tsx
 
 ### [F1] Referências reproduzíveis
 
-- `tests/editor-v6/engineV6SvgReference.test.ts`: compara quadros V6 montados pelo mesmo modelo autoral com uma referência **SceneSurface SVG/librsvg**; verifica interiores, alpha, crop e repetição. Não confundir com oráculo Chromium.
+- `tests/editor-v6/engineV6SvgReference.test.ts`: compara quadros V6 montados pelo mesmo modelo autoral com referência SceneSurface **SVG/librsvg**; verifica interiores, alpha, crop e repetição.
+- `tests/editor-v6/engineV6ChromiumReference.test.ts`: abre SceneSurface de fixture **no Edge/Chromium headless do Windows**, captura PNG e confere amostras opacas de fundo e duas camadas contra Sharp. Não comprova pixels completos, boca/cabelo ou projeto real.
 - `scripts/editor-v6/engine-v3/profileOffline.cjs`: raster sintético com hashes de input/outputs, preparo, tempos P50/P95 e RSS amostrado.
 - `tests/editor-v6/engineV3Profile.test.cjs`: valida limites, saída do perfil, frames dinâmicos e hashes estáticos.
 - `src/engine-v6/engineTimebase.ts` + `tests/editor-v6/engineV6Timebase.test.ts`: mapeamento racional/índices absolutos, bordas idênticas à função legacy, independente de worker e ordem de execução.
-- CI Windows [44838231747](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44838231747): **aprovada**, typecheck, arquitetura, **18 testes Node e 51 testes Vitest**.
+- CI Windows [44838705380](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44838705380): **aprovada**, typecheck, arquitetura, **18 testes Node e 52 testes Vitest**, incluindo o teste real Edge/Chromium (não ignorado).
 - Perfil isolado desse CI: **4 quadros 1920×1080**, atlas sintético 512, **656,444 ms** totais; **P50 143,178 ms/frame**, RSS amostrado **111.910.912 bytes**. Esses números são **apenas o experimento**, não um benchmark MP4 nem comparação de velocidade do V6.
 - Histórico de 163,760 s / 200 s é de outro experimento; não extrapolar os valores acima para a meta de 90 s.
 
 ### O que falta para chamar o Plano 1.1 concluído
 
-1. **G0:** golden verdadeiro dos pixels do Chromium e baseline reproduzido com fixtures modernas e MP4 validado.
+1. **G0:** ampliar a captura real Chromium já testada de três pontos opacos para PNGs RGBA integrais, alpha/máscaras/texto e baseline reproduzido com MP4.
 2. **G1:** demonstrar paridade suficiente em cenas complexas, processo isolado e Windows empacotado; decidir backend.
 3. **G2:** resolver timeline e preparo integralmente no núcleo puro, sem dependência do resolvedor legado.
 4. **G3–G5:** poses/expressões, boca/cabelo, vídeo/áudio e MP4 completo na engine nova.
 5. **G6–G8:** benchmark equivalente, robustez/cancelamento, integração, rollback e remoção segura do caminho antigo.
 
-**Próxima entrega:** capturar pixels verdadeiros do Chromium com a mesma fixture V6,
-comparar pré-encode e registrar diferenças numéricas; não migrar export padrão enquanto
-essa referência e os efeitos de boca/cabelo/mídia estiverem ausentes.
+**Próxima entrega:** medir divergências por pixel/região dos PNGs Chromium/Sharp na mesma fixture V6, ampliar para alpha, crop, flip e texto; não migrar export padrão enquanto boca, cabelo e mídia não estiverem completos.
 
 ## Ordem padrão e mudança de estratégia
 

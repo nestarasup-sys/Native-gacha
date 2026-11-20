@@ -23,8 +23,8 @@ atualizado: 2026-11-20
 
 | Fase/gate | Status | Evidência exigida para concluir |
 | --- | --- | --- |
-| F0 / G0 | EM_ANDAMENTO | referência SceneSurface SVG/librsvg aprovada; falta golden Chromium e baseline de MP4 |
-| F1 / G1 | EM_ANDAMENTO | perfil 1080p e paridade SVG aprovados no Windows; falta Chromium/empacotamento |
+| F0 / G0 | EM_ANDAMENTO | fixture V6 passou Chromium real em 3 pontos opacos; faltam PNGs completos e baseline MP4 |
+| F1 / G1 | EM_ANDAMENTO | perfil 1080p, referência SVG e smoke Chromium real passaram; falta recursos completos/empacotamento |
 | F2 / G2 | EM_ANDAMENTO | IR v1 e timebase racional 24/30 aprovados; falta normalização/avaliação integral |
 | F3 / G3 | PENDENTE | poses/expressões corretas em PNGs comparáveis |
 | F4 / G4 | PENDENTE | boca/cabelo completos + A/B H0–H4 |
@@ -56,20 +56,21 @@ atualizado: 2026-11-20
 
 ## Plano 1.1 — execução parcial verificada em 20/11/2026
 
-- `tests/editor-v6/engineV6SvgReference.test.ts`: quatro casos de comparação entre SceneSurface SVG/librsvg e compositor Sharp para cenas V6 atuais e sintéticas, **sem equivalência comprovada ao Chromium**.
+- `tests/editor-v6/engineV6SvgReference.test.ts`: quatro casos de comparação via SVG/librsvg para cenas V6 sintéticas.
+- `tests/editor-v6/engineV6ChromiumReference.test.ts`: Edge/Chromium headless no Windows comparou com a engine **3 amostras opacas** da mesma cena V6. Sem golden integral de pixel ou alpha/cabelo/texto.
 - `scripts/editor-v6/engine-v3/profileOffline.cjs` + `engineV3Profile.test.cjs`: medição reproduzível de raster/atlas, hashes, input bounds e RSS observado.
 - `src/engine-v6/engineTimebase.ts` + `engineV6Timebase.test.ts`: tempo racional 24/30 fps com partições e seek independente de ordem; contrato conforme `editorV6OutputFrame` legado.
-- [CI Windows **44838231747** aprovada](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44838231747): typecheck, auditoria, 18 testes Node e 51 Vitest.
+- [CI Windows **44838705380** aprovada](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44838705380): typecheck, auditoria, 18 testes Node e 52 Vitest; inclui captura real Edge/Chromium de fixture V6.
 - Perfil sintético 4 frames 1080p/atlas 512: 656,444 ms de parede, P50 143,178 ms/frame, RSS observado 111.910.912 B. **Não comparar** com 163,760 s de MP4 real.
 - Mapa de pipeline, matriz FIX e gates incompletos em [Plano 1.1](PLANO-1.1.md#execução-11--evidências-e-limites-20112026).
 - Projetos antigos não são golden visual da engine nova; casos de compatibilidade usarão leitura e snapshot, não edição destrutiva.
 
-## Próxima tarefa concreta [NEXT-004]
+## Próxima tarefa concreta [NEXT-005]
 
-**Capturar a mesma fixture do V6 em Chromium real, comparar pixels pré-encode e avaliar backend sem tocar no export de produção.**
+**Expandir o smoke Chromium já aprovado para PNGs completos e recursos reais do V6, mantendo a engine em laboratório.**
 
-1. Produzir artefatos verificáveis PNG/JSON/sha256 para o mesmo frame via SceneSurface Chromium e o IR offline.
-2. Definir critérios visuais por região: alpha, limites de máscara, geometria, crop e cores; registrar divergências sem aumentar tolerância às cegas.
+1. Capturar PNG/JSON/sha256 de quadros completos via Chromium e Sharp, com mapa de diferenças por região, não só 3 pixels opacos.
+2. Testar alpha, crop, flip, rotação, máscaras e texto; comparar geometria e bordas em sequência, sem afrouxar limiares para esconder diferenças.
 3. Implementar casos de texto/boca/cabelo, vídeo e áudio **sem depender de projetos antigos**; perfilar tempo total incluindo preparação.
 4. Medir Windows empacotado e MP4 equivalente; só então fechar G0/G1 e decidir tecnologia. F2–F8 permanecem em andamento ou pendentes.
 

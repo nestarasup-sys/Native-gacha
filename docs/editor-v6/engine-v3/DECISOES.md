@@ -32,6 +32,7 @@ atualizado: 2026-11-20
 | DEC-015 | Em teste | Adaptador puro V6 -> IR de frame v1 e materialização de assets apenas no compositor | 7 testes novos no Windows aprovados; contrato F1 não cobre texto, boca, cabelo ou vídeo |
 | DEC-016 | Em teste | Timebase puro de 24/30 fps preserva bordas `editorV6OutputFrame` e seek absoluto | CI 44838231747 passou; ainda não integrado ao exportador |
 | DEC-017 | Aceita | SVG/librsvg é uma referência gráfica intermediária, não golden Chromium | Cenas V6 atuais sintéticas comparadas em CI; avaliação real por Chromium continua obrigatória |
+| DEC-018 | Em teste | Fixture Chromium/Edge Windows para conferir RGBA do novo compositor antes da migração | CI 44838705380 aprovou 3 regiões opacas; falta diferença integral e efeitos complexos |
 
 ## Critérios para mudar decisão
 
