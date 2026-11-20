@@ -4,17 +4,18 @@ import { NavLink, useLocation, useNavigate } from 'react-router'
 import { Icon } from './Icon'
 import { flushPendingRendererWrites } from '../pendingPersistence'
 import { APPLICATION_ROUTES } from '../../../../shared/applicationRoutes'
+import './TopBar.css'
 
 const sections = [
-  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow', tone: 'rose' },
-  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message', tone: 'rose' },
-  { label: 'EDITOR V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles', tone: 'rose' },
-  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera', tone: 'light' },
-  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame', tone: 'light' },
-  { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box', tone: 'light' },
-  { label: 'EDITOR V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles', tone: 'light' },
-  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings', tone: 'dark' },
-  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box', tone: 'dark' }
+  { label: 'Customizar', path: APPLICATION_ROUTES.customizer, icon: 'bow' },
+  { label: 'Roteiros', path: APPLICATION_ROUTES.roteiro, icon: 'message' },
+  { label: 'Editor V6', path: APPLICATION_ROUTES.editorV6, icon: 'sparkles' },
+  { label: 'Studio', path: APPLICATION_ROUTES.studio, icon: 'camera' },
+  { label: 'Base de vídeos', path: APPLICATION_ROUTES.baseVideos, icon: 'frame' },
+  { label: 'Biblioteca V6', path: APPLICATION_ROUTES.editorV6Library, icon: 'box' },
+  { label: 'Editor V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
+  { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings', developer: true },
+  { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box', developer: true }
 ] as const
 
 export function TopBar() {
@@ -38,14 +39,13 @@ export function TopBar() {
   return (
     <header className="top-bar">
       <div className="top-brand">
-        <img className="top-brand-mark" src="./gacha-nymi.ico" alt="Logo Gacha Nymi" />
-        <span className="top-brand-name">Gacha Nymi<span>estúdio criativo</span></span>
+        <img className="top-brand-mark" src="./gacha-nymi.ico" alt="" />
+        <span className="top-brand-name">Gacha <strong>Nymi</strong></span>
       </div>
-      <span className="top-divider" />
       <nav className="top-navigation" aria-label="Áreas do aplicativo">
         {sections.map((section) => (
           <NavLink
-            className={({ isActive }) => `top-nav-link ${section.tone}${isActive ? ' active' : ''}`}
+            className={({ isActive }) => `top-nav-link${'developer' in section ? ' top-nav-dev' : ''}${isActive ? ' active' : ''}`}
             key={section.path}
             onClick={(event) => navigateAfterFlush(event, section.path)}
             to={section.path}
@@ -55,10 +55,11 @@ export function TopBar() {
           </NavLink>
         ))}
       </nav>
-      <div className="topbar-spacer" />
-      <span className="save-status" role="status"><span className="save-dot" />Salvamento automático</span>
-      <button className="top-icon-button" aria-label="Notificações"><Icon name="bell" /><i /></button>
-      <button className="account-button" aria-label="Minha conta">L</button>
+      <div className="top-utilities">
+        <span className="save-status" role="status"><span className="save-dot" />Salvamento automático</span>
+        <button className="top-icon-button" aria-label="Notificações"><Icon name="bell" /><i /></button>
+        <button className="account-button" aria-label="Minha conta">L</button>
+      </div>
     </header>
   )
 }
