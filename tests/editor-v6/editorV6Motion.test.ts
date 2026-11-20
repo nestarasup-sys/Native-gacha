@@ -21,6 +21,40 @@ function bake(document: EditorV6Document): EditorV6MotionBakeResult {
   return { asset: { id: assetId, category: 'character', name: 'Motion', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }, motion: { version: 1, key: plan.key, assetId, frames: plan.samples.map((s, i) => ({ offset: s.offset, sprite: { x: i * 10, y: 0, width: 10, height: 10, atlasWidth: 70, atlasHeight: 10 }, x: i, y: 0, width: 20, height: 30, rotation: 0, flipX: false })) }, metrics: { milliseconds: 1, preparedRigs: 9, samples: 7, atlasPixels: 700 } }
 }
 describe('V6 motion scheduling and portable cache', () => {
+  it('isola os planos de movimento por projeto mesmo quando duas copias compartilham a mesma timeline', () => {
+    const original = fixture()
+    const duplicate = { ...original, id: original.id + '-duplicado' }
+    // Duplicar um documento pode conservar a identidade da timeline em memoria.
+    expect(duplicate.timeline).toBe(original.timeline)
+
+    const originalPlans = editorV6MotionPlans(original)
+    const copiedPlans = editorV6MotionPlans(duplicate)
+    expect(originalPlans).toHaveLength(1)
+    expect(copiedPlans).toEqual(originalPlans)
+    expect(copiedPlans).not.toBe(originalPlans)
+    expect(editorV6MotionPlans(original)).toBe(originalPlans)
+    expect(editorV6MotionPlans(duplicate)).toBe(copiedPlans)
+  })
+
+  it('isola os caches por projeto e por modo de fala, sem perder a reutilizacao local', () => {
+    const original = fixture()
+    const speech = original.timeline.tracks.find(track => track.kind === 'speech')!
+    speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala', characterId: 'alice', startFrame: 86, durationFrames: 2 }]
+    const duplicate = { ...original, id: original.id + '-duplicado' }
+    const variants = [original, duplicate].map(project => ({
+      speaking: editorV6MotionPlans(project, { includeSpeechMouth: true }),
+      silent: editorV6MotionPlans(project, { includeSpeechMouth: false })
+    }))
+    for (const variant of variants) {
+      expect(variant.speaking[0].key).not.toBe(variant.silent[0].key)
+      expect(variant.speaking[0].samples.some(sample => sample.faceMode === 'talk')).toBe(true)
+    }
+    expect(variants[1].speaking).not.toBe(variants[0].speaking)
+    expect(variants[1].silent).not.toBe(variants[0].silent)
+    expect(editorV6MotionPlans(duplicate, { includeSpeechMouth: true })).toBe(variants[1].speaking)
+    expect(editorV6MotionPlans(original, { includeSpeechMouth: false })).toBe(variants[0].silent)
+  })
+
   it('invalidates captured frames when the same video changes its scene layout', () => {
     const scene = (x: number) => ({ frame: 42, background: '#fff', elements: [], mediaVideo: { mediaId: 'video', startFrame: 0, sourceInFrame: 0, layout: { x, y: 0, width: 40, height: 40, rotation: 0 } } })
     expect(editorV6VisualKey(scene(0))).not.toBe(editorV6VisualKey(scene(10)))
