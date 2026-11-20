@@ -2,7 +2,7 @@
 
 Aplicativo desktop de criação de personagens, customização e composição de cenas, feito com **Electron + React + TypeScript**. Este repositório registra uma **refatoração incremental** do aplicativo que já funciona, preservando formatos de arquivos e contratos IPC.
 
-> **Estado atual: em reorganização arquitetural.** O Video Studio e seu motor de edição e exportação foram removidos do aplicativo. As bibliotecas de vídeos e fundos continuam disponíveis em Base de vídeos e Roteiros, que dependem desses arquivos compartilhados.
+> **Dev-v3:** branch experimental para reconstruir a engine de exportação do **Editor V6**. O editor continua sendo a interface de autoria; a nova engine é um laboratório offline e não substituiu o exportador completo. Use o [plano da Engine V6](docs/editor-v6/engine-v3/README.md) para acompanhar os gates.
 
 ## Fluxo principal do produto
 
@@ -35,22 +35,38 @@ npm run dev
 
 > Algumas dependências são nativas e `postinstall` instala Electron; o setup completo deve ser executado no ambiente de desenvolvimento. Os testes de arquitetura e refatoração podem ser executados sem iniciar o desktop.
 
-## Branch oficial e atalhos de desenvolvimento (Windows)
+## Clone local e atalhos da Dev-v3 (Windows)
 
-A branch de trabalho do Native Gacha é **`Main-desenvolvimento`** (respeite maiúsculas/minúsculas); `main` não é atualizada automaticamente.
+**Para trabalhar na nova engine do Editor V6, a branch é `Dev-v3`** (não `Dev-V2`,
+`Main-desenvolvimento` ou `main`). As branches antigas continuam preservadas.
 
-- **`ATUALIZAR_DESENVOLVIMENTO.bat`**: verifica o clone `origin`, recusa alterações locais não salvas, faz fetch da branch oficial, seleciona `Main-desenvolvimento`, configura o upstream e faz `git pull --ff-only`. Não executa `reset --hard`, `clean` ou rebase.
-- **`ABRIR_DESENVOLVIMENTO.bat`**: inicia o Electron no Windows sem chamar o `predev` que migra dados do perfil G-V5 legado.
+- [Guia de primeira atualização de clone antigo](docs/editor-v6/engine-v3/CLONE-LOCAL-DEV-V3.md):
+  inclui comandos de bootstrap; o BAT antigo não consegue se atualizar sozinho.
+- **`ATUALIZAR_DESENVOLVIMENTO.bat`**: com a pasta Git limpa, busca `origin/Dev-v3`,
+  seleciona a branch e aplica só fast-forward. Nunca usa reset, clean, stash, rebase ou push.
+- **`ABRIR_DESENVOLVIMENTO.bat`**: exige que a branch já seja `Dev-v3`, verifica
+  Node e dependências e abre o Electron sem executar o `predev` de migração de dados G-V5.
+- **`PUBLICAR_NO_GITHUB.ps1`**: fluxo antigo de importação para `main` desativado.
+  Não serve para trazer atualizações do GitHub ao computador.
 
-**Primeira atualização em clones antigos:** se o BAT *já presente no computador* ainda cita `feature/model-source-editor`, o usuário precisa primeiro trocar para a branch nova pelo Git ou copiar a versão atualizada do BAT do GitHub. O script antigo não muda sozinho antes de ser atualizado. Com a pasta limpa:
+**Clone novo diretamente da branch desejada:**
 
-```bash
-git fetch origin Main-desenvolvimento
-git switch --track -c Main-desenvolvimento origin/Main-desenvolvimento
+```powershell
+git clone --branch Dev-v3 --single-branch https://github.com/nestarasup-sys/Native-gacha.git Native-gacha-Dev-v3
+cd .\Native-gacha-Dev-v3
 ```
 
-Se a branch local `Main-desenvolvimento` já existir, use `git switch Main-desenvolvimento` no lugar do segundo comando, seguido de `git pull --ff-only origin Main-desenvolvimento`.
+Abra `ABRIR_DESENVOLVIMENTO.bat`. Se estiver copiando uma pasta local antiga em vez
+de clonar do GitHub, siga primeiro o guia de bootstrap. Em qualquer cenário,
+**preserve `app-data/` e não use comandos Git destrutivos.**
 
+### Dependências e dados
+
+O atalho de abertura sincroniza `node_modules` com `package-lock.json`
+quando necessário (`npm ci`). O script não apaga projetos nem executa
+`npm run dev`; este último tem um `predev` histórico que prepara/migra
+perfil local. O desenvolvimento usa `electron-vite dev` diretamente.
+`resources/video-tools/` e `app-data/` são ignorados pelo Git.
 
 ## Estrutura existente (sem mudança agressiva de diretórios)
 
@@ -68,13 +84,14 @@ A estrutura final deve evoluir **por domínio** e não por movimentação massiv
 - [ADR 001 — Electron modular](docs/architecture/ADR-001-modular-electron.md)
 - [ADR 002 — fluxo de personagens](docs/architecture/ADR-002-fluxo-personagens.md)
 - [Relatório da evolução 22/10/2026](docs/architecture/RELATORIO_EVOLUCAO_2026-10-22.md)
-- [Editor V6 — trabalho atual](docs/editor-v6/atual/README.md)
+- [Engine V6 / Dev-v3 — plano atual](docs/editor-v6/engine-v3/README.md)
+- [Editor V6 — pesquisas e benchmarks históricos](docs/editor-v6/atual/README.md)
 - [Arquivo histórico do Editor V6](docs/lixo/editor-v6/README.md)
 - [README histórico, com referências legadas](docs/architecture/README_LEGADO_2026-10-22.md)
 
 ## Branch experimental de renderização (Zona de Guerra)
 
-A branch `dev-v2-zona-de-guerra` concentra os experimentos de renderização e exportação Editor V6; **não é a branch de atualização dos BATs de desenvolvimento**. A `Dev-V2` é a base estável de comparação deste experimento e não recebe automaticamente mudanças desta branch. Para conferir o que ainda não está completo, use o [painel de pendências](docs/lixo/editor-v6/ZONA_GUERRA_PENDENCIAS.md). A bancada Windows do GitHub usa fixtures sintéticas e não equivale a um benchmark no Windows 11 local.
+A branch experimental **`Dev-v3`** é o ambiente atual de construção da engine offline do Editor V6. A `Dev-V2` permanece como referência histórica, sem receber automaticamente as alterações. Consulte o [plano](docs/editor-v6/engine-v3/README.md) e o [estado de execução](docs/editor-v6/engine-v3/ESTADO.md). O laboratório Windows usa fixtures sintéticas; não equivale ao benchmark do MP4 completo no computador do usuário.
 
 ## Segurança e publicação
 

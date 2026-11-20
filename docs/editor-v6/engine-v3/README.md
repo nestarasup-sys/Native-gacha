@@ -29,6 +29,8 @@ A arquitetura pode mudar por evidência. A documentação é curta, versionada e
 | 5 | [DECISOES.md](DECISOES.md) | decisões adotadas, propostas e condições de revisão |
 | 6 | [INSTRUCOES-IA.md](INSTRUCOES-IA.md) | protocolo enxuto para continuar com agentes |
 
+Para usar um **clone local antigo no Windows**, siga [CLONE-LOCAL-DEV-V3.md](CLONE-LOCAL-DEV-V3.md) antes de executar os BATs novos.
+
 Para começar a **executar**: ler `ESTADO`, `INSTRUCOES-IA` e **somente o plano correspondente ao gate atual**.
 Consultar os demais conforme dependência. Não é necessário reler o histórico inteiro a cada mudança.
 

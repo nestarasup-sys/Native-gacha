@@ -47,13 +47,13 @@ Não vasculhe dados pessoais, perfil local ou mídia do usuário sem necessidade
 ## Git e segurança dos dados
 
 - Preserve alterações locais preexistentes. Nunca use `git reset --hard`, `git clean -fd` ou comandos equivalentes para contornar conflitos.
-- Revise o diff e adicione ao commit somente os arquivos desta tarefa. Não inclua `ABRIR_DESENVOLVIMENTO.bat`, dados pessoais, perfil `app-data`, mídia, credenciais, caches ou arquivos gerados sem necessidade explícita.
+- Revise o diff e adicione ao commit somente os arquivos desta tarefa. Não inclua `ABRIR_DESENVOLVIMENTO.bat` sem necessidade explícita (exceto manutenção dos atalhos Dev-v3 solicitada pelo usuário), nem dados pessoais, perfil `app-data`, mídia, credenciais, caches ou arquivos gerados.
 - Para alterações de código, crie um commit local pequeno e descritivo depois das verificações pertinentes. Não faça push, force-push ou publicação sem pedido explícito.
 - Se houver risco real de perda de dados, falta de backup verificável ou credenciais/permissões necessárias, pare antes da ação destrutiva e explique precisamente o bloqueio.
 
 ## Editor V6
 
-- Trabalhe na `Dev-V2` em `C:\TRABALHO 2\OUTROS\GACHA EM C++`. Comece pelo [documento mestre](docs/editor-v6/atual/README.md).
+- **Engine V6 / Dev-v3:** trabalhe somente na branch `Dev-v3`, sem alterar `Dev-V2` nem Editor V7. O documento mestre atual é [Engine V6 / Dev-v3](docs/editor-v6/engine-v3/README.md); confira [ESTADO.md](docs/editor-v6/engine-v3/ESTADO.md) antes de iniciar a próxima tarefa. Documentos em `docs/editor-v6/atual/` são referências históricas.
 - Use os relatórios existentes para escolher prioridades. Faça diagnóstico, implementação e verificações de forma autônoma com fixtures sintéticas e saídas isoladas. Para medir a meta de 90 s, o corte real de 6.000 quadros autorizado em [Execução 1.1](docs/editor-v6/atual/EXECUCAO-1.1.md) pode ser repetido em cópia verificada. Registre o que ficou inconclusivo e siga pelas hipóteses verificáveis sem exigir acompanhamento ou um export manual do usuário.
 - Preserve o MP4 final, o relatório, a qualidade visual e o sincronismo. Descarte dados de trabalho no fim de cada job e inicie o seguinte com preparação nova.
 - Mantenha cada Markdown ativo em até 300 linhas físicas. Antes de ultrapassar o limite, crie a continuação da série com sufixo `1.2`, `1.3` e assim por diante, e atualize o índice. Consulte `docs/lixo/editor-v6/` apenas para recuperar histórico específico.
