@@ -11,7 +11,8 @@ export const baseVideosIpcChannels = {
   deleteDetails: 'base-videos:delete-details',
   deleteVideo: 'base-videos:delete',
   publish: 'base-videos:publish',
-  exportSimpleData: 'base-videos:export-simple-data'
+  exportSimpleData: 'base-videos:export-simple-data',
+  downloadEditorV6Guide: 'base-videos:download-editor-v6-guide'
 } as const satisfies Record<keyof BaseVideosDesktopApi, string>
 
 export type BaseVideosIpcMethod = keyof typeof baseVideosIpcChannels

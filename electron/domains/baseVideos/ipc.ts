@@ -1,6 +1,7 @@
 /** Adaptador fino: autenticação da origem permanece obrigatória por chamada. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import type { writeFile as nativeWriteFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import { baseVideosIpcChannels } from '../../../src/shared/baseVideosIpcChannels.ts'
 import { BaseVideoService } from './service.ts'
 
@@ -13,6 +14,7 @@ export function registerBaseVideoHandlers(
   exportDependencies: {
     showSaveDialog: (sender: IpcMainInvokeEvent['sender'], options: SaveDialogOptions) => Promise<{ canceled: boolean; filePath?: string | null }>
     writeFile: typeof nativeWriteFile
+    downloadsPath: () => string
   }
 ): void {
   ipc.handle(baseVideosIpcChannels.listDetails, async (event) => {
@@ -67,5 +69,24 @@ export function registerBaseVideoHandlers(
     const destination = result.filePath.toLowerCase().endsWith(extension) ? result.filePath : `${result.filePath}${extension}`
     await exportDependencies.writeFile(destination, content, 'utf8')
     return true
+  })
+  ipc.handle(baseVideosIpcChannels.downloadEditorV6Guide, async (event, content: unknown) => {
+    assertTrustedSender(event)
+    if (typeof content !== 'string' || content.trim().length === 0 || Buffer.byteLength(content, 'utf8') > 2 * 1024 * 1024 || content.includes('\0')) {
+      throw new Error('O guia Markdown é inválido ou excede 2 MB.')
+    }
+    const directory = exportDependencies.downloadsPath()
+    const baseName = 'Guia_V14.1_Editor_V6'
+    for (let index = 1; index <= 100; index += 1) {
+      const suffix = index === 1 ? '' : ` (${index})`
+      const fileName = `${baseName}${suffix}.md`
+      try {
+        await exportDependencies.writeFile(join(directory, fileName), content, { encoding: 'utf8', flag: 'wx' })
+        return fileName
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error
+      }
+    }
+    throw new Error('Não foi possível encontrar um nome livre para o guia em Downloads.')
   })
 }

@@ -757,7 +757,8 @@ async function registerFabricatorHandlers(): Promise<void> {
       const owner = BrowserWindow.fromWebContents(sender)
       return owner ? dialog.showSaveDialog(owner, options) : dialog.showSaveDialog(options)
     },
-    writeFile: nativeWriteFile
+    writeFile: nativeWriteFile,
+    downloadsPath: () => app.getPath('downloads')
   })
 
   registerCustomizerCharacterHandlers(ipcMain, assertTrustedSender, customizerService)

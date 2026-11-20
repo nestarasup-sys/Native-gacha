@@ -183,7 +183,8 @@ const baseVideosApi: BaseVideosDesktopApi = {
   deleteDetails: (videoId) => invokeBaseVideos('deleteDetails', videoId),
   deleteVideo: (videoId) => invokeBaseVideos('deleteVideo', videoId),
   publish: (videoId) => invokeBaseVideos('publish', videoId),
-  exportSimpleData: (content, purpose) => invokeBaseVideos('exportSimpleData', content, purpose)
+  exportSimpleData: (content, purpose) => invokeBaseVideos('exportSimpleData', content, purpose),
+  downloadEditorV6Guide: (content) => invokeBaseVideos('downloadEditorV6Guide', content)
 }
 
 const roteirosApi: RoteirosDesktopApi = {
