@@ -37,15 +37,16 @@ export function buildRoteiroEditorV6Text(input: {
     ...roteiro.tiktoks.map((item, index) => ({ label: `TIKTOK ${String(index + 1).padStart(2, '0')} — ${item.title}`, content: { video: item.video ?? null, blocks: item.blocks ?? [], description: item.description, additionalContext: item.additionalContext, timeline: item.timeline, sceneEndSeconds: item.sceneEndSeconds, firstGroupReactionSeconds: item.firstGroupReactionSeconds, secondGroupReactionSeconds: item.secondGroupReactionSeconds } }))
   ]
   const lines = [
-    'ROTEIRO PARA O IMPORTADOR DO EDITOR V6',
-    'Use este TXT junto ao guia V14.1 para gerar NYMI_EDITOR_V6_REACT_V1.',
+    '# ROTEIRO PARA O IMPORTADOR DO EDITOR V6',
+    '',
+    'Use este Markdown junto ao guia V14.1 para gerar NYMI_EDITOR_V6_REACT_V1.',
     'Preserve literalmente o texto, tipo, personagem e ordem de todas as falas e pensamentos.',
     'Os campos Português e English são strings JSON: decodifique as aspas e sequências de escape para recuperar o texto exato.',
     'IDs são referências da biblioteca atual. Não invente poses, expressões ou mídias. Poses indisponíveis não podem ser usadas.',
     'Tempos de cena e reações são relativos ao início de cada vídeo; o JSON do V6 usa tempos absolutos em segundos.',
     'O formato V6 aceita uma língua por linha; preserve o português e trate traduções existentes conforme o guia.',
     '', `Roteiro: ${roteiro.title}`, `Título do vídeo: ${roteiro.videoTitle}`, `ID do roteiro: ${roteiro.id}`, '',
-    'PERSONAGENS DO CUSTOMIZADOR', '============================'
+    '## PERSONAGENS DO CUSTOMIZADOR'
   ]
   for (const id of roteiro.characterIds) {
     const character = byCharacter.get(id), sheet = bySheet.get(id)
@@ -64,9 +65,9 @@ export function buildRoteiroEditorV6Text(input: {
     else lines.push(JSON.stringify({ personality: sheet.personality, backstory: sheet.backstory, fynRelationship: sheet.fynRelationship, speakingStyle: sheet.speakingStyle, relationships: sheet.relationships.map((item) => ({ characterId: item.targetCharacterId, name: byCharacter.get(item.targetCharacterId)?.name ?? 'Personagem não disponível', description: item.description })), additionalRules: sheet.additionalRules }, null, 2))
   }
   const background = roteiro.backgroundAssetId ? input.backgrounds.find((item) => item.id === roteiro.backgroundAssetId) : undefined
-  lines.push('', 'FUNDO', '=====', roteiro.backgroundAssetId ? `backgroundLibraryId: ${roteiro.backgroundAssetId} · ${background?.name ?? 'não encontrado'} · ${background?.available ? 'disponível' : 'INDISPONÍVEL'}` : 'Nenhum fundo selecionado; use backgroundColor ou escolha um fundo na biblioteca.', '', 'ROTEIRO E VÍDEOS', '================')
+  lines.push('', '## FUNDO', roteiro.backgroundAssetId ? `backgroundLibraryId: ${roteiro.backgroundAssetId} · ${background?.name ?? 'não encontrado'} · ${background?.available ? 'disponível' : 'INDISPONÍVEL'}` : 'Nenhum fundo selecionado; use backgroundColor ou escolha um fundo na biblioteca.', '', '## ROTEIRO E VÍDEOS')
   for (const { label, content } of sections) {
-    lines.push('', label)
+    lines.push('', `### ${label}`)
     const reference = content.video, video = reference ? byVideo.get(reference.id) : undefined, detail = reference ? byDetails.get(reference.id) : undefined
     if (reference) {
       lines.push(`videoId: ${reference.id}`, `Nome: ${video?.name ?? reference.name}`, `Número na Base: ${detail?.videoNumber ?? 'não publicado'}`, `Disponibilidade: ${video?.available && video.durationFrames !== null ? 'disponível' : 'INDISPONÍVEL — corrigir na Base de Vídeos'}`, `Duração do vídeo: ${(video?.durationFrames ?? reference.durationFrames) / 60} segundos${video?.durationFrames == null ? ' (referência salva no roteiro; verificar mídia)' : ''}`)

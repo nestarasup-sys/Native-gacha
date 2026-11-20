@@ -1,6 +1,6 @@
 # GUIA V14.1 — Native Gacha / Editor V6 — React editável por JSON
 
-**Uso:** entregue à IA este guia, o TXT exportado de Roteiros e um inventário atual de personagens, poses, expressões, vídeos e fundo. A IA dirige a atuação e entrega um JSON para **Importar vídeo em JSON** na biblioteca do Editor V6.
+**Uso:** entregue à IA este guia, o roteiro exportado em Markdown e um inventário atual de personagens, poses, expressões, vídeos e fundo. A IA dirige a atuação e entrega um JSON para **Importar vídeo em JSON** na biblioteca do Editor V6.
 
 **Formato externo:** `NYMI_EDITOR_V6_REACT_V1`. **Editor:** Native Gacha, Editor V6, 30 FPS. V14.1 é a versão deste guia; não é uma nova versão do formato JSON. O conteúdo criativo deriva do V13.1 consolidado fornecido pelo usuário, incluindo seu núcleo V12.4.1. As estruturas do Editor V4 foram substituídas pelo contrato efetivamente aceito no V6.
 
@@ -15,11 +15,11 @@ O roteiro de falas e pensamentos já foi escrito. **Não crie, melhore, corrija,
 
 ## 2. Antes de gerar
 
-Leia o roteiro inteiro e o contexto adicional. Monte um inventário real: personagens do Customizador (nome único ou UUID), modelo de cada um, `poseSlot` existentes, presets de expressão disponíveis para cada modelo, vídeos publicados e seus `videoId`, `videoNumber` ou nomes únicos, duração e, se houver, UUID de fundo da biblioteca. A existência de um nome ou caminho no TXT não prova que o recurso está disponível no aplicativo.
+Leia o roteiro inteiro e o contexto adicional. Monte um inventário real: personagens do Customizador (nome único ou UUID), modelo de cada um, `poseSlot` existentes, presets de expressão disponíveis para cada modelo, vídeos publicados e seus `videoId`, `videoNumber` ou nomes únicos, duração e, se houver, UUID de fundo da biblioteca. A existência de um nome ou caminho no roteiro não prova que o recurso está disponível no aplicativo.
 
 Quando um recurso essencial não puder ser identificado sem ambiguidade, peça os dados ou apresente a limitação; nunca fabrique UUID, pose, preset, mídia ou resultado de teste. A IA não pode garantir a importação, sprites, áudio ou MP4 sem executá-los.
 
-O botão **Exportar roteiro** da área Roteiros gera um TXT para o V6 com IDs do elenco, poses selecionadas em Poses Dev, presets reais, fichas locais, fundo, vídeos, tempos, descrições e textos. Cada campo `Português` ou `English` é uma string JSON: decodifique aspas e escapes para recuperar o texto exato. Dados marcados indisponíveis precisam ser corrigidos antes da importação. TXTs antigos podem conter caminhos `assets/...` do V4; eles ajudam a identificar o material, mas **não entram no JSON V6**. Se faltar informação, solicite-a.
+O botão **Exportar roteiro** da área Roteiros gera um Markdown para o V6 com IDs do elenco, poses selecionadas em Poses Dev, presets reais, fichas locais, fundo, vídeos, tempos, descrições e textos. Cada campo `Português` ou `English` é uma string JSON: decodifique aspas e escapes para recuperar o texto exato. Dados marcados indisponíveis precisam ser corrigidos antes da importação. TXTs antigos podem conter caminhos `assets/...` do V4; eles ajudam a identificar o material, mas **não entram no JSON V6**. Se faltar informação, solicite-a.
 
 ## 3. Contrato técnico do JSON
 
@@ -97,7 +97,7 @@ Ciúme exige vínculo e ameaça percebida, sensação de substituição ou outro
 
 Comece com poses reais distribuídas de forma equilibrada e com rostos coerentes com cada personalidade; não deixe todos iguais por comodidade. Com mais personagens que poses, repetir é inevitável. A cada 15 segundos globais, procure trocar a pose de **um** personagem elegível para outra pose real, com sequência reproduzível por seed; preserve emoção e orientação. Trocas narrativas excepcionais são independentes. Uma troca de pose não muda emoção. Não use a regra antiga de trocar todo o elenco a cada sete segundos.
 
-O automático do V6 tenta uma troca em cada marco quando há personagem com mais de uma pose; ele pode usar qualquer pose salva do modelo, pula o marco se já existe beat de pose nele e não garante lidar sozinho com colisões dramáticas. Para usar somente as poses escolhidas no painel **Poses para Editor V6 Importer**, defina `autoPoseEverySeconds: 0`, indique uma pose inicial selecionada no `cast` e emita os beats de pose explicitamente usando os `poseSlot` selecionados no TXT. Desloque o mínimo necessário quando o autor exigir evitar um momento crítico. Registre exceções na auditoria. Se nenhuma pose tiver sido selecionada, use a pose base (`poseSlot: null`) e não invente trocas.
+O automático do V6 tenta uma troca em cada marco quando há personagem com mais de uma pose; ele pode usar qualquer pose salva do modelo, pula o marco se já existe beat de pose nele e não garante lidar sozinho com colisões dramáticas. Para usar somente as poses escolhidas no painel **Poses para Editor V6 Importer**, defina `autoPoseEverySeconds: 0`, indique uma pose inicial selecionada no `cast` e emita os beats de pose explicitamente usando os `poseSlot` selecionados no roteiro exportado. Desloque o mínimo necessário quando o autor exigir evitar um momento crítico. Registre exceções na auditoria. Se nenhuma pose tiver sido selecionada, use a pose base (`poseSlot: null`) e não invente trocas.
 
 ## 6. Dicionário de atuação facial
 
