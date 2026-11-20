@@ -1,6 +1,7 @@
 import { EDITOR_V6_DEFAULT_DURATION_FRAMES, type EditorV6Document, type EditorV6SceneElement } from './editorV6'
 import type { EditorV6MotionFrame } from './editorV6Motion'
 import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
+import { editorV6VideoSourceFrameAtTimelineFrame } from './editorV6VideoComposition'
 import { isEditorV6ExportTestMode, type EditorV6ExportTestMode } from './editorV6ExportTestModes'
 
 export type EditorV6ExportAudio = {
@@ -186,13 +187,13 @@ function editorV6LayerVisualKeysForElements(background: unknown, elements: Retur
   return editorV6LayerVisualKeysFromSerialized(editorV6SerializeVisualKey(background), editorV6SerializeVisualKey(elements), hairAnimationFrame)
 }
 function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: ReturnType<typeof editorV6ElementVisualKeys>): string {
-  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
+  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? editorV6VideoSourceFrameAtTimelineFrame(scene.mediaVideo.sourceInFrame, scene.mediaVideo.startFrame, scene.frame) : null
   const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], elements]
   return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
 }
 function editorV6VisualKeysFromSerializedElements(scene: EditorV6VisualKeyInput, elementsKey: string, cache?: EditorV6ExportFrameVisualKeyCache): EditorV6VisualKeys {
   const backgroundKey = editorV6SerializeBackground(scene.background, cache)
-  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
+  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? editorV6VideoSourceFrameAtTimelineFrame(scene.mediaVideo.sourceInFrame, scene.mediaVideo.startFrame, scene.frame) : null
   const mediaKey = editorV6SerializeVisualKey(mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout])
   const hairFrameKey = scene.hairAnimationFrame === undefined ? undefined : editorV6SerializeVisualKey(scene.hairAnimationFrame)
   // JSON.stringify([background, media, elements, hairFrame?]) has the same
