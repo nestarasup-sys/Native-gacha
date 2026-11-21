@@ -87,6 +87,22 @@ export function planEditorV6Audio(clips: readonly EditorV6ExportAudio[], startFr
     return clip.muted || clip.gain === 0 || end <= start ? [] : [{ clip, sourceInFrame: clip.sourceInFrame + start - clip.startFrame, durationFrames: end - start, delayFrames: start - startFrame }]
   })
 }
+
+/** Resolves visible timeline audio and audio-enabled video into ID-linked clips. */
+export function editorV6TimelineMediaAudio(project: Pick<EditorV6Document, 'timeline' | 'media'>): EditorV6ExportAudio[] {
+  const media = new Map((project.media ?? []).filter(asset => asset.hasAudio).map(asset => [asset.id, asset]))
+  return project.timeline.tracks.flatMap(track => track.blocks.flatMap(block => {
+    const asset = block.mediaId ? media.get(block.mediaId) : undefined
+    if (!asset || (track.kind !== 'audio' && !(track.kind === 'video' && asset.kind === 'video'))
+      || track.muted || track.hidden || block.audioEnabled === false) return []
+    return [{ id: block.id, name: asset.name, fileName: asset.fileName,
+      ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}),
+      ...(asset.libraryAudioId ? { libraryAudioId: asset.libraryAudioId } : {}),
+      sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0,
+      durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
+  }))
+}
+
 export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], maxFrames: number): EditorV6ExportPart[] {
   if (!Number.isInteger(maxFrames) || maxFrames < 1) throw Error('O tamanho de cada trecho de exportação é inválido.')
   const result: EditorV6ExportPart[] = []

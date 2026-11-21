@@ -57,6 +57,42 @@ describe('Engine V6 — contrato de frame 1.0', () => {
     expect(reverse.reverse()).toEqual(frames.map(frame => bySeek.get(frame)))
   })
 
+  it('keeps static character snapshots, pose cuts, z-order and asset references at block boundaries', async () => {
+    const alice = actor({ assetId: 'pose-a', poseSlot: 1, width: 20, height: 30, zIndex: 1 })
+    const bob = actor({ id: 'bob', characterId: 'bob', assetId: 'bob-pose', x: 18, width: 20, height: 30, zIndex: 2 })
+    const doc = project([alice, bob], [asset('pose-a'), asset('pose-b'), asset('bob-pose')])
+    doc.timeline.durationFrames = 60
+    const aliceTrack = doc.timeline.tracks.find(track => track.kind === 'character' && track.characterId === 'alice')!
+    aliceTrack.blocks = [
+      { ...aliceTrack.blocks[0], id: 'pose-block-a', startFrame: 0, durationFrames: 30, state: alice },
+      { ...aliceTrack.blocks[0], id: 'pose-block-b', startFrame: 30, durationFrames: 30,
+        state: { ...alice, assetId: 'pose-b', poseSlot: 2, x: 8, rotation: 15, flipX: true } }
+    ]
+    const firstScene = resolveEditorV6SceneAtFrame(doc, 29)
+    const secondScene = resolveEditorV6SceneAtFrame(doc, 30)
+    const beforeCut = planEngineV6ResolvedScene(doc, firstScene, { width: 64, height: 36 })
+    const atCut = planEngineV6ResolvedScene(doc, secondScene, { width: 64, height: 36 })
+    expect(beforeCut.requiredAssetIds).toEqual(['pose-a', 'bob-pose'])
+    expect(atCut.requiredAssetIds).toEqual(['pose-b', 'bob-pose'])
+    expect(beforeCut.commands.map(command => command.kind === 'image' ? command.assetId : '')).toEqual(['pose-a', 'bob-pose'])
+    expect(atCut.commands[0]).toMatchObject({ assetId: 'pose-b', x: 1113.6, rotation: 15, flipX: true })
+
+    const red = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#ff0000ff' } }).png().toBuffer()
+    const blue = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#0000ffff' } }).png().toBuffer()
+    const green = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#00ff00ff' } }).png().toBuffer()
+    const pixelProject = { ...doc, assets: [
+      asset('pose-a', `data:image/png;base64,${red.toString('base64')}`),
+      asset('pose-b', `data:image/png;base64,${blue.toString('base64')}`),
+      asset('bob-pose', `data:image/png;base64,${green.toString('base64')}`)
+    ] }
+    const firstPixels = await renderOfflineFrame(materializeEngineV6LegacyFrame(pixelProject, beforeCut))
+    const secondPixels = await renderOfflineFrame(materializeEngineV6LegacyFrame(pixelProject, atCut))
+    const center = (x: number, y: number) => (y * 64 + x) * 4
+    expect([...firstPixels.subarray(center(32, 18), center(32, 18) + 4)]).toEqual([255, 0, 0, 255])
+    expect([...secondPixels.subarray(center(34, 18), center(34, 18) + 4)]).toEqual([0, 0, 255, 255])
+    expect([...secondPixels.subarray(center(42, 18), center(42, 18) + 4)]).toEqual([0, 255, 0, 255])
+  })
+
   it('retains character geometry, motion atlas crop and flip', () => {
     const figure = actor({ x: 10, y: -5, width: 20, height: 30, characterScale: 150, characterWidthScale: 50, flipX: true, rotation: 45 })
     const doc = project([figure])
@@ -96,7 +132,7 @@ describe('Engine V6 — contrato de frame 1.0', () => {
     const scene = resolveEditorV6SceneAtFrame(doc, 0)
     const options = { width: 640, height: 360 }
     expect(() => planEngineV6ResolvedScene(doc, { ...scene, elements: [{ ...actor(), kind: 'speech' }] }, options)).toThrow(/Texto/)
-    expect(() => planEngineV6ResolvedScene(doc, { ...scene, elements: [{ ...actor(), mouthPatch: { assetId: 'face' } as EditorV6Element['mouthPatch'] }] }, options)).toThrow(/Composição facial/)
+    expect(() => planEngineV6ResolvedScene(doc, { ...scene, elements: [{ ...actor(), mouthPatch: { assetId: 'face' } as EditorV6Element['mouthPatch'] }] }, options)).toThrow(/Retângulo facial inválido/)
     expect(() => planEngineV6ResolvedScene(doc, { ...scene, mediaVideo: {} as NonNullable<typeof scene.mediaVideo> }, options)).toThrow(/Vídeo sobreposto/)
     expect(() => planEngineV6ResolvedScene(doc, { ...scene, elements: [{ ...actor(), assetId: 'missing' }] }, options)).toThrow(/Asset não encontrado/)
     expect(() => planEngineV6DocumentFrame(doc, -1, options)).toThrow(/fora dos limites/)
@@ -120,6 +156,37 @@ describe('Engine V6 — contrato de frame 1.0', () => {
     expect(rgba.length).toBe(16 * 9 * 4)
     expect([...rgba.subarray((4 * 16 + 8) * 4, (4 * 16 + 8) * 4 + 4)]).toEqual([255, 0, 0, 255])
   })
+
+  it('plans and composites a mouth patch above its character, with a validated replacement cutout', async () => {
+    const patch = { assetId: 'face', sprite: { x: 0, y: 0, width: 2, height: 2, atlasWidth: 2, atlasHeight: 2 },
+      x: .4, y: .4, width: .2, height: .2, replace: true, replaceBounds: { x: .25, y: 0, width: .5, height: 1 } }
+    const doc = project([actor({ rotation: 90, flipX: true, mouthPatch: patch })], [asset('base'), asset('face')])
+    const framePlan = planEngineV6DocumentFrame(doc, 0, { width: 16, height: 9 })
+    expect(framePlan.requiredAssetIds).toEqual(['base', 'face'])
+    expect(framePlan.commands).toHaveLength(2)
+    expect(framePlan.commands[0]).toMatchObject({ kind: 'image', assetId: 'base', cutout: { x: .45, y: .4, width: .1, height: .2 } })
+    expect(framePlan.commands[1]).toMatchObject({ kind: 'image', assetId: 'face', x: 960, y: 540,
+      width: 384, height: 216, rotation: 90, flipX: true, source: { x: 0, y: 0, width: 2, height: 2 } })
+
+    const red = await sharp({ create: { width: 1, height: 1, channels: 4, background: '#ff0000ff' } }).png().toBuffer()
+    const yellow = await sharp({ create: { width: 2, height: 2, channels: 4, background: '#ffff00ff' } }).png().toBuffer()
+    const pixelDoc = { ...doc, assets: [
+      asset('base', `data:image/png;base64,${red.toString('base64')}`),
+      asset('face', `data:image/png;base64,${yellow.toString('base64')}`)
+    ] }
+    const pixels = await renderOfflineFrame(materializeEngineV6LegacyFrame(pixelDoc, framePlan))
+    const centerOffset = (4 * 16 + 8) * 4
+    expect([...pixels.subarray(centerOffset, centerOffset + 4)]).toEqual([255, 255, 0, 255])
+    const outerOffset = (4 * 16 + 20) * 4
+    expect([...pixels.subarray(outerOffset, outerOffset + 4)]).toEqual([255, 0, 0, 255])
+
+    const invalidRect = { ...patch, x: .9, width: .2 }
+    expect(() => planEngineV6ResolvedScene(doc, { ...resolveEditorV6SceneAtFrame(doc, 0),
+      elements: [{ ...actor(), mouthPatch: invalidRect }] }, { width: 16, height: 9 })).toThrow(/Retângulo facial inválido/)
+    const invalidSprite = { ...patch, sprite: { ...patch.sprite, x: 1, width: 2 } }
+    expect(() => planEngineV6ResolvedScene(doc, { ...resolveEditorV6SceneAtFrame(doc, 0),
+      elements: [{ ...actor(), mouthPatch: invalidSprite }] }, { width: 16, height: 9 })).toThrow(/Recorte facial fora do atlas/)
+  })
 })
 
 describe('Editor V6 — política de prévia leve', () => {
@@ -137,5 +204,7 @@ describe('Editor V6 — política de prévia leve', () => {
     expect(resolveEditorV6PreviewSceneAtFrame(doc, blink!).elements[0].assetId).toBe('blink')
     expect(resolveEditorV6PreviewSceneAtFrame(doc, nonBlink!).elements[0].assetId).toBe('base')
     expect(resolveEditorV6SceneAtFrame(doc, nonBlink!).elements[0].assetId).toBe('talk')
+    expect(planEngineV6DocumentFrame(doc, blink!, { width: 16, height: 9 }).requiredAssetIds).toContain('talk-blink')
+    expect(planEngineV6DocumentFrame(doc, nonBlink!, { width: 16, height: 9 }).requiredAssetIds).toContain('talk')
   })
 })

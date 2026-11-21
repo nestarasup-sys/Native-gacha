@@ -1,4 +1,5 @@
 import type { EditorV6Document } from '../shared/editorV6'
+import type { EditorV6FacePatch } from '../shared/editorV6Motion'
 import type { EditorV6NativeFramePlan } from '../shared/editorV6Export'
 import { editorV6ElementSize } from '../shared/editorV6SceneModel'
 import { resolveEditorV6SceneAtFrame, type EditorV6ResolvedScene } from '../shared/editorV6TimelineScene'
@@ -10,9 +11,9 @@ export type EngineV6FrameOptions = { width: number; height: number; layer?: Engi
  * Temporary V6 -> engine bridge. Pure, versioned and independent of React/DOM/Electron.
  * No image bytes enter the IR: they are materialized only at the compositor boundary.
  *
- * Scope (F1): backgrounds, images, character snapshots and prepared motion atlases.
- * Text, face patches and embedded video intentionally fail instead of silently disappearing.
- * Export-only hair/mouth preparation remains a separate, later milestone.
+ * Scope (F1/F4 spike): backgrounds, images, character snapshots, motion crops and validated face patches.
+ * Text and embedded video intentionally fail instead of silently disappearing.
+ * Face patch timing/preparation and export-only hair remain separate milestones.
  */
 export type EngineV6FramePlanV1 = {
   contractVersion: 1
@@ -28,6 +29,35 @@ export type EngineV6FramePlanV1 = {
 
 function position(x: number, y: number) {
   return { x: (50 + x) * 19.2, y: (50 + y) * 10.8 }
+}
+
+function validateFacePatch(elementId: string, patch: EditorV6FacePatch): void {
+  const validUnitRect = (rect: { x: number; y: number; width: number; height: number }) =>
+    [rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)
+    && rect.x >= 0 && rect.y >= 0 && rect.width > 0 && rect.height > 0
+    && rect.x + rect.width <= 1 && rect.y + rect.height <= 1
+  const sprite = patch.sprite
+  if (!validUnitRect(patch)) throw Error(`Retângulo facial inválido no elemento ${elementId}.`)
+  if (![sprite.x, sprite.y, sprite.width, sprite.height, sprite.atlasWidth, sprite.atlasHeight].every(Number.isSafeInteger)
+    || sprite.x < 0 || sprite.y < 0 || sprite.width < 1 || sprite.height < 1
+    || sprite.atlasWidth < 1 || sprite.atlasHeight < 1
+    || sprite.x + sprite.width > sprite.atlasWidth || sprite.y + sprite.height > sprite.atlasHeight) {
+    throw Error(`Recorte facial fora do atlas no elemento ${elementId}.`)
+  }
+  if (patch.replaceBounds && !validUnitRect(patch.replaceBounds)) {
+    throw Error(`Limites de substituição facial inválidos no elemento ${elementId}.`)
+  }
+}
+
+function facePatchCutout(patch: EditorV6FacePatch) {
+  if (!patch.replace) return undefined
+  const bounds = patch.replaceBounds ?? { x: 0, y: 0, width: 1, height: 1 }
+  return {
+    x: patch.x + bounds.x * patch.width,
+    y: patch.y + bounds.y * patch.height,
+    width: bounds.width * patch.width,
+    height: bounds.height * patch.height
+  }
 }
 
 function validateOptions(options: EngineV6FrameOptions) {
@@ -81,25 +111,45 @@ export function planEngineV6ResolvedScene(
       if (element.kind === 'narrator' || element.kind === 'speech' || element.kind === 'thought') {
         throw Error(`Texto/balão ${element.id} ainda requer um rasterizador de fonte na Engine V6 F1.`)
       }
-      if (element.mouthPatch) {
-        throw Error(`Composição facial ${element.id} ainda requer validação de máscaras na Engine V6 F1.`)
-      }
       if (!element.assetId) throw Error(`Elemento visível sem imagem: ${element.id}.`)
       requireAsset(element.assetId)
       const size = editorV6ElementSize(element)
+      const width = size.width * 19.2
+      const height = size.height * 10.8
       const sprite = element.motionSprite
+      const patch = element.mouthPatch
+      if (patch) {
+        validateFacePatch(element.id, patch)
+        requireAsset(patch.assetId)
+      }
       commands.push({
         kind: 'image',
         assetId: element.assetId,
         ...position(element.x, element.y),
-        width: size.width * 19.2,
-        height: size.height * 10.8,
+        width,
+        height,
         rotation: element.rotation,
         opacity: 1,
         flipX: Boolean(element.flipX),
         contain: element.kind === 'image' && !sprite,
-        ...(sprite ? { source: { x: sprite.x, y: sprite.y, width: sprite.width, height: sprite.height } } : {})
+        ...(sprite ? { source: { x: sprite.x, y: sprite.y, width: sprite.width, height: sprite.height } } : {}),
+        ...(patch?.replace ? { cutout: facePatchCutout(patch) } : {})
       })
+      if (patch) {
+        const flipped = Boolean(element.flipX)
+        const localX = (-width / 2 + patch.x * width + patch.width * width / 2) * (flipped ? -1 : 1)
+        const localY = -height / 2 + patch.y * height + patch.height * height / 2
+        const radians = element.rotation * Math.PI / 180
+        const center = position(element.x, element.y)
+        commands.push({
+          kind: 'image', assetId: patch.assetId,
+          x: center.x + localX * Math.cos(radians) - localY * Math.sin(radians),
+          y: center.y + localX * Math.sin(radians) + localY * Math.cos(radians),
+          width: patch.width * width, height: patch.height * height,
+          rotation: element.rotation, opacity: 1, flipX: flipped,
+          source: { x: patch.sprite.x, y: patch.sprite.y, width: patch.sprite.width, height: patch.sprite.height }
+        })
+      }
     }
   }
   return {

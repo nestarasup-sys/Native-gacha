@@ -33,14 +33,23 @@ function validateFramePlan(plan) {
   }
   for (const command of plan.commands) {
     if (command?.kind === 'solid') {
-      if (![command.x, command.y, command.width, command.height].every(finite) || !COLOR.test(command.color)) throw Error('Retângulo sólido inválido.')
+      if (![command.x, command.y, command.width, command.height].every(finite)
+        || !positive(command.width) || !positive(command.height) || !COLOR.test(command.color)) throw Error('Retângulo sólido inválido.')
       continue
     }
     if (command?.kind !== 'image' || !assets.has(command.assetId)
       || ![command.x, command.y, command.width, command.height, command.rotation, command.opacity].every(finite)
-      || command.opacity < 0 || command.opacity > 1) throw Error('Comando de imagem inválido no compositor offline.')
-    for (const rect of [command.source, command.cutout]) {
-      if (rect && (![rect.x, rect.y, rect.width, rect.height].every(finite) || !positive(rect.width) || !positive(rect.height))) throw Error('Recorte inválido no plano offline.')
+      || !positive(command.width) || !positive(command.height) || command.opacity < 0 || command.opacity > 1) {
+      throw Error('Comando de imagem inválido no compositor offline.')
+    }
+    if (command.source && (![command.source.x, command.source.y, command.source.width, command.source.height].every(Number.isSafeInteger)
+      || command.source.x < 0 || command.source.y < 0 || !positive(command.source.width) || !positive(command.source.height))) {
+      throw Error('Recorte de atlas inválido no plano offline.')
+    }
+    if (command.cutout && (![command.cutout.x, command.cutout.y, command.cutout.width, command.cutout.height].every(finite)
+      || command.cutout.x < 0 || command.cutout.y < 0 || !positive(command.cutout.width) || !positive(command.cutout.height)
+      || command.cutout.x + command.cutout.width > 1 || command.cutout.y + command.cutout.height > 1)) {
+      throw Error('Máscara de recorte inválida no plano offline.')
     }
   }
   return assets
@@ -52,7 +61,7 @@ function intersect(left, top, width, height, maxWidth, maxHeight) {
   return right <= x || bottom <= y ? null : { left: x, top: y, width: right - x, height: bottom - y }
 }
 
-async function buildImageOverlay(command, encoded, width, height) {
+async function buildImageOverlay(command, encoded, width, height, resizeKernel) {
   const scaleX = width / 1920, scaleY = height / command.logicalHeight
   const info = await sharp(encoded, { limitInputPixels: MAX_PIXELS }).metadata()
   if (!Number.isSafeInteger(info.width) || !Number.isSafeInteger(info.height)) throw Error('Metadados de imagem offline indisponíveis.')
@@ -73,7 +82,7 @@ async function buildImageOverlay(command, encoded, width, height) {
   if (rasterWidth > 4096 || rasterHeight > 2160) throw Error('Imagem transformada excede o limite do compositor offline.')
   let image = sharp(encoded, { limitInputPixels: MAX_PIXELS })
     .extract({ left: source.x, top: source.y, width: source.width, height: source.height })
-    .resize(rasterWidth, rasterHeight, { fit: 'fill', kernel: 'lanczos3' })
+    .resize(rasterWidth, rasterHeight, { fit: 'fill', kernel: resizeKernel })
     .ensureAlpha()
   if (command.flipX) image = image.flop()
   if (command.cutout) {
@@ -109,14 +118,22 @@ async function buildSolidOverlay(command, width, height, logicalHeight) {
 }
 
 /** Returns straight-alpha RGBA; the caller must declare pix_fmt=rgba to FFmpeg. */
-async function renderOfflineFrame(plan) {
+async function renderOfflineFrame(plan, options = {}) {
+  if (!options || typeof options !== 'object' || Array.isArray(options)
+    || Object.keys(options).some(key => key !== 'resizeKernel')) {
+    throw Error('Opções desconhecidas para o compositor offline.')
+  }
+  const resizeKernel = options.resizeKernel ?? 'lanczos3'
+  if (!['nearest', 'linear', 'cubic', 'mitchell', 'lanczos2', 'lanczos3'].includes(resizeKernel)) {
+    throw Error('Kernel de redimensionamento inválido para o compositor offline.')
+  }
   const assets = validateFramePlan(plan)
   const overlays = []
   for (const command of plan.commands) {
-    if (command.kind === 'image' && (!positive(command.width) || !positive(command.height) || command.opacity === 0)) continue
+    if (command.kind === 'image' && command.opacity === 0) continue
     const result = command.kind === 'solid'
       ? await buildSolidOverlay(command, plan.width, plan.height, plan.logicalHeight)
-      : await buildImageOverlay({ ...command, logicalHeight: plan.logicalHeight }, assets.get(command.assetId), plan.width, plan.height)
+      : await buildImageOverlay({ ...command, logicalHeight: plan.logicalHeight }, assets.get(command.assetId), plan.width, plan.height, resizeKernel)
     if (!result) continue
     // Sharp requires overlays to remain inside the base. Clip here after rotation.
     const clipped = intersect(result.left, result.top, result.width ?? plan.width, result.height ?? plan.height, plan.width, plan.height)

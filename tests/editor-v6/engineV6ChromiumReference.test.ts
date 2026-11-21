@@ -17,11 +17,12 @@ import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurf
 import { materializeEngineV6LegacyFrame, planEngineV6ResolvedScene } from '../../src/engine-v6/v6FrameAdapter'
 
 const { renderOfflineFrame } = createRequire(import.meta.url)('../../scripts/editor-v6/engine-v3/offlineCompositor.cjs') as {
-  renderOfflineFrame: (plan: ReturnType<typeof materializeEngineV6LegacyFrame>) => Promise<Buffer>
+  renderOfflineFrame: (plan: ReturnType<typeof materializeEngineV6LegacyFrame>, options?: { resizeKernel?: string }) => Promise<Buffer>
 }
 const { compareRgba } = createRequire(import.meta.url)('../../scripts/editor-v6/engine-v3/compareRgba.cjs') as {
   compareRgba: (reference: Buffer, candidate: Buffer, width: number, height: number) => {
     differingPixels: number; differingPixelPercent: number; differingChannels: number; meanAbsoluteChannelError: number
+    channels: Record<string, { differingPixels: number; meanAbsoluteError: number; maxAbsoluteError: number }>
     maxAbsoluteChannelError: number; alpha: { differingPixels: number }; edge: { differingPixels: number }
     interior: { differingPixels: number }; boundingBox: { x: number; y: number; width: number; height: number } | null
     referenceSha256: string; candidateSha256: string; differenceMap: Buffer; differenceMapSha256: string
@@ -74,7 +75,7 @@ function fixture(assets: EditorV6Asset[]): EditorV6Document {
 }
 
 describe('Engine V6 — baseline real Chromium de um frame, sem projeto de usuário', () => {
-  it.skipIf(process.platform !== 'win32')('compara áreas opacas do SceneSurface renderizado no Edge/Chromium ao RGBA da engine', async () => {
+  it.skipIf(process.platform !== 'win32')('compara o frame RGBA completo do SceneSurface com o compositor offline', async () => {
     const assets = [await solidAsset('red', '#ff0000ff'), await solidAsset('green', '#00ff00ff'), await croppedAlphaAsset()]
     const project = fixture(assets)
     project.elements.push(actor('detail', 'alpha-crop', -40))
@@ -106,6 +107,16 @@ describe('Engine V6 — baseline real Chromium de um frame, sem projeto de usuá
       const ir = planEngineV6ResolvedScene(project, scene, SIZE)
       const engine = await renderOfflineFrame(materializeEngineV6LegacyFrame(project, ir))
       const comparison = compareRgba(chromium.data, engine, SIZE.width, SIZE.height)
+      const kernelComparison = []
+      for (const resizeKernel of ['nearest', 'linear', 'cubic', 'mitchell', 'lanczos2', 'lanczos3']) {
+        const candidate = await renderOfflineFrame(materializeEngineV6LegacyFrame(project, ir), { resizeKernel })
+        const metrics = compareRgba(chromium.data, candidate, SIZE.width, SIZE.height)
+        kernelComparison.push({ resizeKernel, differingPixels: metrics.differingPixels,
+          differingPixelPercent: metrics.differingPixelPercent, meanAbsoluteChannelError: metrics.meanAbsoluteChannelError,
+          maxAbsoluteChannelError: metrics.maxAbsoluteChannelError, alphaDifferingPixels: metrics.alpha.differingPixels,
+          edgePixels: metrics.edge.differingPixels, interiorPixels: metrics.interior.differingPixels,
+          outputSha256: metrics.candidateSha256 })
+      }
       const mapPng = await sharp(comparison.differenceMap, { raw: { width: SIZE.width, height: SIZE.height, channels: 4 } }).png().toBuffer()
       await writeFile(join(dir, 'difference-map.png'), mapPng, { flag: 'wx' })
       const hash = (value: Buffer | string) => createHash('sha256').update(value).digest('hex')
@@ -113,8 +124,8 @@ describe('Engine V6 — baseline real Chromium de um frame, sem projeto de usuá
         width: SIZE.width, height: SIZE.height, differingPixels: comparison.differingPixels,
         differingPixelPercent: comparison.differingPixelPercent, differingChannels: comparison.differingChannels,
         meanAbsoluteChannelError: comparison.meanAbsoluteChannelError, maxAbsoluteChannelError: comparison.maxAbsoluteChannelError,
-        alpha: comparison.alpha, edge: comparison.edge, interior: comparison.interior,
-        boundingBox: comparison.boundingBox, inputHtmlSha256: hash(html), chromiumPngSha256: hash(await readFile(output)),
+        channels: comparison.channels, alpha: comparison.alpha, edge: comparison.edge, interior: comparison.interior,
+        boundingBox: comparison.boundingBox, kernelComparison, inputHtmlSha256: hash(html), chromiumPngSha256: hash(await readFile(output)),
         engineRgbaSha256: comparison.candidateSha256, differenceMapSha256: hash(mapPng),
         rawDifferenceMapSha256: comparison.differenceMapSha256
       })}\n`)

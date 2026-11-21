@@ -15,9 +15,14 @@ function compareRgba(reference, candidate, width, height) {
   }
   const count = width * height
   const differenceMap = Buffer.alloc(count * 4)
+  const channelNames = ['red', 'green', 'blue', 'alpha']
+  const channelErrorTotals = [0, 0, 0, 0]
+  const channelErrorCounts = [0, 0, 0, 0]
+  const channelMaximums = [0, 0, 0, 0]
   const result = {
     width, height, pixels: count, differingPixels: 0, differingPixelPercent: 0,
     differingChannels: 0, meanAbsoluteChannelError: 0, maxAbsoluteChannelError: 0,
+    channels: null,
     alpha: { differingPixels: 0, meanAbsoluteError: 0, maxAbsoluteError: 0 },
     edge: { differingPixels: 0, differingChannels: 0 },
     interior: { differingPixels: 0, differingChannels: 0 },
@@ -32,6 +37,9 @@ function compareRgba(reference, candidate, width, height) {
     for (let channel = 0; channel < 4; channel++) {
       const error = Math.abs(reference[offset + channel] - candidate[offset + channel])
       channelError += error
+      channelErrorTotals[channel] += error
+      if (error) channelErrorCounts[channel]++
+      channelMaximums[channel] = Math.max(channelMaximums[channel], error)
       result.maxAbsoluteChannelError = Math.max(result.maxAbsoluteChannelError, error)
       if (error) { pixelDiff = true; pixelChannels++; result.differingChannels++ }
       if (channel === 3 && error) {
@@ -68,6 +76,11 @@ function compareRgba(reference, candidate, width, height) {
   result.differingPixelPercent = result.differingPixels * 100 / count
   result.meanAbsoluteChannelError = channelError / (count * 4)
   result.alpha.meanAbsoluteError = alphaError / count
+  result.channels = Object.fromEntries(channelNames.map((name, channel) => [name, {
+    differingPixels: channelErrorCounts[channel],
+    meanAbsoluteError: channelErrorTotals[channel] / count,
+    maxAbsoluteError: channelMaximums[channel]
+  }]))
   if (result.differingPixels) result.boundingBox = { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 }
   return { ...result, differenceMap, differenceMapSha256: sha256(differenceMap) }
 }

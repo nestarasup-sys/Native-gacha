@@ -84,6 +84,9 @@ test('rejects unsafe, missing and out-of-range inputs', async () => {
   const red = await png([255, 0, 0, 255], 1, 1)
   const invalid = plan([image('red', { source: { x: 2, y: 0, width: 1, height: 1 } })], [asset('red', red)])
   await assert.rejects(() => renderOfflineFrame(invalid), /Recorte de atlas/)
+  assert.throws(() => validateFramePlan(plan([image('red', { width: 0 })], [asset('red', red)])), /Comando de imagem inválido/)
+  assert.throws(() => validateFramePlan(plan([image('red', { cutout: { x: .9, y: 0, width: .2, height: 1 } })], [asset('red', red)])), /Máscara de recorte inválida/)
+  assert.throws(() => validateFramePlan(plan([{ kind: 'solid', x: 0, y: 0, width: -1, height: 1, color: '#fff' }])), /Retângulo sólido inválido/)
 })
 
 test('repeated renders with identical input return identical buffers', async () => {
@@ -92,6 +95,10 @@ test('repeated renders with identical input return identical buffers', async () 
   const first = await renderOfflineFrame(scene)
   const second = await renderOfflineFrame(scene)
   assert.equal(first.equals(second), true)
+})
+
+test('rejects resize kernels outside the bounded raster comparison experiment', async () => {
+  await assert.rejects(() => renderOfflineFrame(plan(), { resizeKernel: 'invented' }), /Kernel de redimensionamento inválido/)
 })
 
 test('renders stacked V6 background/foreground command coordinates', async () => {

@@ -1,5 +1,5 @@
 import type { EditorV6Document } from '../../../src/shared/editorV6'
-import { planEditorV6Audio, type EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
+import { editorV6TimelineMediaAudio as resolveTimelineMediaAudio, planEditorV6Audio, type EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
 
 type PlannedAudioClip = ReturnType<typeof planEditorV6Audio>[number]
 
@@ -9,12 +9,7 @@ function errorMessage(error: unknown) {
 
 /** Resolves timeline audio blocks into export clips while honoring track and block visibility. */
 export function editorV6TimelineMediaAudio(project: EditorV6Document): EditorV6ExportAudio[] {
-  const media = new Map((project.media ?? []).filter((asset) => asset.hasAudio).map((asset) => [asset.id, asset]))
-  return project.timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => {
-    const asset = block.mediaId ? media.get(block.mediaId) : undefined
-    if (!asset || (track.kind !== 'audio' && !(track.kind === 'video' && asset.kind === 'video')) || track.muted || track.hidden || block.audioEnabled === false) return []
-    return [{ id: block.id, name: asset.name, fileName: asset.fileName, ...(asset.libraryVideoId ? { libraryVideoId: asset.libraryVideoId } : {}), ...(asset.libraryAudioId ? { libraryAudioId: asset.libraryAudioId } : {}), sourceFrames: asset.sourceFrames, startFrame: block.startFrame, sourceInFrame: block.mediaInFrame ?? 0, durationFrames: block.durationFrames, gain: block.gain ?? 1, muted: false }]
-  }))
+  return resolveTimelineMediaAudio(project)
 }
 
 /** Combines project-level audio with visible audio-enabled timeline media in the same order as export. */
