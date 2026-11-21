@@ -64,9 +64,11 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
     if (state.faceModeAssetIds) state.faceModeAssetIds = Object.fromEntries(Object.entries(state.faceModeAssetIds).map(([mode, id]) => [mode, id === beforeAsset.id ? snapshot.id : id])) as EditorV6Element['faceModeAssetIds']
     next = { ...next, assets: [...next.assets.filter((asset) => asset.id !== beforeAsset.id && asset.id !== snapshot.id), beforeAsset, snapshot] }
   }
-  next = { ...next, elements: next.elements.map((element) => element.id === base.id ? base : element), timeline: { ...next.timeline, tracks: next.timeline.tracks.map((track) => ({
-    ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, state, label: state.text.trim().slice(0, 120) || block.label } : block)
-  })) } }
+  const label = state.text.trim().slice(0, 120)
+  const tracks = next.timeline.tracks.map((track) => track.blocks.some(block => block.id === blockId) ? {
+    ...track, blocks: track.blocks.map((block) => block.id === blockId ? { ...block, state, label: label || block.label } : block)
+  } : track)
+  next = { ...next, elements: next.elements.map((element) => element.id === base.id ? base : element), timeline: { ...next.timeline, tracks } }
   if (clip.track.kind === 'character' && state.kind === 'character' && (state.x !== before.x || state.y !== before.y)) {
     next = setEditorV6CharacterPosition(next, base.id, { x: state.x, y: state.y })
   }
@@ -74,9 +76,13 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
 }
 
 export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): EditorV6Document {
-  const keys = new Map(editorV6MotionPlans(document).map((plan) => [plan.blockId, plan.key]))
-  if (timelineClips(document.timeline).some(({ block }) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key)) {
-    document = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key ? { ...block, incomingMotion: undefined } : block) })) } }
+  const clips = timelineClips(document.timeline)
+  const prepared = clips.filter(({ block }) => block.incomingMotion)
+  if (prepared.length) {
+    const keys = new Map(editorV6MotionPlans(document, { preparedOnly: true }).map((plan) => [plan.blockId, plan.key]))
+    if (prepared.some(({ block }) => keys.get(block.id) !== block.incomingMotion?.key)) {
+      document = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => block.incomingMotion && keys.get(block.id) !== block.incomingMotion.key ? { ...block, incomingMotion: undefined } : block) })) } }
+    }
   }
   const referenced = new Set([document.backgroundAssetId,
     ...document.elements.flatMap((element) => [element.assetId, ...Object.values(element.faceModeAssetIds ?? {})]),

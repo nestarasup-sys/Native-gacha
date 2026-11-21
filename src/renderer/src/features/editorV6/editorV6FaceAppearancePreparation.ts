@@ -2,6 +2,7 @@ import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../
 import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { bakeFaceModeAssets, measureFaceModeCrop, PreparedEditorV6FaceRenderer } from './faceModeAssets'
 import type { TrimmedImage } from '../../characters/transparentImageTrim'
+import type { createEditorV6InteractiveFaceBakes } from './editorV6InteractiveFaceBakes'
 
 type BakedFace = Awaited<ReturnType<typeof bakeFaceModeAssets>>
 type FaceRender = Awaited<ReturnType<PreparedEditorV6FaceRenderer['renderToCanvas']>>
@@ -15,11 +16,12 @@ type FaceAppearancePreparationDependencies = {
   faceModeForElement: (element: EditorV6Element, appearance?: CustomizerFaceAppearance) => EditorV6FaceRenderMode
   measureCrop: typeof measureFaceModeCrop
   bakeAssets: typeof bakeFaceModeAssets
+  interactiveBakes: ReturnType<typeof createEditorV6InteractiveFaceBakes>
 }
 
 export type PreparedEditorV6FaceAppearance = {
   baseMode: EditorV6FaceRenderMode
-  rendered: FaceRender
+  rendered: Pick<FaceRender, 'width' | 'height'>
   baked: BakedFace
   previousCrop: Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null
 }
@@ -45,29 +47,19 @@ export async function prepareEditorV6FaceAppearance(
     : element.activeFaceMode
   const baseMode = faceMode ?? dependencies.faceModeForElement(element, appearance)
 
-  const previousRendered = await renderer.renderToCanvas(
-    element.faceAppearance ?? character.customization.faceAppearance,
-    element.faceTransforms,
-    element.activeExpressionEffects,
-    element.activeFaceMode
+  const previousAppearance = element.faceAppearance ?? character.customization.faceAppearance
+  let previousCrop: PreparedEditorV6FaceAppearance['previousCrop'] | undefined = element.activeFaceMode && dependencies.interactiveBakes.previousCrop(
+    renderer, element.text, previousAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode
   )
   // Saved snapshots use the union of all face modes, not the active frame alone.
-  const previousCrop = await dependencies.measureCrop(
-    element.text, renderer, element.faceAppearance ?? character.customization.faceAppearance,
-    element.faceTransforms, element.activeExpressionEffects,
-    element.activeFaceMode ?? dependencies.faceModeForElement(element, element.faceAppearance ?? character.customization.faceAppearance),
-    previousRendered
-  )
-  const rendered = await renderer.renderToCanvas(appearance, faceTransforms, activeEffects, baseMode)
-  const baked = await dependencies.bakeAssets(
-    element.text,
-    renderer,
-    appearance,
-    faceTransforms,
-    activeEffects,
-    baseMode,
-    rendered
-  )
-
-  return { baseMode, rendered, baked, previousCrop }
+  if (previousCrop === undefined) {
+    const previousRendered = await renderer.renderToCanvas(previousAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode)
+    previousCrop = await dependencies.measureCrop(
+      element.text, renderer, previousAppearance, element.faceTransforms, element.activeExpressionEffects,
+      element.activeFaceMode ?? dependencies.faceModeForElement(element, previousAppearance),
+      previousRendered
+    )
+  }
+  const prepared = await dependencies.interactiveBakes.bake(renderer, element.text, appearance, faceTransforms, activeEffects, baseMode, dependencies.bakeAssets)
+  return { baseMode, ...prepared, previousCrop }
 }

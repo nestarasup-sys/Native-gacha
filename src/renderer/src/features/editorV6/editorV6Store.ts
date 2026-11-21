@@ -41,14 +41,14 @@ export const useEditorV6Store = create<EditorV6HistoryStore>()(immer((set, get) 
     if (index < 0) state.projects.push(summary)
     else state.projects[index] = summary
   }),
-  updateActiveProject: (update) => set((state) => {
-    if (!state.activeProject) return
-    state.activeProject = update(state.activeProject)
-    const summary = editorV6ProjectSummary(state.activeProject)
-    const index = state.projects.findIndex((item) => item.id === summary.id)
-    if (index < 0) state.projects.push(summary)
-    else state.projects[index] = summary
-  }),
+  updateActiveProject: (update) => {
+    // The commands are immutable. Running one against an Immer draft makes
+    // each scan wrap timeline blocks and defeats indexes keyed by identity.
+    const current = get().activeProject
+    if (!current) return
+    const next = update(current)
+    if (next !== current) get().setActiveProject(next)
+  },
   upsertSummary: (summary) => set((state) => {
     const index = state.projects.findIndex((item) => item.id === summary.id)
     if (index < 0) state.projects.push(summary)

@@ -152,15 +152,16 @@ export function editorV6MotionHasCompleteFaceAtlas(
 }
 
 const plansCache = new WeakMap<EditorV6Document['timeline'], Map<boolean, EditorV6MotionPlan[]>>()
-export function editorV6MotionPlans(document: EditorV6Document, options: { includeSpeechMouth?: boolean } = {}): EditorV6MotionPlan[] {
+export function editorV6MotionPlans(document: EditorV6Document, options: { includeSpeechMouth?: boolean; preparedOnly?: boolean } = {}): EditorV6MotionPlan[] {
   const includeSpeechMouth = options.includeSpeechMouth !== false
   const cached = plansCache.get(document.timeline)?.get(includeSpeechMouth)
-  if (cached) return cached
+  if (cached && !options.preparedOnly) return cached
   const plans: EditorV6MotionPlan[] = []
   for (const track of document.timeline.tracks) {
     if (track.kind !== 'character' || track.hidden || track.muted || track.motionEnabled === false) continue
     const sorted = orderedEditorV6TimelineBlocks(track.blocks)
     for (let index = 1; index < sorted.length; index++) {
+      if (options.preparedOnly && !sorted[index].incomingMotion) continue
       const plan = motionPlanWithoutKey(track, sorted[index - 1], sorted[index])
       if (!plan) continue
       // Baked transitions keep eyes open. Their only automatic face mode is speech.
@@ -173,6 +174,7 @@ export function editorV6MotionPlans(document: EditorV6Document, options: { inclu
       plans.push({ ...plan, key: motionKey(plan) })
     }
   }
+  if (options.preparedOnly) return plans
   const variants = plansCache.get(document.timeline) ?? new Map<boolean, EditorV6MotionPlan[]>()
   variants.set(includeSpeechMouth, plans)
   plansCache.set(document.timeline, variants)

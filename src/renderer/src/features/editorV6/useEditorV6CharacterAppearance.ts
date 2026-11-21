@@ -1,13 +1,16 @@
+import { useRef } from 'react'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceTransform } from '../../../../shared/editorV6'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
-import { bakeFaceModeAssets, editorV6FaceModeForElement, measureFaceModeCrop, trimTransparentCanvas } from './faceModeAssets'
+import { bakeFaceModeAssets, canvasFaceAlphaBounds, editorV6FaceModeForElement, measureFaceModeCrop } from './faceModeAssets'
 import { prepareEditorV6FaceAppearance } from './editorV6FaceAppearancePreparation'
 import { createEditorV6CharacterAppearanceCommands } from './editorV6CharacterAppearanceCommands'
 import { prepareEditorV6PoseChange } from './editorV6PosePreparation'
 import { createEditorV6FaceTransformCommands } from './editorV6FaceTransformCommands'
 import { useEditorV6FacePreview } from './useEditorV6FacePreview'
 import type { PoseRevisionSnapshot } from './editorV6CharacterSourceModel'
+import { editorV6PoseRevisionKey } from './editorV6CharacterSourceRevisions'
+import { createEditorV6InteractiveFaceBakes } from './editorV6InteractiveFaceBakes'
 
 type FacePreviewOptions = Parameters<typeof useEditorV6FacePreview>[0]
 type Options = FacePreviewOptions & {
@@ -27,7 +30,9 @@ type Options = FacePreviewOptions & {
 
 /** Connects face preview rendering, appearance/pose preparation, and transform edits. */
 export function useEditorV6CharacterAppearance(options: Options) {
-  const facePreview = useEditorV6FacePreview(options)
+  const facePreview = useEditorV6FacePreview({ ...options, sourceSnapshot: options.poseSourceSnapshot })
+  const bakes = useRef<ReturnType<typeof createEditorV6InteractiveFaceBakes> | null>(null)
+  const interactiveBakes = bakes.current ??= createEditorV6InteractiveFaceBakes()
   const appearance = createEditorV6CharacterAppearanceCommands({
     activeProject: options.activeProject,
     selectedElement: options.selectedElement,
@@ -40,19 +45,26 @@ export function useEditorV6CharacterAppearance(options: Options) {
     prepareFaceAppearance: (input, renderer) => prepareEditorV6FaceAppearance(input, renderer, {
       faceModeForElement: editorV6FaceModeForElement,
       measureCrop: measureFaceModeCrop,
-      bakeAssets: bakeFaceModeAssets
+      bakeAssets: bakeFaceModeAssets,
+      interactiveBakes
     }),
-    preparePoseChange: async (input) => {
-      const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
-      return prepareEditorV6PoseChange(input, {
-        prepareRenderer: prepareSavedCharacterRenderer,
-        bakeAssets: bakeFaceModeAssets,
-        trimCanvas: trimTransparentCanvas,
-        faceModeForElement: editorV6FaceModeForElement,
-        getStageSize: () => ({ width: options.sceneRef.current?.clientWidth ?? 1000, height: options.sceneRef.current?.clientHeight ?? 562 }),
-        faceRenderGeometry
-      })
-    },
+    preparePoseChange: (input) => prepareEditorV6PoseChange(input, {
+      withRenderer: (character, run) => {
+        const modelSlot = character.customization.modelSlot ?? 1
+        const poseSlot = character.customization.poseSlot
+        const revisions = options.poseSourceSnapshot
+        const poseRevision = typeof poseSlot === 'number'
+          ? revisions?.revisions[editorV6PoseRevisionKey(modelSlot, poseSlot)] ?? (revisions ? 'missing' : undefined)
+          : undefined
+        return facePreview.withRenderer(character, poseRevision, revisions?.modelRevisions[modelSlot] ?? input.element.modelSourceRevision, run)
+      },
+      bakeAssets: bakeFaceModeAssets,
+      interactiveBakes,
+      trimCanvas: canvasFaceAlphaBounds,
+      faceModeForElement: editorV6FaceModeForElement,
+      getStageSize: () => ({ width: options.sceneRef.current?.clientWidth ?? 1000, height: options.sceneRef.current?.clientHeight ?? 562 }),
+      faceRenderGeometry
+    }),
     changeScene: options.changeScene,
     patchDocument: options.patchDocument,
     setError: options.setError

@@ -81,6 +81,7 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     patchEditorV6FacePreview: editing.patchFacePreview,
     recordHistory,
     changeScene,
+    changeAppearance: editing.changeAppearance,
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
     ...sceneCommands,

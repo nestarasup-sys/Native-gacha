@@ -66,3 +66,18 @@ Na verificação sintética de MP4, os casos padrão `current-parity`, `capture-
 - A comparação dos 6.000 quadros decodificados com o MP4 histórico de referência deu SSIM de 0,999113. O conteúdo codificado da faixa de áudio teve o mesmo SHA-256.
 - O corte levou 184,19 s do início do fluxo até a validação e ficou 21,50 s (13,22%) acima da referência histórica de 162,69 s com os mesmos parâmetros. A renderização passou de 108,67 s para 129,02 s. A soma da espera dos workers após a navegação passou de 14,51 s para 36,84 s, e a taxa de leituras de captura antigas passou de 14,54% para 22,90%. As duas execuções usaram árvores com mudanças locais e a nova medição contém uma única amostra. O relatório não isola a causa da diferença nem confirma ganho no tempo total.
 - Ainda falta medir na interface real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo da prévia. O tempo de exportação continua acima da meta de 90 s.
+
+## Troca de preset e pose na timeline
+
+- A troca prepara corpo, rosto, recorte e até quatro PNGs antes de publicar o snapshot. O preset também media de novo o recorte anterior. A edição passava todos os blocos pelo Immer, sincronizava as faixas e calculava planos sem atlas ao limpar snapshots.
+- A preparação interativa mantém dois renderizadores recentes e reaproveita seus PNGs e recortes por aparência, transformação, efeitos e modo. Troca de projeto ou revisão de fonte invalida os renderizadores. Uma primeira preparação ainda renderiza as variantes e codifica seus PNGs, com até duas codificações simultâneas.
+- A edição de aparência grava pelo caminho do bloco selecionado, sem sincronizar a estrutura inteira. O estado recebe a transformação imutável sobre o documento estável. A limpeza calcula chaves apenas para blocos com atlas preparado.
+
+| Projeto sintético | Ação | Primeira troca, antes → depois | Mediana de sete trocas com repetição, antes → depois |
+| --- | --- | ---: | ---: |
+| 24 blocos | Preset | 296,3 → 168,3 ms | 140,6 → 0,3 ms |
+| 24 blocos | Pose | 160,0 → 131,5 ms | 135,7 → 0,3 ms |
+| 8.550 blocos | Preset | 923,2 → 189,3 ms | 856,7 → 7,7 ms |
+| 8.550 blocos | Pose | 834,7 → 167,0 ms | 855,1 → 8,1 ms |
+
+O ensaio no Electron compara `014246be` com o caminho atualizado, usando canvases sintéticos de 960×1280. O tempo cobre preparo, gravação no estado e resolução da cena. Os PNGs e recortes comparados foram idênticos. A medição exclui leituras reais do Fabricador e a pintura final da interface. A verificação integrada de movimento e geometria facial também passou.

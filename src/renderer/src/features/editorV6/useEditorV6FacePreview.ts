@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6FaceTransforms } from '../../../../shared/editorV6'
+import { editorV6CharacterRenderKey } from '../../../../shared/editorV6SceneModel'
+import type { PoseRevisionSnapshot } from './editorV6CharacterSourceRevisions'
 import { faceRenderGeometry } from '../../characters/characterGeometry'
 import {
   bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, editorV6FaceModeForElement, trimTransparentCanvas,
@@ -21,6 +23,7 @@ type MutableRef<T> = { current: T }
 type Dependencies = {
   activeProject: EditorV6Document | null
   activeProjectId: string | null
+  sourceSnapshot?: PoseRevisionSnapshot | null
   sceneRef: MutableRef<HTMLDivElement | null>
   transformsRef: MutableRef<Record<string, EditorV6FaceTransforms>>
   patchProject: (projectId: string, blockId: string | null | undefined, transform: (project: EditorV6Document) => EditorV6Document) => void
@@ -35,16 +38,27 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
   const renderTimerRef = useRef<number | null>(null)
   const renderVersionRef = useRef(0)
   const renderRunningRef = useRef(false)
+  const commandRunningRef = useRef(false)
   const disposedRef = useRef(false)
   const disposeWhenIdleRef = useRef(false)
   const rendererCacheRef = useRef<ReturnType<typeof createEditorV6FaceRendererCache> | null>(null)
   const rendererCacheProjectIdRef = useRef(dependencies.activeProjectId)
+  const rendererCacheSourceRef = useRef(dependencies.sourceSnapshot)
 
   if (!rendererCacheRef.current) {
     rendererCacheRef.current = createEditorV6FaceRendererCache(async (character) => {
       const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
       return prepareSavedCharacterRenderer(character)
-    })
+    }, (character, poseRevision, modelRevision) => {
+      const appearance = character.customization.faceAppearance
+      // Legacy face sets are painted when the rig is created. Catalog faces
+      // supply their individual pieces to the same rig at render time.
+      return JSON.stringify([
+        editorV6CharacterRenderKey(character, poseRevision, modelRevision),
+        character.updatedAt,
+        appearance?.setId ? appearance : appearance?.modelSlot
+      ])
+    }, 2)
   }
   const rendererCache = rendererCacheRef.current
 
@@ -153,15 +167,26 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
     modelSourceRevision: string | undefined,
     operation: (renderer: PreparedEditorV6FaceRenderer) => Promise<T>
   ): Promise<T | null> => {
-    await cancelPendingAndWait()
-    if (disposedRef.current) return null
-    renderRunningRef.current = true
+    const projectId = dependencies.activeProjectId
+    const sourceSnapshot = dependencies.sourceSnapshot
+    if (commandRunningRef.current) return null
+    commandRunningRef.current = true
     try {
-      const renderer = await rendererCache.get(character, poseSourceRevision, () => !disposedRef.current, modelSourceRevision)
-      if (!renderer || disposedRef.current) return null
-      return await operation(renderer)
+      await cancelPendingAndWait()
+      const isCurrent = () => !disposedRef.current && dependenciesRef.current.activeProjectId === projectId
+        && dependenciesRef.current.sourceSnapshot === sourceSnapshot
+      if (!isCurrent()) return null
+      renderRunningRef.current = true
+      try {
+        const renderer = await rendererCache.get(character, poseSourceRevision, isCurrent, modelSourceRevision)
+        if (!renderer || !isCurrent()) return null
+        const result = await operation(renderer)
+        return isCurrent() ? result : null
+      } finally {
+        finishRenderRun()
+      }
     } finally {
-      finishRenderRun()
+      commandRunningRef.current = false
     }
   }
 
@@ -190,8 +215,10 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
 
   useEffect(() => {
     const currentProjectId = dependencies.activeProjectId
-    if (!shouldResetEditorV6FacePreviewCache(rendererCacheProjectIdRef.current, currentProjectId)) return
+    if (!shouldResetEditorV6FacePreviewCache(rendererCacheProjectIdRef.current, currentProjectId)
+      && rendererCacheSourceRef.current === dependencies.sourceSnapshot) return
     rendererCacheProjectIdRef.current = currentProjectId
+    rendererCacheSourceRef.current = dependencies.sourceSnapshot
     renderVersionRef.current += 1
     pendingJobRef.current = null
     clearRenderTimer()
@@ -200,7 +227,7 @@ export function useEditorV6FacePreview(dependencies: Dependencies) {
       disposeWhenIdleRef.current = false
       rendererCache.dispose()
     }
-  }, [dependencies.activeProjectId, rendererCache])
+  }, [dependencies.activeProjectId, dependencies.sourceSnapshot, rendererCache])
 
   return { renderRunningRef, schedulePreview, flushPreview, cancelPendingAndWait, withRenderer }
 }
