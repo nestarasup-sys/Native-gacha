@@ -7,11 +7,10 @@ import type { RoteiroUiGifLibraryStore } from './roteiroUiGifLibrary'
 import type { DomainFileSystem } from './domainFileSystem.cjs'
 
 const libraryAssetIdPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const videoMimeTypes = { mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', m4v: 'video/x-m4v' } as const
 
 type MediaProtocolDependencies = {
   protocol: Pick<Protocol, 'handle'>
-  videoLibrary: Pick<VideoLibraryStore, 'resolveMedia'>
+  videoLibrary: Pick<VideoLibraryStore, 'resolveStreamMedia'>
   backgroundLibrary: Pick<VideoBackgroundLibraryStore, 'resolve'>
   gifLibrary: Pick<RoteiroUiGifLibraryStore, 'resolve'>
   fileSystem: Pick<DomainFileSystem, 'resolvePhysicalPath'>
@@ -52,9 +51,9 @@ export function registerMediaProtocols({
     try {
       const id = libraryAssetIdFromUrl(request.url)
       if (!id) return new Response('Not found', { status: 404 })
-      const media = await videoLibrary.resolveMedia(id)
+      const media = await videoLibrary.resolveStreamMedia(id)
       const path = await fileSystem.resolvePhysicalPath(media.path) ?? media.path
-      return await createMediaFileResponse(request, path, videoMimeTypes[media.extension])
+      return await createMediaFileResponse(request, path, media.mimeType)
     } catch {
       return new Response('Not found', { status: 404 })
     }
@@ -64,7 +63,7 @@ export function registerMediaProtocols({
     projectPath: editorV6Path,
     readManifest: readEditorV6Manifest,
     resolveLibraryMedia: async (id) => {
-      const media = await videoLibrary.resolveMedia(id)
+      const media = await videoLibrary.resolveStreamMedia(id)
       return { path: await fileSystem.resolvePhysicalPath(media.path) ?? media.path, mimeType: media.mimeType }
     },
     resolveLibraryAsset: resolveEditorV6LibraryAsset,

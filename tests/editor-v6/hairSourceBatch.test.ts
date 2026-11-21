@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CharacterRenderAssetProvider } from '../../src/shared/characterRenderAssets'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
-import { createEditorV6HairSourceBatch } from '../../src/renderer/src/features/editorV6/motion/hairSourceBatch'
+import { createEditorV6CharacterSourceBatch } from '../../src/renderer/src/features/editorV6/motion/characterSourceBatch'
 
 function character(modelSlot: number, poseSlot: number | null, id = 'actor'): CustomizerCharacter {
   return { id, name: id, customization: { modelSlot, poseSlot } } as unknown as CustomizerCharacter
@@ -14,7 +14,7 @@ function provider() {
 describe('R25 first-export Fabricator model and pose source reuse', () => {
   it('shares concurrent source requests without sharing shaped character renderers', async () => {
     const { api, loadFabricatorSlot, loadFabricatorPose } = provider()
-    const batch = createEditorV6HairSourceBatch(api)
+    const batch = createEditorV6CharacterSourceBatch(api)
     const [a, b, c] = await Promise.all([
       batch.sourceFor(character(2, 3, 'hero')),
       batch.sourceFor(character(2, 3, 'other')),
@@ -30,7 +30,7 @@ describe('R25 first-export Fabricator model and pose source reuse', () => {
   })
   it('never requests a pose for base-model selection (null), and separates model slots', async () => {
     const { api, loadFabricatorSlot, loadFabricatorPose } = provider()
-    const batch = createEditorV6HairSourceBatch(api)
+    const batch = createEditorV6CharacterSourceBatch(api)
     const [base, other] = await Promise.all([batch.sourceFor(character(1, null)), batch.sourceFor(character(2, null))])
     expect(base.artwork).toBe(base.source)
     expect(other.artwork).toBe(other.source)
@@ -41,12 +41,12 @@ describe('R25 first-export Fabricator model and pose source reuse', () => {
   it('never persists across exports; a failed read is retried instead of retained', async () => {
     const { api, loadFabricatorSlot } = provider()
     loadFabricatorSlot.mockRejectedValueOnce(Error('temporarily unavailable'))
-    const first = createEditorV6HairSourceBatch(api)
+    const first = createEditorV6CharacterSourceBatch(api)
     await expect(first.sourceFor(character(2, null))).rejects.toThrow('temporarily unavailable')
     await expect(first.sourceFor(character(2, null))).resolves.toBeDefined()
     expect(loadFabricatorSlot).toHaveBeenCalledTimes(2)
     first.clear()
-    const second = createEditorV6HairSourceBatch(api)
+    const second = createEditorV6CharacterSourceBatch(api)
     await second.sourceFor(character(2, null))
     expect(loadFabricatorSlot).toHaveBeenCalledTimes(3)
   })

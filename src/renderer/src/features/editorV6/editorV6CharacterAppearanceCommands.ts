@@ -36,7 +36,7 @@ type Dependencies = {
     input: Parameters<typeof prepareEditorV6FaceAppearance>[0],
     renderer: PreparedEditorV6FaceRenderer
   ) => Promise<PreparedEditorV6FaceAppearance>
-  preparePoseChange: (input: Parameters<typeof prepareEditorV6PoseChange>[0]) => Promise<PreparedEditorV6PoseChange>
+  preparePoseChange: (input: Parameters<typeof prepareEditorV6PoseChange>[0]) => Promise<PreparedEditorV6PoseChange | null>
   changeScene: (update: (project: EditorV6Document) => EditorV6Document) => void
   patchDocument: (update: (project: EditorV6Document) => EditorV6Document) => void
   setError: (message: string | null) => void
@@ -106,7 +106,9 @@ export function createEditorV6CharacterAppearanceCommands(dependencies: Dependen
 
     dependencies.setFaceBusy(true)
     try {
-      const { baseMode, baked, geometry } = await dependencies.preparePoseChange({ character, element, poseSlot })
+      const prepared = await dependencies.preparePoseChange({ character, element, poseSlot })
+      if (!prepared) return
+      const { baseMode, baked, geometry } = prepared
       const elementId = element.id
       const assetId = element.assetId
       const revisions = dependencies.poseSourceSnapshot

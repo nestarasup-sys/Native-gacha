@@ -28,15 +28,15 @@ export function createEditorV6ExportMouthLoopResolver(
   const hairSourceAssetId = (element: { assetId?: string }) => element.assetId ? mouthlessSourceAssetById.get(element.assetId) ?? element.assetId : undefined
   const applyMouthLoop = (scene: Scene, frame: number) => {
     if (!mouthLoops && !hairPoseReactionEnds.size) return scene
-    const scale = mouthLoops ? editorV6MouthLoopScaleAtFrame(frame, mouthLoops.startFrame, mouthLoops.cycleFrames) : 1
-    const sampleIndex = Math.round((scale - 1) / (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[2] - 1) * 2)
-    return { ...scene, elements: scene.elements.map((element) => {
+    let sampleIndex: number | undefined
+    const resolveElement = (element: Scene['elements'][number]) => {
       if (element.kind !== 'character' || !element.characterId) return element
       // Pose and preset share the baked sprite; mouth animation is held at 1x.
       // No extra per-sample face atlas is required during the transition.
       if (element.motionSprite) return element
 
       const reacting = hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
+      if (!mouthLoops && !reacting) return element
       const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
       if (faceMode !== 'talk' && faceMode !== 'talk-blink') {
         if (!reacting || faceMode !== 'blink') return element
@@ -53,11 +53,24 @@ export function createEditorV6ExportMouthLoopResolver(
       if (!state || state.characterId !== element.characterId) return element
       // Hold a single 1x sample with open eyes while rear hair settles.
       const mode = reacting ? 'talk' : faceMode
-      const motion = state.frames[reacting ? 0 : sampleIndex] ?? state.frames[0]
+      if (!reacting && sampleIndex === undefined) {
+        const scale = editorV6MouthLoopScaleAtFrame(frame, mouthLoops.startFrame, mouthLoops.cycleFrames)
+        sampleIndex = Math.round((scale - 1) / (EDITOR_V6_MOUTH_LOOP_SAMPLE_SCALES[2] - 1) * 2)
+      }
+      const motion = state.frames[reacting ? 0 : sampleIndex!] ?? state.frames[0]
       if (!motion?.facePatch) throw Error(`A camada facial de ${element.text || element.characterId} está incompleta; a exportação foi interrompida para evitar um vídeo sem animação de boca.`)
       const mouthlessAssetId = state.baseAssetIds?.[mode]
       return { ...element, ...(mouthlessAssetId ? { assetId: mouthlessAssetId } : {}), mouthPatch: { assetId: state.assetId, ...motion.facePatch } }
-    }) }
+    }
+    let elements: Scene['elements'] | undefined
+    for (let index = 0; index < scene.elements.length; index++) {
+      const element = resolveElement(scene.elements[index])
+      if (element !== scene.elements[index]) {
+        elements ??= scene.elements.slice()
+        elements[index] = element
+      }
+    }
+    return elements ? { ...scene, elements } : scene
   }
 
   return { applyMouthLoop, hairSourceAssetId, facePatchSourceCrop: (assetId: string) => patchSourceCropByAssetId.get(assetId) }

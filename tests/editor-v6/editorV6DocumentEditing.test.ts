@@ -42,6 +42,28 @@ function harness(options: { project?: EditorV6Document | null; selectedElementId
 afterEach(() => { useEditorV6Store.getState().clear('edit-project') })
 
 describe('edição do documento do Editor V6', () => {
+  it('grava a aparência no bloco selecionado, mantendo a faixa alheia e o estado anterior disponíveis', () => {
+    const initial = makeProject()
+    const block = initial.timeline.tracks.find(track => track.kind === 'character')!.blocks[1]
+    const unrelatedTrack = initial.timeline.tracks.find(track => track.kind === 'video')
+    const { commands, getProject } = harness({ project: initial, selectedTimelineBlockId: block.id })
+
+    commands.changeAppearance(document => ({
+      ...document,
+      elements: document.elements.map(element => ({ ...element, poseSlot: 7 })),
+      assets: document.assets.map(asset => ({ ...asset, dataUrl: 'data:pose-7' }))
+    }))
+
+    const updated = getProject()!
+    const [first, second] = updated.timeline.tracks.find(track => track.kind === 'character')!.blocks
+    expect(updated.timeline.tracks.find(track => track.kind === 'video')).toBe(unrelatedTrack)
+    expect(first.state?.assetId).toBe('asset-1')
+    expect(second.state?.poseSlot).toBe(7)
+    expect(updated.assets.find(asset => asset.id === first.state?.assetId)?.dataUrl).toBe('data:actor')
+    expect(updated.assets.find(asset => asset.id === second.state?.assetId)?.dataUrl).toBe('data:pose-7')
+    expect(useEditorV6Store.getState().histories[initial.id].undo[0].timeline).toBe(initial.timeline)
+  })
+
   it('aplica patch ao bloco selecionado e mantém o snapshot do período anterior', () => {
     const initial = makeProject()
     const tracks = initial.timeline.tracks.map((track) => track.kind === 'character'

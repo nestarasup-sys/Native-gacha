@@ -29,9 +29,9 @@ test('registra e serve vídeos, fundos e GIFs pelas bibliotecas autorizadas', as
   registerMediaProtocols({
     protocol: { handle: (scheme, handler) => handlers.set(scheme, handler) },
     videoLibrary: {
-      resolveMedia: async (id) => {
+      resolveStreamMedia: async (id) => {
         calls.video.push(id)
-        return { path: 'logical-video.mp4', name: 'fixture', mimeType: 'video/mp4', extension: 'mp4', size: bytes.length, durationFrames: 30 }
+        return { path: 'logical-video.mp4', mimeType: 'video/mp4' }
       }
     },
     backgroundLibrary: {

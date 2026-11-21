@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import type { EditorV6Asset, EditorV6Element } from '../../src/shared/editorV6'
@@ -22,6 +22,33 @@ const scene = (): EditorV6ResolvedScene => ({
 } as EditorV6ResolvedScene)
 
 describe('Editor V6 export visible-asset scope', () => {
+  it('encodes simultaneous replacements of the same face only once', async () => {
+    const encode = vi.fn(() => 'data:image/png;base64,AA==')
+    vi.stubGlobal('Image', class {
+      naturalWidth = 50
+      naturalHeight = 50
+      onload?: () => void
+      decode() { return Promise.resolve() }
+      set src(_value: string) { queueMicrotask(() => this.onload?.()) }
+    })
+    vi.stubGlobal('document', {
+      createElement: () => ({
+        getContext: () => ({ drawImage() {}, getImageData() {}, putImageData() {} }),
+        toDataURL: encode
+      })
+    })
+    try {
+      const actor = scene().elements[0]
+      const input = { elements: [{ ...actor, mouthPatch: { ...actor.mouthPatch!, replace: true, replaceBounds: actor.mouthPatch!.sprite } }] }
+      const catalog = [asset('base'), asset('mouth')]
+      const results = await Promise.all(Array.from({ length: 12 }, () => composeEditorV6FaceReplacements(input, catalog, { additionsOnly: true })))
+      expect(encode).toHaveBeenCalledTimes(1)
+      expect(new Set(results.map(({ assets }) => assets[0].id)).size).toBe(1)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('renders identical SVG with the complete catalog or only visible assets, for all layers', () => {
     const frame = scene()
     const catalog = [asset('bg', 'background'), asset('base'), asset('mouth'), asset('prop'),

@@ -6,6 +6,7 @@ import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Tim
 type SceneElement = ReturnType<typeof resolveEditorV6SceneAtFrame>['elements'][number]
 type CanvasSurface = { canvas: HTMLCanvasElement; context: CanvasRenderingContext2D }
 type HairTransitionPlan = { atlas: EditorV6HairMotionTransition }
+const REST_CANVASES_PER_ACTOR = 4
 
 type Options = {
   hairSurfaces: Map<string, ImageBitmap>
@@ -23,8 +24,27 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
   // no frame retention, no change to the SVG mouth overlay. Hair is re-rasterized
   // when a one-shot reaction starts and once again after it ends.
   const readyRestSurfaces = new Map<string, EditorV6HairMotionRig>()
+  const restingCanvasKeysByActor = new Map<string, Set<string>>()
+  const staticLayers = new WeakMap<EditorV6HairMotionRig, {
+    back: EditorV6HairMotionLayer[]; rear: EditorV6HairMotionLayer[]; front: EditorV6HairMotionLayer[]
+  }>()
   const composeHairFrame = (rig: EditorV6HairMotionRig, element: SceneElement, frame: number, timings: EditorV6FrameTimings, metrics: EditorV6FrameMetrics): HTMLCanvasElement => {
     const canvasKey = `${element.id}:${rig.assetId}`
+    let actorKeys = restingCanvasKeysByActor.get(element.id)
+    if (!actorKeys) {
+      actorKeys = new Set()
+      restingCanvasKeysByActor.set(element.id, actorKeys)
+    }
+    actorKeys.delete(canvasKey)
+    actorKeys.add(canvasKey)
+    if (actorKeys.size > REST_CANVASES_PER_ACTOR) {
+      const oldest = actorKeys.values().next().value!
+      const canvas = hairFrameCanvases.get(oldest)?.canvas
+      if (canvas) canvas.width = canvas.height = 1
+      readyRestSurfaces.delete(oldest)
+      hairFrameCanvases.delete(oldest)
+      actorKeys.delete(oldest)
+    }
     let surface = hairFrameCanvases.get(canvasKey)
     if (!surface) {
       const canvas = document.createElement('canvas')
@@ -43,6 +63,9 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
       return canvas
     }
     readyRestSurfaces.delete(canvasKey)
+    if (canvas.width !== rig.outputWidth || canvas.height !== rig.outputHeight) {
+      canvas.width = rig.outputWidth; canvas.height = rig.outputHeight
+    }
     const clearStarted = performance.now()
     context.clearRect(0, 0, canvas.width, canvas.height)
     timings.hairCanvasClearMs = (timings.hairCanvasClearMs ?? 0) + performance.now() - clearStarted
@@ -58,12 +81,22 @@ export function createEditorV6ExportHairFrameComposer({ hairSurfaces, hairFrameC
       context.restore()
       timings.hairSurfaceComposeMs = (timings.hairSurfaceComposeMs ?? 0) + performance.now() - surfaceStarted
     }
-    for (const piece of rig.layers) if (piece.side === 'back') drawHairPiece(context, rig, piece, element, frame, timings)
+    let layers = staticLayers.get(rig)
+    if (!layers) {
+      layers = { back: [], rear: [], front: [] }
+      for (const piece of rig.layers) {
+        if (piece.side === 'back') layers.back.push(piece)
+        if (piece.id.startsWith('rearHair:')) layers.rear.push(piece)
+        else if (piece.side !== 'back') layers.front.push(piece)
+      }
+      staticLayers.set(rig, layers)
+    }
+    for (const piece of layers.back) drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.baseSurfaceId)
     drawSurface(rig.faceSurfaceId)
-    for (const piece of rig.layers) if (piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
+    for (const piece of layers.rear) drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.eyesAboveRearHairSurfaceId ?? null)
-    for (const piece of rig.layers) if (piece.side !== 'back' && !piece.id.startsWith('rearHair:')) drawHairPiece(context, rig, piece, element, frame, timings)
+    for (const piece of layers.front) drawHairPiece(context, rig, piece, element, frame, timings)
     drawSurface(rig.overlaySurfaceId)
     metrics.hairRasterFrames = (metrics.hairRasterFrames ?? 0) + 1
     metrics.hairRasterPixels = (metrics.hairRasterPixels ?? 0) + canvas.width * canvas.height

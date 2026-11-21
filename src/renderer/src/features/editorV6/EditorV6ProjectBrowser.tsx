@@ -1,7 +1,10 @@
 import type { EditorV6Document, EditorV6ProjectSummary } from '../../../../shared/editorV6'
 import { Icon } from '../../ui/components/Icon'
-import { EditorV6ReactImportDialog } from './EditorV6ReactImportDialog'
-import { useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
+
+const EditorV6ReactImportDialog = lazy(async () => ({
+  default: (await import('./EditorV6ReactImportDialog')).EditorV6ReactImportDialog
+}))
 
 type Props = {
   folder: string
@@ -55,7 +58,7 @@ export function EditorV6ProjectBrowser({
         <button className="studio-action studio-action-primary" onClick={() => void onCreateProject()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
         <button className="studio-action" onClick={onOpenImport} type="button"><Icon name="download" />Importar JSON</button>
       </div>
-      {importOpen && <EditorV6ReactImportDialog onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} />}
+      {importOpen && <Suspense fallback={<p role="status">Carregando importador…</p>}><EditorV6ReactImportDialog onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} /></Suspense>}
       {error && <p className="studio-error-message" role="alert">{error}</p>}
       {jsonError && <p className="studio-error-message" role="alert">{jsonError}</p>}
       {jsonStatus && <p role="status" style={{ whiteSpace: 'pre-line' }}>{jsonStatus}</p>}

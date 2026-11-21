@@ -4,6 +4,7 @@ import { editorV6HairMotionInstancePhase } from '../../../../shared/editorV6Hair
 import { createExportHairMeshRenderer } from './exportHairMeshRenderer'
 import { createEditorV6ExportHairTextureWarper } from './exportHairTextureWarper'
 import { loadEditorV6WorkerMediaImage } from './exportWorkerMediaImage'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 
 type ImageLoader = (dataUrl: string) => Promise<ImageBitmap>
 type HairMeshRenderer = ReturnType<typeof createExportHairMeshRenderer>
@@ -101,25 +102,22 @@ export async function createEditorV6ExportWorkerHairResources(
   try {
     if (animation) {
       const loadImage = dependencies.loadImage ?? loadHairImage
-      const imagesByUrl = new Map<string, Promise<ImageBitmap>>()
-      const loadInto = async (id: string, dataUrl: string, target: Map<string, ImageBitmap>) => {
-        let pending = imagesByUrl.get(dataUrl)
-        if (!pending) {
-          pending = loadImage(dataUrl).then(image => {
-            if (disposed) { image.close(); throw Error('A preparação das imagens de cabelo foi cancelada.') }
-            ownedImages.add(image)
-            return image
-          })
-          imagesByUrl.set(dataUrl, pending)
-        }
-        const image = await pending
-        if (disposed) return
-        target.set(id, image)
+      const destinations = new Map<string, { id: string; target: Map<string, ImageBitmap> }[]>()
+      const add = (id: string, dataUrl: string, target: Map<string, ImageBitmap>) => {
+        const existing = destinations.get(dataUrl)
+        if (existing) existing.push({ id, target })
+        else destinations.set(dataUrl, [{ id, target }])
       }
-      await Promise.all([
-        ...animation.surfaces.map(surface => loadInto(surface.id, surface.dataUrl, hairSurfaces)),
-        ...animation.textures.map(texture => loadInto(texture.id, texture.dataUrl, hairTextures))
-      ])
+      for (const { id, dataUrl } of animation.surfaces) add(id, dataUrl, hairSurfaces)
+      for (const { id, dataUrl } of animation.textures) add(id, dataUrl, hairTextures)
+      // Bound temporary decode buffers, while every destination still shares
+      // the same bitmap for a source used in more than one layer.
+      await mapConcurrentItems([...destinations], async ([dataUrl, targets]) => {
+        const image = await loadImage(dataUrl)
+        if (disposed) { image.close(); return }
+        ownedImages.add(image)
+        for (const { id, target } of targets) target.set(id, image)
+      }, () => disposed, 4)
     }
   } catch (error) {
     dispose()

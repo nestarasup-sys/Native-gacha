@@ -58,6 +58,7 @@ describe('interações de ponteiro da timeline do Editor V6', () => {
     const { commands, events, fixture, didDrag } = harness()
     commands.onPointer(pointerEvent(), fixture.track, fixture.block, 'move')
     commands.movePointer(pointerEvent({ type: 'pointermove', clientX: 130 }))
+    commands.movePointer(pointerEvent({ type: 'pointermove', clientX: 130.1 }))
     commands.endPointer(pointerEvent({ type: 'pointerup', clientX: 130 }))
 
     expect(captures).toEqual([7])
@@ -83,6 +84,7 @@ describe('interações de ponteiro da timeline do Editor V6', () => {
     const { commands, events } = harness()
     commands.onScrub(pointerEvent({ clientX: 190 }))
     commands.movePointer(pointerEvent({ pointerId: 7, type: 'pointermove', clientX: 220 }))
+    commands.movePointer(pointerEvent({ pointerId: 7, type: 'pointermove', clientX: 220.1 }))
     expect(captures).toEqual([7])
     expect(events).toEqual([['seek', 100], ['seek', 130]])
   })

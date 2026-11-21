@@ -60,9 +60,9 @@ describe('createEditorV6ExportMouthLoopResolver', () => {
   it('keeps the baked pose/expression face static without requiring extra mouth patches', () => {
     const resolver = createEditorV6ExportMouthLoopResolver(project(), mouthLoops())
     const unchanged = scene()
-    expect(resolver.applyMouthLoop(unchanged, 300).elements[0]).toBe(unchanged.elements[0])
+    expect(resolver.applyMouthLoop(unchanged, 300)).toBe(unchanged)
     const moving = scene({ motionSprite: { x: 0, y: 0, width: 1, height: 1, atlasWidth: 1, atlasHeight: 1 } })
-    expect(resolver.applyMouthLoop(moving, 15).elements[0]).toBe(moving.elements[0])
+    expect(resolver.applyMouthLoop(moving, 15)).toBe(moving)
   })
 
   it('holds the 1x mouth with eyes open while the rear hair settles, then resumes the cycle', () => {

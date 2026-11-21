@@ -4,6 +4,7 @@ import type { EditorV6Asset, EditorV6Element } from '../../src/shared/editorV6'
 import type { FaceExpressionEffects } from '../../src/shared/fabricator'
 import type { PreparedEditorV6FaceRenderer } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { prepareEditorV6PoseChange } from '../../src/renderer/src/features/editorV6/editorV6PosePreparation'
+import { createEditorV6InteractiveFaceBakes } from '../../src/renderer/src/features/editorV6/editorV6InteractiveFaceBakes'
 
 function character(): CustomizerCharacter {
   return { id: 'character-1', name: 'Hero', updatedAt: 'source-1', customization: { modelSlot: 1, poseSlot: 2 } } as CustomizerCharacter
@@ -28,8 +29,15 @@ function renderer(width: number, height: number) {
 }
 
 function dependencies(renderers: PreparedEditorV6FaceRenderer[]) {
+  const prepareRenderer = vi.fn((_character: CustomizerCharacter) => renderers.shift()!)
   return {
-    prepareRenderer: vi.fn(async (_character: CustomizerCharacter) => renderers.shift()!),
+    prepareRenderer,
+    withRenderer: async <T>(character: CustomizerCharacter, run: (renderer: PreparedEditorV6FaceRenderer) => Promise<T>) => {
+      const prepared = prepareRenderer(character)
+      try { return await run(prepared) }
+      finally { prepared.dispose() }
+    },
+    interactiveBakes: createEditorV6InteractiveFaceBakes(),
     bakeAssets: vi.fn(async () => ({
       dataUrl: 'data:image/png;base64,baked', crop: null, assetIds: {}, extraAssets: [] as EditorV6Asset[]
     })),
@@ -58,7 +66,7 @@ describe('preparação de pose do Editor V6', () => {
     expect(currentRenderer.renderToCanvas).toHaveBeenCalledWith(undefined, {}, effects, 'idle')
     expect(deps.bakeAssets).toHaveBeenCalledWith('Hero', poseRenderer, undefined, {}, effects, 'idle', expect.objectContaining({ width: 900, height: 700 }))
     expect(deps.faceRenderGeometry).toHaveBeenCalledWith(expect.objectContaining({ characterCanvasWidth: 240 }), expect.objectContaining({ width: 900, height: 700 }), null, 1600, 900)
-    expect(result.geometry.characterCanvasWidth).toBe(240)
+    expect(result?.geometry.characterCanvasWidth).toBe(240)
     expect(currentRenderer.dispose).toHaveBeenCalledOnce()
     expect(poseRenderer.dispose).toHaveBeenCalledOnce()
   })

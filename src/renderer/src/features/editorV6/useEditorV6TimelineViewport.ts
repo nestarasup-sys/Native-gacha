@@ -20,7 +20,10 @@ export type UseEditorV6TimelineViewportOptions = {
 
 export function useEditorV6TimelineViewport(scrollRef: RefObject<HTMLDivElement | null>, { playing, playbackFrame, pixelsPerSecond, heading }: UseEditorV6TimelineViewportOptions) {
   const [viewport, setViewport] = useState<EditorV6TimelineViewportMetrics>({ left: 0, width: 800 })
-  const measure = useCallback((node: HTMLDivElement) => setViewport(readEditorV6TimelineViewport(node)), [])
+  const measure = useCallback((node: HTMLDivElement) => {
+    const next = readEditorV6TimelineViewport(node)
+    setViewport((current) => current.left === next.left && current.width === next.width ? current : next)
+  }, [])
 
   useEffect(() => {
     const node = scrollRef.current

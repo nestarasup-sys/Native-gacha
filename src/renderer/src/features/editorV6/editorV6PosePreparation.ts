@@ -2,14 +2,16 @@ import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../
 import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
 import type { bakeFaceModeAssets, PreparedEditorV6FaceRenderer } from './faceModeAssets'
 import type { TrimmedImage } from '../../characters/transparentImageTrim'
+import type { createEditorV6InteractiveFaceBakes } from './editorV6InteractiveFaceBakes'
 
 type PoseRender = Awaited<ReturnType<PreparedEditorV6FaceRenderer['renderToCanvas']>>
 type BakedPose = Awaited<ReturnType<typeof bakeFaceModeAssets>>
 
 type PosePreparationDependencies = {
-  prepareRenderer: (character: CustomizerCharacter) => Promise<PreparedEditorV6FaceRenderer>
+  withRenderer: <T>(character: CustomizerCharacter, run: (renderer: PreparedEditorV6FaceRenderer) => Promise<T>) => Promise<T | null>
   bakeAssets: typeof bakeFaceModeAssets
-  trimCanvas: (canvas: HTMLCanvasElement) => TrimmedImage | null
+  interactiveBakes: ReturnType<typeof createEditorV6InteractiveFaceBakes>
+  trimCanvas: (canvas: HTMLCanvasElement) => Pick<TrimmedImage, 'width' | 'height' | 'left' | 'top'> | null
   faceModeForElement: (element: EditorV6Element, appearance?: CustomizerFaceAppearance) => EditorV6FaceRenderMode
   getStageSize: () => { width: number; height: number }
   faceRenderGeometry: (
@@ -35,7 +37,7 @@ export async function prepareEditorV6PoseChange(
     poseSlot: number | null
   },
   dependencies: PosePreparationDependencies
-): Promise<PreparedEditorV6PoseChange> {
+): Promise<PreparedEditorV6PoseChange | null> {
   const { character, element, poseSlot } = input
   const appearance = element.faceAppearance ?? character.customization.faceAppearance
   let characterCanvasWidth = element.characterCanvasWidth
@@ -49,20 +51,17 @@ export async function prepareEditorV6PoseChange(
         faceAppearance: appearance
       }
     }
-    const currentRenderer = await dependencies.prepareRenderer(currentPoseCharacter)
-    let currentRendered: PoseRender
-    try {
-      currentRendered = await currentRenderer.renderToCanvas(
+    characterCanvasWidth = await dependencies.withRenderer(currentPoseCharacter, async (renderer) => {
+      const currentRendered = await renderer.renderToCanvas(
         appearance,
         element.faceTransforms,
         element.activeExpressionEffects,
         element.activeFaceMode
       )
-    } finally {
-      currentRenderer.dispose()
-    }
-    const currentCrop = dependencies.trimCanvas(currentRendered.canvas)
-    characterCanvasWidth = element.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
+      const currentCrop = dependencies.trimCanvas(currentRendered.canvas)
+      return element.width * currentRendered.width / (currentCrop?.width ?? currentRendered.width)
+    }) ?? undefined
+    if (characterCanvasWidth === undefined) return null
   }
 
   const poseCharacter: CustomizerCharacter = {
@@ -70,28 +69,11 @@ export async function prepareEditorV6PoseChange(
     customization: { ...character.customization, poseSlot, faceAppearance: appearance }
   }
   const baseMode = dependencies.faceModeForElement(element, poseCharacter.customization.faceAppearance)
-  const poseRenderer = await dependencies.prepareRenderer(poseCharacter)
-  let rendered: PoseRender
-  let baked: BakedPose
-  try {
-    rendered = await poseRenderer.renderToCanvas(
-      poseCharacter.customization.faceAppearance,
-      element.faceTransforms,
-      element.activeExpressionEffects,
-      baseMode
-    )
-    baked = await dependencies.bakeAssets(
-      element.text,
-      poseRenderer,
-      poseCharacter.customization.faceAppearance,
-      element.faceTransforms,
-      element.activeExpressionEffects,
-      baseMode,
-      rendered
-    )
-  } finally {
-    poseRenderer.dispose()
-  }
+  const prepared = await dependencies.withRenderer(poseCharacter, (renderer) => dependencies.interactiveBakes.bake(
+    renderer, element.text, appearance, element.faceTransforms, element.activeExpressionEffects, baseMode, dependencies.bakeAssets
+  ))
+  if (!prepared) return null
+  const { rendered, baked } = prepared
 
   const stageSize = dependencies.getStageSize()
   const geometry = dependencies.faceRenderGeometry(

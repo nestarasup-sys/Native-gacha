@@ -2,6 +2,7 @@ import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Asset, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
 import type { TrimmedImage } from '../../characters/transparentImageTrim'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 
 // Version 9 rebuilds snapshots made by the refresh path that applied body
 // dimensions twice to characters with customized proportions.
@@ -168,17 +169,18 @@ export async function bakeFaceModeAssets(
     const bounds = canvasFaceAlphaBounds(union)
     const { width: sourceWidth, height: sourceHeight } = union
     union.width = union.height = 1
-    const dataUrl = await cropCharacterCanvas(frames.get(baseMode)!, bounds)
+    const encoded = await mapConcurrentItems([...frames], async ([mode, frame]) => ({
+      mode, dataUrl: await cropCharacterCanvas(frame, bounds)
+    }), () => false, 2)
+    const dataUrl = encoded[0].dataUrl
     const crop = bounds ? { ...bounds, dataUrl, sourceWidth, sourceHeight } : null
     const assetIds: Partial<Record<EditorV6FaceRenderMode, string>> = {}
     const extraAssets: EditorV6Asset[] = []
-    for (const [mode, frame] of frames) {
-      if (mode === baseMode) continue
+    for (const { mode, dataUrl: variantUrl } of encoded.slice(1)) {
       const id = crypto.randomUUID()
       assetIds[mode] = id
-      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: await cropCharacterCanvas(frame, crop), timelineSnapshot: true })
+      extraAssets.push({ id, category: 'character', name: `${name} · ${mode}`, mimeType: 'image/png', dataUrl: variantUrl, timelineSnapshot: true })
     }
-    union.width = union.height = 1
     return { dataUrl, crop, assetIds, extraAssets }
   } finally {
     for (const frame of frames.values()) frame.width = frame.height = 1

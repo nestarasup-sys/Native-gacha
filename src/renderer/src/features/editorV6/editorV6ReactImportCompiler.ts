@@ -11,6 +11,11 @@ import { bakeFaceModeAssets } from './faceModeAssets'
 import { compileEditorV6ReactCharacterTracks, type EditorV6ReactRenderedCharacterState } from './editorV6ReactCharacterTracks'
 import { buildSceneExpressionAppearance, buildSceneExpressionTransforms, appearanceWithPupilsLookingLeft } from '../../characters/sceneExpressionTransforms'
 import type { FaceExpressionPreset } from '../../../../shared/fabricator'
+import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
+import { createPreparedFaceCatalogItemLoader, type PreparedFaceCatalogItemCache } from '../../characters/preparedFaceCatalogItems'
+import type { GachaReusableMaterialCache } from '../../characters/preparedCharacterMaterials'
+import type { StandardExpressionEffectsCache } from '../../characters/standardExpressionEffects'
+import { createEditorV6CharacterSourceBatch } from './motion/characterSourceBatch'
 
 const uuid = () => crypto.randomUUID()
 const utc = () => new Date().toISOString()
@@ -46,15 +51,17 @@ export async function compileEditorV6ReactImport(
   onProgress: (message:string)=>void=()=>{}
 ): Promise<EditorV6ReactPrepared> {
   const projectId=uuid()
-  const media=[], seen=new Set<string>()
-  for(const video of source.videos){
-    const videoId=video.videoId
-    if(!videoId)throw new Error('Os vídeos precisam ser resolvidos para IDs antes da compilação.')
-    if(seen.has(videoId))continue
-    seen.add(videoId)
-    onProgress('Verificando mídia ' + seen.size + '/' + source.videos.length)
-    media.push(await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId,videoId))
+  const videoIds = new Set<string>()
+  for (const video of source.videos) {
+    if (!video.videoId) throw new Error('Os vídeos precisam ser resolvidos para IDs antes da compilação.')
+    videoIds.add(video.videoId)
   }
+  let verified = 0
+  const media = await mapConcurrentItems([...videoIds], async (id) => {
+    const linked = await window.desktop.editorV6.linkEditorV6LibraryVideo(projectId, id)
+    onProgress(`Verificando mídia ${++verified}/${videoIds.size}`)
+    return linked
+  }, () => false, 3)
   const plan=planEditorV6ReactImport(source,{
     characters:sources.characters,posesByCharacter:sources.poseSlots,presetsByModel:sources.presets,media
   })
@@ -84,6 +91,11 @@ export async function compileEditorV6ReactImport(
   const renderCache=new Map<string,EditorV6ReactRenderedCharacterState>()
   const presetCache=new Map<string,FaceExpressionPreset>()
   const referenceSizes=new Map<number,Awaited<ReturnType<typeof editorV6CharacterStageReference>>>()
+  const fabricator = window.desktop.fabricator
+  const renderSources = createEditorV6CharacterSourceBatch(fabricator, 8)
+  const materialCache: GachaReusableMaterialCache = new Map()
+  const faceCatalogItemsCache: PreparedFaceCatalogItemCache = new Map()
+  const expressionEffectsCache: StandardExpressionEffectsCache = new WeakMap()
   const {prepareSavedCharacterRenderer}=await import('../../characters/editorV6CharacterRenderer')
   const loadPreset=async (model:number,id:string)=>{
     const key=model+':'+id
@@ -102,19 +114,25 @@ export async function compileEditorV6ReactImport(
     const baseAppearance=character.customization.faceAppearance
     if(expression&&!baseAppearance)throw new Error(actor.name+' precisa de uma aparência facial no Customizador para usar presets.')
     const preset=expression?await loadPreset(actor.modelSlot,expression):null
-    const appearance=preset&&baseAppearance?await buildSceneExpressionAppearance(preset,baseAppearance,(id)=>window.desktop.fabricator.loadFaceCatalogItem(actor.modelSlot,id)):baseAppearance
+    const loadCatalog = createPreparedFaceCatalogItemLoader(actor.modelSlot, fabricator, faceCatalogItemsCache)
+    const appearance=preset&&baseAppearance?await buildSceneExpressionAppearance(preset,baseAppearance,loadCatalog):baseAppearance
     const transforms=preset&&appearance?await buildSceneExpressionTransforms(
       preset,appearance,{},(id)=>window.desktop.fabricator.loadFaceComponentAsset(actor.modelSlot,id),
-      (id)=>window.desktop.fabricator.loadFaceCatalogItem(actor.modelSlot,id),gaze
+      loadCatalog,gaze
     ):gaze==='left'&&appearance?await appearanceWithPupilsLookingLeft(appearance,(id)=>window.desktop.fabricator.loadFaceComponentAsset(actor.modelSlot,id))??{}:{}
     const effects=preset?.effects
     const characterCopy:CustomizerCharacter={...character,customization:{...character.customization,poseSlot,faceAppearance:appearance}}
-    const renderer=await prepareSavedCharacterRenderer(characterCopy)
+    const renderer=await prepareSavedCharacterRenderer(characterCopy, {
+      ...await renderSources.sourceFor(characterCopy), materialCache, faceCatalogItemsCache, expressionEffectsCache
+    })
     try{
       const rendered=await renderer.renderToCanvas(appearance,transforms,effects,'idle')
       const baked=await bakeFaceModeAssets(actor.name,renderer,appearance,transforms,effects,'idle',rendered)
       const cropWidth=baked.crop?.width??rendered.width,cropHeight=baked.crop?.height??rendered.height
-      if(!referenceSizes.has(actor.modelSlot))referenceSizes.set(actor.modelSlot,await editorV6CharacterStageReference(character))
+      if (!referenceSizes.has(actor.modelSlot)) {
+        const neutralSource = await renderSources.sourceFor({ ...character, customization: { ...character.customization, poseSlot: null } })
+        referenceSizes.set(actor.modelSlot, await editorV6CharacterStageReference(character, neutralSource))
+      }
       const ref=referenceSizes.get(actor.modelSlot)!
       const geometry=fitEditorV6CharacterToStage(ref.rendered,ref.crop,rendered,{width:cropWidth,height:cropHeight},stageWidth,stageHeight)
       const base:EditorV6Asset={id:uuid(),category:'character',name:actor.name+' · '+(expression??'base')+' · '+gaze,mimeType:'image/png',dataUrl:baked.dataUrl,timelineSnapshot:true}
@@ -134,6 +152,10 @@ export async function compileEditorV6ReactImport(
     renderState,
     onProgress,
     createId:uuid
+  }).finally(() => {
+    renderSources.clear()
+    materialCache.clear()
+    faceCatalogItemsCache.clear()
   })
   document.elements.push(...compiledCharacters.elements)
   document.timeline.tracks.push(...compiledCharacters.tracks)

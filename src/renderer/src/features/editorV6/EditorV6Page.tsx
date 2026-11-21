@@ -4,8 +4,6 @@ import { createEditorV6Timeline, videoCharacterTrackColor } from '../../../../sh
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
-import { EditorV6VideoPickerModal } from './EditorV6VideoPickerModal'
-import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
 import { EditorV6ToolRail } from './EditorV6ToolRail'
 import { EditorV6Inspector } from './EditorV6Inspector'
@@ -43,7 +41,7 @@ import { createDefaultSceneFaceTransform } from '../../characters/sceneFaceSelec
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { createEditorV6SceneViewModel } from './editorV6SceneViewModel'
 import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
-import { Profiler, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { lazy, Profiler, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
 import { SceneCastPickerModal } from '../../ui/components/SceneCastPickerModal'
@@ -70,6 +68,13 @@ import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
 type EditorV6Card = EditorV6ProjectSummary
 type Tool = 'background' | 'objects' | null
 const defaultStudioEyeTransform: EditorV6FaceTransform = createDefaultSceneFaceTransform()
+
+const EditorV6VideoPickerModal = lazy(async () => ({
+  default: (await import('./EditorV6VideoPickerModal')).EditorV6VideoPickerModal
+}))
+const EditorV6AudioLibraryPicker = lazy(async () => ({
+  default: (await import('./EditorV6AudioLibraryPicker')).EditorV6AudioLibraryPicker
+}))
 
 /** Layout do Editor V6. */
 export function EditorV6Page() {
@@ -319,6 +324,7 @@ export function EditorV6Page() {
     patchEditorV6FacePreview,
     recordHistory,
     changeScene,
+    changeAppearance,
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
     undo,
@@ -369,7 +375,7 @@ export function EditorV6Page() {
     faceBusy: editorV6FaceBusy,
     setFaceBusy: setEditorV6FaceBusy,
     poseSourceSnapshot: activePoseSourceSnapshot,
-    changeScene,
+    changeScene: changeAppearance,
     patchDocument,
     selectedTimelineBlockId,
     defaultTransform: defaultStudioEyeTransform,
@@ -719,8 +725,8 @@ export function EditorV6Page() {
           onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
           onSelect={stageSelection.selectTimelineBlock} /></Profiler> }
         <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={onExportActivity} trackOperation={trackEditorV6Operation} />
-        {videoPickerOpen && <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />}
-        {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />}
+        {videoPickerOpen && <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}><EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} /></Suspense>}
+        {audioPickerOpen && <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}><EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} /></Suspense>}
         {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
       </main>
     )

@@ -1,0 +1,16 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Editor V6 thumbnail diagnostic</title></head><body><pre id="result">running…</pre><img id="preview" style="max-width:480px"><script type="module">
+import { captureEditorV6Frame } from '/src/renderer/src/features/editorV6/sceneCapture.tsx'
+const result = document.querySelector('#result')
+try {
+  const response = await fetch('/@fs/C:/TRABALHO%202/OUTROS/GACHA%20EM%20C++/app-data/runtime/profile/studios/Editor%20V6/editorV6-2d6fb9ec-cfea-45ea-91ff-366fbc1abd59/editorV6.json')
+  if (!response.ok) throw new Error(`project read ${response.status}`)
+  const project = await response.json()
+  const started = performance.now()
+  const thumbnail = await Promise.race([
+    captureEditorV6Frame(project, 0, 480, 270, 'image/jpeg'),
+    new Promise((_, reject) => setTimeout(() => reject(new Error('capture timeout after 15s')), 15000))
+  ])
+  document.querySelector('#preview').src = thumbnail
+  result.textContent = JSON.stringify({ status: 'ok', milliseconds: Math.round(performance.now() - started), bytes: thumbnail.length, id: project.id })
+} catch (error) { result.textContent = JSON.stringify({ status: 'error', message: String(error), stack: error?.stack }) }
+</script></body></html>

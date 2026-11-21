@@ -50,12 +50,13 @@ export function isCurrentEditorV6FacePreviewTarget(
     && (!target.characterSourceUpdatedAt || target.characterSourceUpdatedAt === job.character.updatedAt))
 }
 
-/** Owns one reusable character renderer and releases a renderer prepared for stale work. */
+/** Owns reusable character renderers and releases resources prepared for stale work. */
 export function createEditorV6FaceRendererCache(
   prepareRenderer: PrepareRenderer,
-  keyForRenderer: KeyForRenderer = editorV6CharacterRenderKey
+  keyForRenderer: KeyForRenderer = editorV6CharacterRenderKey,
+  capacity = 1
 ) {
-  let cached: { key: string; renderer: PreparedEditorV6FaceRenderer } | null = null
+  const cached = new Map<string, PreparedEditorV6FaceRenderer>()
 
   const get = async (
     character: CustomizerCharacter,
@@ -64,27 +65,36 @@ export function createEditorV6FaceRendererCache(
     modelSourceRevision?: string
   ): Promise<PreparedEditorV6FaceRenderer | null> => {
     const key = keyForRenderer(character, poseSourceRevision, modelSourceRevision)
-    if (cached?.key === key) return cached.renderer
+    const hit = cached.get(key)
+    if (hit) {
+      cached.delete(key)
+      cached.set(key, hit)
+      return hit
+    }
 
     const renderer = await prepareRenderer(character)
     if (!isCurrent()) {
       renderer.dispose()
       return null
     }
-    if (cached?.key === key) {
+    const existing = cached.get(key)
+    if (existing) {
       renderer.dispose()
-      return cached.renderer
+      return existing
     }
 
-    cached?.renderer.dispose()
-    cached = { key, renderer }
+    cached.set(key, renderer)
+    if (cached.size > capacity) {
+      const oldest = cached.keys().next().value!
+      cached.get(oldest)!.dispose()
+      cached.delete(oldest)
+    }
     return renderer
   }
 
   const dispose = () => {
-    const renderer = cached?.renderer
-    cached = null
-    renderer?.dispose()
+    for (const renderer of cached.values()) renderer.dispose()
+    cached.clear()
   }
 
   return { get, dispose }

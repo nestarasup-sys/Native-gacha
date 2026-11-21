@@ -120,4 +120,26 @@ describe('createEditorV6ExportWorkerHairResources', () => {
 
     expect(renderer.dispose).toHaveBeenCalledOnce()
   })
+
+  it('decodes at most four distinct sources at once and shares bitmaps across atlases', async () => {
+    const bundle = animation()
+    bundle.surfaces = Array.from({ length: 9 }, (_, index) => ({ id: `surface-${index}`, dataUrl: `data:${index}` }))
+    bundle.textures = [{ id: 'shared', dataUrl: 'data:0' }]
+    let active = 0
+    let peak = 0
+    const loadImage = vi.fn(async (_source: string) => {
+      peak = Math.max(peak, ++active)
+      await Promise.resolve()
+      active--
+      return { close: vi.fn() } as unknown as ImageBitmap
+    })
+    const resources = await createEditorV6ExportWorkerHairResources(bundle, { loadImage, createMeshRenderer: fakeRenderer })
+    try {
+      expect(peak).toBe(4)
+      expect(loadImage).toHaveBeenCalledTimes(9)
+      expect(resources.hairTextures.get('shared')).toBe(resources.hairSurfaces.get('surface-0'))
+    } finally {
+      resources.dispose()
+    }
+  })
 })

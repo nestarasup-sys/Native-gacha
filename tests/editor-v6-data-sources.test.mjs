@@ -91,8 +91,9 @@ function createMediaCommandHarness(overrides = {}) {
       const timeline = { ...current.timeline, tracks: current.timeline.tracks.map((item) => item === track ? { ...item, blocks: [...item.blocks, block] } : item) }
       const mediaList = current.media ?? []
       const next = { ...current, media: mediaList.some((item) => item.id === media.id) ? mediaList : [...mediaList, media], timeline }
-      await options.persistDocument(current, next)
-      return { blockId: block.id, startFrame: block.startFrame }
+      const selection = { blockId: block.id, startFrame: block.startFrame }
+      await options.persistDocument(current, next, () => options.onPublished?.(selection))
+      return selection
     },
     addImageAsset: () => source,
     addTimelineMedia: () => ({ document: source, block: { id: 'unused' }, startFrame: 0 }),
@@ -116,7 +117,11 @@ function createMediaCommandHarness(overrides = {}) {
     pausePlayback: () => calls.push('pause'),
     publishPlayheadFrame: (frame) => calls.push(['playhead', frame]),
     loadLatestProject: async (projectId) => { calls.push(['load-latest', projectId]); return source },
-    persistImportedDocument: async (before, next) => { calls.push(['persist', before, next]); return true },
+    persistImportedDocument: async (before, next, onPublished) => {
+      onPublished?.()
+      calls.push(['persist', before, next])
+      return true
+    },
     setError: (message) => calls.push(['error', message]),
     setVideoPickerOpen: (open) => calls.push(['picker', open]),
     setAudioPickerOpen: (open) => calls.push(['audio-picker', open]),
@@ -748,7 +753,7 @@ test('comandos da tela importam imagem pelo projeto mais recente antes de seleci
   assert.equal(selections.inspectorTab, 'editor')
 })
 
-test('comandos da tela vinculam vídeo da biblioteca, salvam antes de selecionar e fecham o picker', async () => {
+test('comandos da tela vinculam vídeo da biblioteca e selecionam o clipe ao publicar, antes de salvar', async () => {
   const { commands, calls, selections, source } = createMediaCommandHarness()
   await commands.linkVideoLibraryItem({ id: 'library-video', name: 'Clipe escolhido' })
 
@@ -756,6 +761,7 @@ test('comandos da tela vinculam vídeo da biblioteca, salvam antes de selecionar
     'track', 'pause', ['media-use-case', 42], ['link-video', 'project', 'library-video'], ['load-latest', 'project'], ['playhead', 42], ['picker', false]
   ])
   const persisted = calls.find((call) => Array.isArray(call) && call[0] === 'persist')
+  assert.ok(calls.findIndex((call) => call[0] === 'playhead') < calls.indexOf(persisted))
   assert.equal(persisted[1], source)
   assert.equal(persisted[2].media[0].libraryVideoId, 'library-video')
   assert.equal(selections.blockId, persisted[2].timeline.tracks.find((track) => track.kind === 'video').blocks[0].id)

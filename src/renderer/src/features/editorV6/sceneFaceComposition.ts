@@ -5,6 +5,7 @@ const MAX_DECODED_IMAGE_BYTES = 96 * 1024 * 1024
 const MAX_COMPOSITE_CACHE_CHARS = 32 * 1024 * 1024
 const decodedImages = new Map<number, { asset: EditorV6Asset; promise: Promise<HTMLImageElement>; decodedBytes: number }>()
 const compositeAssets = new Map<string, EditorV6Asset>()
+const pendingComposites = new Map<string, Promise<EditorV6Asset>>()
 const assetIdentity = new WeakMap<EditorV6Asset, number>()
 let cachedCompositeChars = 0
 let nextAssetIdentity = 1
@@ -25,7 +26,9 @@ function loadImage(asset: EditorV6Asset): Promise<HTMLImageElement> {
       if (current?.promise === pending) {
         const decodedBytes = image.naturalWidth * image.naturalHeight * 4
         while ((decodedImages.size > MAX_DECODED_IMAGES || cachedDecodedImageBytes + decodedBytes > MAX_DECODED_IMAGE_BYTES) && decodedImages.size > 1) {
-          const oldest = [...decodedImages.keys()].find((candidate) => candidate !== key)
+          const keys = decodedImages.keys()
+          const first = keys.next().value
+          const oldest = first === key ? keys.next().value : first
           if (oldest === undefined) break
           const removed = decodedImages.get(oldest)!
           decodedImages.delete(oldest)
@@ -79,6 +82,23 @@ function cacheComposite(key: string, asset: EditorV6Asset): void {
   cachedCompositeChars += chars
 }
 
+function getFaceComposite(key: string, build: () => Promise<EditorV6Asset>): Promise<EditorV6Asset> {
+  const cached = compositeAssets.get(key)
+  if (cached) {
+    compositeAssets.delete(key)
+    compositeAssets.set(key, cached)
+    return Promise.resolve(cached)
+  }
+  const inFlight = pendingComposites.get(key)
+  if (inFlight) return inFlight
+  const pending = build().then((asset) => {
+    cacheComposite(key, asset)
+    return asset
+  }).finally(() => pendingComposites.delete(key))
+  pendingComposites.set(key, pending)
+  return pending
+}
+
 /** Applies a complete native-resolution RGBA face replacement before SVG scaling. */
 export async function composeEditorV6FaceReplacements<T extends { elements: EditorV6Element[] }>(
   scene: T,
@@ -101,8 +121,7 @@ export async function composeEditorV6FaceReplacements<T extends { elements: Edit
     if (!base || !face) throw Error(`A camada facial de ${element.text || element.characterId || 'personagem'} está incompleta; a composição foi interrompida.`)
     if (!patch.replaceBounds) throw Error(`A camada facial de ${element.text || element.characterId || 'personagem'} não informa a região RGBA que deve ser substituída.`)
     const key = compositeKey(element, base, face)
-    let composed = compositeAssets.get(key)
-    if (!composed) {
+    const composed = await getFaceComposite(key, async () => {
       const [baseImage, faceImage] = await Promise.all([loadImage(base), loadImage(face)])
       const source = element.motionSprite ?? { x: 0, y: 0, width: baseImage.naturalWidth, height: baseImage.naturalHeight, atlasWidth: baseImage.naturalWidth, atlasHeight: baseImage.naturalHeight }
       if (source.x + source.width > baseImage.naturalWidth || source.y + source.height > baseImage.naturalHeight) throw Error(`O recorte corporal de ${element.text || element.characterId || 'personagem'} está fora do atlas.`)
@@ -116,24 +135,27 @@ export async function composeEditorV6FaceReplacements<T extends { elements: Edit
         || left < 0 || top < 0 || left + width > source.width || top + height > source.height) {
         throw Error(`A camada facial de ${element.text || element.characterId || 'personagem'} não corresponde ao recorte corporal em resolução nativa.`)
       }
-      const canvas = document.createElement('canvas'); canvas.width = source.width; canvas.height = source.height
-      const context = canvas.getContext('2d', { willReadFrequently: true })
-      if (!context) throw Error('Não foi possível compor a camada facial em resolução nativa.')
-      context.drawImage(baseImage, source.x, source.y, source.width, source.height, 0, 0, source.width, source.height)
-      const faceCanvas = document.createElement('canvas'); faceCanvas.width = width; faceCanvas.height = height
-      const faceContext = faceCanvas.getContext('2d', { willReadFrequently: true })
-      if (!faceContext) throw Error('Não foi possível ler a camada facial em resolução nativa.')
-      faceContext.drawImage(faceImage, sprite.x, sprite.y, width, height, 0, 0, width, height)
-      const replacement = faceContext.getImageData(0, 0, width, height)
-      context.putImageData(replacement, left, top)
-      const asset: EditorV6Asset = {
-        id: crypto.randomUUID(), category: 'character', name: `${base.name} · composição facial`, mimeType: 'image/png',
-        dataUrl: canvas.toDataURL('image/png'), timelineSnapshot: true
+      const canvas = document.createElement('canvas')
+      const faceCanvas = document.createElement('canvas')
+      canvas.width = source.width; canvas.height = source.height
+      faceCanvas.width = width; faceCanvas.height = height
+      try {
+        const context = canvas.getContext('2d', { willReadFrequently: true })
+        if (!context) throw Error('Não foi possível compor a camada facial em resolução nativa.')
+        context.drawImage(baseImage, source.x, source.y, source.width, source.height, 0, 0, source.width, source.height)
+        const faceContext = faceCanvas.getContext('2d', { willReadFrequently: true })
+        if (!faceContext) throw Error('Não foi possível ler a camada facial em resolução nativa.')
+        faceContext.drawImage(faceImage, sprite.x, sprite.y, width, height, 0, 0, width, height)
+        const replacement = faceContext.getImageData(0, 0, width, height)
+        context.putImageData(replacement, left, top)
+        return {
+          id: crypto.randomUUID(), category: 'character', name: `${base.name} · composição facial`, mimeType: 'image/png',
+          dataUrl: canvas.toDataURL('image/png'), timelineSnapshot: true
+        }
+      } finally {
+        canvas.width = canvas.height = faceCanvas.width = faceCanvas.height = 1
       }
-      canvas.width = canvas.height = faceCanvas.width = faceCanvas.height = 1
-      composed = asset
-      cacheComposite(key, asset)
-    }
+    })
     additions.push(composed)
     return { ...element, assetId: composed.id, ...(element.motionSprite ? { motionSprite: { x: 0, y: 0, width: element.motionSprite.width, height: element.motionSprite.height, atlasWidth: element.motionSprite.width, atlasHeight: element.motionSprite.height } } : {}), mouthPatch: undefined }
   }))

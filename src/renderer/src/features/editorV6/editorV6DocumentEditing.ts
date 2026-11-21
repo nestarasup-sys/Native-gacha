@@ -1,5 +1,5 @@
 import { syncEditorV6TimelineElements, type EditorV6Document } from '../../../../shared/editorV6'
-import { editorV6ClipAtFrame, normalizeEditorV6Timeline, timelineClips } from '../../../../shared/editorV6TimelineCore'
+import { editorV6ClipAtFrame, findEditorV6TimelineClip, normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6Store } from './editorV6Store'
 
@@ -38,8 +38,8 @@ export function createEditorV6DocumentEditingCommands(dependencies: Dependencies
     dependencies.updateActiveProject((project) => {
       if (project.id !== activeProjectId) return project
       const currentFrame = dependencies.getFrame()
-      const selected = timelineClips(project.timeline).find(({ block }) =>
-        block.id === dependencies.selectedTimelineBlockId && block.elementId === dependencies.selectedElementId)
+      const explicit = findEditorV6TimelineClip(project.timeline, dependencies.selectedTimelineBlockId)
+      const selected = (explicit?.block.elementId === dependencies.selectedElementId ? explicit : undefined)
         ?? (dependencies.selectedElementId
           ? editorV6ClipAtFrame(project.timeline, dependencies.selectedElementId, currentFrame)
           : undefined)
@@ -73,5 +73,11 @@ export function createEditorV6DocumentEditingCommands(dependencies: Dependencies
     })
   }
 
-  return { recordHistory, patchDocument, patchFacePreview, changeScene }
+  const changeAppearance = (transform: (project: EditorV6Document) => EditorV6Document) => {
+    if (!dependencies.activeProject) return
+    recordHistory()
+    patchDocument(transform)
+  }
+
+  return { recordHistory, patchDocument, patchFacePreview, changeScene, changeAppearance }
 }

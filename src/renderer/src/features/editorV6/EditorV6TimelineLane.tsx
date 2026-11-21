@@ -1,4 +1,4 @@
-import { memo, type PointerEvent as ReactPointerEvent } from 'react'
+import { memo, useMemo, type PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Document, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
 import type { EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { videoCharacterTrackColor } from '../../../../shared/editorV6'
@@ -27,17 +27,20 @@ type Props = {
 }
 
 export const EditorV6TimelineLane = memo(function EditorV6TimelineLane({ track, backgroundLane, blocks, transitions, characterNameColors, pixelsPerSecond, width, range, selectedId, onPointer, onSelect, onMenu, onScrub }: Props) {
+  const visibleBlocks = useMemo(() => getEditorV6TimelineVisibleBlocks(blocks, range), [blocks, range])
   return <div className="editor-v6-timeline-lane" style={{ width, backgroundSize: `${pixelsPerSecond}px 100%` }} onPointerDown={onScrub}>
     {transitions.map((plan) => <i key={`motion-${plan.blockId}`} className="v6-motion-range" style={getEditorV6TimelineMotionPixels(plan, pixelsPerSecond)} />)}
-    {getEditorV6TimelineVisibleBlocks(blocks, range).map((block) => {
+    {visibleBlocks.map((block) => {
       const characterId = block.state?.characterId ?? block.characterId ?? track.characterId
       const characterColor = characterId ? characterNameColors?.[characterId] ?? videoCharacterTrackColor(characterId) : undefined
+      const durationLabel = frameTimecode(block.durationFrames)
+      const startLabel = frameTimecode(block.startFrame)
       const pixels = getEditorV6TimelineBlockPixels(block, pixelsPerSecond)
       return <div key={block.id}
         className={`editor-v6-timeline-block kind-${backgroundLane ? 'background' : track.kind}${selectedId === block.id ? ' selected' : ''}${track.locked ? ' locked' : ''}`}
         style={{ ...pixels, ...(characterColor ? { borderColor: characterColor, background: `linear-gradient(180deg, ${characterColor}28, ${characterColor}16)` } : {}) }}
-        tabIndex={0} role="button" aria-label={`${block.label}, ${frameTimecode(block.startFrame)}, duração ${frameTimecode(block.durationFrames)}`}
-        title={`${block.label}\nInício ${frameTimecode(block.startFrame)} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${frameTimecode(block.durationFrames)}`}
+        tabIndex={0} role="button" aria-label={`${block.label}, ${startLabel}, duração ${durationLabel}`}
+        title={`${block.label}\nInício ${startLabel} · Fim ${frameTimecode(block.startFrame + block.durationFrames)} · Duração ${durationLabel}`}
         onPointerDown={(event) => { if (event.button === 0) onPointer(event, track, block, 'move'); else event.stopPropagation() }}
         onClick={(event) => {
           event.stopPropagation()
@@ -46,7 +49,7 @@ export const EditorV6TimelineLane = memo(function EditorV6TimelineLane({ track, 
         }} onKeyDown={(event) => { if (event.key === 'Enter') onSelect(block) }}
         onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); onMenu(event.clientX, event.clientY, track, block) }}>
         <span>{block.state?.visible === false ? '◌ ' : ''}{block.parentBlockId ? '↳ ' : ''}{block.label}</span>
-        {(backgroundLane || !track.collapsed) && <small>{frameTimecode(block.durationFrames)}</small>}
+        {(backgroundLane || !track.collapsed) && <small>{durationLabel}</small>}
         <i className="editor-v6-timeline-resize" onPointerDown={(event) => onPointer(event, track, block, 'resize')} aria-label="Alterar duração" />
       </div>
     })}

@@ -43,6 +43,26 @@ async function setup(t, transaction) {
 }
 
 for (const transaction of transactions) {
+  test(`${transaction.name}: salvar só o manifesto não regrava nem faz backup de PNG idêntico`, async t => {
+    const { folder, asset } = await setup(t, transaction)
+    const assetWrites = []
+    const files = {
+      ...fs,
+      writeFile: async (path, data, ...options) => {
+        if (/\.(png|bak)$/.test(String(path))) assetWrites.push(path)
+        return fs.writeFile(path, data, ...options)
+      }
+    }
+    await transaction.publish({
+      files, folder,
+      assets: [{ relativePath: assetPath, bytes: Buffer.from('PREVIOUS_BYTES') }],
+      manifestValue: { title: 'RENAMED' }
+    })
+    assert.deepEqual(assetWrites, [])
+    assert.equal(await fs.readFile(asset, 'utf8'), 'PREVIOUS_BYTES')
+    assert.equal(JSON.parse(await fs.readFile(join(folder, transaction.manifestName), 'utf8')).title, 'RENAMED')
+  })
+
   test(`${transaction.name}: publica manifesto e assets juntos e limpa seu journal`, async t => {
     const { folder, asset, journal } = await setup(t, transaction)
     await transaction.publish({

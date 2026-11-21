@@ -25,3 +25,14 @@ export async function probeExportMedia(ffprobe: string, path: string, signal: Ab
   const result = await runExportCommand(ffprobe, ['-v', 'error', ...countArgs, '-show_streams', '-show_format', '-show_data_hash', 'sha256', '-of', 'json', path], signal)
   return JSON.parse(result.stdout) as MediaProbe
 }
+
+export async function probeEditorV6VideoLink(ffprobe: string, path: string, signal: AbortSignal): Promise<{
+  streams: Array<Pick<MediaProbe['streams'][number], 'codec_type' | 'width' | 'height' | 'duration'>>
+  format: MediaProbe['format']
+}> {
+  const result = await runExportCommand(ffprobe, [
+    '-v', 'error', '-show_entries', 'stream=codec_type,width,height,duration:format=duration',
+    '-of', 'json', path
+  ], signal)
+  return JSON.parse(result.stdout)
+}

@@ -53,6 +53,7 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
   const patchSourceCrop = options.facePatchSourceCrop ?? (() => undefined)
   const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
   const rigInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionRig>()
+  const mouthlessRigs = new WeakMap<EditorV6HairMotionRig, EditorV6HairMotionRig>()
 
   const resolveStaticHairRig = (element: SceneElement): EditorV6HairMotionRig | undefined => {
     const assetId = hairSourceAssetId(element)
@@ -60,7 +61,13 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
     if (!rig || assetId === element.assetId || !element.mouthPatch || element.mouthPatch.replace) return rig
     // The asset alias identifies the pose. Only a paired face can safely
     // replace that mouthless portrait beneath an isolated speech overlay.
-    return rig.mouthlessFaceSurfaceId ? { ...rig, faceSurfaceId: rig.mouthlessFaceSurfaceId } : undefined
+    if (!rig.mouthlessFaceSurfaceId) return undefined
+    let mouthless = mouthlessRigs.get(rig)
+    if (!mouthless) {
+      mouthless = { ...rig, faceSurfaceId: rig.mouthlessFaceSurfaceId }
+      mouthlessRigs.set(rig, mouthless)
+    }
+    return mouthless
   }
 
   const hasAnimatedHair = (element: SceneElement, frame: number): boolean => {

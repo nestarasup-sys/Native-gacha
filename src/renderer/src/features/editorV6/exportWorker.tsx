@@ -23,9 +23,9 @@ async function initialize() {
   const images = new Map<string, Promise<void>>()
   const assetDecodeDiagnostics = new Map<number, { index: number; state: string; mime: string; bytes: number }>()
   const { prepare: prepareFrameAssets } = createEditorV6ExportFrameAssetImageLoader(images, status => {
-    assetDecodeDiagnostics.set(status.index, status)
+    if (status.state === 'ready') assetDecodeDiagnostics.delete(status.index)
+    else assetDecodeDiagnostics.set(status.index, status)
     exportDiagnosticWindow.__editorV6ExportDiagnosticAssets = [...assetDecodeDiagnostics.values()]
-      .filter(asset => asset.state !== 'ready')
   })
   const { onLoad: onSvgImageLoad, waitForImage: waitForSvgImage } = createEditorV6SvgImageReadiness()
   // The document catalog is immutable during this worker's lifetime. Keep its

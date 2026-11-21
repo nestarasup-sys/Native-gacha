@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
+import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
 import { createPendingOperationTracker } from '../../ui/pendingOperations'
 import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { useSerializedSceneDocumentSave } from '../../ui/hooks/useSerializedSceneDocumentSave'
@@ -23,10 +24,14 @@ async function makeEditorV6Thumbnail(project: EditorV6Document): Promise<string>
 }
 
 function editorV6ThumbnailCacheKey(project: EditorV6Document): readonly unknown[] {
-  return [project.id, project.assets, project.elements, project.timeline, project.media ?? null,
-    project.backgroundColor, project.backgroundAssetId, project.backgroundX, project.backgroundY,
-    project.backgroundWidth, project.backgroundHeight, project.backgroundRotation,
-    project.characterNameColors ?? null, project.balloonScalePercent ?? 100, project.balloonOffsetY ?? 0]
+  const scene = resolveEditorV6SceneAtFrame(project, 0)
+  const visibleIds = new Set<string | null | undefined>([scene.background.backgroundAssetId])
+  for (const element of scene.elements) {
+    visibleIds.add(element.assetId)
+    visibleIds.add(element.mouthPatch?.assetId)
+  }
+  const visibleAssets = project.assets.filter((asset) => visibleIds.has(asset.id))
+  return [project.id, JSON.stringify(scene), ...visibleAssets]
 }
 
 /** Owns Editor V6 document writes, autosave flushing, and operation draining. */

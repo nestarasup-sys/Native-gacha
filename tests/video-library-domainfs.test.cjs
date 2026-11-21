@@ -55,13 +55,50 @@ test('video imports resolve physical content from active app-data domain storage
     assert.deepEqual(await fs.readFile(physicalMedia), bytes)
     await assert.rejects(fs.stat(logicalMedia), { code: 'ENOENT' }, 'active domain media is virtual, not a profile filesystem file')
 
-    const ready = await library.finishImport(imported.id, 600)
+    const catalogPath = path.join(libraryRoot, 'media-library', 'catalog.json')
+    let continueRename
+    let onRename
+    const renameEntered = new Promise(resolve => { onRename = resolve })
+    const renameBlocked = new Promise(resolve => { continueRename = resolve })
+    let catalogReads = 0
+    const originalRead = adapter.readFile.bind(adapter)
+    const originalRename = adapter.rename.bind(adapter)
+    adapter.readFile = (file, options) => {
+      if (file === catalogPath) catalogReads++
+      return originalRead(file, options)
+    }
+    adapter.rename = async (from, to) => {
+      if (to === catalogPath) {
+        onRename()
+        await renameBlocked
+      }
+      return originalRename(from, to)
+    }
+    const finishing = library.finishImport(imported.id, 600)
+    await renameEntered
+    let timeout
+    try {
+      const before = catalogReads
+      const requests = Array.from({ length: 12 }, () => library.resolveStreamMedia(imported.id))
+      const resolved = await Promise.race([
+        Promise.all(requests),
+        new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('Prévia ficou na fila da gravação')), 2000) })
+      ])
+      assert.equal(catalogReads - before, 1)
+      assert.ok(resolved.every(item => item.path === logicalMedia && item.mimeType === 'video/mp4'))
+    } finally {
+      clearTimeout(timeout)
+      continueRename()
+      await finishing
+      adapter.rename = originalRename
+      adapter.readFile = originalRead
+    }
+    const ready = await finishing
     assert.equal(ready.durationFrames, 600)
     assert.equal(Object.hasOwn(ready, 'studios'), false)
 
     // Old/unknown catalog properties are kept on disk, but aren't part of the
     // current video-library IPC contract.
-    const catalogPath = path.join(libraryRoot, 'media-library', 'catalog.json')
     const legacyCatalog = JSON.parse(await adapter.readFile(catalogPath, 'utf8'))
     legacyCatalog.items[0].studios = [{ id: 'legacy', title: 'Legacy' }]
     await adapter.writeFile(catalogPath, JSON.stringify(legacyCatalog, null, 2), 'utf8')

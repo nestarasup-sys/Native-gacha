@@ -34,19 +34,25 @@ export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Documen
     return hairPoseRigs.get(`${element.id}:${poseSlot ?? 'base'}`) ?? direct
   }
 
-  const motionBlocks = new Map(project.timeline.tracks.flatMap((track) => track.blocks.map((block) => [block.id, block] as const)))
-  const motionPlans = editorV6MotionPlans(project, { includeSpeechMouth })
+  const motionBlocks = new Map<string, EditorV6Document['timeline']['tracks'][number]['blocks'][number]>()
+  if (hairAnimation && !hairAnimation.poseReactionOnly) {
+    for (const track of project.timeline.tracks) {
+      for (const block of track.blocks) motionBlocks.set(block.id, block)
+    }
+  }
+  const motionPlans = hairAnimation ? editorV6MotionPlans(project, { includeSpeechMouth }) : []
   const transitions: IndexedHairTransition[] = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map((transition) => [`${transition.elementId}:${transition.key}`, transition]))
   const expressionOnlyPlansByElement = new Map<string, typeof motionPlans>()
   for (const plan of motionPlans) {
     // One-shot pose reaction keeps the canonical full-character motion atlas;
     // it needs end-of-pose events, not interpolated hairless layers.
-    if (hairAnimation?.poseReactionOnly || motionBlocks.get(plan.blockId)?.incomingMotion?.key !== plan.key) continue
+    const motion = motionBlocks.get(plan.blockId)?.incomingMotion
+    if (motion?.key !== plan.key) continue
     // Face-only plans keep their normal motionSprite and face atlas. They must
     // not replace an in-flight hair pose atlas.
     if (!editorV6MotionChangesHairGeometry(plan)) {
-      if (editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)) {
+      if (editorV6MotionHasCompleteFaceAtlas(plan, motion)) {
         const entries = expressionOnlyPlansByElement.get(plan.elementId) ?? []
         entries.push(plan)
         expressionOnlyPlansByElement.set(plan.elementId, entries)

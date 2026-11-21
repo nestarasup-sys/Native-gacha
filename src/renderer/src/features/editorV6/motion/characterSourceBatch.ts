@@ -3,13 +3,13 @@ import type { CharacterRenderAssetProvider } from '../../../../../shared/charact
 
 /**
  * Resolve immutable Fabricator *source* models and poses once for all
- * character/pose groups in THIS hair export. The source resolver still applies
+ * character/pose groups in this preparation job. The source resolver still applies
  * each character's own skin, proportions, torso and body shape individually.
  *
  * The model and pose data may be shared safely; a shaped *renderer* may not.
- * Every fresh export creates a fresh batch. No storage or persistent cache.
+ * Every preparation creates a fresh batch. No storage or persistent cache.
  */
-export function createEditorV6HairSourceBatch(provider: CharacterRenderAssetProvider) {
+export function createEditorV6CharacterSourceBatch(provider: CharacterRenderAssetProvider, maxEntries = Infinity) {
   type Model = Awaited<ReturnType<typeof provider.loadFabricatorSlot>>
   type Pose = Awaited<ReturnType<typeof provider.loadFabricatorPose>>
   const models = new Map<number, Promise<Model>>()
@@ -22,6 +22,7 @@ export function createEditorV6HairSourceBatch(provider: CharacterRenderAssetProv
     modelReads++
     const result = Promise.resolve().then(() => provider.loadFabricatorSlot(slot))
     models.set(slot, result)
+    if (models.size > maxEntries) models.delete(models.keys().next().value!)
     void result.catch(() => { if (models.get(slot) === result) models.delete(slot) })
     return result
   }
@@ -32,6 +33,7 @@ export function createEditorV6HairSourceBatch(provider: CharacterRenderAssetProv
     poseReads++
     const result = Promise.resolve().then(() => provider.loadFabricatorPose(slot, poseSlot))
     poses.set(key, result)
+    if (poses.size > maxEntries) poses.delete(poses.keys().next().value!)
     void result.catch(() => { if (poses.get(key) === result) poses.delete(key) })
     return result
   }
