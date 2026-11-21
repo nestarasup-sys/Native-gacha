@@ -46,6 +46,17 @@ describe('Engine V6 — contrato de frame 1.0', () => {
     expect(materializeEngineV6LegacyFrame(doc, first).assets).toEqual([{ id: 'base', dataUrl: doc.assets[0].dataUrl }])
   })
 
+  it('re-evaluates arbitrary seeks to identical plans regardless of traversal order', () => {
+    const doc = project([actor(), actor({ id: 'second', characterId: 'bob', x: 12, zIndex: 2 })])
+    const frames = [0, 1, 23, 30, 59, 89, 90, 14, 60, 2]
+    const bySeek = new Map(frames.map(frame => [frame, planEngineV6DocumentFrame(doc, frame, { width: 64, height: 36 })]))
+    const sequential = new Map<number, ReturnType<typeof planEngineV6DocumentFrame>>()
+    for (let frame = 0; frame < 91; frame++) sequential.set(frame, planEngineV6DocumentFrame(doc, frame, { width: 64, height: 36 }))
+    for (const frame of frames) expect(bySeek.get(frame)).toEqual(sequential.get(frame))
+    const reverse = [...frames].reverse().map(frame => planEngineV6DocumentFrame(doc, frame, { width: 64, height: 36 }))
+    expect(reverse.reverse()).toEqual(frames.map(frame => bySeek.get(frame)))
+  })
+
   it('retains character geometry, motion atlas crop and flip', () => {
     const figure = actor({ x: 10, y: -5, width: 20, height: 30, characterScale: 150, characterWidthScale: 50, flipX: true, rotation: 45 })
     const doc = project([figure])

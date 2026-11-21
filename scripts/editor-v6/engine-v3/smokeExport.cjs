@@ -4,7 +4,7 @@
 // Run: node scripts/editor-v6/engine-v3/smokeExport.cjs --frames=150 --width=640 --height=360
 const sharp = require('sharp')
 const { spawn, execFile } = require('node:child_process')
-const { mkdtemp, stat, writeFile } = require('node:fs/promises')
+const { mkdtemp, stat, writeFile, rm } = require('node:fs/promises')
 const { tmpdir } = require('node:os')
 const path = require('node:path')
 const { performance } = require('node:perf_hooks')
@@ -59,6 +59,7 @@ async function waitForExit(child) {
 
 async function run(opts = parseArgs([])) {
   const dir = await mkdtemp(path.join(tmpdir(), 'native-gacha-engine-v3-'))
+  try {
   const output = path.join(dir, 'synthetic-offline.mp4')
   const reportPath = path.join(dir, 'report.json')
   const assets = await syntheticProjectAssets()
@@ -114,10 +115,14 @@ async function run(opts = parseArgs([])) {
     renderer: 'sharp', transportPixelFormat: 'rgba', codec: stream.codec_name, frames: framesWritten,
     width: opts.width, height: opts.height, fps: opts.fps,
     outputBytes: bytes, wallMilliseconds: Math.round(wallMs),
-    output, limitations: 'Fixture sintética sem timeline real, boca dinâmica, cabelo, texto, áudio ou vídeo sobreposto. Não é comparação com export de produção.' }
+    temporaryArtifactsRemoved: true,
+    limitations: 'Fixture sintética sem timeline real, boca dinâmica, cabelo, texto, áudio ou vídeo sobreposto. Não é comparação com export de produção.' }
   await writeFile(reportPath, JSON.stringify(report, null, 2), { flag: 'wx' })
-  console.log(JSON.stringify({ ...report, reportPath }, null, 2))
+  console.log(JSON.stringify(report, null, 2))
   return report
+  } finally {
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 })
+  }
 }
 
 if (require.main === module) {

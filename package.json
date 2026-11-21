@@ -11,7 +11,7 @@
     "dev": "electron-vite dev --watch",
     "build:editor-v6:native": "node scripts/editor-v6/build-native-renderer.cjs",
     "build": "npm run build:editor-v6:native && electron-vite build",
-    "test:editor-v6:engine-v3": "node --test tests/editor-v6/engineV3OfflineCompositor.test.cjs tests/editor-v6/engineV3Profile.test.cjs",
+    "test:editor-v6:engine-v3": "node --test tests/editor-v6/engineV3OfflineCompositor.test.cjs tests/editor-v6/engineV3Profile.test.cjs tests/editor-v6/engineV3CompareRgba.test.cjs",
     "profile:editor-v6:engine-v3": "node scripts/editor-v6/engine-v3/profileOffline.cjs",
     "spike:editor-v6:engine-v3": "node scripts/editor-v6/engine-v3/smokeExport.cjs",
     "test:editor-v6:native-renderer": "npm run build:editor-v6:native && node --experimental-strip-types scripts/editor-v6/check-native-renderer.mjs",
