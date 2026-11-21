@@ -41,6 +41,9 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 35 | Calcular a amostra de boca apenas se um personagem realmente precisar dela no quadro. | Testes da amostra em fala e da pausa do ciclo durante a reação. |
 | 36 | Reusar a variante sem boca de cada rig, permitindo que o compositor identifique a mesma pose em quadros sucessivos. | Teste confirma identidade do rig e alternância correta entre boca isolada e face completa. |
 | 37 | Retirar a importação direta do seletor de áudio no painel de exportação para que seu módulo possa carregar sob demanda. | O build final gerou um módulo próprio de 5,21 kB e eliminou o aviso de importação dinâmica ineficaz. |
+| 38 | Limitar a quatro as decodificações simultâneas de imagens de cabelo no worker. | Fixture com nove fontes confirma o limite e o compartilhamento do bitmap entre superfície e textura. |
+| 39 | Limitar a quatro os canvases de pose mantidos por personagem, liberando os pixels do menos recente. | Teste confirma o reaproveitamento da pose recente, a liberação da antiga e sua recomposição. |
+| 40 | Reaproveitar a classificação das peças de cabelo por ordem de composição do rig. | Testes confirmam a ordem das camadas estáticas e das transições. |
 
 Na verificação sintética de MP4, os casos padrão `current-parity`, `capture-profile-unique-320` e `capture-profile-unique-1080` concluíram com 40, 60 e 60 quadros. A suíte parou no caso experimental `capture-profile-paint-1080` por timeout ao aguardar o token de pintura. Os casos posteriores não foram executados nessa tentativa.
 

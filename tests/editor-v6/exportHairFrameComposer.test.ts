@@ -100,6 +100,24 @@ describe('createEditorV6ExportHairFrameComposer', () => {
     expect(order).toHaveLength(16)
   })
 
+  it('releases the least recently used pose canvas for an actor and redraws an evicted pose', () => {
+    const order: string[] = []
+    installCanvasFactory(order)
+    const factory = composer(order, true)
+    const element = { id: 'actor' } as SceneElement
+    const poses = Array.from({ length: 5 }, (_, index) => ({ ...rig(), assetId: `pose-${index}` }))
+    const canvases = poses.slice(0, 4).map(pose => factory.composeHairFrame(pose, element, 0, {}, {}))
+    expect(factory.composeHairFrame(poses[0], element, 1, {}, {})).toBe(canvases[0])
+    factory.composeHairFrame(poses[4], element, 2, {}, {})
+
+    expect(factory.hairFrameCanvases.size).toBe(4)
+    expect([canvases[1].width, canvases[1].height]).toEqual([1, 1])
+    expect(canvases[0].width).toBe(10)
+    const restored = factory.composeHairFrame(poses[1], element, 3, {}, {})
+    expect(restored).not.toBe(canvases[1])
+    expect([restored.width, restored.height]).toEqual([10, 8])
+  })
+
   it('composes transition atlases in layer order and resizes its per-actor surface', () => {
     const order: string[] = []
     installCanvasFactory(order)

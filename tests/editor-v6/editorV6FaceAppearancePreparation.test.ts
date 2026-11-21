@@ -56,7 +56,7 @@ describe('preparação de aparência facial do Editor V6', () => {
     expect(faceRenderer.renderToCanvas).toHaveBeenNthCalledWith(1, oldAppearance, {}, oldEffects, 'blink')
     expect(faceRenderer.renderToCanvas).toHaveBeenNthCalledWith(2, newAppearance, nextTransforms, oldEffects, 'blink')
     expect(deps.faceModeForElement).not.toHaveBeenCalled()
-    expect(deps.measureCrop).toHaveBeenCalledWith('Hero', faceRenderer, oldAppearance, {}, oldEffects, 'blink', expect.objectContaining({ width: 800, height: 600 }), true)
+    expect(deps.measureCrop).toHaveBeenCalledWith('Hero', faceRenderer, oldAppearance, {}, oldEffects, 'blink', expect.objectContaining({ width: 800, height: 600 }))
     expect(deps.bakeAssets).toHaveBeenCalledWith('Hero', faceRenderer, newAppearance, nextTransforms, oldEffects, 'blink', expect.objectContaining({ width: 810, height: 610 }))
     expect(prepared.baseMode).toBe('blink')
     expect(prepared.previousCrop?.width).toBe(500)

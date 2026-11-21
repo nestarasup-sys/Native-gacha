@@ -27,12 +27,12 @@ vi.mock('../../electron/domains/editorV6/exportWorkers', () => ({
 vi.mock('../../electron/domains/editorV6/exportRunner', () => ({
   runEditorV6Export: vi.fn()
 }))
-vi.mock('../../electron/domains/editorV6/exportMediaProbe', () => ({ probeExportMedia: vi.fn() }))
+vi.mock('../../electron/domains/editorV6/exportMediaProbe', () => ({ probeExportMedia: vi.fn(), probeEditorV6VideoLink: vi.fn() }))
 
 import { dialog } from 'electron'
 import { copyFile, readFile, stat, writeFile } from 'node:fs/promises'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
-import { probeExportMedia } from '../../electron/domains/editorV6/exportMediaProbe'
+import { probeEditorV6VideoLink, probeExportMedia } from '../../electron/domains/editorV6/exportMediaProbe'
 import { registerEditorV6ExportHandlers } from '../../electron/domains/editorV6/exportIpc'
 
 const sourceId = '11111111-1111-4111-8111-111111111111'
@@ -220,7 +220,7 @@ describe('lifecycle de cópias de mídia do Editor V6', () => {
   })
 
   it('vincula vídeo da biblioteca após validar formato e faixa de vídeo', async () => {
-    vi.mocked(probeExportMedia).mockResolvedValue({
+    vi.mocked(probeEditorV6VideoLink).mockResolvedValue({
       streams: [{ codec_type: 'video', duration: '1', width: 320, height: 180 }],
       format: {}
     } as never)
