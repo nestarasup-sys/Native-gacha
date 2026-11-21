@@ -71,33 +71,34 @@ atualizado: 2026-11-21
 
 | Frente | Estado efetivo nesta rodada |
 | --- | --- |
-| A — comparação Chromium × offline | **Parcial:** comparação integral RGBA, hashes de HTML/PNG/RGBA/mapa, mapa de diferenças, bounding box e métricas de alpha/borda/interior. Fixture cobre fundo/z-order e asset alpha com crop, flip e rotação. Texto, balões e máscaras faciais ainda não entram. |
-| B — compositor | **Parcial:** compositor Sharp anterior permanece; não foi trocado o backend. Harness de MP4 agora limpa sua pasta temporária também em falhas. |
-| C — frames determinísticos | **Parcial:** testes extras de seek por ordem arbitrária; o timebase racional 24/30 e seus testes já existiam. Nenhuma integração à exportação. |
-| D — poses/personagens | **Não iniciado:** fixture ainda não representa a montagem completa de personagem nem transição de pose/expressão. |
-| E — boca | **Não iniciado:** frame adapter segue recusando patch facial sem suporte validado. |
+| A — comparação Chromium × offline | **Parcial:** comparação integral RGBA, hashes de HTML/PNG/RGBA/mapa, mapa de diferenças, bounding box e métricas por canal, alpha/borda/interior. A/B de seis kernels não reduziu consistentemente a divergência. Texto, balões e máscaras faciais ainda não entram. |
+| B — compositor | **Parcial:** compositor Sharp anterior permanece; valida dimensões, crop de atlas e cutout normalizado com falha explícita. A/B isolado de resize não justificou mudança padrão. Harness de MP4 limpa sua pasta temporária também em falhas. |
+| C — frames determinísticos | **Parcial:** testes de seek por ordem arbitrária e plano de mídia por job/output frame. Timebase racional 24/30; sem integração à exportação. |
+| D — poses/personagens | **Parcial:** planos nos cortes 29/30 provam snapshots estáticos, mudança de asset/pose, transformação e dois personagens em z-order; faltam montagem em partes, expressão completa e transições interpoladas. |
+| E — boca | **Parcial:** IR valida e compõe patch facial sintético, cutout de substituição, atlas, flip e rotação. Sem agenda talk/talk-blink e ciclo de boca no motor. |
 | F — cabelo | **Não iniciado:** sem A/B H0–H4 nem simulação offline. |
-| G — vídeo/áudio | **Não iniciado:** smoke H.264 é somente vídeo sintético sem áudio ou timeline. |
+| G — vídeo/áudio | **Parcial:** `src/engine-v6/engineMediaPlan.ts` prepara camadas de vídeo e trechos de áudio por IDs, offsets, gain, mute e segundos racionais; seek determina source frame por FPS. Sem decode, composição audiovisual, mux ou smoke com áudio sintético. |
 | H — confiabilidade | **Parcial:** limpeza garantida no harness de smoke; cancelamento/worker/cache e falhas de recursos continuam abertos. |
 | I — perfis | **Medição executada:** perfil sintético 1080p/30 frames, atlas 1024, Sharp 0.35.5/libvips 8.18.7, Node 24.22.3, Windows. Preparo 125.432 ms; raster 8135.979 ms; parede 8274.097 ms; P50 227.727 ms/frame, P95 486.337 ms; RSS observado entre frames 118.534.144 B (não é pico do processo). Entrada 4.202.841 B. Não comparar a export real histórica. |
 
 ### Evidência visual e verificações
 
 - Edge/Chromium real, 640×360, fixture sintética com fundo, dois elementos opacos e um asset 2×2 com alpha/crop/flip/rotação: **8.344 pixels divergentes (3,6215%)**, 24.200 canais, MAE 0,42765, erro máximo 202, alpha com zero diferenças; 7.369 pixels divergentes classificados na borda e 975 no interior; bbox `(0,126) 136×108`. A discordância RGB está concentrada na imagem transformada; a hipótese é diferença de rasterização/interpolação SVG Chromium vs Sharp, ainda não isolada nem corrigida. Não elevar tolerância nem declarar paridade.
+- A/B de kernels na mesma cena e entrada: `linear` reduziu MAE para 0,38824 mas aumentou diferenças para 8.366 pixels; erro máximo continuou 202. `nearest` elevou MAE a 0,87815; `cubic`, `mitchell`, `lanczos2` e `lanczos3` produziram pixels idênticos entre si neste crop estreito. Evidência insuficiente para trocar o kernel padrão; falta uma fixture com área-fonte maior e sem rotação para separar etapas.
 - Hashes reproduzíveis do caso: HTML `8df426ddb2de669dcf47288b0e4cf53cb5bffcb8696941534a439738e70cf8fe`; PNG Chromium `c79a752747e6190f65cc5b0f8493c92231e38c711764c250d2c96008fbbde`; RGBA offline `618ae604044af4482ed6687a2c3fb2d364bc180ebcc7d7de6d7b6a78033b5033`; mapa PNG `54f18185e6d148680430f945106230bd0b828f6d466d1b82a8f1015aabd2b2f5`. Artefatos são temporários e removidos.
-- `npm run test:editor-v6:engine-v3`: 21/21 Node aprovados. `npx vitest run --config vitest.editor-v6.config.ts`: 910 aprovados, 1 skip. `npm run typecheck` e `npm run audit:architecture` aprovados. Smoke sintético H.264 640×360/30fps, 30 frames validado por ffprobe; temporários removidos, 707 ms de parede (não benchmark). Perfil 1080p descrito acima.
+- `npm run test:editor-v6:engine-v3`: 22/22 Node aprovados. `npx vitest run --config vitest.editor-v6.config.ts`: 916 aprovados, 1 skip. `npm run typecheck`, `npm run audit:architecture` e `tests/editor-v6-export-audio.test.mjs` aprovados. Inclui planos de mídia 24/30 fps e patches faciais sintéticos. Smoke sintético H.264 640×360/30fps, 30 frames validado por ffprobe; temporários removidos, 707 ms de parede (não benchmark). Perfil 1080p descrito acima.
 - Limite desta rodada: sem bateria de exportação real. CI Windows do commit de implementação aprovada no [run 44862607942](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44862607942): typecheck, arquitetura, compositor, perfil sintético, regressões e Chromium/Edge concluíram com sucesso.
 
 ## Próximo lote concreto [NEXT-005 a NEXT-010]
 
 **Construir e provar várias fatias da engine offline no mesmo ciclo de Codex**, mantendo o export padrão intacto e sem benchmarking real de export (DEC-020). A prioridade depende da evidência de cada etapa; não declarar um gate concluído sem todos os requisitos.
 
-1. **NEXT-005, F0/F1:** PNG/JSON/hash de quadros completos Chromium x Sharp; métricas RGBA, mapas/bounding boxes de diferença e fixtures de alpha, crop, flip, rotação, máscara, texto/z-order.
-2. **NEXT-006, F1/F2:** robustecer o compositor offline e o contrato de IR determinístico; preparar/evaluar por frame, seek aleatório, timebase 24/30, recursos e invalidação, com testes por borda.
-3. **NEXT-007, F3:** personagens estáticos, trocas de pose/expressão, geometria/mascaras e assets de fonte versionados, medindo paridade de frames de laboratório.
-4. **NEXT-008, F4:** boca (talk/talk-blink/patch) e cabelo (H0-H4) em laboratório, com A/B de recursos, perfil e sequência determinística; não ligar ao export padrão.
-5. **NEXT-009, F5:** camadas de vídeo e áudio com clocks/PTS, filtros e smoke sintético curto de MP4 quando possível; sem projetos pessoais, sem medir velocidade real ponta a ponta.
-6. **NEXT-010, qualidade:** regressões, falha/cancelamento/limpeza em temporários isolados, stress sintético intensivo permitido e CI Windows com resultados reais; atualizar o estado somente com evidências.
+1. **F0/F1:** adicionar fixtures de área-fonte maior e variar escala, crop, flip e rotação separadamente para localizar a diferença RGB Chromium/Sharp; manter métricas e hashes integrais.
+2. **F3/F4:** validar patches com alpha/máscara contra Chromium; planejar agenda determinística `talk`/`talk-blink` e ciclo facial sem depender da UI.
+3. **F3:** expandir de snapshots estáticos para personagem por partes, expressão, pivôs e transições nos limites da timeline; testar revisões e invalidação.
+4. **F4:** medir H0–H4 em cabelo com 2+ personagens, seeks e paralelismo antes de escolher algoritmo.
+5. **F5:** definir composição de vídeo/áudio e PTS racionais; realizar smoke sintético com mídia curta e verificar contêiner/sincronismo.
+6. **Qualidade/F6-F8:** cancelamento, falhas de worker, limites/cache/streaming, Windows empacotado e integração gradual; só então autorizar benchmark final de export real e gates subsequentes.
 
 **Adiado intencionalmente:** BENCH de exportação real (5/40/200 s, projeto de 6.000 frames), conclusão de G6 e mudança de padrão/limpeza do legado. Se as tarefas forem grandes, entregar um conjunto coerente e testado, listar o restante sem afirmar conclusão.
 

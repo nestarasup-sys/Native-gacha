@@ -71,4 +71,4 @@ Só marcar `VALIDADO` após testes/artefatos verificáveis.
 ## Primeiro trabalho a ser executado
 
 **Fundação do Plano 1.0 concluída:** política de preview + IR v1 + render de uma cena V6 sintética via Sharp, com CI Windows aprovada. Ver [Plano 1.0](PLANO-1.0.md#10-estado-comprovado-da-fundação-10--20112026).
-**Plano 1.1 em execução parcial:** CI Windows aprovou captura real Edge/Chromium (3 pontos de uma cena sintética V6), referência SVG/librsvg, perfil 1080p e timebase 24/30. **Próximo foco F0/G0 e F1/G1:** medir diferenças dos frames completos e cobrir alpha/máscaras, boca, cabelo, texto e mídia. Nenhum gate F0–F8 está fechado.
+**Plano 1.1 em execução parcial:** CI Windows aprovou comparação RGBA completa do frame sintético Edge/Chromium; foi medida uma divergência RGB em asset com alpha/crop/flip/rotação. O IR já compõe patches faciais sintéticos e preserva snapshots de pose nos cortes testados. Seguem pendentes personagem completo, texto, ciclo de boca, cabelo, vídeo/áudio e integração. Nenhum gate F0–F8 está fechado; confira os resultados e o próximo foco em [ESTADO.md](ESTADO.md).
