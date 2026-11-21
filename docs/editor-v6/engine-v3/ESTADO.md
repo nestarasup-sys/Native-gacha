@@ -86,7 +86,7 @@ atualizado: 2026-11-21
 - Edge/Chromium real, 640×360, fixture sintética com fundo, dois elementos opacos e um asset 2×2 com alpha/crop/flip/rotação: **8.344 pixels divergentes (3,6215%)**, 24.200 canais, MAE 0,42765, erro máximo 202, alpha com zero diferenças; 7.369 pixels divergentes classificados na borda e 975 no interior; bbox `(0,126) 136×108`. A discordância RGB está concentrada na imagem transformada; a hipótese é diferença de rasterização/interpolação SVG Chromium vs Sharp, ainda não isolada nem corrigida. Não elevar tolerância nem declarar paridade.
 - Hashes reproduzíveis do caso: HTML `8df426ddb2de669dcf47288b0e4cf53cb5bffcb8696941534a439738e70cf8fe`; PNG Chromium `c79a752747e6190f65cc5b0f8493c92231e38c711764c250d2c96008fbbde`; RGBA offline `618ae604044af4482ed6687a2c3fb2d364bc180ebcc7d7de6d7b6a78033b5033`; mapa PNG `54f18185e6d148680430f945106230bd0b828f6d466d1b82a8f1015aabd2b2f5`. Artefatos são temporários e removidos.
 - `npm run test:editor-v6:engine-v3`: 21/21 Node aprovados. `npx vitest run --config vitest.editor-v6.config.ts`: 910 aprovados, 1 skip. `npm run typecheck` e `npm run audit:architecture` aprovados. Smoke sintético H.264 640×360/30fps, 30 frames validado por ffprobe; temporários removidos, 707 ms de parede (não benchmark). Perfil 1080p descrito acima.
-- Limite desta rodada: sem bateria de exportação real; CI Windows deste commit ainda precisa rodar após push.
+- Limite desta rodada: sem bateria de exportação real. CI Windows do commit de implementação aprovada no [run 44862607942](https://github.com/nestarasup-sys/Native-gacha/actions/runs/44862607942): typecheck, arquitetura, compositor, perfil sintético, regressões e Chromium/Edge concluíram com sucesso.
 
 ## Próximo lote concreto [NEXT-005 a NEXT-010]
 
