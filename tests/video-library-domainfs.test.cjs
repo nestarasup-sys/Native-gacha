@@ -25,7 +25,9 @@ function loadVideoLibrary() {
 }
 
 test('video imports resolve physical content from active app-data domain storage', async () => {
-  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-domainfs-'))
+  // Windows runners may expose TEMP via the 8.3 RUNNER~1 alias. Use the
+  // canonical path, matching the production storage boundary's invariant.
+  const root = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'gacha-video-domainfs-')))
   const dataRoot = path.join(root, 'app-data')
   const userData = path.join(root, 'profile')
   const libraryRoot = path.join(userData, 'studios', 'Editor Gacha')
