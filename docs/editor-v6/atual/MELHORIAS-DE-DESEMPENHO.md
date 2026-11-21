@@ -57,4 +57,12 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 
 Na verificação sintética de MP4, os casos padrão `current-parity`, `capture-profile-unique-320` e `capture-profile-unique-1080` concluíram com 40, 60 e 60 quadros. A suíte parou no caso experimental `capture-profile-paint-1080` por timeout ao aguardar o token de pintura. Os casos posteriores não foram executados nessa tentativa.
 
-Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O corte real de MP4 também segue pendente nesta rodada.
+## Verificação final
+
+- Uma timeline sintética de 8.550 blocos produziu as mesmas chaves e amostras de transição e 5.880 resoluções de cena iguais às da revisão `ed954389`. A comparação incluiu blocos fora de ordem, fala ligada e desligada, e cenas com e sem atlas preparado.
+- Na mediana de cinco repetições, oito montagens de planos de movimento com cache vazio passaram de 537,59 ms para 246,66 ms. Oito primeiras resoluções de cena sem atlas passaram de 573,39 ms para 5,21 ms. São medidas dessas funções em uma fixture grande, sem a interface ou o carregamento de mídia.
+- Passaram o typecheck, a auditoria de arquitetura, o build Electron/Vite e 909 testes do Editor V6, com um teste ignorado. A verificação integrada de cabelo passou em 720p e 1080p, incluindo sete quadros de transição, espelhamento, transparência e emendas. O fixture temporário foi removido.
+- O corte autorizado em cópia verificada passou no perfil padrão da interface, com boca, cabelo, piscadas e transições. O MP4 tem 6.000 quadros H.264, 1920×1080/30, áudio AAC de 200 s e nove emendas verificadas. Não houve estados de boca ignorados ou obsoletos nem erros de limpeza. MP4 e relatório em `out/editor-v6-stress/runs/performance50-full200-20261121-000942/`.
+- A comparação dos 6.000 quadros decodificados com o MP4 histórico de referência deu SSIM de 0,999113. O conteúdo codificado da faixa de áudio teve o mesmo SHA-256.
+- O corte levou 184,19 s do início do fluxo até a validação e ficou 21,50 s (13,22%) acima da referência histórica de 162,69 s com os mesmos parâmetros. A renderização passou de 108,67 s para 129,02 s. A soma da espera dos workers após a navegação passou de 14,51 s para 36,84 s, e a taxa de leituras de captura antigas passou de 14,54% para 22,90%. As duas execuções usaram árvores com mudanças locais e a nova medição contém uma única amostra. O relatório não isola a causa da diferença nem confirma ganho no tempo total.
+- Ainda falta medir na interface real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo da prévia. O tempo de exportação continua acima da meta de 90 s.
