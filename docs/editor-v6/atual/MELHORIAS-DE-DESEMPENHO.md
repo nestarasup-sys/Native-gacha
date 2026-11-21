@@ -34,5 +34,14 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 28 | Compartilhar as leituras do catálogo facial entre aplicação de preset, cálculo de transformações e renderização. | Testes do cache cobrem reutilização, isolamento por slot e limite de memória. |
 | 29 | Reusar a carga dos efeitos padrão de expressão entre estados importados. | Typecheck e inspeção da sessão de importação. Ganho no projeto real pendente. |
 | 30 | Medir o recorte da referência neutra diretamente no canvas, evitando codificar a imagem, decodificá-la e gerar outro PNG só para medir largura e altura. | Mesmo limiar de alfa da rotina anterior. Passaram os testes de elenco e o teste geral de geometria no Electron. Comparação isolada da referência neutra pendente. |
+| 31 | Pular a espera em lote para imagens já decodificadas no worker. | Ensaio com 5 mil quadros e 16 imagens quentes, sem decodificação real. Mediana de cinco repetições caiu de 52,58 ms para 6,71 ms junto com o item 32. |
+| 32 | Registrar diagnósticos de imagem somente enquanto há trabalho pendente ou falha, sem publicar eventos por imagem já pronta. | No mesmo ensaio, os eventos durante os cinco lotes caíram de 800 mil para zero. O teste de imagem ainda cobre os diagnósticos de decodificação nova. |
+| 33 | Preservar a referência da cena quando o loop de boca não muda nenhum elemento. | Testes confirmam a mesma referência em silêncio e durante movimento com face pronta. |
+| 34 | Evitar consultar o modo facial fora da reação do cabelo quando o export não tem atlas de boca. | Testes confirmam que o piscar só é substituído durante a reação. |
+| 35 | Calcular a amostra de boca apenas se um personagem realmente precisar dela no quadro. | Testes da amostra em fala e da pausa do ciclo durante a reação. |
+| 36 | Reusar a variante sem boca de cada rig, permitindo que o compositor identifique a mesma pose em quadros sucessivos. | Teste confirma identidade do rig e alternância correta entre boca isolada e face completa. |
+| 37 | Retirar a importação direta do seletor de áudio no painel de exportação para que seu módulo possa carregar sob demanda. | O build final gerou um módulo próprio de 5,21 kB e eliminou o aviso de importação dinâmica ineficaz. |
 
-Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O MP4 não foi cronometrado nesta rodada.
+Na verificação sintética de MP4, os casos padrão `current-parity`, `capture-profile-unique-320` e `capture-profile-unique-1080` concluíram com 40, 60 e 60 quadros. A suíte parou no caso experimental `capture-profile-paint-1080` por timeout ao aguardar o token de pintura. Os casos posteriores não foram executados nessa tentativa.
+
+Ainda falta medir numa sessão real a abertura, a inserção de vídeo, a troca de expressão e o sincronismo do áudio. O corte real de MP4 também segue pendente nesta rodada.

@@ -65,14 +65,17 @@ describe('createEditorV6ExportFrameAssetImageLoader', () => {
   it('reuses decoded promises for repeated assets', async () => {
     const created = installImageFactory()
     const cache = new Map<string, Promise<void>>()
-    const loader = createEditorV6ExportFrameAssetImageLoader(cache)
+    const diagnostic = vi.fn()
+    const loader = createEditorV6ExportFrameAssetImageLoader(cache, diagnostic)
 
     await loader.prepare([asset('one'), asset('two')])
+    diagnostic.mockClear()
     await loader.prepare([asset('one')])
 
     expect(created).toHaveLength(2)
     expect(created.map(image => image.src)).toEqual(['data:image/png;base64,one', 'data:image/png;base64,two'])
     expect(cache.size).toBe(2)
+    expect(diagnostic).not.toHaveBeenCalled()
   })
 
   it('evicts the oldest cached image when adding a thirty-third asset', async () => {

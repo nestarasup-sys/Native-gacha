@@ -121,11 +121,13 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     const factory = makeComposer({ planIndex, hairSourceAssetId: value => value.assetId === 'isolated-base' ? 'hair' : value.assetId })
     const speaking = element({ assetId: 'isolated-base' })
     const silent = element({ mouthPatch: undefined })
-    for (const original of [speaking, silent]) {
+    for (const original of [speaking, silent, speaking]) {
       expect(factory.hasAnimatedHair(original, 12)).toBe(true)
       factory.compose({ composedScene: scene([original]), originalElements: new Map([['actor', original]]), frame: 12, activeHair: true, riggedElementIds: new Set(['actor']), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings: {}, metrics: {} })
     }
-    expect(vi.mocked(factory.composeHairFrame).mock.calls.map(([rig]) => rig.faceSurfaceId)).toEqual(['face-without-mouth', 'face'])
+    const rigs = vi.mocked(factory.composeHairFrame).mock.calls.map(([rig]) => rig)
+    expect(rigs.map(rig => rig.faceSurfaceId)).toEqual(['face-without-mouth', 'face', 'face-without-mouth'])
+    expect(rigs[0]).toBe(rigs[2])
   })
 
   it('reuses a face atlas across transition frames and preserves expanded transition geometry', () => {

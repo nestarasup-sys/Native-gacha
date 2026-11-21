@@ -39,7 +39,7 @@ describe('createEditorV6ExportWorkerHairRuntime', () => {
     const runtime = createEditorV6ExportWorkerHairRuntime(project(), undefined, resources(), mouthLoops)
     const first = runtime.resolveRawSceneAtFrame(11)
     const firstMouth = runtime.applyMouthLoop(first, 11)
-    expect(firstMouth).not.toBe(first)
+    expect(firstMouth).toBe(first)
     expect(runtime.applyMouthLoop(first, 11)).toBe(firstMouth)
 
     const next = runtime.resolveRawSceneAtFrame(12)
@@ -47,8 +47,8 @@ describe('createEditorV6ExportWorkerHairRuntime', () => {
     expect(nextMouth).not.toBe(firstMouth)
     expect(runtime.applyMouthLoop(next, 12)).toBe(nextMouth)
 
-    // Reusing the same number for a different scene is not a cache hit.
-    expect(runtime.applyMouthLoop(first, 11)).not.toBe(firstMouth)
+    // Returning to an earlier frame must not return the later scene.
+    expect(runtime.applyMouthLoop(first, 11)).toBe(first)
   })
 
   it('mantém uma única resolução bruta por quadro e aplica os serviços de cabelo sem tocar cenas inativas', () => {

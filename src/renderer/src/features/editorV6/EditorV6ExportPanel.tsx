@@ -1,15 +1,18 @@
-import { useLayoutEffect, useRef } from 'react'
+import { lazy, Suspense, useLayoutEffect, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { editorV6ExportContentEndFrame } from '../../../../shared/editorV6Export'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
 import { prepareEditorV6HairMotionBundle } from './editorV6HairMotionPreparation'
 import { EditorV6HairPresetEditor } from './EditorV6HairPresetEditor'
 import { EditorV6ExportActivity } from './EditorV6ExportActivity'
-import { EditorV6AudioLibraryPicker } from './EditorV6AudioLibraryPicker'
 import { EditorV6ExportAudioSettings } from './EditorV6ExportAudioSettings'
 import { editorV6ExportFramesToSeconds, editorV6ExportSecondsToFrames } from './editorV6ExportTime'
 import { isEditorV6ExportFinished } from './editorV6ExportStatusPolling'
 import { useEditorV6ExportPanelController } from './useEditorV6ExportPanelController'
+const EditorV6AudioLibraryPicker = lazy(async () => ({
+  default: (await import('./EditorV6AudioLibraryPicker')).EditorV6AudioLibraryPicker
+}))
+
 export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequired, onClose, onExitEditor, onChange, onActivity, trackOperation, prepareHair = prepareEditorV6HairMotionBundle }: { project: EditorV6Document; open: boolean; characterSourceRefreshRequired: boolean; onClose: () => void; onExitEditor: () => void; onChange: (update: (project: EditorV6Document) => EditorV6Document) => void; onActivity?: (active: boolean) => void; trackOperation: <T,>(operation: () => Promise<T>) => Promise<T>; prepareHair?: typeof prepareEditorV6HairMotionBundle }) {
   const dialog = useRef<HTMLElement>(null)
   useLayoutEffect(() => {
@@ -73,6 +76,6 @@ export function EditorV6ExportPanel({ project, open, characterSourceRefreshRequi
       {error && <p role="alert" className="v6-export-error">{error}</p>}
       <footer>{active ? <button type="button" disabled={busy} onClick={() => void cancel()}>Cancelar exportação</button> : <button className="v6-export-primary" type="button" disabled={busy || characterSourceRefreshRequired} onClick={() => void start()}>{busy ? 'Abrindo exportação…' : options.nativeRenderer ? 'EXPORTAR MP4 · RENDERIZADOR NATIVO C++' : 'EXPORTAR MP4'}</button>}<button type="button" disabled={busy} onClick={onClose}>Fechar painel</button>{job && isEditorV6ExportFinished(job) && <button type="button" disabled={busy} onClick={onExitEditor}>Voltar aos projetos</button>}</footer>
     </section>
-    {audioPickerOpen && <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudio} />}
+    {audioPickerOpen && <Suspense fallback={<span role="status">Abrindo biblioteca de áudio…</span>}><EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudio} /></Suspense>}
   </div>
 }
