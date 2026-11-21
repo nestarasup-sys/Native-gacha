@@ -3,7 +3,7 @@ id: V6-ENGINE-DECISIONS
 tipo: registro-de-decisoes
 status: ativo
 branch: Dev-v3
-atualizado: 2026-11-20
+atualizado: 2026-11-21
 ---
 
 # Decisões e hipóteses versionáveis
@@ -33,6 +33,9 @@ atualizado: 2026-11-20
 | DEC-016 | Em teste | Timebase puro de 24/30 fps preserva bordas `editorV6OutputFrame` e seek absoluto | CI 44838231747 passou; ainda não integrado ao exportador |
 | DEC-017 | Aceita | SVG/librsvg é uma referência gráfica intermediária, não golden Chromium | Cenas V6 atuais sintéticas comparadas em CI; avaliação real por Chromium continua obrigatória |
 | DEC-018 | Em teste | Fixture Chromium/Edge Windows para conferir RGBA do novo compositor antes da migração | CI 44838705380 aprovou 3 regiões opacas; falta diferença integral e efeitos complexos |
+| DEC-019 | Aceita | Durante a construção, o Codex pode utilizar intensamente CPU/GPU/RAM para testes automatizados, perfil e stress sintéticos isolados | Usuário autorizou carga alta agora; medir pixels, etapas, recursos e determinismo com limites seguros e sem tocar em dados pessoais |
+| DEC-020 | Aceita | Adiar **benchmarks reais de exportação e comparação de velocidade ponta a ponta**, incluindo cortes de 5/40/200 s e 6.000 frames, até a engine estar completa e integrada para a etapa final de avaliação | A meta <=90 s não pode ser alegada por microbenchmark; smoke sintético curto de MP4 é prova funcional permitida, não benchmark |
+| DEC-021 | Aceita | Entregar lotes amplos de implementação em Dev-v3; Codex deve sincronizar `origin/Dev-v3` com segurança, validar, fazer commit/push sem force e devolver relatório | Usuário enviará o prompt manualmente, depois encaminhará a resposta para revisão do GitHub antes do próximo lote; nenhuma outra branch será publicada |
 
 ## Critérios para mudar decisão
 

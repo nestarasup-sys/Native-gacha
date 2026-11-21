@@ -3,7 +3,7 @@ id: V6-ENGINE-STATE
 tipo: checkpoint-vivo
 status: ativo
 branch: Dev-v3
-atualizado: 2026-11-20
+atualizado: 2026-11-21
 ---
 
 # Estado atual — único checkpoint de continuidade
@@ -18,6 +18,8 @@ atualizado: 2026-11-20
 - **Fundação do Plano 1.0 implementada:** política de prévia com piscadas, adaptador V6 -> IR versionado e materialização de assets na fronteira do compositor. O laboratório offline ainda não é a exportação padrão.
 - Trabalhos anteriores já commitados na `Dev-v3`: isolamentos de cache por projeto, regra temporal de vídeo, testes e CI focado. Eles não constituem a nova engine.
 - Laboratório F1, referência SVG independente e perfil sintético passaram CI Windows. Uma base temporal F2 também foi testada; **nenhum gate F0–F8 foi fechado** e ainda não existe benchmark comparável à exportação padrão.
+- **DEC-019/020 (21/11/2026):** autorizado alto uso de CPU/GPU/RAM para construção, perfis, stress e testes **sintéticos**; a bateria de export real e comparações de velocidade 5/40/200 s/6.000 frames fica adiada até engine completa/integrada. Smoke MP4 sintético curto continua permitido apenas como teste funcional.
+- **DEC-021:** próximo lote de Codex é amplo, executado somente em `Dev-v3`, após sincronizar com `origin/Dev-v3` sem descartar alterações locais. Comitar e publicar apenas o código verificado; resposta do Codex e GitHub serão revisados antes do lote seguinte.
 
 ## Quadro de gates
 
@@ -65,14 +67,18 @@ atualizado: 2026-11-20
 - Mapa de pipeline, matriz FIX e gates incompletos em [Plano 1.1](PLANO-1.1.md#execução-11--evidências-e-limites-20112026).
 - Projetos antigos não são golden visual da engine nova; casos de compatibilidade usarão leitura e snapshot, não edição destrutiva.
 
-## Próxima tarefa concreta [NEXT-005]
+## Próximo lote concreto [NEXT-005 a NEXT-010]
 
-**Expandir o smoke Chromium já aprovado para PNGs completos e recursos reais do V6, mantendo a engine em laboratório.**
+**Construir e provar várias fatias da engine offline no mesmo ciclo de Codex**, mantendo o export padrão intacto e sem benchmarking real de export (DEC-020). A prioridade depende da evidência de cada etapa; não declarar um gate concluído sem todos os requisitos.
 
-1. Capturar PNG/JSON/sha256 de quadros completos via Chromium e Sharp, com mapa de diferenças por região, não só 3 pixels opacos.
-2. Testar alpha, crop, flip, rotação, máscaras e texto; comparar geometria e bordas em sequência, sem afrouxar limiares para esconder diferenças.
-3. Implementar casos de texto/boca/cabelo, vídeo e áudio **sem depender de projetos antigos**; perfilar tempo total incluindo preparação.
-4. Medir Windows empacotado e MP4 equivalente; só então fechar G0/G1 e decidir tecnologia. F2–F8 permanecem em andamento ou pendentes.
+1. **NEXT-005, F0/F1:** PNG/JSON/hash de quadros completos Chromium x Sharp; métricas RGBA, mapas/bounding boxes de diferença e fixtures de alpha, crop, flip, rotação, máscara, texto/z-order.
+2. **NEXT-006, F1/F2:** robustecer o compositor offline e o contrato de IR determinístico; preparar/evaluar por frame, seek aleatório, timebase 24/30, recursos e invalidação, com testes por borda.
+3. **NEXT-007, F3:** personagens estáticos, trocas de pose/expressão, geometria/mascaras e assets de fonte versionados, medindo paridade de frames de laboratório.
+4. **NEXT-008, F4:** boca (talk/talk-blink/patch) e cabelo (H0-H4) em laboratório, com A/B de recursos, perfil e sequência determinística; não ligar ao export padrão.
+5. **NEXT-009, F5:** camadas de vídeo e áudio com clocks/PTS, filtros e smoke sintético curto de MP4 quando possível; sem projetos pessoais, sem medir velocidade real ponta a ponta.
+6. **NEXT-010, qualidade:** regressões, falha/cancelamento/limpeza em temporários isolados, stress sintético intensivo permitido e CI Windows com resultados reais; atualizar o estado somente com evidências.
+
+**Adiado intencionalmente:** BENCH de exportação real (5/40/200 s, projeto de 6.000 frames), conclusão de G6 e mudança de padrão/limpeza do legado. Se as tarefas forem grandes, entregar um conjunto coerente e testado, listar o restante sem afirmar conclusão.
 
 ## Bloqueios/hipóteses em aberto
 

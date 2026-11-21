@@ -3,7 +3,7 @@ id: V6-ENGINE-PLAN-1.3
 tipo: validacao-e-operacao
 status: proposto
 branch: Dev-v3
-atualizado: 2026-11-20
+atualizado: 2026-11-21
 anterior: PLANO-1.2.md
 ---
 
@@ -53,6 +53,8 @@ Conservar anotações de bugs antigos para não congelar um defeito.
 
 ## 4. Benchmark justo [BENCH]
 
+**Sequenciamento obrigatório (DEC-019/020):** durante a construção, permitir testes de regressão, comparação integral de pixels, perfil intensivo de CPU/GPU/RAM, stress de memória/seek/concorrência e experimentos sintéticos, inclusive com carga alta no PC. Respeitar limites de memória/disco, processos e temporários; não tocar dados pessoais. Um smoke MP4 **sintético curto** valida somente funcionalidade, não velocidade. **Não executar ainda** a bateria de exportações reais, comparações fim a fim de velocidade ou o corte de 6.000 quadros; só aplicar o protocolo abaixo quando a engine estiver funcional, integrada e apta à avaliação final, após nova orientação explícita. O desempenho de microbenchmarks não prova a meta de 90 s.
+
 **Histórico, não resultado atual:** export completo [0, 6000), 1080p30, OpenH264 CPU, 4 workers, animações completas/áudio: **163,760 s**. Meta exploratória **<=90 s**.
 Fonte: `docs/editor-v6/atual/README.md`, `PESQUISA-1.1.md`, `EXECUCAO-1.1.md`.
 
@@ -84,7 +86,7 @@ npm run bench:editor-v6:project -- <opcoes-validadas>
 ```
 
 - Alguns scripts exigem Electron, FFmpeg e Windows; CI `windows-2025` não equivale a Windows 11/AMD AMF físico.
-- O benchmark com projeto real exige cópia isolada verificada e respeito ao escopo de autorização; priorizar fixtures sintéticas.
+- A bateria de benchmark com projeto real está **adiada** pela DEC-020, mesmo que haja autorização antiga para cópia isolada; o Codex só executa provas sintéticas agora.
 - Verificar um bundle empacotado; execução em Node/Vitest não prova que biblioteca nativa foi empacotada.
 - Cada PR/commit importante deve registrar testes **executados** vs **pendentes**, não inventar aprovação.
 - CI rápido da `Dev-v3` existe em `.github/workflows/editor-v6-dev-v3-contracts.yml`; pipeline novo precisa adicionar gates próprios quando houver código.
