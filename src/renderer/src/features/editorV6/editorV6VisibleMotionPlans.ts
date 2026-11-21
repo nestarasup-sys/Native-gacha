@@ -43,7 +43,7 @@ export function editorV6VisibleMotionPlans(
   blocks: readonly EditorV6TimelineBlock[],
   range: EditorV6FrameRange
 ): EditorV6MotionPlan[] {
-  if (track.kind !== 'character') return []
+  if (track.kind !== 'character' || track.motionEnabled === false) return []
   const [startFrame, endFrame] = range
   const plans: EditorV6MotionPlan[] = []
   for (const [previous, next] of selectEditorV6MotionPairsInRange(blocks, range)) {

@@ -44,6 +44,16 @@ Registro das 50 melhorias adicionais solicitadas. Cada item conta uma mudança d
 | 38 | Limitar a quatro as decodificações simultâneas de imagens de cabelo no worker. | Fixture com nove fontes confirma o limite e o compartilhamento do bitmap entre superfície e textura. |
 | 39 | Limitar a quatro os canvases de pose mantidos por personagem, liberando os pixels do menos recente. | Teste confirma o reaproveitamento da pose recente, a liberação da antiga e sua recomposição. |
 | 40 | Reaproveitar a classificação das peças de cabelo por ordem de composição do rig. | Testes confirmam a ordem das camadas estáticas e das transições. |
+| 41 | Consultar apenas o estado de fala ao preparar as amostras de transição, que já mantêm os olhos abertos. | Testes de movimento, piscada e fala. |
+| 42 | Adiar o índice de transições da cena enquanto a timeline ainda não tiver nenhum atlas preparado. | Testes de resolução de cena com atlas pronto e sem atlas. |
+| 43 | Omitir os limites cumulativos nos índices de personagem, cuja regra é manter o estado até o próximo bloco. | Testes de timeline, incluindo cortes e sobreposição. |
+| 44 | Resolver a cena sem ordenar novamente quando o resultado já segue a ordem das camadas. | Comparação de cenas e testes de composição. |
+| 45 | Reutilizar os blocos que já estão em ordem ao montar planos de movimento, aceitando projetos com blocos fora de ordem. | Comparação com a versão anterior em timelines ordenadas e invertidas. |
+| 46 | Serializar a chave da transição uma única vez após resolver os modos faciais. | Comparação das chaves com a versão anterior e testes de invalidação. |
+| 47 | Preencher o modo facial nas amostras recém-criadas, sem gerar uma segunda coleção de amostras. | Comparação das amostras com a versão anterior e testes de movimento. |
+| 48 | Pular a preparação do plano de cabelo quando a exportação não contém pacote de cabelo. | Testes do worker sem cabelo e com rig carregado. |
+| 49 | Omitir o mapa de blocos de transição no modo padrão de reação à pose, que usa somente os eventos de fim de pose. | Testes do worker e exportação integrada de cabelo. |
+| 50 | Pular a busca de pares de transição nas faixas em que o movimento foi desativado pelo usuário. | Testes do plano de movimento e da janela visível. |
 
 Na verificação sintética de MP4, os casos padrão `current-parity`, `capture-profile-unique-320` e `capture-profile-unique-1080` concluíram com 40, 60 e 60 quadros. A suíte parou no caso experimental `capture-profile-paint-1080` por timeout ao aguardar o token de pintura. Os casos posteriores não foram executados nessa tentativa.
 

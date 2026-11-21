@@ -9,6 +9,14 @@ export const frameTimecode = (frame: number): string => {
   return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`
 }
 export const compareEditorV6TimelineBlocks = (a: EditorV6TimelineBlock, b: EditorV6TimelineBlock) => a.startFrame - b.startFrame || a.id.localeCompare(b.id)
+export function orderedEditorV6TimelineBlocks(blocks: EditorV6TimelineBlock[]): EditorV6TimelineBlock[] {
+  for (let index = 1; index < blocks.length; index++) {
+    if (compareEditorV6TimelineBlocks(blocks[index - 1], blocks[index]) > 0) {
+      return [...blocks].sort(compareEditorV6TimelineBlocks)
+    }
+  }
+  return blocks
+}
 export const timelineClips = (timeline: EditorV6Timeline): TimelineClip[] => timeline.tracks.flatMap((track) => track.blocks.map((block) => ({ track, block })))
 
 /** Finds one block without allocating a flattened copy of the timeline. */
@@ -68,9 +76,8 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
   const durationFrames = Math.min(MAX_TIMELINE_FRAME, end)
   tracks = tracks.map((track) => {
     if (track.kind !== 'character') return track
-    const sorted = track.blocks.some((block, index, blocks) => index > 0 && compareEditorV6TimelineBlocks(blocks[index - 1], block) > 0)
-      ? { ...track, blocks: [...track.blocks].sort(compareEditorV6TimelineBlocks) }
-      : track
+    const blocks = orderedEditorV6TimelineBlocks(track.blocks)
+    const sorted = blocks === track.blocks ? track : { ...track, blocks }
     return updateTimelineBlocks(sorted, (block, index) => {
       const duration = Math.max(1, (sorted.blocks[index + 1]?.startFrame ?? durationFrames) - block.startFrame)
       return duration === block.durationFrames ? block : { ...block, durationFrames: duration }
@@ -127,7 +134,10 @@ function compile(timeline: EditorV6Timeline): CompiledTimeline {
     }
   }
   for (const entry of result.byElement.values()) {
-    entry.clips.sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+    if (entry.clips.some(({ block }, index, clips) => index > 0 && compareEditorV6TimelineBlocks(clips[index - 1].block, block) > 0)) {
+      entry.clips.sort((a, b) => compareEditorV6TimelineBlocks(a.block, b.block))
+    }
+    if (entry.character) continue
     let end = 0
     entry.maximumEnds = entry.clips.map(({ block }) => { end = Math.max(end, block.startFrame + block.durationFrames); return end })
   }
@@ -154,6 +164,7 @@ function clipAtFrame(entry: ElementIndex | undefined, frame: number): TimelineCl
 export function resolveEditorV6StaticElementsAtFrame(document: EditorV6Document, frame: number): EditorV6Element[] {
   const compiled = compile(document.timeline)
   const resolved: EditorV6Element[] = []
+  let ordered = true
   for (const base of document.elements) {
     const elementIndex = compiled.byElement.get(base.id)
     const clip = clipAtFrame(elementIndex, frame)
@@ -161,7 +172,11 @@ export function resolveEditorV6StaticElementsAtFrame(document: EditorV6Document,
     if (!clip && (compiled.managed.has(base.id) || elementIndex)) continue
     const state = clip?.block.state ?? base
     if (state.visible === false) continue
-    resolved.push(state.id === base.id ? state : { ...state, id: base.id })
+    const element = state.id === base.id ? state : { ...state, id: base.id }
+    if (ordered && resolved.length && compareSceneElements(resolved[resolved.length - 1], element) > 0) ordered = false
+    resolved.push(element)
   }
-  return resolved.sort((a, b) => a.zIndex - b.zIndex || a.id.localeCompare(b.id))
+  return ordered ? resolved : resolved.sort(compareSceneElements)
 }
+
+const compareSceneElements = (a: EditorV6Element, b: EditorV6Element) => a.zIndex - b.zIndex || a.id.localeCompare(b.id)

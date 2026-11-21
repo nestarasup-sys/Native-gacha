@@ -87,6 +87,7 @@ export function resolveEditorV6SceneAtFrame(document: EditorV6Document, frame: n
 }
 
 const motionIndex = new WeakMap<EditorV6Document['timeline'], Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>>()
+const hasPreparedMotion = new WeakMap<EditorV6Timeline, boolean>()
 type BaseCharacterIndex = { byElementId: Map<string, EditorV6Element>; byCharacterId: Map<string | undefined, EditorV6Element> }
 const baseCharacterIndexCache = new WeakMap<EditorV6Document['elements'], BaseCharacterIndex>()
 
@@ -172,6 +173,13 @@ export function resolveEditorV6ElementsAtFrame(document: EditorV6Document, frame
     return element
   }
   if (options.includeMotion === false) return attachLinkedBalloons(document, resolved.map(applyAutomaticFace), frame)
+  let prepared = hasPreparedMotion.get(document.timeline)
+  if (prepared === undefined) {
+    prepared = document.timeline.tracks.some(track => track.blocks.some(block => Boolean(block.incomingMotion)))
+    hasPreparedMotion.set(document.timeline, prepared)
+  }
+  // Preview can still show authored poses before any transition atlas is ready.
+  if (!prepared) return attachLinkedBalloons(document, resolved.map(applyAutomaticFace), frame)
   const includeSpeechMouth = options.includeSpeechMouth !== false
   const indexes = motionIndex.get(document.timeline) ?? new Map<boolean, Map<string, Array<{ plan: EditorV6MotionPlan; block: EditorV6TimelineBlock }>>>()
   let index = indexes.get(includeSpeechMouth)
