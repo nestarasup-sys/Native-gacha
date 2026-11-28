@@ -8,6 +8,7 @@ export const editorV6IpcChannels = {
   saveEditorV6Project: 'editor-v6:projects:save',
   deleteEditorV6Project: 'editor-v6:projects:delete',
   getEditorV6Folder: 'editor-v6:folder',
+  openEditorV6Folder: 'editor-v6:folder:open',
   importEditorV6Image: 'editor-v6:import-image',
   linkEditorV6LibraryBackground: 'editor-v6:background:link-library',
   linkEditorV6LibraryAsset: 'editor-v6:asset:link-library',

@@ -82,14 +82,18 @@ export function useEditorV6CharacterSnapshotRefresh({
     if (exportInProgress || !project || !availableCharactersReady || !normalizedProjectIdsRef.current.has(project.id)
       || poseSourceSnapshot?.projectId !== project.id) return
 
-    const forceRefresh = refreshOnOpenProjectId === project.id
-    if (!availableCharacters.length && !forceRefresh) return
-    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions, poseSourceSnapshot.headExtraRevisions, poseSourceSnapshot.eyeRevisions, forceRefresh)
+    const openingProject = refreshOnOpenProjectId === project.id
+    if (!availableCharacters.length) {
+      if (openingProject) setRefreshOnOpenProjectId(null)
+      setRefreshing(false)
+      return
+    }
+    const plan = planEditorV6CharacterRefresh(project, availableCharacters, poseSourceSnapshot.revisions, poseSourceSnapshot.modelRevisions, poseSourceSnapshot.wardrobeRevisions, poseSourceSnapshot.hairRevisions, poseSourceSnapshot.headExtraRevisions, poseSourceSnapshot.eyeRevisions)
     if (plan.missingCharacterNames.length) {
       reportError(`Não foi possível atualizar ${plan.missingCharacterNames.join(', ')} porque o personagem não está disponível no Customizador.`)
     }
     if (!plan.groups.length) {
-      if (forceRefresh) setRefreshOnOpenProjectId(null)
+      if (openingProject) setRefreshOnOpenProjectId(null)
       setRefreshing(false)
       return
     }
@@ -107,14 +111,14 @@ export function useEditorV6CharacterSnapshotRefresh({
         )
         if (stopped() || !result) return
 
-        if (forceRefresh) setRefreshOnOpenProjectId(null)
+        if (openingProject) setRefreshOnOpenProjectId(null)
         updateProject((current) => current.id === projectId
           ? applyEditorV6CharacterRefreshResult(current, result, pruneEditorV6TimelineSnapshots)
           : current)
         markUnsaved()
       } catch (reason) {
         if (!stopped()) {
-          if (forceRefresh) setRefreshOnOpenProjectId(null)
+          if (openingProject) setRefreshOnOpenProjectId(null)
           reportError(reason instanceof Error ? reason.message : 'Não foi possível atualizar o personagem e as poses salvas no Editor V6.')
         }
       } finally {

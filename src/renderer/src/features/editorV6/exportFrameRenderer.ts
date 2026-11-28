@@ -11,7 +11,7 @@ import { createEditorV6NativeFramePlan } from './editorV6NativeFramePlan'
 type HairRuntime = ReturnType<typeof createEditorV6ExportWorkerHairRuntime>
 type ExportScene = ReturnType<HairRuntime['resolveRawSceneAtFrame']>
 type ExportSceneElement = ExportScene['elements'][number]
-type RenderLayer = 'all' | 'background' | 'foreground' | 'stacked'
+type RenderLayer = 'all' | 'background' | 'foreground'
 
 const EMPTY_ORIGINAL_ELEMENTS: ReadonlyMap<string, ExportSceneElement> = new Map()
 
@@ -59,7 +59,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
 
   return async (
     frame: number,
-    layer: 'background' | 'foreground' | 'stacked' | undefined,
+    layer: 'background' | 'foreground' | undefined,
     paintToken: number
   ): Promise<EditorV6RenderFrameResult> => {
     const frameStarted = now()
@@ -75,13 +75,11 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     const rawScene = hairRuntime.resolveRawSceneAtFrame(frame)
     const scene = hairRuntime.applyMouthLoop(rawScene, frame)
     const framePlan = resolveEditorV6ExportFramePlan({
-      scene, frame, requestedLayer: layer === 'stacked' ? undefined : layer, layeredVideo: layeredVideo && layer !== 'stacked', hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
+      scene, frame, requestedLayer: layer, layeredVideo, hairAnimation, hairPoseReactionEnds: hairRuntime.hairPoseReactionEnds,
       visualKeyCache,
       hasAnimatedHair: element => hairRuntime.hasAnimatedHair(element, frame)
     })
     const { activeLayer, activeHair, riggedElementIds, key, layerKeys } = framePlan
-    // A stacked frame contains the full background and foreground in one
-    // DOM paint. Frame reuse is evaluated for both layers together.
     timings.sceneResolutionMs = now() - resolutionStarted
     const reuseDecision = frameReuse.decide(key, activeLayer, layerKeys)
     if (reuseDecision === 'frame') return completeFrame({ reused: true })
@@ -146,7 +144,7 @@ export function createEditorV6ExportFrameRenderer(options: Options) {
     setDiagnosticStage(`react-commit:${frame}`)
     commitSurface({
       scene: renderScene, assets: renderAssets, resolveAssetById: resolveFrameAsset, outputWidth: width, outputHeight: height,
-      renderLayer: layer === 'stacked' ? 'stacked' : activeLayer ?? 'all', onImageLoad, rasterCanvases
+      renderLayer: activeLayer ?? 'all', onImageLoad, rasterCanvases
     })
     timings.reactCommitMs = now() - reactCommitStarted
 

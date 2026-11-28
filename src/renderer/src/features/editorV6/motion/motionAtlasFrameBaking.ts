@@ -38,6 +38,10 @@ export type BakedMotionAtlasFrames = {
   layerAtlases?: MotionLayerAtlases
 }
 
+export class MotionAtlasCellOverflow extends Error {
+  constructor() { super('O recorte intermediário não cabe na célula prevista do atlas.') }
+}
+
 /** Creates the body atlas, draws each pose and returns its frame/layer metadata. */
 export async function bakeEditorV6MotionAtlasFrames<Frame extends MotionAtlasSourceFrame>({
   samples,
@@ -77,6 +81,7 @@ export async function bakeEditorV6MotionAtlasFrames<Frame extends MotionAtlasSou
       try {
         const x = index % columns * cellWidth, y = Math.floor(index / columns) * cellHeight
         const width = Math.max(1, Math.ceil(crop.width * ratio)), height = Math.max(1, Math.ceil(crop.height * ratio))
+        if (width > cellWidth || height > cellHeight) throw new MotionAtlasCellOverflow()
         const sourceCanvas = baked?.canvas ?? frame!.canvas
         const atlasDrawStarted = performance.now()
         context.drawImage(sourceCanvas, baked ? 0 : crop.left, baked ? 0 : crop.top, crop.width, crop.height, x, y, width, height)

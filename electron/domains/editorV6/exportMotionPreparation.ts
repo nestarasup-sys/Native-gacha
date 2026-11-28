@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6ExportOptions } from '../../../src/shared/editorV6Export'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { prepareExportMotions } from './prepareMotions'
@@ -42,7 +43,7 @@ export async function prepareEditorV6ExportMotions(dependencies: Dependencies): 
     // Each export reconstructs motion atlases from current timeline/character
     // inputs. Only equal transitions within THIS run share a result.
     ignoreExistingMotions: true,
-    ...(options.mouthLoop === false ? {} : { mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? 30 } }),
+    ...(options.mouthLoop === false ? {} : { mouthLoop: { startFrame: options.startFrame, cycleFrames: options.mouthLoopCycleFrames ?? EDITOR_V6_TIMELINE_FPS } }),
     bake: (request, bakeSignal) => {
       if (inputSamples.length < 3 && !inputSamples.some((sample) => sample.characterId === request.character.id)) {
         inputSamples.push({

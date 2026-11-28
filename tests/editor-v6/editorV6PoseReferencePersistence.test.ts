@@ -156,7 +156,7 @@ describe('inventário leve de poses do Editor V6', () => {
       readEditorV6Summary: async () => null,
       readEditorV6PoseReferences: persistence.readEditorV6PoseReferences
     })
-    expect(await library.listEditorV6s()).toHaveLength(0)
+    expect(await library.listEditorV6s()).toMatchObject([{ id: projectId, unavailableReason: 'O manifesto do projeto não foi encontrado.' }])
     expect(await library.listEditorV6PoseReferenceDocuments()).toHaveLength(1)
   })
 

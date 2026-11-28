@@ -65,10 +65,19 @@ let closePanelTest: () => void
     assert(button, `Painel de exportação não mostrou o botão: ${text}. Conteúdo: ${mount.textContent?.slice(-900)}`)
     return button
   }
+  const waitForButton = async (text: string) => {
+    const deadline = Date.now() + 5000
+    while (Date.now() < deadline) {
+      const button = Array.from(document.querySelectorAll('button')).find((item) => item.textContent?.includes(text))
+      if (button) return button
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+    return findButton(text)
+  }
   const hairAnimationCheckbox = () => {
-    const label = Array.from(document.querySelectorAll('label.v6-export-check')).find((item) => item.textContent?.includes('Exportar sem animação de cabelo'))
+    const label = Array.from(document.querySelectorAll('label.v6-export-check')).find((item) => item.textContent?.includes('Usar só piscadas e transições de pose e expressão'))
     const checkbox = label?.querySelector('input[type="checkbox"]')
-    assert(checkbox, 'Painel não mostrou a opção de exportar sem animação de cabelo.')
+    assert(checkbox, 'Painel não mostrou a opção de animação simplificada.')
     return checkbox
   }
   function Demo() {
@@ -82,16 +91,18 @@ let closePanelTest: () => void
   await new Promise((resolve) => requestAnimationFrame(resolve))
   assert(mount.textContent?.includes('C:/exportacoes') && mount.textContent?.includes('Mudar pasta fixa'), 'Painel não mostrou a pasta escolhida.')
   findButton('Selecionar da biblioteca').click()
-  await new Promise((resolve) => requestAnimationFrame(resolve))
-  findButton(libraryAudio.name).click()
-  await new Promise((resolve) => requestAnimationFrame(resolve))
+  ;(await waitForButton(libraryAudio.name)).click()
+  const linkedDeadline = Date.now() + 5000
+  while ((linked !== 1 || !mount.textContent?.includes(libraryAudio.name)) && Date.now() < linkedDeadline) {
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
   assert(linked === 1 && mount.textContent?.includes(libraryAudio.name), 'A seleção da biblioteca não vinculou o áudio ao projeto.')
   hairAnimationCheckbox().click()
-  findButton('EXPORTAR MP4 · SEM ANIMAÇÃO DE CABELO').click()
+  findButton('EXPORTAR MP4').click()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(startedWithoutHair && prepared === 0 && started === 1, 'A opção sem cabelo preparou animação ou não iniciou a exportação.')
   hairAnimationCheckbox().click()
-  findButton('EXPORTAR MP4 · COM ANIMAÇÃO DE CABELO').click()
+  findButton('EXPORTAR MP4').click()
   await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
   assert(prepared === 1 && started === 2 && mount.textContent?.includes('MP4 exportado e validado.'), 'Exportação padrão não preservou a animação ou não mostrou o resultado.')
   closePanelTest = () => { root.unmount(); mount.remove() }

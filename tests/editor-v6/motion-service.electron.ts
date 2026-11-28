@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { readFile, writeFile } from 'node:fs/promises'
 import { strict as assert } from 'node:assert'
 import { createEditorV6MotionService } from '../../electron/domains/editorV6/motionIpc'
-import { editorV6MotionPlan, type EditorV6MotionBakeRequest } from '../../src/shared/editorV6Motion'
+import { attachEditorV6Motion, editorV6MotionPlan, type EditorV6MotionBakeRequest } from '../../src/shared/editorV6Motion'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6TimelineTrack } from '../../src/shared/editorV6'
 import type { FaceCatalogItem, FabricatorProject } from '../../src/shared/fabricator'
@@ -190,12 +191,40 @@ async function main() {
   assert.ok(first.motion.frames[0].x !== second.motion.frames[0].x,
     'Session reuse accidentally returned the previous actor geometry')
   await writeFile(join(folder, 'client.html'), '<!doctype html><html><body></body></html>')
-  await writeFile(join(folder, 'client-preload.cjs'), "const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('prepareTest',{prepare:r=>ipcRenderer.invoke('editor-v6:motion:prepare',r)})")
-  const client = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, preload: join(folder, 'client-preload.cjs') } })
+  await writeFile(join(folder, 'client-preload.cjs'), "const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('prepareTest',{prepare:r=>ipcRenderer.invoke('editor-v6:motion:prepare',r),bake:r=>ipcRenderer.invoke('editor-v6:motion:bake',r),cancel:id=>ipcRenderer.invoke('editor-v6:motion:cancel',id)})")
+  const client = new BrowserWindow({ show: false, webPreferences: { offscreen: true, sandbox: true, contextIsolation: true, preload: join(folder, 'client-preload.cjs') } })
   try {
     await client.loadFile(join(folder, 'client.html'))
     const response = await client.webContents.executeJavaScript(`window.prepareTest.prepare(${JSON.stringify({ ...firstRequest, id: randomUUID() })})`)
     assert.equal(response, undefined, 'Background preparation sent a PNG atlas to the editor UI')
+    const beforePreviewCancellation = windows
+    const previewRequests = [request(10), request(11), request(12)]
+    const [kept, discarded, following] = await client.webContents.executeJavaScript(`(async () => {
+      const [first, obsolete, next] = ${JSON.stringify(previewRequests)}
+      const pending = [prepareTest.bake(first), prepareTest.bake(obsolete), prepareTest.bake(next)]
+      await prepareTest.cancel(obsolete.id)
+      return Promise.all(pending)
+    })()`)
+    assert.equal(discarded, null, 'Preview cancellation rejected or returned an atlas')
+    assert.equal(kept.motion.key, previewRequests[0].plan.key)
+    assert.equal(following.motion.key, previewRequests[2].plan.key)
+    assert.equal(windows, beforePreviewCancellation, 'Cancelling a queued preview bake retired the warm worker')
+    const fixture = preparationFixture(1, 2).project
+    const assetId = randomUUID()
+    const intro: EditorV6TimelineTrack = { id: randomUUID(), kind: 'intro', name: 'Intro', muted: false, locked: false,
+      blocks: [1, 2].map((poseSlot, index) => ({
+        id: randomUUID(), label: character.name, startFrame: index * 30, durationFrames: 30,
+        intro: { kind: 'character', characterId: character.id, assetId, portraitAspect: 1, poseSlot,
+          face: { faceAppearance }, text: 'Olá.', englishText: 'Hello.', flipX: false }
+      }))
+    }
+    fixture.timeline = { ...fixture.timeline, durationFrames: 60, tracks: [intro] }
+    const plan = editorV6MotionPlan(intro, intro.blocks[0], intro.blocks[1])!
+    const atlas = await client.webContents.executeJavaScript(`window.prepareTest.bake(${JSON.stringify({ id: randomUUID(), plan, character })})`)
+    const preview = attachEditorV6Motion(fixture, plan.blockId, atlas)
+    assert.ok(resolveEditorV6SceneAtFrame(preview, 26).elements[0].motionSprite, 'Intro preview did not display the offscreen atlas')
+    assert.equal(resolveEditorV6SceneAtFrame(preview, 30).elements[0].poseSlot, 2, 'Intro preview did not arrive at the authored pose')
+    assert.equal(fixture.timeline.tracks[0].blocks[1].incomingMotion, undefined, 'Preparing the preview modified the saved scene')
   } finally { client.destroy() }
   const beforeScopedExportReads = modelReads, scopedRequest = { ...firstRequest, id: randomUUID(), cacheScope: randomUUID() }
   const scopedExport = await service!.bakeForExport(scopedRequest, new AbortController().signal)

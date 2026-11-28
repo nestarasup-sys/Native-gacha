@@ -1,6 +1,6 @@
 import type { EditorV6Timeline as Timeline } from '../../../../shared/editorV6'
 import { findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
-import { duplicateEditorV6Block, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
+import { duplicateEditorV6Block, removeEditorV6TimelineBlock, splitEditorV6Block } from '../../../../shared/editorV6TimelineEdits'
 
 type Dependencies = {
   getTimeline: () => Timeline
@@ -14,20 +14,7 @@ export function createEditorV6TimelineBlockCommands(dependencies: Dependencies) 
   const remove = (id: string) => {
     const found = findEditorV6TimelineClip(dependencies.getTimeline(), id)
     if (!found || found.track.locked) return
-    const removedEndFrame = found.block.startFrame + found.block.durationFrames
-    const removedDurationFrames = found.block.durationFrames
-    dependencies.changeTimeline((current) => ({ ...current, tracks: current.tracks.map((track) => ({
-      ...track,
-      blocks: track.blocks.flatMap((block) => {
-        if (block.id === id) {
-          if (track.kind !== 'character' || track.blocks.some((candidate) => candidate.id !== id && candidate.startFrame >= removedEndFrame)) return []
-          return [{ ...block, id: crypto.randomUUID(), label: 'Vazio', state: block.state ? { ...block.state, visible: false } : undefined, emptyGap: true }]
-        }
-        if (block.parentBlockId === id) return []
-        if (track.id === found.track.id && block.startFrame >= removedEndFrame) return [{ ...block, startFrame: Math.max(found.block.startFrame, block.startFrame - removedDurationFrames) }]
-        return [block]
-      })
-    })) }))
+    dependencies.changeTimeline(current => removeEditorV6TimelineBlock(current, id))
     dependencies.closeMenu()
   }
 

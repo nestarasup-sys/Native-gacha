@@ -1,3 +1,4 @@
+import { editorV6IntroCharacterElement } from '../../../../shared/editorV6Intro'
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../../shared/editorV6CharacterSource.ts'
@@ -9,7 +10,7 @@ export type { EditorV6CharacterRefreshGroup, EditorV6CharacterRefreshPlan, Edito
 
 const poseRevisionKey = (modelSlot: number, poseSlot: number) => `${modelSlot}:${poseSlot}`
 
-/** Collect character snapshots that are stale, or all of them when opening a project. */
+/** Collect only character snapshots whose saved source or render version is stale. */
 export function planEditorV6CharacterRefresh(
   project: EditorV6Document,
   availableCharacters: CustomizerCharacter[],
@@ -18,17 +19,17 @@ export function planEditorV6CharacterRefresh(
   wardrobeRevisions: Record<string, string> = {},
   hairRevisions: Record<string, string> = {},
   headExtraRevisions: Record<string, string> = {},
-  eyeRevisions: Record<string, string> = {},
-  forceRefresh = false
+  eyeRevisions: Record<string, string> = {}
 ): EditorV6CharacterRefreshPlan {
   const characters = new Map(availableCharacters.map((character) => [character.id, character]))
   const groups = new Map<string, EditorV6CharacterRefreshGroup>()
   const missingCharacterNames = new Set<string>()
-  const addTarget = (kind: EditorV6CharacterRefreshTarget['kind'], id: string, state: EditorV6Element) => {
+  const addTarget = (kind: EditorV6CharacterRefreshTarget['kind'], id: string, state: EditorV6Element, fitLegacyPortrait = false) => {
+    const legacyIntro = kind === 'intro'
     if (state.kind !== 'character' || !state.characterId || !state.assetId) return
     const character = characters.get(state.characterId)
     if (!character) {
-      if (forceRefresh || state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text)
+      if (state.faceRendererVersion !== EDITOR_V6_FACE_RENDER_VERSION) missingCharacterNames.add(state.text)
       return
     }
     const poseSlot = state.poseSlot === undefined ? character.customization.poseSlot : state.poseSlot
@@ -47,17 +48,23 @@ export function planEditorV6CharacterRefresh(
     const headExtraChanged = headExtraRevision !== undefined && state.headExtraSourceRevision !== headExtraRevision
     const eyeRevision = editorV6CharacterEyeSourceRevision(character, eyeRevisions)
     const eyeChanged = eyeRevision !== undefined && state.eyeSourceRevision !== eyeRevision
-    if (!forceRefresh && !poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && editorV6CharacterSnapshotIsCurrent(state, character)) return
-    const signature = JSON.stringify([character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot,
+    if (!legacyIntro && !poseChanged && !modelChanged && !wardrobeChanged && !hairChanged && !headExtraChanged && !eyeChanged && state.faceRendererVersion === EDITOR_V6_FACE_RENDER_VERSION && editorV6CharacterSnapshotIsCurrent(state, character)) return
+    const signature = JSON.stringify([legacyIntro, character.id, character.updatedAt, EDITOR_V6_FACE_RENDER_VERSION, poseRevision, poseSlot,
       state.faceAppearance, state.expressionBase, state.faceTransforms, state.activeFaceMode, state.activeExpressionPresetId,
       state.activeExpressionPresetUpdatedAt, state.activeExpressionGaze, state.activeExpressionEffects, modelRevision ?? state.modelSourceRevision ?? null, wardrobeRevision ?? null, hairRevision ?? null, headExtraRevision ?? null, eyeRevision ?? null])
     const group = groups.get(signature) ?? { character, state, targets: [], ...(poseRevision ? { poseRevision } : {}), modelRevision: modelRevision ?? state.modelSourceRevision ?? 'missing', ...(wardrobeRevision ? { wardrobeRevision } : {}), ...(hairRevision ? { hairRevision } : {}), ...(headExtraRevision ? { headExtraRevision } : {}), ...(eyeRevision ? { eyeRevision } : {}) }
-    group.targets.push({ kind, id, state })
+    group.targets.push({ kind, id, state, ...(fitLegacyPortrait ? { fitLegacyPortrait } : {}) })
     groups.set(signature, group)
   }
   for (const element of project.elements) addTarget('element', element.id, element)
   for (const track of project.timeline.tracks) {
-    for (const block of track.blocks) if (block.state && block.elementId) addTarget('block', block.id, block.state)
+    for (const block of track.blocks) {
+      if (block.state && block.elementId) addTarget('block', block.id, block.state)
+      if (block.intro?.kind === 'character' && (block.intro.faceRendererVersion ?? 0) < EDITOR_V6_FACE_RENDER_VERSION) {
+        const state = editorV6IntroCharacterElement(block)
+        if (state) addTarget('intro', block.id, state, !block.intro.portraitAspect)
+      }
+    }
   }
   return { groups: [...groups.values()], missingCharacterNames: [...missingCharacterNames] }
 }

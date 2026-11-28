@@ -70,6 +70,8 @@ describe('resolveEditorV6ExportFramePlan', () => {
   it.each([
     ['balloon scale', actor({ kind: 'speech' }), actor({ kind: 'speech', balloonScalePercent: 125 })],
     ['balloon vertical offset', actor({ kind: 'thought' }), actor({ kind: 'thought', balloonOffsetY: -5 })],
+    ['balloon translation', actor({ kind: 'thought', englishText: 'First' }), actor({ kind: 'thought', englishText: 'Second' })],
+    ['balloon tail', actor({ kind: 'thought', speakerAnchorX: 7 }), actor({ kind: 'thought', speakerAnchorX: 12 })],
     ['linked speaker name', actor({ kind: 'speech' }), actor({ kind: 'speech', speakerName: 'Alice' })],
     ['linked speaker color', actor({ kind: 'speech' }), actor({ kind: 'speech', speakerColor: '#8C7BFF' })]
   ])('invalidates frame reuse when %s changes', (_field, before, after) => {

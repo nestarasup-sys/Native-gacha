@@ -1,4 +1,5 @@
 import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
+import { EDITOR_V6_AUDIO_SAMPLE_RATE, EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 import { writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
@@ -18,6 +19,16 @@ export type EditorV6ExportFinalizationPart = Pick<EditorV6ExportPart, 'startFram
 export type EditorV6ExportFinalizationResult = {
   validation: EditorV6ExportMediaProbe & { seams: number[]; decodedFramesNearEachSeam: number }
   audioClips: number
+  finalizationDiagnostics?: EditorV6ExportFinalizationDiagnostics
+}
+
+export type EditorV6ExportFinalizationDiagnostics = {
+  concatMuxMs: number
+  packetProbeMs: number
+  seamDecodeMs: number
+  validationWallMs: number
+  fallbackFrameProbeMs: number
+  validationChecksMs: number
 }
 
 type Dependencies = {
@@ -37,6 +48,8 @@ type Dependencies = {
   setAudioClipCount: (count: number) => void
   setDeliveryWarning: (warning: string) => void
   setValidation: (validation: EditorV6ExportMediaProbe) => void
+  collectDiagnostics?: boolean
+  now?: () => number
 }
 
 const message = (error: unknown) => error instanceof Error ? error.message : String(error)
@@ -44,7 +57,18 @@ const message = (error: unknown) => error instanceof Error ? error.message : Str
 /** Joins rendered parts, recovers only supported audio decode failures, then validates the final MP4. */
 export async function finalizeEditorV6Export(deps: Dependencies): Promise<EditorV6ExportFinalizationResult> {
   const { parts, project, options, totalFrames, signal } = deps
-  const fps = options.fps ?? 30
+  const finalizationDiagnostics = deps.collectDiagnostics
+    ? { concatMuxMs: 0, packetProbeMs: 0, seamDecodeMs: 0, validationWallMs: 0, fallbackFrameProbeMs: 0, validationChecksMs: 0 }
+    : undefined
+  const now = finalizationDiagnostics ? deps.now ?? (() => performance.now()) : undefined
+  const measure = <T>(phase: 'concatMuxMs' | 'packetProbeMs' | 'seamDecodeMs' | 'fallbackFrameProbeMs', run: () => Promise<T>): Promise<T> => {
+    if (!finalizationDiagnostics || !now) return run()
+    const startedAt = now()
+    return run().finally(() => {
+      finalizationDiagnostics[phase] += Math.max(0, now() - startedAt)
+    })
+  }
+  const fps = options.fps ?? EDITOR_V6_TIMELINE_FPS
   const timelineFrames = options.endFrame - options.startFrame
   const duration = totalFrames / fps
   if (new Set(parts.map((part) => part.encoder)).size !== 1) throw Error('As partes usaram codificadores diferentes.')
@@ -68,9 +92,9 @@ export async function finalizeEditorV6Export(deps: Dependencies): Promise<Editor
   deps.setAudioClipCount(audio.length)
   const { strict: filters, recoverable: recoveryFilters } = editorV6AudioFilterGraphs(audio, timelineFrames)
   const audioPaths = await Promise.all(audio.map((item) => deps.audioPath(item.clip)))
-  const joinArgs = (recoverAudio = false) => ['-v', 'error', '-y', ...(recoverAudio ? ['-max_error_rate', '1'] : []), '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', (recoverAudio ? recoveryFilters : filters).join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', '48000'] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(duration), '-movflags', '+faststart', deps.candidate]
+  const joinArgs = (recoverAudio = false) => ['-v', 'error', '-y', ...(recoverAudio ? ['-max_error_rate', '1'] : []), '-f', 'concat', '-safe', '0', '-i', list, ...audioPaths.flatMap((path) => ['-i', path]), ...(audio.length ? ['-filter_complex', (recoverAudio ? recoveryFilters : filters).join(';'), '-map', '0:v:0', '-map', '[mix]', '-c:a', 'aac', '-b:a', '192k', '-ar', String(EDITOR_V6_AUDIO_SAMPLE_RATE)] : ['-map', '0:v:0', '-an']), '-c:v', 'copy', '-t', String(duration), '-movflags', '+faststart', deps.candidate]
   try {
-    await deps.runCommand(deps.ffmpeg, joinArgs(), signal, deps.folder)
+    await measure('concatMuxMs', () => deps.runCommand(deps.ffmpeg, joinArgs(), signal, deps.folder))
   } catch (error) {
     signal.throwIfAborted()
     if (!audio.length) throw error
@@ -85,7 +109,7 @@ export async function finalizeEditorV6Export(deps: Dependencies): Promise<Editor
     try {
       // FFmpeg's default max_error_rate is 2/3 and returns code 69 above it.
       // Retry only after that failure; valid sources keep the strict, unchanged path.
-      await deps.runCommand(deps.ffmpeg, joinArgs(true), signal, deps.folder)
+      await measure('concatMuxMs', () => deps.runCommand(deps.ffmpeg, joinArgs(true), signal, deps.folder))
     } catch (recoveryError) {
       throw Error(`A fonte ${sourceName} tem erros demais para recuperar o ${codec}. O MP4 não foi publicado para evitar áudio ausente. Substitua ou reimporte essa mídia. ${message(recoveryError)}`, { cause: recoveryError })
     }
@@ -103,9 +127,10 @@ export async function finalizeEditorV6Export(deps: Dependencies): Promise<Editor
       if (failed?.status === 'rejected') throw failed.reason
     }
   }
+  const validationTasksStartedAt = now ? now() : undefined
   const [packetProbeResult, seamResult] = await Promise.allSettled([
-    deps.probeMedia(deps.ffprobe, deps.candidate, signal, 'packets'),
-    validateSeams()
+    measure('packetProbeMs', () => deps.probeMedia(deps.ffprobe, deps.candidate, signal, 'packets')),
+    measure('seamDecodeMs', validateSeams)
   ])
   if (packetProbeResult.status === 'rejected') throw packetProbeResult.reason
   if (seamResult.status === 'rejected') throw seamResult.reason
@@ -113,8 +138,9 @@ export async function finalizeEditorV6Export(deps: Dependencies): Promise<Editor
   const packetVideo = validation.streams.find((stream) => stream.codec_type === 'video')
   // Encoded parts have already been frame-count validated; no-B-frame H.264 has one packet per frame.
   if (Number(packetVideo?.nb_read_packets) !== totalFrames || Number(packetVideo?.has_b_frames ?? 0) !== 0) {
-    validation = await deps.probeMedia(deps.ffprobe, deps.candidate, signal, true)
+    validation = await measure('fallbackFrameProbeMs', () => deps.probeMedia(deps.ffprobe, deps.candidate, signal, true))
   }
+  const validationChecksStartedAt = now?.()
   deps.setValidation(validation)
   const video = validation.streams.find((stream) => stream.codec_type === 'video')
   const validatedFrames = video?.nb_read_frames === undefined && Number(video?.has_b_frames ?? 0) === 0
@@ -122,7 +148,17 @@ export async function finalizeEditorV6Export(deps: Dependencies): Promise<Editor
   if (!video || Number(validatedFrames) !== totalFrames || video.width !== deps.options.width || video.height !== deps.options.height || video.r_frame_rate !== `${fps}/1` || !Number.isFinite(Number(video.duration)) || Math.abs(Number(video.duration) - duration) > 1 / fps + .001) throw Error('O arquivo final não passou na validação de quadros, resolução, FPS ou duração.')
   if (audio.length) {
     const sound = validation.streams.find((stream) => stream.codec_type === 'audio')
-    if (!sound || !Number.isFinite(Number(sound.duration)) || Math.abs(Number(sound.duration) - timelineFrames / 30) > .05) throw Error('O arquivo final perdeu ou truncou a trilha de áudio.')
+    if (!sound || !Number.isFinite(Number(sound.duration)) || Math.abs(Number(sound.duration) - timelineFrames / EDITOR_V6_TIMELINE_FPS) > .05) throw Error('O arquivo final perdeu ou truncou a trilha de áudio.')
   }
-  return { validation: { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 }, audioClips: audio.length }
+  if (validationChecksStartedAt !== undefined && now && finalizationDiagnostics)
+    finalizationDiagnostics.validationChecksMs = Math.max(0, now() - validationChecksStartedAt)
+  if (validationTasksStartedAt !== undefined && now && finalizationDiagnostics) {
+    // Includes parallel packet/seam checks plus any fallback probe; these intervals overlap.
+    finalizationDiagnostics.validationWallMs = Math.max(0, now() - validationTasksStartedAt)
+  }
+  return {
+    validation: { ...validation, seams, decodedFramesNearEachSeam: seams.length ? 3 : 0 },
+    audioClips: audio.length,
+    ...(finalizationDiagnostics ? { finalizationDiagnostics } : {})
+  }
 }

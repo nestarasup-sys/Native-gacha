@@ -76,4 +76,31 @@ describe('compilação das faixas de personagens do importador React V6', () => 
       ...common, durationFrames: 0, beats: [{ characterId: actor.characterId, startFrame: 0 }]
     })).rejects.toThrow('Personagem sem imagens visuais: Luka')
   })
+
+  it('mantém o mesmo quadro corporal quando a expressão muda e permite geometria de pose distinta', async () => {
+    const renderState = vi.fn(async (_actor, poseSlot, expression, gaze) => ({
+      ...renderedState(`image-${poseSlot}-${expression ?? 'base'}-${gaze}`),
+      width: expression === 'sad' ? 120.2 : 120,
+      height: expression === 'sad' ? 180.3 : 180,
+      characterCanvasWidth: expression === 'sad' ? 240.4 : 240
+    }))
+    const result = await compileEditorV6ReactCharacterTracks({
+      actors: [actor],
+      beats: [
+        { characterId: actor.characterId, startFrame: 0, poseSlot: 2, expression: 'worried' },
+        { characterId: actor.characterId, startFrame: 40, expression: 'sad' },
+        { characterId: actor.characterId, startFrame: 70, poseSlot: 4, expression: 'sad' }
+      ],
+      durationFrames: 100,
+      characters: [character],
+      poseRevisions: new Map([[actor.characterId, new Map([[2, 'pose-2'], [4, 'pose-4']])]]),
+      renderState,
+      createId: (() => { let id = 0; return () => `stable-${++id}` })()
+    })
+    const blocks = result.tracks[0].blocks
+    expect(blocks[0].state).toMatchObject({ width: 120, height: 180, characterCanvasWidth: 240 })
+    expect(blocks[1].state).toMatchObject({ width: 120, height: 180, characterCanvasWidth: 240 })
+    expect(blocks[2].state).toMatchObject({ width: 120.2, height: 180.3, characterCanvasWidth: 240.4 })
+    expect(blocks[1].state?.assetId).toBe('image-2-sad-right')
+  })
 })

@@ -1,4 +1,5 @@
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 
 export type EditorV6VideoDurationDependencies = {
   createVideo: () => HTMLVideoElement
@@ -39,7 +40,7 @@ export async function recognizeEditorV6VideoDuration(
       video.load()
     })
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 60 * 60 * 24) throw new Error(`A duração de “${item.name}” não é válida.`)
-    return await dependencies.finishImport(item.id, Math.max(1, Math.ceil(seconds * 30)))
+    return await dependencies.finishImport(item.id, Math.max(1, Math.ceil(seconds * EDITOR_V6_TIMELINE_FPS)))
   } finally {
     video.pause()
     video.removeAttribute('src')

@@ -7,6 +7,7 @@ import { planEditorV6VideoOverlays } from '../../src/shared/editorV6VideoComposi
 import { attachEditorV6Motion, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
 import { splitEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { renderEditorV6FrameSvg } from '../../src/renderer/src/features/editorV6/sceneCapture'
+import { SceneSurface } from '../../src/renderer/src/features/editorV6/SceneSurface'
 
 vi.mock('../../src/renderer/src/features/editorV6/editorV6PlaybackClock', () => ({
   useEditorV6PlaybackFrame: () => 83
@@ -26,6 +27,16 @@ const vid = (id: string, name: string) => ({
 })
 
 describe('paridade da seleção visual prévia ↔ exportação', () => {
+  it('desenha os cards acima da cena e mantém os balões acima deles', () => {
+    const ordinary: EditorV6Element = { id: 'ordinary', kind: 'narrator', text: 'Objeto comum', x: 0, y: 0, width: 20, height: 10, rotation: 0, zIndex: 1 }
+    const balloon: EditorV6Element = { id: 'balloon', kind: 'speech', text: 'Fala acima', x: 0, y: 0, width: 20, height: 10, rotation: 0, zIndex: 2 }
+    const scene = { frame: 0, background: { backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0 },
+      elements: [balloon, ordinary], videoCardItems: [{ blockId: 'card', position: 'bottom' as const, text: 'Card acima', layout: { x: 0, y: 0, width: 40, height: 40, rotation: 0 } }] }
+    const svg = renderToStaticMarkup(createElement(SceneSurface, { scene, assets: [] }))
+    expect(svg.indexOf('aria-label="Objeto comum"')).toBeLessThan(svg.indexOf('aria-label="Card acima"'))
+    expect(svg.indexOf('aria-label="Card acima"')).toBeLessThan(svg.indexOf('aria-label="Fala acima"'))
+  })
+
   it('desempata vídeos no mesmo quadro pelo ID do bloco, nunca pelo nome do arquivo', () => {
     const doc = fixture()
     const idA = crypto.randomUUID(), idB = crypto.randomUUID()
@@ -107,12 +118,64 @@ describe('paridade da seleção visual prévia ↔ exportação', () => {
     expect(scene.elements[0].assetId).toBe(atlasId)
     expect(scene.elements[0].motionSprite?.x).toBe(0)
     const preview = renderToStaticMarkup(createElement(EditorV6PlaybackScene, {
-      project: ready, selectedId: null, playing: false, fullView: true
+      project: ready, previewMotionCharacters: [], previewMotionEnabled: false, selectedId: null, playing: false, fullView: true
     }))
     const exportSvg = renderEditorV6FrameSvg(ready, frame)
     expect(preview).toContain('viewBox="0 0 10 10"')
     expect(preview).toContain('data:image/png;base64,AQ==')
     expect(exportSvg).toContain('viewBox="0 0 10 10"')
     expect(exportSvg).toContain('data:image/png;base64,AQ==')
+  })
+
+  it('renderiza os cards temporizados com o mesmo conteúdo e geometria na prévia e no SVG de exportação', () => {
+    const doc = fixture(), mediaId = crypto.randomUUID()
+    doc.media = [vid(mediaId, 'Clipe com cards')]
+    doc.timeline.durationFrames = 180
+    doc.timeline.tracks.find(track => track.kind === 'video')!.blocks = [{ id: crypto.randomUUID(), label: 'Clipe', mediaId,
+      startFrame: 0, durationFrames: 180, mediaLayout: { x: 7, y: -4, width: 72, height: 64, rotation: 8 },
+      videoPresentation: {
+        timeCards: [{ startSeconds: 1, endSeconds: 3, text: 'Future' }],
+        bottomCards: [{ startSeconds: 1, endSeconds: 3, text: 'Contexto em dois idiomas' }]
+      } }]
+    const preview = renderToStaticMarkup(createElement(EditorV6PlaybackScene, {
+      project: doc, previewMotionCharacters: [], previewMotionEnabled: false, selectedId: null, playing: false, fullView: true
+    }))
+    const exportSvg = renderEditorV6FrameSvg(doc, 83)
+    const cardMarkup = (svg: string, label: string) => svg.match(new RegExp(`<g aria-label="${label}">[\\s\\S]*?<\\/g>`))?.[0]
+    expect(cardMarkup(preview, 'Future')).toBeTruthy()
+    expect(cardMarkup(preview, 'Future')).toBe(cardMarkup(exportSvg, 'Future'))
+    expect(cardMarkup(preview, 'Contexto em dois idiomas')).toBe(cardMarkup(exportSvg, 'Contexto em dois idiomas'))
+    expect(preview).toContain('Future')
+    expect(exportSvg).toContain('Contexto em dois idiomas')
+  })
+
+  it('mantém a apresentação bilíngue da Intro e o retrato iguais na prévia e no SVG de exportação', () => {
+    const doc = fixture(), assetId = crypto.randomUUID()
+    doc.assets = [{ id: assetId, category: 'character', name: 'Retrato da Intro', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }]
+    const mediaId = crypto.randomUUID()
+    doc.media = [vid(mediaId, 'Vídeo após a Intro')]
+    doc.timeline.tracks.find(track => track.kind === 'video')!.blocks = [{ id: crypto.randomUUID(), label: 'Vídeo após a Intro', mediaId,
+      startFrame: 90, durationFrames: 10, videoPresentation: { loadingGif: true } }]
+    doc.timeline.tracks.push({ id: crypto.randomUUID(), kind: 'intro', name: 'Intro', muted: false, locked: false, blocks: [{
+      id: crypto.randomUUID(), label: 'Apresentação', startFrame: 80, durationFrames: 10,
+      intro: { kind: 'character', characterId: 'alice', assetId, text: 'Olá, Alice', englishText: 'Hello, Alice', flipX: true,
+        portraitLayout: { x: -10, characterScale: 150, zIndex: 1, flipX: true } }
+    }] })
+    doc.timeline.durationFrames = 100
+    const preview = renderToStaticMarkup(createElement(EditorV6PlaybackScene, {
+      project: doc, previewMotionCharacters: [], previewMotionEnabled: false, selectedId: null, playing: false, fullView: true
+    }))
+    const exportSvg = renderEditorV6FrameSvg(doc, 83)
+    for (const svg of [preview, exportSvg]) {
+      expect(svg).toContain('Hello, Alice')
+      expect(svg).toContain('Olá, Alice')
+      expect(svg).toContain('data:image/png;base64,AA==')
+      expect(svg).toContain('scale(1.5 1.5)')
+      expect(svg).toContain('scale(-1 1)')
+      expect(svg).toContain('aria-label="Loading..."')
+    }
+    expect(resolveEditorV6SceneAtFrame(doc, 83).loadingGifFrame).toBeDefined()
+    expect(resolveEditorV6SceneAtFrame(doc, 83, { includeVideo: false, includeVideoPresentation: true }).loadingGifFrame).toBeDefined()
+    expect(resolveEditorV6SceneAtFrame(doc, 83, { includeVideo: false, includeVideoPresentation: false }).loadingGifFrame).toBeUndefined()
   })
 })

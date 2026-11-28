@@ -39,6 +39,11 @@ export function registerEditorV6FileHandlers(deps: EditorV6FileIpcDependencies):
     deps.assertTrustedSender(event)
     return deps.libraryPath()
   })
+  deps.ipcMain.handle(editorV6IpcChannels.openEditorV6Folder, async (event): Promise<void> => {
+    deps.assertTrustedSender(event)
+    const error = await deps.openPath(deps.libraryPath())
+    if (error) throw new Error(`Não foi possível abrir a pasta dos projetos do Editor V6: ${error}`)
+  })
   deps.ipcMain.handle(editorV6IpcChannels.importEditorV6Image, async (event, category: EditorV6Asset['category']): Promise<EditorV6Asset | null> => {
     deps.assertTrustedSender(event)
     if (category !== 'background' && category !== 'object') throw new Error('Categoria de imagem inválida para o Editor V6.')

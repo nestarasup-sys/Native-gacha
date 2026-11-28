@@ -2,12 +2,11 @@ import { useCallback, useMemo, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, timelineClips } from '../../../../shared/editorV6TimelineCore'
 import { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6TimelineScene'
-import { editorV6StageDragPosition, moveEditorV6StageDrag, prepareEditorV6StageDrag, type EditorV6StageDrag } from './editorV6StageDrag'
+import { editorV6StageDragPosition, moveEditorV6StageDrag, prepareEditorV6StageDrag, type EditorV6StageDrag, type StageDragTarget } from './editorV6StageDrag'
 import { commitEditorV6StageDrag, rollbackEditorV6StageDrag } from './editorV6StageDragLifecycle'
 import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import type { ScenePointerEvent, SceneSurfaceInteraction } from './SceneSurface'
 
-type StageDragTarget = 'element' | 'background' | 'video'
 export { editorV6StageDragPosition, moveEditorV6StageDrag }
 export type { EditorV6StageDrag } from './editorV6StageDrag'
 
@@ -66,26 +65,25 @@ export function useEditorV6StageInteraction(
     current.pausePlayback()
     const currentScene = resolveEditorV6SceneAtFrame(project, getEditorV6PlaybackFrame(), { includeMotion: false })
     const videoBlockId = id.startsWith('media-video:') ? id.slice('media-video:'.length) : null
-    const target: StageDragTarget = videoBlockId ? 'video' : id === 'background' ? 'background' : 'element'
-    current.setSelectedElementId(target === 'video' ? null : id)
+    const introBlockId = id.startsWith('intro:') ? id.slice('intro:'.length) : null
+    if (introBlockId && currentScene.introBlockId !== introBlockId) return
+    const target: StageDragTarget = introBlockId ? 'intro' : videoBlockId ? 'video' : id === 'background' ? 'background' : 'element'
+    current.setSelectedElementId(target === 'video' || target === 'intro' ? null : id)
     current.setActiveTool(target === 'background' ? 'background' : null)
     current.setInspectorOpen(true)
     const element = target === 'element' ? currentScene.elements.find((item) => item.id === id) : undefined
     const videoClip = videoBlockId ? timelineClips(project.timeline).find(({ track, block }) => track.kind === 'video' && block.id === videoBlockId) : undefined
     if (target === 'video' && (!videoClip || videoClip.track.locked)) return
-    const currentClip = target === 'background' || target === 'video'
-      ? null
-      : editorV6ClipAtFrame(project.timeline, id, currentScene.frame)
-    current.setSelectedTimelineBlockId(currentClip?.block.id ?? null)
-    if (videoClip) current.setSelectedTimelineBlockId(videoClip.block.id)
-    if (element?.kind === 'character') current.restoreCharacterInspectorView()
+    const currentClip = target === 'element' ? editorV6ClipAtFrame(project.timeline, id, currentScene.frame) : undefined
+    current.setSelectedTimelineBlockId(introBlockId ?? videoClip?.block.id ?? currentClip?.block.id ?? null)
+    if (element?.kind === 'character' || target === 'intro') current.restoreCharacterInspectorView()
     else current.setInspectorTab('editor')
     if (current.faceBusy || current.expressionBusy || current.faceRenderRunningRef.current) return
     const rect = stage.getBoundingClientRect()
     const drag = prepareEditorV6StageDrag({
       project,
       scene: currentScene,
-      id,
+      id: introBlockId ?? id,
       target,
       element,
       videoClip,

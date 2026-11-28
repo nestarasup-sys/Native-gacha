@@ -1,8 +1,9 @@
+import { editorV6BlinkEventAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { describe, expect, it } from 'vitest'
 import type { EditorV6Document, EditorV6Timeline } from '../../src/shared/editorV6'
 import type { EditorV6ExportMouthLoops } from '../../src/shared/editorV6Export'
 import type { EditorV6MotionFrame } from '../../src/shared/editorV6Motion'
-import { editorV6FaceModeAtFrame, isEditorV6BlinkFrame } from '../../src/shared/editorV6FaceSchedule'
+import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import type { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import { createEditorV6ExportMouthLoopResolver } from '../../src/renderer/src/features/editorV6/exportMouthLoop'
 
@@ -49,7 +50,7 @@ describe('createEditorV6ExportMouthLoopResolver', () => {
     const doc = project()
     const resolver = createEditorV6ExportMouthLoopResolver(doc, mouthLoops())
     const result = resolver.applyMouthLoop(scene(), 15)
-    const faceMode = editorV6FaceModeAtFrame(doc.id, doc.timeline, 'character', 15)
+    const faceMode = editorV6FaceModeAtFrame(doc.timeline, 'character', 15)
 
     expect(result.elements[0]).toMatchObject({
       assetId: faceMode === 'talk-blink' ? 'talk-blink-base' : 'talk-base',
@@ -68,14 +69,14 @@ describe('createEditorV6ExportMouthLoopResolver', () => {
   it('holds the 1x mouth with eyes open while the rear hair settles, then resumes the cycle', () => {
     const doc = project()
     const blink = Array.from({ length: 300 }, (_, frame) => frame).find(frame =>
-      frame > 0 && isEditorV6BlinkFrame(doc.id, 'character', frame))!
+      frame > 0 && Boolean(editorV6BlinkEventAtFrame(doc.id, frame)))!
     const atlas = mouthLoops()
     const referencePatch = atlas.states[0].frames[2].facePatch!
     atlas.states[0].frames = atlas.states[0].frames.map((item, index) => ({
       ...item, facePatch: { ...referencePatch, x: index / 10 + 0.1 }
     }))
     const resolver = createEditorV6ExportMouthLoopResolver(doc, atlas, new Map([['actor', [blink - 1]]]))
-    const during = resolver.applyMouthLoop(scene({ assetId: 'talk-blink-source' }), blink).elements[0]
+    const during = resolver.applyMouthLoop({ ...scene({ assetId: 'talk-blink-source' }), blinkElementId: 'actor' }, blink).elements[0]
     expect(during.assetId).toBe('talk-base')
     expect(during.mouthPatch).toMatchObject({ assetId: 'mouth-atlas', x: 0.1 })
     const after = resolver.applyMouthLoop(scene(), blink + 30).elements[0]
@@ -86,9 +87,9 @@ describe('createEditorV6ExportMouthLoopResolver', () => {
     const doc = { ...project(), elements: [{ id: 'actor', kind: 'character', assetId: 'idle-base' }] } as unknown as EditorV6Document
     doc.timeline.tracks.find(track => track.kind === 'speech')!.blocks = []
     const blink = Array.from({ length: 300 }, (_, frame) => frame).find(frame =>
-      frame > 0 && isEditorV6BlinkFrame(doc.id, 'character', frame))!
+      frame > 0 && Boolean(editorV6BlinkEventAtFrame(doc.id, frame)))!
     const resolver = createEditorV6ExportMouthLoopResolver(doc, mouthLoops(), new Map([['actor', [blink - 1]]]))
-    expect(resolver.applyMouthLoop(scene({ assetId: 'blink-source' }), blink).elements[0].assetId).toBe('idle-base')
+    expect(resolver.applyMouthLoop({ ...scene({ assetId: 'blink-source' }), blinkElementId: 'actor' }, blink).elements[0].assetId).toBe('idle-base')
     expect(resolver.applyMouthLoop(scene({ assetId: 'blink-source' }), blink + 30).elements[0].assetId).toBe('blink-source')
   })
 })

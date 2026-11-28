@@ -1,3 +1,4 @@
+import { editorV6IntroCharacterTrack, editorV6IntroPortraitAssetIds } from '../../../src/shared/editorV6Intro'
 import type { EditorV6Document, EditorV6Element, EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../../src/shared/editorV6'
 import type { EditorV6ExportMouthLoops, EditorV6ExportPart } from '../../../src/shared/editorV6Export'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionRig } from '../../../src/shared/editorV6HairMotion'
@@ -92,8 +93,9 @@ export function createEditorV6ExportWorkerData(
       const fallback = block.elementId ? elementById.get(block.elementId)
         : track.kind === 'character' && track.characterId ? project.elements.find(element => element.characterId === track.characterId)
           : undefined
-      const state = block.state ?? fallback
+      const state = block.state ?? (track.kind === 'intro' ? editorV6IntroCharacterTrack(track).get(block.id) : undefined) ?? fallback
       collectStateAssets(state, assetIds)
+      for (const id of editorV6IntroPortraitAssetIds(block.intro)) assetIds.add(id)
       if (state?.kind === 'character') {
         activeCharacterStates.push(state)
         relevantCharacterElementIds.add(state.id)

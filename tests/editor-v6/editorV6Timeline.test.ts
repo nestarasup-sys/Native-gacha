@@ -1,7 +1,16 @@
+import { editorV6BlinkEventAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { recordEditorV6History, redoEditorV6History, undoEditorV6History } from '../../src/shared/editorV6History'
+import { pasteEditorV6CardBlock } from '../../src/shared/editorV6Cards'
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, syncEditorV6TimelineElements, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6HasDuplicateAssetIds, isEditorV6BlinkFrame, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
+import { addEditorV6ElementAtFrame, editEditorV6DocumentAtBlock, editorV6HasDuplicateAssetIds, normalizeEditorV6Timeline, duplicateEditorV6Block, repairEditorV6DuplicateAssets, repairEditorV6FaceModeAssetReferences, resolveEditorV6ElementsAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, snapEditorV6Frame, splitEditorV6Block, timelineClips } from '../../src/shared/editorV6Timeline'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
+import { exportEditorV6React } from '../../src/shared/editorV6ReactExport'
+import { editorV6VisualKeys } from '../../src/shared/editorV6Export'
+import { editorV6VideoPresentationImportSchema, editorV6VideoPresentationSchema } from '../../src/shared/editorV6VideoPresentation'
+import { attachEditorV6Motion, editorV6MotionPlans } from '../../src/shared/editorV6Motion'
+import { editorV6CardMatchesVideo } from '../../src/shared/editorV6Cards'
+import { duplicateEditorV6ProjectDocument } from '../../src/renderer/src/features/editorV6/editorV6ProjectDuplication'
 
 function fixture(): EditorV6Document {
   const assetId = crypto.randomUUID()
@@ -29,12 +38,12 @@ describe('timeline do Editor V6', () => {
     characterTrack.blocks = characterTrack.blocks.map((block) => ({ ...block, state: { ...actor, faceModeAssetIds: { blink: blinkId, talk: talkId, 'talk-blink': combinedId } } }))
     document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks = [{ id: crypto.randomUUID(), label: 'Fala de Alice', characterId: 'alice', startFrame: 0, durationFrames: 300 }]
     document.timeline.tracks.find((track) => track.kind === 'thought')!.blocks = [{ id: crypto.randomUUID(), label: 'Pensamento', characterId: 'alice', startFrame: 0, durationFrames: 300 }]
-    const normalFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => !isEditorV6BlinkFrame(document.id, 'alice', frame))!
+    const normalFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => !Boolean(editorV6BlinkEventAtFrame(document.id, frame)))!
     expect(resolveEditorV6ElementsAtFrame(document, normalFrame)[0].assetId).toBe(talkId)
     expect(resolveEditorV6ElementsAtFrame(document, normalFrame, { includeMotion: false })[0].assetId).toBe(talkId)
-    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => isEditorV6BlinkFrame(document.id, 'alice', frame))!
+    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => Boolean(editorV6BlinkEventAtFrame(document.id, frame)))!
     expect(resolveEditorV6ElementsAtFrame(document, blinkFrame)[0].assetId).toBe(combinedId)
-    expect(isEditorV6BlinkFrame(document.id, 'alice', blinkFrame)).toBe(true)
+    expect(Boolean(editorV6BlinkEventAtFrame(document.id, blinkFrame))).toBe(true)
     const noSpeech = { ...document, timeline: { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.kind === 'speech' ? [] : track.blocks })) } }
     expect(resolveEditorV6ElementsAtFrame(noSpeech, normalFrame)[0].assetId).toBe(actor.assetId)
     expect(editorV6DocumentSchema.safeParse(document).success).toBe(true)
@@ -51,7 +60,7 @@ describe('timeline do Editor V6', () => {
     document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks = [{
       id: crypto.randomUUID(), elementId: crypto.randomUUID(), label: 'Fala de Alice', characterId: actor.characterId, startFrame: 0, durationFrames: 300
     }]
-    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => isEditorV6BlinkFrame(document.id, actor.characterId!, frame))!
+    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find((frame) => Boolean(editorV6BlinkEventAtFrame(document.id, frame)))!
 
     expect(resolveEditorV6ElementsAtFrame(document, blinkFrame)[0].assetId).toBe(actor.assetId)
     expect(resolveEditorV6ElementsAtFrame(document, 30)[0].assetId).toBe(actor.assetId)
@@ -95,6 +104,52 @@ describe('timeline do Editor V6', () => {
     const resolved = resolveEditorV6ElementsAtFrame(document, 1)
     expect(resolved.find((element) => element.kind === 'speech')?.speakerName).toBe('Cópia próxima')
     expect(resolved.find((element) => element.kind === 'thought')?.speakerName).toBe('Alice')
+    const linkedSpeech = resolved.find((element) => element.kind === 'speech')!
+    expect(linkedSpeech.speakerAnchorX).toBeGreaterThan(0)
+    expect(linkedSpeech.speakerAnchorY).toBeLessThan(0)
+  })
+
+  it('mantém fala e pensamento ancorados à geometria lógica enquanto o recorte animado varia', () => {
+    const document = fixture(), actor = document.elements[0]
+    const speech: EditorV6Element = { id: crypto.randomUUID(), kind: 'speech', characterId: actor.characterId,
+      attachedCharacterElementId: actor.id, attachmentOriginX: actor.x, attachmentOriginY: actor.y,
+      text: 'Fala estável', x: actor.x, y: actor.y, width: 28, height: 16, rotation: 0, zIndex: 2 }
+    const thought: EditorV6Element = { ...speech, id: crypto.randomUUID(), kind: 'thought', text: 'Pensamento estável', y: actor.y + 20, zIndex: 3 }
+    document.elements.push(speech, thought)
+    document.timeline.tracks.find(track => track.kind === 'speech')!.blocks = [{
+      id: crypto.randomUUID(), elementId: speech.id, label: speech.text, startFrame: 0, durationFrames: 300, state: speech
+    }]
+    document.timeline.tracks.find(track => track.kind === 'thought')!.blocks = [{
+      id: crypto.randomUUID(), elementId: thought.id, label: thought.text, startFrame: 0, durationFrames: 300, state: thought
+    }]
+    const characterTrack = document.timeline.tracks.find(track => track.kind === 'character')!
+    const firstBlock = characterTrack.blocks[0]
+    document.timeline = splitEditorV6Block(document.timeline, firstBlock.id, 90)
+    const transitionBlock = document.timeline.tracks.find(track => track.kind === 'character')!.blocks[1]
+    transitionBlock.state = { ...actor, poseSlot: 2 }
+    const plan = editorV6MotionPlans(document)[0]
+    const assetId = crypto.randomUUID()
+    const frames = plan.samples.map((sample, index) => ({
+      offset: sample.offset,
+      // Every crop has different visible bounds, simulating pose/expression alpha changes.
+      sprite: { x: 0, y: index * 120, width: 80 + index * 7, height: 100 + index * 13, atlasWidth: 122, atlasHeight: plan.samples.length * 120 },
+      x: actor.x, y: actor.y, width: 20 + index * 3, height: 30 + index * 5, rotation: index * 2, flipX: false
+    }))
+    const ready = attachEditorV6Motion(document, transitionBlock.id, {
+      asset: { id: assetId, category: 'character', name: 'Atlas variável', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AQ==', timelineSnapshot: true },
+      motion: { version: 1, key: plan.key, assetId, frames }
+    })
+    const snapshots = plan.samples.map(sample => {
+      const frame = plan.endFrame + sample.offset
+      const elements = resolveEditorV6ElementsAtFrame(ready, frame)
+      return [speech, thought].map(source => {
+        const linked = elements.find(element => element.id === source.id)!
+        return { x: linked.x, y: linked.y, layout: linked.balloonLayout, anchorX: linked.speakerAnchorX, anchorY: linked.speakerAnchorY }
+      })
+    })
+
+    expect(snapshots.length).toBeGreaterThan(1)
+    for (const snapshot of snapshots.slice(1)) expect(snapshot).toEqual(snapshots[0])
   })
 
   it('recria o índice de snapshots-base quando a lista de elementos é substituída', () => {
@@ -153,6 +208,179 @@ describe('timeline do Editor V6', () => {
     expect(withoutVideo.mediaVideo).toBeUndefined()
     expect(withoutVideo.elements).toEqual(complete.elements)
     expect(withoutVideo.background).toEqual(complete.background)
+  })
+
+  it('salva e reexporta a apresentação do vídeo e mantém os limites de quadros', () => {
+    const document = fixture(), videoId = crypto.randomUUID()
+    document.media = [{ id: videoId, libraryVideoId: videoId, name: 'Cena.mp4', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: false, width: 1080, height: 1920, sizeBytes: 1024 }]
+    const track = document.timeline.tracks.find(item => item.kind === 'video')!
+    const presentation = { timeCard: 'Indecipherable', bottomCard: 'Contexto', loadingGif: true } as const
+    const block = { id: crypto.randomUUID(), label: 'Cena', mediaId: videoId, mediaInFrame: 0, startFrame: 120, durationFrames: 60, videoPresentation: presentation }
+    track.blocks.push(block)
+    document.timeline.durationFrames = 300
+    const saved = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(document)))
+    expect(exportEditorV6React(saved).data.videos[0].presentation).toEqual(presentation)
+    const at = (frame: number) => resolveEditorV6SceneAtFrame(saved, frame, { includeVideo: false, includeVideoPresentation: true })
+    expect(at(29).loadingGifFrame).toBeUndefined()
+    expect(at(30).loadingGifFrame).toBe(0)
+    expect(at(39).loadingGifFrame).toBe(1)
+    expect(at(119).loadingGifFrame).toBe(1)
+    expect(at(120).loadingGifFrame).toBeUndefined()
+    expect(at(120).mediaVideo).toBeUndefined()
+    expect(at(120).videoCards).toMatchObject({ aspect: 1080 / 1920, timeCard: 'Indecipherable', bottomCard: 'Contexto' })
+    expect(at(180).videoCards).toBeUndefined()
+    const split = splitEditorV6Block(saved.timeline, block.id, 150)
+    const blocks = split.tracks.find(item => item.kind === 'video')!.blocks
+    expect(blocks[1].videoPresentation).toEqual({ loadingGif: false })
+    expect(resolveEditorV6SceneAtFrame({ ...saved, timeline: split }, 145).loadingGifFrame).toBeUndefined()
+  })
+
+  it('mostra cards nos intervalos pedidos e preserva o tempo ao dividir o clipe', () => {
+    const document = fixture(), videoId = crypto.randomUUID()
+    document.media = [{ id: videoId, libraryVideoId: videoId, name: 'Cena', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 600, hasAudio: false, width: 1920, height: 1080, sizeBytes: 100 }]
+    const block = { id: crypto.randomUUID(), label: 'Cena', mediaId: videoId, mediaInFrame: 0, startFrame: 60, durationFrames: 600,
+      videoPresentation: { bottomCards: [{ startSeconds: 10, endSeconds: 15, text: 'Primeiro' }, { startSeconds: 16, endSeconds: 20, text: 'Segundo' }],
+        timeCards: [{ startSeconds: 0, endSeconds: 15, text: 'Past' as const }, { startSeconds: 15, endSeconds: 20, text: 'Future' as const }] } }
+    document.timeline.tracks.find(track => track.kind === 'video')!.blocks.push(block)
+    document.timeline.durationFrames = 660
+    const saved = editorV6DocumentSchema.parse(JSON.parse(JSON.stringify(document)))
+    const card = (frame: number, timeline = saved.timeline) => resolveEditorV6SceneAtFrame({ ...saved, timeline }, frame).videoCards
+    expect(card(359)?.bottomCard).toBeUndefined()
+    expect(card(360)?.bottomCard).toBe('Primeiro')
+    expect(card(510)?.bottomCard).toBeUndefined()
+    expect(card(510)?.timeCard).toBe('Future')
+    expect(card(540)?.bottomCard).toBe('Segundo')
+    const split = splitEditorV6Block(saved.timeline, block.id, 420)
+    expect(card(420, split)?.bottomCard).toBe('Primeiro')
+    expect(card(510, split)?.timeCard).toBe('Future')
+    expect(exportEditorV6React(saved).data.videos[0].presentation).toEqual(block.videoPresentation)
+  })
+
+  it('migra cards antigos para blocos independentes, edita seus tempos e exporta o roteiro compatível', () => {
+    const document = fixture(), videoId = crypto.randomUUID(), blockId = crypto.randomUUID()
+    document.media = [{ id: videoId, libraryVideoId: videoId, name: 'Cena', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 600, hasAudio: false, width: 1920, height: 1080, sizeBytes: 100 }]
+    const video = { id: blockId, label: 'Cena', mediaId: videoId, startFrame: 60, durationFrames: 300,
+      videoPresentation: { loadingGif: true, bottomCards: [{ startSeconds: 0, endSeconds: 5, text: 'Primeiro' }, { startSeconds: 5, endSeconds: 10, text: 'Segundo' }], timeCards: [{ startSeconds: 0, endSeconds: 10, text: 'Past' as const }] } }
+    document.timeline.tracks.find(track => track.kind === 'video')!.blocks.push(video)
+    document.timeline.durationFrames = 360
+
+    const timeline = normalizeEditorV6Timeline(document.timeline)
+    const cards = timeline.tracks.find(track => track.kind === 'card')!
+    const migrated = { ...document, timeline }
+    expect(timeline.tracks.findIndex(track => track.kind === 'card')).toBe(timeline.tracks.findIndex(track => track.kind === 'video') + 1)
+    expect(timeline.tracks.find(track => track.kind === 'video')!.blocks[0].videoPresentation).toEqual({ loadingGif: true })
+    expect(cards.blocks.map(block => [block.startFrame, block.durationFrames])).toEqual([[60, 300], [210, 150]])
+    expect(resolveEditorV6SceneAtFrame(migrated, 209).videoCardItems?.map(card => card.text)).toEqual(expect.arrayContaining(['Past', 'Primeiro']))
+    expect(resolveEditorV6SceneAtFrame(migrated, 210).videoCardItems?.map(card => card.text)).toEqual(expect.arrayContaining(['Past', 'Segundo']))
+    expect(editorV6VisualKeys(resolveEditorV6SceneAtFrame(migrated, 209)).layerKeys.foreground).not.toBe(editorV6VisualKeys(resolveEditorV6SceneAtFrame(migrated, 210)).layerKeys.foreground)
+
+    const secondCard = cards.blocks.find(block => block.videoCard && 'components' in block.videoCard && block.videoCard.components.portuguese.text === 'Segundo')!
+    const changed = setEditorV6BlockTiming(timeline, secondCard.id, { startFrame: 330, durationFrames: 60 })
+    expect(resolveEditorV6SceneAtFrame({ ...migrated, timeline: changed }, 330).videoCardItems?.map(card => card.text)).toContain('Segundo')
+    expect(resolveEditorV6SceneAtFrame({ ...migrated, timeline: changed }, 360).videoCardItems).toBeUndefined()
+    const persisted = editorV6DocumentSchema.parse({ ...migrated, timeline: changed })
+    expect(exportEditorV6React(persisted).data.videos[0].presentation).toMatchObject({ loadingGif: true, cards: [
+      { temporal: { startSeconds: 0, endSeconds: 10, text: 'Past', enabled: true },
+        portuguese: { startSeconds: 0, endSeconds: 5, text: 'Primeiro', enabled: true } },
+      { portuguese: { startSeconds: 9, endSeconds: 10, text: 'Segundo', enabled: true } }
+    ] })
+  })
+
+  it('preserva o card bilíngue na ida e volta e isola divisão, duplicação e colagem', () => {
+    const document = fixture(), videoId = crypto.randomUUID(), videoBlockId = crypto.randomUUID()
+    document.media = [{ id: videoId, libraryVideoId: videoId, name: 'Cena', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 600, hasAudio: false, sizeBytes: 100 }]
+    const video = { id: videoBlockId, label: 'Cena', mediaId: videoId, startFrame: 90, durationFrames: 360 }
+    const presentation = editorV6VideoPresentationImportSchema.parse({ loadingGif: true, cards: [{
+      startSeconds: 0, endSeconds: 8,
+      temporal: { startSeconds: 0, endSeconds: 8, text: 'Future' },
+      english: { startSeconds: 1, endSeconds: 6, text: 'Hello' },
+      portuguese: { startSeconds: 4, endSeconds: 8, text: 'Olá', enabled: false }
+    }] })
+    const videoTrack = document.timeline.tracks.find(track => track.kind === 'video')!
+    videoTrack.blocks = [{ ...video, videoPresentation: presentation }]
+    document.timeline = normalizeEditorV6Timeline(document.timeline)
+    const getCards = (timeline = document.timeline) => timeline.tracks.find(track => track.kind === 'card')!.blocks
+    const [block] = getCards()
+    expect(getCards()).toHaveLength(1)
+    expect(exportEditorV6React(editorV6DocumentSchema.parse(document)).data.videos[0].presentation).toEqual(presentation)
+    const at = (frame: number) => resolveEditorV6SceneAtFrame(document, frame, { includeVideo: false }).videoCardItems?.map(item => item.text)
+    expect(at(120)).toEqual(expect.arrayContaining(['Hello', 'Future']))
+    expect(at(270)).toEqual(['Future'])
+
+    const split = splitEditorV6Block(document.timeline, block.id, 180)
+    const divided = { ...document, timeline: split }
+    const history = recordEditorV6History({ undo: [], redo: [] }, document)
+    const undone = undoEditorV6History(history, divided)!
+    expect(getCards(undone.document.timeline)).toEqual([block])
+    expect(getCards(redoEditorV6History(undone.history, undone.document)!.document.timeline)).toEqual(getCards(split))
+    const [left, right] = getCards(split)
+    expect(left.id).not.toEqual(right.id)
+    expect(left.videoCard).toMatchObject({ components: { english: { startFrame: 30, endFrame: 90 }, portuguese: { enabled: false, text: 'Olá' } } })
+    expect(right.videoCard).toMatchObject({ components: { english: { startFrame: 0, endFrame: 90 }, portuguese: { startFrame: 30, endFrame: 150 } } })
+    if (!right.videoCard || !('components' in right.videoCard)) throw Error('Card não unificado')
+    right.videoCard.components.english.text = 'Other'
+    expect(left.videoCard).toMatchObject({ components: { english: { text: 'Hello' } } })
+    const duplicated = getCards(duplicateEditorV6Block(split, left.id)).at(-1)!
+    const pasted = pasteEditorV6CardBlock({ ...document, timeline: split }, left, 280, crypto.randomUUID())!.block
+    for (const copy of [duplicated, pasted]) {
+      expect(copy.id).not.toBe(left.id)
+      expect(copy.videoCard).toEqual(left.videoCard)
+      expect(copy.videoCard).not.toBe(left.videoCard)
+      if (!copy.videoCard || !('components' in copy.videoCard)) throw Error('Card não unificado')
+      copy.videoCard.components.english.text = 'Copy'
+      expect(left.videoCard).toMatchObject({ components: { english: { text: 'Hello' } } })
+    }
+  })
+
+  it('exibe card apenas dentro do vídeo associado e limita intervalos legados ao fim do clipe', () => {
+    const document = fixture(), videoId = crypto.randomUUID(), videoBlockId = crypto.randomUUID()
+    document.media = [{ id: videoId, name: 'Cena', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 600, hasAudio: false, sizeBytes: 100 }]
+    const videoTrack = document.timeline.tracks.find(track => track.kind === 'video')!
+    videoTrack.blocks = [{ id: videoBlockId, label: 'Cena', mediaId: videoId, startFrame: 150, durationFrames: 300 }]
+    const cardTrack = document.timeline.tracks.find(track => track.kind === 'card')!
+    cardTrack.blocks = [{ id: crypto.randomUUID(), label: 'Contexto', startFrame: 300, durationFrames: 300,
+      videoCard: { videoBlockId, position: 'bottom', text: 'Contexto', fallbackLayout: { x: 0, y: 0, width: 40, height: 40, rotation: 0 } } }]
+    document.timeline.durationFrames = 600
+
+    expect(resolveEditorV6SceneAtFrame(document, 299).videoCardItems).toBeUndefined()
+    expect(resolveEditorV6SceneAtFrame(document, 300).videoCardItems?.[0].text).toBe('Contexto')
+    expect(resolveEditorV6SceneAtFrame(document, 449).videoCardItems?.[0].text).toBe('Contexto')
+    expect(resolveEditorV6SceneAtFrame(document, 450).videoCardItems).toBeUndefined()
+    const mutedDocument = structuredClone(document)
+    mutedDocument.timeline.tracks.find(track => track.kind === 'video')!.muted = true
+    expect(resolveEditorV6SceneAtFrame(mutedDocument, 320).videoCardItems).toBeUndefined()
+
+    const legacy = fixture()
+    legacy.timeline.tracks.find(track => track.kind === 'video')!.blocks = [{ id: videoBlockId, label: 'Cena', startFrame: 150, durationFrames: 300,
+      videoPresentation: { bottomCards: [{ startSeconds: 9, endSeconds: 12, text: 'Até o fim' }] } }]
+    const migrated = normalizeEditorV6Timeline(legacy.timeline).tracks.find(track => track.kind === 'card')!.blocks[0]
+    expect(migrated).toMatchObject({ startFrame: 420, durationFrames: 30 })
+  })
+
+  it('rejeita intervalos de card menores que um quadro e resolve limites com a conversão da timeline', () => {
+    const subFrame = {
+      bottomCards: [{ startSeconds: 0.01, endSeconds: 0.02, text: 'Curto demais' }]
+    }
+    expect(editorV6VideoPresentationImportSchema.safeParse(subFrame).success).toBe(false)
+    // Persisted projects stay readable; the stricter rule applies only to new script imports.
+    expect(editorV6VideoPresentationSchema.safeParse(subFrame).success).toBe(true)
+    const legacyProject = fixture(), legacyVideoId = crypto.randomUUID()
+    legacyProject.media = [{ id: legacyVideoId, name: 'Cena', fileName: `${legacyVideoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: false, sizeBytes: 1 }]
+    legacyProject.timeline.tracks.find(track => track.kind === 'video')!.blocks.push({ id: crypto.randomUUID(), label: 'Cena', mediaId: legacyVideoId,
+      startFrame: 0, durationFrames: 60, videoPresentation: subFrame })
+    const parsedLegacy = editorV6DocumentSchema.safeParse(legacyProject)
+    expect(parsedLegacy.success, JSON.stringify(parsedLegacy.success ? [] : parsedLegacy.error.issues)).toBe(true)
+
+    const document = fixture(), videoId = crypto.randomUUID()
+    document.media = [{ id: videoId, name: 'Cena', fileName: `${videoId}.mp4`, kind: 'video', mimeType: 'video/mp4', sourceFrames: 180, hasAudio: false, sizeBytes: 1 }]
+    const block = { id: crypto.randomUUID(), label: 'Cena', mediaId: videoId, startFrame: 60, durationFrames: 90,
+      videoPresentation: { bottomCards: [{ startSeconds: 0.01, endSeconds: 0.04, text: 'Um quadro' }] } }
+    document.timeline.tracks.find(track => track.kind === 'video')!.blocks.push(block)
+    document.timeline.durationFrames = 180
+
+    expect(resolveEditorV6SceneAtFrame(document, 60).videoCards?.bottomCard).toBeUndefined()
+    expect(resolveEditorV6SceneAtFrame(document, 61).videoCards?.bottomCard).toBe('Um quadro')
+    expect(resolveEditorV6SceneAtFrame(document, 62).videoCards?.bottomCard).toBeUndefined()
   })
 
   it('atualiza o índice de vídeos quando a lista de mídia do projeto muda', () => {
@@ -274,6 +502,62 @@ describe('timeline do Editor V6', () => {
     expect(editorV6DocumentSchema.safeParse(JSON.parse(JSON.stringify(document))).success).toBe(true)
   })
 
+  it('divide e duplica blocos com estados aninhados independentes', () => {
+    const document = fixture(), original = actorClip(document)
+    const state = { ...original.block.state!, faceModeAssetIds: { idle: 'idle-asset', blink: 'blink-asset' } }
+    original.block.state = state
+
+    const split = splitEditorV6Block(document.timeline, original.block.id, 90)
+    const splitBlocks = split.tracks.find((track) => track.kind === 'character')!.blocks
+    expect(splitBlocks[0].state).not.toBe(splitBlocks[1].state)
+    expect(splitBlocks[0].state!.faceModeAssetIds).not.toBe(splitBlocks[1].state!.faceModeAssetIds)
+    splitBlocks[1].state!.faceModeAssetIds!.blink = 'changed-after-split'
+    expect(splitBlocks[0].state!.faceModeAssetIds!.blink).toBe('blink-asset')
+
+    const duplicated = duplicateEditorV6Block(document.timeline, original.block.id)
+    const duplicatedBlocks = duplicated.tracks.find((track) => track.kind === 'character')!.blocks
+    expect(duplicatedBlocks[0].state).not.toBe(duplicatedBlocks[1].state)
+    expect(duplicatedBlocks[0].state!.faceModeAssetIds).not.toBe(duplicatedBlocks[1].state!.faceModeAssetIds)
+    duplicatedBlocks[1].state!.faceModeAssetIds!.idle = 'changed-after-duplicate'
+    expect(duplicatedBlocks[0].state!.faceModeAssetIds!.idle).toBe('idle-asset')
+  })
+
+  it('duplica projetos com cards ligados aos novos IDs de vídeo e estados independentes', () => {
+    const document = fixture()
+    const videoTrack = document.timeline.tracks.find((track) => track.kind === 'video')!
+    const cardTrack = document.timeline.tracks.find((track) => track.kind === 'card')!
+    const videoId = crypto.randomUUID(), rightVideoId = crypto.randomUUID(), cardId = crypto.randomUUID()
+    const video = { id: videoId, label: 'Vídeo', mediaId: 'media', startFrame: 0, durationFrames: 30 }
+    const rightVideo = { id: rightVideoId, label: 'Vídeo · continuação', mediaId: 'media', startFrame: 30, durationFrames: 30, videoCardOriginBlockId: videoId }
+    const card = { id: cardId, label: 'Card', startFrame: 0, durationFrames: 60, videoCard: { videoBlockId: videoId, components: {
+      temporal: { enabled: true, startFrame: 0, endFrame: 60, text: 'Past' as const },
+      english: { enabled: false, startFrame: 0, endFrame: 60, text: '' },
+      portuguese: { enabled: true, startFrame: 0, endFrame: 60, text: 'Texto' }
+    } } }
+    videoTrack.blocks = [video, rightVideo]
+    cardTrack.blocks = [card]
+    document.characterNameColors = { alice: '#ffffff' }
+    const appearance = { modelSlot: 1, eyeState: 0 } as NonNullable<EditorV6Element['faceAppearance']>
+    document.elements[0] = { ...document.elements[0], faceAppearance: appearance }
+
+    const duplicate = duplicateEditorV6ProjectDocument(document, {
+      id: crypto.randomUUID(), title: 'Cópia independente', color: document.color,
+      createdAt: document.createdAt, updatedAt: document.updatedAt
+    }, () => crypto.randomUUID())
+    const copiedVideoTrack = duplicate.timeline.tracks.find((track) => track.kind === 'video')!
+    const copiedRoot = copiedVideoTrack.blocks.find((block) => block.label === video.label)!
+    const copiedRight = copiedVideoTrack.blocks.find((block) => block.label === rightVideo.label)!
+    const copiedCard = duplicate.timeline.tracks.find((track) => track.kind === 'card')!.blocks[0]
+    expect(copiedCard.videoCard!.videoBlockId).toBe(copiedRoot.id)
+    expect(copiedRight.videoCardOriginBlockId).toBe(copiedRoot.id)
+    expect(editorV6CardMatchesVideo(copiedCard.videoCard!, copiedRight)).toBe(true)
+    expect(copiedCard.videoCard!.components).not.toBe(card.videoCard.components)
+    copiedCard.videoCard!.components.portuguese.text = 'Alterado na cópia'
+    expect(card.videoCard.components.portuguese.text).toBe('Texto')
+    expect(duplicate.elements[0].faceAppearance).not.toBe(document.elements[0].faceAppearance)
+    expect(duplicate.characterNameColors).not.toBe(document.characterNameColors)
+  })
+
   it('compartilha posição ao saltar e mantém os demais estados por bloco', () => {
     const document = fixture(), original = actorClip(document)
     document.timeline = splitEditorV6Block(document.timeline, original.block.id, 90)
@@ -283,6 +567,40 @@ describe('timeline do Editor V6', () => {
     expect(resolveEditorV6ElementsAtFrame(edited, 45)[0].x).toBe(25)
     expect(resolveEditorV6ElementsAtFrame(edited, 90)[0].x).toBe(25)
     expect(edited.elements[0].x).toBe(25)
+  })
+
+  it('compartilha controles de transformação sem substituir a pose e o recorte de outros blocos', () => {
+    const document = fixture(), original = actorClip(document)
+    document.timeline = splitEditorV6Block(document.timeline, original.block.id, 90)
+    const blocks = actorClip(document).track.blocks
+    blocks[0].state = { ...blocks[0].state!, poseSlot: 1, width: 12, height: 40, characterScale: 80 }
+    blocks[1].state = { ...blocks[1].state!, poseSlot: 2, width: 18, height: 50, characterScale: 120 }
+    const edited = editEditorV6DocumentAtBlock(document, blocks[1].id, (working) => ({
+      ...working, elements: working.elements.map((element) => ({ ...element, characterScale: 145, characterWidthScale: 115, characterHeightScale: 90, rotation: 12, flipX: true, zIndex: 4 }))
+    }))
+    const first = resolveEditorV6ElementsAtFrame(edited, 45)[0]
+    const second = resolveEditorV6ElementsAtFrame(edited, 150)[0]
+    for (const state of [first, second, edited.elements[0]]) expect(state).toMatchObject({ characterScale: 145, characterWidthScale: 115, characterHeightScale: 90, rotation: 12, flipX: true, zIndex: 4 })
+    expect(first).toMatchObject({ poseSlot: 1, width: 12, height: 40 })
+    expect(second).toMatchObject({ poseSlot: 2, width: 18, height: 50 })
+    const resized = editEditorV6DocumentAtBlock(edited, blocks[1].id, (working) => ({ ...working, elements: working.elements.map((element) => ({ ...element, characterScale: 160 })) }))
+    expect(resolveEditorV6ElementsAtFrame(resized, 45)[0]).toMatchObject({ characterScale: 160, characterWidthScale: 115, poseSlot: 1 })
+  })
+
+  it('propaga o ajuste do personagem sem bloco selecionado', () => {
+    const document = fixture(), original = actorClip(document)
+    document.timeline = splitEditorV6Block(document.timeline, original.block.id, 90)
+    const edited = editEditorV6DocumentAtBlock(document, null, (working) => ({ ...working, elements: working.elements.map((element) => ({ ...element, characterScale: 140 })) }))
+    expect(resolveEditorV6ElementsAtFrame(edited, 45)[0].characterScale).toBe(140)
+    expect(resolveEditorV6ElementsAtFrame(edited, 150)[0].characterScale).toBe(140)
+  })
+
+  it('não altera o personagem de faixa bloqueada quando não há bloco selecionado', () => {
+    const document = fixture(), original = actorClip(document)
+    original.track.locked = true
+    const edited = editEditorV6DocumentAtBlock(document, null, (working) => ({ ...working, elements: working.elements.map((element) => ({ ...element, characterScale: 140 })) }))
+    expect(edited.elements[0]).toEqual(document.elements[0])
+    expect(actorClip(edited).block.state).toEqual(original.block.state)
   })
 
   it('mantém a imagem da pose anterior ao editar a imagem de outro período', () => {

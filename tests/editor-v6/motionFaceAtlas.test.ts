@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { buildEditorV6MotionFaceAtlas } from '../../src/renderer/src/features/editorV6/motion/motionFaceAtlas'
 import type { BakedFacePatch } from '../../src/renderer/src/features/editorV6/motion/motionFacePatchPreparation'
+import { parseEditorV6MotionAtlasBudgetError } from '../../src/shared/editorV6MotionBudget'
 
 function canvas(width: number, height: number, drawImage = vi.fn(), dataUrl = 'data:image/png;base64,face-atlas') {
   const context = { drawImage }
@@ -50,8 +51,10 @@ describe('Editor V6 motion face atlas', () => {
   it('rejects a face atlas that exceeds its native pixel budget before allocating a canvas', () => {
     const createCanvas = vi.fn(() => canvas(0, 0).value)
 
-    expect(() => buildEditorV6MotionFaceAtlas({ patches: [bakedPatch()], frames: [{}, {}], bodyPixels: 300, maxAtlasPixels: 400, createCanvas }))
-      .toThrow('As camadas faciais desta transição excedem o limite seguro em resolução nativa.')
+    let thrown: unknown
+    try { buildEditorV6MotionFaceAtlas({ patches: [bakedPatch()], frames: [{}, {}], bodyPixels: 300, maxAtlasPixels: 400, createCanvas }) }
+    catch (error) { thrown = error }
+    expect(parseEditorV6MotionAtlasBudgetError(thrown)).toEqual({ width: 14, height: 12, pixels: 468, limitPixels: 400 })
     expect(createCanvas).not.toHaveBeenCalled()
   })
 

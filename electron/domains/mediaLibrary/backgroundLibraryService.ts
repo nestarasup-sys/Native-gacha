@@ -13,7 +13,7 @@ export type BackgroundLibraryServiceDependencies = {
   }
   assertRoteiroUnreferenced: (id: string) => void
   assertEditorV6Unreferenced: (id: string) => Promise<void>
-  editorV6References: (id: string) => Promise<Array<{ id: string; title: string }>>
+  editorV6ReferencesForIds: (ids: readonly string[]) => Promise<Map<string, Array<{ id: string; title: string }>>>
   coordinateReferenceChange: <T>(operation: () => Promise<T>) => Promise<T>
   enqueueWrite: <T>(operation: () => Promise<T> | T) => Promise<T>
 }
@@ -21,7 +21,9 @@ export type BackgroundLibraryServiceDependencies = {
 export function createBackgroundLibraryService(deps: BackgroundLibraryServiceDependencies) {
   return {
     async list() {
-      return Promise.all((await deps.library.list()).map(async (item) => ({ ...item, editorV6Projects: await deps.editorV6References(item.id) })))
+      const items = await deps.library.list()
+      const references = await deps.editorV6ReferencesForIds(items.map((item) => item.id))
+      return items.map((item) => ({ ...item, editorV6Projects: references.get(item.id) ?? [] }))
     },
     async import(): Promise<VideoBackgroundLibraryItem | null> {
       const path = await deps.openImportDialog()

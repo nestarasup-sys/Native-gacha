@@ -24,6 +24,7 @@ type Props = {
   selectedPoseSlot: number | null
   faceBusy: boolean
   onPoseSelect: (slot: number) => void
+  onApplyPoseToIntro?: () => void
   expressionLoading: boolean
   expressionBusy: boolean
   faceAppearanceAvailable: boolean
@@ -62,6 +63,7 @@ export function EditorV6PresetPanel({
   selectedPoseSlot,
   faceBusy,
   onPoseSelect,
+  onApplyPoseToIntro,
   expressionLoading,
   expressionBusy,
   faceAppearanceAvailable,
@@ -99,6 +101,8 @@ export function EditorV6PresetPanel({
         })}
         {!poseSlots.length && <p className="studio-custom-hint">Este modelo ainda não tem poses salvas.</p>}
       </div>
+      {onApplyPoseToIntro && <button type="button" className="pose-button secondary" disabled={faceBusy}
+        onClick={onApplyPoseToIntro}>Aplicar esta pose a toda a Intro</button>}
     </section>}
     {category === 'expression' && <section className="studio-expression-catalog" aria-label="Presets do Expressão Dev">
       {expressionLoading ? <p className="studio-custom-hint">Carregando conjuntos de expressão…</p> : <>

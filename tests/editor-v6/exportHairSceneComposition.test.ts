@@ -7,12 +7,10 @@ import { expandEditorV6HairCrop } from '../../src/renderer/src/features/editorV6
 import { createEditorV6ExportHairSceneComposer } from '../../src/renderer/src/features/editorV6/exportHairSceneComposition'
 import type { createEditorV6ExportHairFrameComposer } from '../../src/renderer/src/features/editorV6/exportHairFrameComposer'
 import type { createEditorV6ExportHairMotionPlanIndex } from '../../src/renderer/src/features/editorV6/exportHairMotionPlanIndex'
-import type { createEditorV6ExportHairRigAtFrame } from '../../src/renderer/src/features/editorV6/exportHairRigAtFrame'
 
 type Scene = ReturnType<typeof resolveEditorV6SceneAtFrame>
 type SceneElement = Scene['elements'][number]
 type MotionPlanIndex = ReturnType<typeof createEditorV6ExportHairMotionPlanIndex>
-type HairRigAtFrame = ReturnType<typeof createEditorV6ExportHairRigAtFrame>['hairRigAtFrame']
 type HairFrameComposer = ReturnType<typeof createEditorV6ExportHairFrameComposer>
 
 const motionRig: EditorV6HairMotionRig = {
@@ -37,18 +35,17 @@ function scene(elements: SceneElement[]): Scene {
 function makeComposer(overrides: Partial<Parameters<typeof createEditorV6ExportHairSceneComposer>[0]> = {}) {
   const transitionLookup = vi.fn(() => undefined)
   const planIndex = {
-    hairRigs: new Map([['actor:hair', motionRig]]), expressionOnlyPlansByElement: new Map(),
+    hairRigs: new Map([['actor:hair', motionRig]]),
     hairTransitionIndex: { get: transitionLookup }
   } as unknown as MotionPlanIndex
-  const hairRigAtFrame = vi.fn(() => ({ rig: motionRig, element: element() })) as unknown as HairRigAtFrame
   const canvas = { width: 100, height: 80 } as HTMLCanvasElement
   const composeHairFrame = vi.fn(() => canvas) as unknown as HairFrameComposer['composeHairFrame']
   const composeMotionHairFrame = vi.fn(() => canvas) as unknown as HairFrameComposer['composeMotionHairFrame']
   const options: Parameters<typeof createEditorV6ExportHairSceneComposer>[0] = {
-    planIndex, hairRigAtFrame, hairSourceAssetId: value => value.assetId,
+    planIndex, hairSourceAssetId: value => value.assetId,
     composeHairFrame, composeMotionHairFrame, ...overrides
   }
-  return { ...createEditorV6ExportHairSceneComposer(options), transitionLookup, hairRigAtFrame, composeHairFrame, composeMotionHairFrame, canvas }
+  return { ...createEditorV6ExportHairSceneComposer(options), transitionLookup, composeHairFrame, composeMotionHairFrame, canvas }
 }
 
 describe('createEditorV6ExportHairSceneComposer', () => {
@@ -165,7 +162,7 @@ describe('createEditorV6ExportHairSceneComposer', () => {
     expect(factory.composeMotionHairFrame).toHaveBeenCalledTimes(2)
   })
 
-  it('checks indexed transition layers without interpolating the rig twice', () => {
+  it('keeps the canonical sprite when a layered transition is missing', () => {
     const factory = makeComposer()
     const transitioning = element({ motionSprite: { sprite: { x: 0, y: 0, width: 10, height: 10, atlasWidth: 10, atlasHeight: 10 }, x: 0, y: 0, width: 1, height: 1, rotation: 0, flipX: false } })
     factory.transitionLookup.mockReturnValue({
@@ -173,14 +170,10 @@ describe('createEditorV6ExportHairSceneComposer', () => {
       poseSample: { offset: -1, progress: 0.5 }
     } as never)
 
-    expect(factory.hasAnimatedHair(transitioning, 12)).toBe(true)
-    expect(factory.hairRigAtFrame).not.toHaveBeenCalled()
-
-    factory.transitionLookup.mockReturnValue({
-      transition: { from: { ...motionRig, layers: [] }, to: motionRig },
-      poseSample: { offset: -1, progress: 0.5 }
-    } as never)
     expect(factory.hasAnimatedHair(transitioning, 12)).toBe(false)
-    expect(factory.hairRigAtFrame).not.toHaveBeenCalled()
+    const current = scene([transitioning])
+    const result = factory.compose({ composedScene: current, originalElements: new Map([['actor', transitioning]]), frame: 12, activeHair: true, riggedElementIds: new Set(['actor']), assetsById: new Map(), renderAssetsById: new Map(), hairSurfaceDataById: new Map(), timings: {}, metrics: {} })
+    expect(result.renderScene.elements[0]).toBe(transitioning)
+    expect(factory.composeMotionHairFrame).not.toHaveBeenCalled()
   })
 })

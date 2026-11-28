@@ -3,6 +3,7 @@ import type { EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
 import { orderEditorV6TimelineTracks } from '../../../../shared/editorV6'
 import { editorV6VisibleMotionPlans } from './editorV6VisibleMotionPlans'
 import { editorV6TimelineTrackFixedToBottom, editorV6TimelineTrackGroup } from './editorV6TimelineTrackCommands'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 
 export type EditorV6TimelineDisplayRow = { key: string; track: Track; blocks: Block[]; backgroundLane: boolean; index: number }
 export type EditorV6TimelineBlockPixels = { left: number; width: number }
@@ -71,18 +72,45 @@ export function getEditorV6TimelineVisibleBlocks(blocks: readonly Block[], [star
 }
 
 export function getEditorV6TimelineBlockPixels(block: Block, pixelsPerSecond: number): EditorV6TimelineBlockPixels {
-  return { left: block.startFrame / 30 * pixelsPerSecond, width: Math.max(3, block.durationFrames / 30 * pixelsPerSecond) }
+  return { left: block.startFrame / EDITOR_V6_TIMELINE_FPS * pixelsPerSecond, width: Math.max(3, block.durationFrames / EDITOR_V6_TIMELINE_FPS * pixelsPerSecond) }
+}
+
+export type EditorV6TimelineBlockHitCycle = { key: string; index: number; x: number }
+
+/**
+ * Resolves clicks on visually overlapping blocks. Very short clips have a
+ * minimum hit width for usability, so their rendered rectangles can overlap
+ * even when their frame intervals do not. Repeated clicks cycle that stack.
+ */
+export function resolveEditorV6TimelineBlockHit(input: {
+  blocks: readonly Block[]
+  targetBlockId: string
+  x: number
+  pixelsPerSecond: number
+  previous?: EditorV6TimelineBlockHitCycle
+}): { block: Block; cycle?: EditorV6TimelineBlockHitCycle } | undefined {
+  const hits = input.blocks.filter((block) => {
+    const pixels = getEditorV6TimelineBlockPixels(block, input.pixelsPerSecond)
+    return input.x >= pixels.left && input.x <= pixels.left + pixels.width
+  })
+  if (!hits.length) return undefined
+  const targetIndex = hits.findIndex((block) => block.id === input.targetBlockId)
+  if (hits.length === 1) return { block: hits[0] }
+  const key = hits.map((block) => block.id).join('|')
+  const repeated = input.previous?.key === key && Math.abs(input.x - input.previous.x) <= 6
+  const index = repeated ? (input.previous!.index + 1) % hits.length : Math.max(0, targetIndex)
+  return { block: hits[index], cycle: { key, index, x: input.x } }
 }
 
 /** A block's first click selects it; a repeated click seeks within its frame range. */
 export function getEditorV6TimelineBlockSeekFrame(block: Block, clickCount: number, clientX: number, boundsLeft: number, pixelsPerSecond: number): number | undefined {
   if (clickCount < 2 || !Number.isFinite(pixelsPerSecond) || pixelsPerSecond <= 0) return undefined
-  const offsetFrames = Math.round((clientX - boundsLeft) / pixelsPerSecond * 30)
+  const offsetFrames = Math.round((clientX - boundsLeft) / pixelsPerSecond * EDITOR_V6_TIMELINE_FPS)
   return Math.min(block.startFrame + block.durationFrames, Math.max(block.startFrame, block.startFrame + offsetFrames))
 }
 
 export function getEditorV6TimelineMotionPixels(plan: EditorV6MotionPlan, pixelsPerSecond: number): EditorV6TimelineBlockPixels {
-  return { left: plan.startFrame / 30 * pixelsPerSecond, width: (plan.endFrame - plan.startFrame) / 30 * pixelsPerSecond }
+  return { left: plan.startFrame / EDITOR_V6_TIMELINE_FPS * pixelsPerSecond, width: (plan.endFrame - plan.startFrame) / EDITOR_V6_TIMELINE_FPS * pixelsPerSecond }
 }
 
 export function canMoveEditorV6TimelineTrack(rows: readonly EditorV6TimelineDisplayRow[], index: number, direction: -1 | 1) {

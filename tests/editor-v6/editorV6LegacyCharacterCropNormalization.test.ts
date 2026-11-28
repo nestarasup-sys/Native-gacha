@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6Document } from '../../src/shared/editorV6'
 import { prepareEditorV6LegacyCharacterCrops } from '../../src/renderer/src/features/editorV6/editorV6LegacyCharacterCropNormalization'
-import { editorV6RefreshedCharacterGeometry } from '../../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel'
+import { editorV6SourceFrameGeometry, EDITOR_V6_SOURCE_FRAME_VERSION } from '../../src/renderer/src/features/editorV6/editorV6SourceFrame'
 import { resolveEditorV6MotionElementScales } from '../../src/renderer/src/features/editorV6/motion/motionFrameGeometry'
 
 const project = {
@@ -39,18 +39,27 @@ describe('preparação de recortes legados do Editor V6', () => {
     expect(trimImage).toHaveBeenCalledExactlyOnceWith('legacy-a-bytes')
   })
 
-  it('conserva a posição ao reabrir e usa a mesma escala de corpo para expressões com recortes diferentes', () => {
-    const state = { ...project.elements[0], x: -14, y: 21, width: 20, height: 30, characterCanvasWidth: 40 }
-    const canvas = { width: 1000, height: 1000 }
-    const idle = { left: 100, top: 100, width: 500, height: 700, fingerprint: '' }
-    const expression = { left: 90, top: 70, width: 550, height: 730, fingerprint: '' }
-    const from = { ...state, ...editorV6RefreshedCharacterGeometry(state, canvas, idle) }
-    const to = { ...state, ...editorV6RefreshedCharacterGeometry(state, canvas, expression) }
-    expect(to).toMatchObject({ x: -14, y: 21, characterCanvasWidth: 40 })
-    expect({ ...to, ...editorV6RefreshedCharacterGeometry(to, canvas, expression) }).toEqual(to)
-    const scales = resolveEditorV6MotionElementScales(from, to, idle, expression)
+  it('preserva as coordenadas do corpo ao remover o recorte antigo de um personagem espelhado e rotacionado', () => {
+    const state = { ...project.elements[0], x: -14, y: 21, width: 20, height: 30, rotation: 23, flipX: true,
+      characterScale: 91, characterWidthScale: 70, characterHeightScale: 110 }
+    const source = { left: 0, top: 0, width: 1000, height: 900 }
+    const oldCrop = { left: 100, top: 120, width: 500, height: 700 }
+    const converted = { ...state, ...editorV6SourceFrameGeometry(state, source, oldCrop),
+      faceRendererVersion: EDITOR_V6_SOURCE_FRAME_VERSION }
+    const scales = resolveEditorV6MotionElementScales(state, converted, oldCrop, source)
     expect(scales.to.x).toBeCloseTo(scales.from.x)
     expect(scales.to.y).toBeCloseTo(scales.from.y)
+    const bodyPoint = { x: 320, y: 550 }
+    const stagePoint = (element: typeof state, crop: typeof oldCrop, scale: typeof scales.from) => {
+      const x = -(bodyPoint.x - crop.left - crop.width / 2) * scale.x
+      const y = (bodyPoint.y - crop.top - crop.height / 2) * scale.y
+      const angle = state.rotation * Math.PI / 180
+      return [element.x * 19.2 + x * Math.cos(angle) - y * Math.sin(angle),
+        element.y * 10.8 + x * Math.sin(angle) + y * Math.cos(angle)]
+    }
+    const originalPoint = stagePoint(state, oldCrop, scales.from)
+    stagePoint(converted, source, scales.to).forEach((value, index) => expect(value).toBeCloseTo(originalPoint[index]))
+    expect(editorV6SourceFrameGeometry(converted, source, { left: 90, top: 2, width: 620, height: 768 })).toEqual({})
   })
   it('processa somente assets de personagem referenciados por snapshots legados e mantém a ordem', async () => {
     const trimImage = vi.fn(async (dataUrl: string) => {

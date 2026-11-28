@@ -78,19 +78,28 @@ test('remover fundo registra background nulo no frame e preserva o asset do proj
 test('remover um vídeo apaga só o bloco da timeline e mantém mídia e asset do projeto', () => {
   const videoTrack = {
     id: 'video-track', kind: 'video', name: 'Vídeo', muted: false, locked: false,
-    blocks: [{ id: 'video-block', mediaId: 'media-1', label: 'Clipe', startFrame: 0, durationFrames: 90 }]
+    blocks: [
+      { id: 'video-block', mediaId: 'media-1', label: 'Clipe', startFrame: 0, durationFrames: 90 },
+      { id: 'video-after', mediaId: 'media-1', label: 'Depois', startFrame: 150, durationFrames: 90 }
+    ]
   }
+  const speechTrack = { id: 'speech-track', kind: 'speech', name: 'Falas', muted: false, locked: false,
+    blocks: [{ id: 'speech-block', label: 'Fala vinculada', startFrame: 30, durationFrames: 20, parentBlockId: 'video-block', relativeStartFrame: 30 }] }
+  const cardTrack = { id: 'card-track', kind: 'card', name: 'Cards', muted: false, locked: false,
+    blocks: [{ id: 'card-block', label: 'Card', startFrame: 30, durationFrames: 60, videoCard: { videoBlockId: 'video-block', position: 'bottom', text: 'Card' } }] }
   const media = { id: 'media-1', name: 'Clipe', fileName: 'clip.mp4', kind: 'video', mimeType: 'video/mp4', sourceFrames: 90, hasAudio: false, sizeBytes: 100 }
   const asset = { id: 'unused-asset', category: 'object', name: 'Recurso', mimeType: 'image/png', dataUrl: 'data:obj' }
   const { command, events, state } = makeHarness({
-    project: makeProject({ tracks: [videoTrack], media: [media], assets: [asset] }),
+    project: makeProject({ tracks: [videoTrack, speechTrack, cardTrack], media: [media], assets: [asset] }),
     selectedTimelineVideoBlockId: 'video-block'
   })
 
   command()
 
   assert.deepEqual(events, [['change-scene'], ['selected-block', null]])
-  assert.equal(state.project.timeline.tracks[0].blocks.length, 0)
+  assert.deepEqual(state.project.timeline.tracks.find((track) => track.id === 'video-track').blocks, [videoTrack.blocks[1]])
+  assert.deepEqual(state.project.timeline.tracks.find((track) => track.id === 'speech-track').blocks, [{ id: 'speech-block', label: 'Fala vinculada', startFrame: 30, durationFrames: 20 }])
+  assert.deepEqual(state.project.timeline.tracks.find((track) => track.id === 'card-track').blocks, cardTrack.blocks)
   assert.deepEqual(state.project.media, [media])
   assert.deepEqual(state.project.assets, [asset])
 })

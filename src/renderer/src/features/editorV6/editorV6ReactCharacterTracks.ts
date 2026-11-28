@@ -1,6 +1,7 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Asset, EditorV6Element, EditorV6TimelineTrack } from '../../../../shared/editorV6'
 import { EDITOR_V6_REACT_CHARACTER_SCALE, type EditorV6ReactImportPlan } from '../../../../shared/editorV6ReactImport'
+import { stabilizeEditorV6CharacterTrackFaceGeometry } from '../../../../shared/editorV6CharacterFaceGeometry'
 import { EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
 
 export type EditorV6ReactRenderedCharacterState = {
@@ -14,6 +15,7 @@ export type EditorV6ReactRenderedCharacterState = {
   transforms: EditorV6Element['faceTransforms']
   effects: EditorV6Element['activeExpressionEffects']
   presetUpdatedAt?: string
+  collectionId?: string
 }
 
 type Options = {
@@ -133,5 +135,5 @@ export async function compileEditorV6ReactCharacterTracks({
     if (baseIndex >= 0) elements[baseIndex] = lane.blocks[0].state!
   }
 
-  return { elements, tracks }
+  return { elements, tracks: tracks.map(stabilizeEditorV6CharacterTrackFaceGeometry) }
 }

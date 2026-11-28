@@ -1,7 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { EditorV6FrameWorker } from '../../electron/domains/editorV6/exportWorkers'
-import { createEditorV6TimingAccumulators, summarizeEditorV6Timings } from '../../electron/domains/editorV6/exportMetrics'
-import { renderAndWriteEditorV6Frames } from '../../electron/domains/editorV6/exportFramePipeline'
+import {
+  createEditorV6TimingAccumulators,
+  summarizeEditorV6Timings
+} from '../../electron/domains/editorV6/exportMetrics'
+import {
+  renderAndWriteEditorV6Frames,
+  type EditorV6FrameWriteTimelineSample
+} from '../../electron/domains/editorV6/exportFramePipeline'
 import type { EditorV6FrameMetrics, EditorV6FrameTimings } from '../../src/shared/editorV6Export'
 
 function worker(frames: Array<Awaited<ReturnType<EditorV6FrameWorker['frame']>>>) {
@@ -11,16 +17,47 @@ function worker(frames: Array<Awaited<ReturnType<EditorV6FrameWorker['frame']>>>
 function accounting() {
   return {
     counters: { rendered: 0, reused: 0, frames: 0 },
+    collectDiagnostics: true,
     timingAccumulators: createEditorV6TimingAccumulators(),
     frameMetrics: {} as Record<string, number>
   }
 }
 
 describe('pipeline de quadros renderizados do Editor V6', () => {
+  it('não cria amostras nem chama o coletor no caminho padrão', async () => {
+    const frames = worker([
+      { reused: false, bitmap: Buffer.from([1]), timings: { sceneResolutionMs: 2 }, metrics: { hairRasterFrames: 1 } },
+      { reused: true, bitmap: undefined, timings: { sceneResolutionMs: 3 }, metrics: { hairRasterFrames: 1 } }
+    ])
+    const diagnostics = vi.fn()
+    const now = vi.fn(() => 10)
+    const counters = { rendered: 0, reused: 0, frames: 0 }
+    const writes: Buffer[] = []
+
+    await renderAndWriteEditorV6Frames({
+      worker: frames,
+      part: { startFrame: 0, endFrame: 2 },
+      signal: new AbortController().signal,
+      counters,
+      writeFrame: async bitmap => { writes.push(bitmap) },
+      onFrameWritten: vi.fn(),
+      now,
+      onDiagnosticWrite: diagnostics
+    })
+
+    expect(writes).toEqual([Buffer.from([1]), Buffer.from([1])])
+    expect(counters).toEqual({ rendered: 1, reused: 1, frames: 2 })
+    expect(counters).not.toHaveProperty('frameSequenceDiagnostics')
+    expect(diagnostics).not.toHaveBeenCalled()
+    expect(now).not.toHaveBeenCalled()
+  })
+
   it('conta apenas a espera que sobrou depois que o quadro antecipado ficou pronto', async () => {
     let time = 0
     let finishFirstWrite!: () => void
-    const firstWrite = new Promise<void>(resolve => { finishFirstWrite = resolve })
+    const firstWrite = new Promise<void>((resolve) => {
+      finishFirstWrite = resolve
+    })
     const renderer = {
       frame: vi.fn(async (index: number) => {
         if (index === 1) time = 30
@@ -29,12 +66,16 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
     }
     const state = accounting()
     const exporting = renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 2 },
-      signal: new AbortController().signal, ...state,
-      overlapEncoding: true, now: () => time, onFrameWritten: () => {},
-      writeFrame: bitmap => bitmap[0] === 0 ? firstWrite : Promise.resolve()
+      worker: renderer,
+      part: { startFrame: 0, endFrame: 2 },
+      signal: new AbortController().signal,
+      ...state,
+      overlapEncoding: true,
+      now: () => time,
+      onFrameWritten: () => {},
+      writeFrame: (bitmap) => (bitmap[0] === 0 ? firstWrite : Promise.resolve())
     })
-    await new Promise<void>(resolve => setImmediate(resolve))
+    await new Promise<void>((resolve) => setImmediate(resolve))
     time = 50
     finishFirstWrite()
     await exporting
@@ -61,8 +102,12 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
       part: { startFrame: 0, endFrame: 3 },
       signal: new AbortController().signal,
       ...state,
-      writeFrame: async (bitmap) => { writes.push(bitmap) },
-      onFrameWritten: () => { completedFrames++ },
+      writeFrame: async (bitmap) => {
+        writes.push(bitmap)
+      },
+      onFrameWritten: () => {
+        completedFrames++
+      },
       now: () => 10
     })
 
@@ -71,29 +116,44 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
     expect(state.counters).toEqual({ rendered: 2, reused: 1, frames: 3 })
     expect(completedFrames).toBe(3)
     expect(state.frameMetrics).toEqual({ hairRasterFrames: 4 })
-    expect(summarizeEditorV6Timings(state.timingAccumulators).sceneResolutionMs).toMatchObject({ samples: 2, totalMs: 3 })
+    expect(summarizeEditorV6Timings(state.timingAccumulators).sceneResolutionMs).toMatchObject({
+      samples: 2,
+      totalMs: 3
+    })
   })
 
   it('overlaps one render with the preceding FFmpeg write while bounding the queue', async () => {
     let releaseFirstWrite!: () => void
-    const firstWrite = new Promise<void>(resolve => { releaseFirstWrite = resolve })
+    const firstWrite = new Promise<void>((resolve) => {
+      releaseFirstWrite = resolve
+    })
     let secondFrameStarted!: () => void
-    const secondStarted = new Promise<void>(resolve => { secondFrameStarted = resolve })
+    const secondStarted = new Promise<void>((resolve) => {
+      secondFrameStarted = resolve
+    })
     let thirdFrameStarted!: () => void
-    const thirdStarted = new Promise<void>(resolve => { thirdFrameStarted = resolve })
+    const thirdStarted = new Promise<void>((resolve) => {
+      thirdFrameStarted = resolve
+    })
     const pictures = [Buffer.from([10]), Buffer.from([20]), Buffer.from([30])]
-    const renderer = { frame: vi.fn(async (frame: number) => {
-      if (frame === 1) secondFrameStarted()
-      if (frame === 2) thirdFrameStarted()
-      return { reused: false, bitmap: pictures[frame] }
-    }) }
-    const writeFrame = vi.fn((bitmap: Buffer) => bitmap === pictures[0] ? firstWrite : Promise.resolve())
+    const renderer = {
+      frame: vi.fn(async (frame: number) => {
+        if (frame === 1) secondFrameStarted()
+        if (frame === 2) thirdFrameStarted()
+        return { reused: false, bitmap: pictures[frame] }
+      })
+    }
+    const writeFrame = vi.fn((bitmap: Buffer) => (bitmap === pictures[0] ? firstWrite : Promise.resolve()))
     const onFrameWritten = vi.fn()
     const state = accounting()
     const exporting = renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 3 },
-      signal: new AbortController().signal, ...state,
-      writeFrame, onFrameWritten, overlapEncoding: true
+      worker: renderer,
+      part: { startFrame: 0, endFrame: 3 },
+      signal: new AbortController().signal,
+      ...state,
+      writeFrame,
+      onFrameWritten,
+      overlapEncoding: true
     })
 
     await secondStarted
@@ -113,20 +173,33 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
   it('retains acknowledged frames and observes an early lookahead failure without unhandled rejection', async () => {
     const failure = Error('falha no próximo quadro')
     let releaseWrite!: () => void
-    const writing = new Promise<void>(resolve => { releaseWrite = resolve })
+    const writing = new Promise<void>((resolve) => {
+      releaseWrite = resolve
+    })
     let notifySecond!: () => void
-    const secondStarted = new Promise<void>(resolve => { notifySecond = resolve })
-    const renderer = { frame: vi.fn(async (frame: number) => {
-      if (frame === 1) { notifySecond(); throw failure }
-      return { reused: false, bitmap: Buffer.from([42]) }
-    }) }
+    const secondStarted = new Promise<void>((resolve) => {
+      notifySecond = resolve
+    })
+    const renderer = {
+      frame: vi.fn(async (frame: number) => {
+        if (frame === 1) {
+          notifySecond()
+          throw failure
+        }
+        return { reused: false, bitmap: Buffer.from([42]) }
+      })
+    }
     const writeFrame = vi.fn(() => writing)
     const onFrameWritten = vi.fn()
     const state = accounting()
     const exporting = renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 3 },
-      signal: new AbortController().signal, ...state,
-      writeFrame, onFrameWritten, overlapEncoding: true
+      worker: renderer,
+      part: { startFrame: 0, endFrame: 3 },
+      signal: new AbortController().signal,
+      ...state,
+      writeFrame,
+      onFrameWritten,
+      overlapEncoding: true
     })
 
     await secondStarted
@@ -146,12 +219,19 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
       { reused: false, bitmap: Buffer.from([8]) }
     ])
     const state = accounting()
-    await expect(renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 2 },
-      signal: controller.signal, ...state, overlapEncoding: true,
-      writeFrame: async () => { controller.abort(cancellation) },
-      onFrameWritten: vi.fn()
-    })).rejects.toBe(cancellation)
+    await expect(
+      renderAndWriteEditorV6Frames({
+        worker: renderer,
+        part: { startFrame: 0, endFrame: 2 },
+        signal: controller.signal,
+        ...state,
+        overlapEncoding: true,
+        writeFrame: async () => {
+          controller.abort(cancellation)
+        },
+        onFrameWritten: vi.fn()
+      })
+    ).rejects.toBe(cancellation)
     expect(renderer.frame).toHaveBeenCalledTimes(1)
     expect(state.counters.frames).toBe(1)
   })
@@ -167,9 +247,15 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
     const writes: Buffer[] = []
     const state = accounting()
     await renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 3 },
-      signal: new AbortController().signal, ...state, overlapEncoding: true,
-      writeFrame: async bitmap => { writes.push(bitmap) }, onFrameWritten: vi.fn()
+      worker: renderer,
+      part: { startFrame: 0, endFrame: 3 },
+      signal: new AbortController().signal,
+      ...state,
+      overlapEncoding: true,
+      writeFrame: async (bitmap) => {
+        writes.push(bitmap)
+      },
+      onFrameWritten: vi.fn()
     })
     expect(writes).toEqual([first, first, second])
     expect(state.counters).toEqual({ rendered: 2, reused: 1, frames: 3 })
@@ -187,11 +273,19 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
       { reused: false, bitmap: Buffer.from([2]), metrics: { captureReadbacks: 99 } }
     ])
     const state = accounting()
-    await expect(renderAndWriteEditorV6Frames({
-      worker: renderer, part: { startFrame: 0, endFrame: 2 },
-      signal: new AbortController().signal, ...state, overlapEncoding: true,
-      writeFrame: async () => { throw failure }, onFrameWritten: vi.fn()
-    })).rejects.toBe(failure)
+    await expect(
+      renderAndWriteEditorV6Frames({
+        worker: renderer,
+        part: { startFrame: 0, endFrame: 2 },
+        signal: new AbortController().signal,
+        ...state,
+        overlapEncoding: true,
+        writeFrame: async () => {
+          throw failure
+        },
+        onFrameWritten: vi.fn()
+      })
+    ).rejects.toBe(failure)
     expect(renderer.frame).toHaveBeenCalledTimes(2)
     expect(state.frameMetrics).toEqual({ captureReadbacks: 1 })
     expect(state.counters).toEqual({ rendered: 1, reused: 0, frames: 0 })
@@ -200,8 +294,12 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
   })
 
   it('agrega somente campos próprios das métricas por quadro', async () => {
-    const timings = Object.assign(Object.create({ sceneResolutionMs: 99 }), { assetPreparationMs: 0.35 }) as EditorV6FrameTimings
-    const metrics = Object.assign(Object.create({ hairRasterFrames: 99 }), { captureReadbacks: 1 }) as EditorV6FrameMetrics
+    const timings = Object.assign(Object.create({ sceneResolutionMs: 99 }), {
+      assetPreparationMs: 0.35
+    }) as EditorV6FrameTimings
+    const metrics = Object.assign(Object.create({ hairRasterFrames: 99 }), {
+      captureReadbacks: 1
+    }) as EditorV6FrameMetrics
     const renderer = worker([{ reused: false, bitmap: Buffer.from([1]), timings, metrics }])
     const state = accounting()
 
@@ -224,27 +322,33 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
   it('rejeita bitmap ausente e mantém contadores anteriores se o write falha', async () => {
     const emptyRenderer = worker([{ reused: true }])
     const emptyState = accounting()
-    await expect(renderAndWriteEditorV6Frames({
-      worker: emptyRenderer,
-      part: { startFrame: 0, endFrame: 1 },
-      signal: new AbortController().signal,
-      ...emptyState,
-      writeFrame: vi.fn(async () => undefined),
-      onFrameWritten: vi.fn(),
-      now: () => 10
-    })).rejects.toThrow('O renderizador não entregou o bitmap.')
+    await expect(
+      renderAndWriteEditorV6Frames({
+        worker: emptyRenderer,
+        part: { startFrame: 0, endFrame: 1 },
+        signal: new AbortController().signal,
+        ...emptyState,
+        writeFrame: vi.fn(async () => undefined),
+        onFrameWritten: vi.fn(),
+        now: () => 10
+      })
+    ).rejects.toThrow('O renderizador não entregou o bitmap.')
 
     const renderer = worker([{ reused: false, bitmap: Buffer.from([9]) }])
     const state = accounting()
-    await expect(renderAndWriteEditorV6Frames({
-      worker: renderer,
-      part: { startFrame: 0, endFrame: 1 },
-      signal: new AbortController().signal,
-      ...state,
-      writeFrame: vi.fn(async () => { throw Error('falha de escrita sintética') }),
-      onFrameWritten: vi.fn(),
-      now: () => 10
-    })).rejects.toThrow('falha de escrita sintética')
+    await expect(
+      renderAndWriteEditorV6Frames({
+        worker: renderer,
+        part: { startFrame: 0, endFrame: 1 },
+        signal: new AbortController().signal,
+        ...state,
+        writeFrame: vi.fn(async () => {
+          throw Error('falha de escrita sintética')
+        }),
+        onFrameWritten: vi.fn(),
+        now: () => 10
+      })
+    ).rejects.toThrow('falha de escrita sintética')
     expect(state.counters).toEqual({ rendered: 1, reused: 0, frames: 0 })
   })
 
@@ -255,18 +359,64 @@ describe('pipeline de quadros renderizados do Editor V6', () => {
       { reused: false, bitmap: Buffer.from([2]) }
     ])
     const state = accounting()
-    const writeFrame = vi.fn(async () => { controller.abort(Error('cancelado sinteticamente')) })
+    const writeFrame = vi.fn(async () => {
+      controller.abort(Error('cancelado sinteticamente'))
+    })
 
-    await expect(renderAndWriteEditorV6Frames({
-      worker: renderer,
-      part: { startFrame: 0, endFrame: 2 },
-      signal: controller.signal,
-      ...state,
-      writeFrame,
-      onFrameWritten: vi.fn(),
-      now: () => 10
-    })).rejects.toThrow('cancelado sinteticamente')
+    await expect(
+      renderAndWriteEditorV6Frames({
+        worker: renderer,
+        part: { startFrame: 0, endFrame: 2 },
+        signal: controller.signal,
+        ...state,
+        writeFrame,
+        onFrameWritten: vi.fn(),
+        now: () => 10
+      })
+    ).rejects.toThrow('cancelado sinteticamente')
     expect(renderer.frame).toHaveBeenCalledTimes(1)
     expect(state.counters.frames).toBe(1)
+  })
+
+  it('mede quadros repetidos e fundo constante com primeiro plano variável', async () => {
+    const frames = [
+      { reused: false, bitmap: Buffer.from([0, 0]) },
+      { reused: true, bitmap: undefined },
+      { reused: false, bitmap: Buffer.from([0, 1]) },
+      { reused: false, bitmap: Buffer.from([0, 1]) }
+    ]
+    let index = 0
+    const state = accounting()
+    const writes: EditorV6FrameWriteTimelineSample[] = []
+    let clock = 100
+    await renderAndWriteEditorV6Frames({
+      worker: { frame: async () => frames[index++]! },
+      part: { startFrame: 0, endFrame: frames.length },
+      signal: new AbortController().signal,
+      ...state,
+      writeFrame: async () => ({ backpressureMs: 2 }),
+      onFrameWritten: () => undefined,
+      diagnosticLayerBytes: 1,
+      diagnosticExportStartedAt: 90,
+      onDiagnosticWrite: (sample) => writes.push(sample),
+      now: () => ++clock
+    })
+    expect(state.counters.frames).toBe(4)
+    expect(state.counters.frameSequenceDiagnostics).toEqual({
+      frameCount: 4,
+      rawBytesWritten: 8,
+      runLengths: [2, 2],
+      runCount: 2,
+      repeatedRunCount: 2,
+      repeatedFrames: 2,
+      averageRunLength: 2,
+      medianRunLength: 2,
+      maximumRunLength: 2,
+      avoidableBytesIfOneFramePerRun: 4,
+      backgroundConstantForegroundChangedFrames: 1
+    })
+    expect(writes).toHaveLength(4)
+    expect(writes.every((sample) => sample.bytes === 2 && sample.backpressureMs === 2)).toBe(true)
+    expect(writes[0].startOffsetMs).toBeGreaterThan(0)
   })
 })

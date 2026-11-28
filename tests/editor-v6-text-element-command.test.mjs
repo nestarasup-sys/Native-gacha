@@ -3,14 +3,28 @@ import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import { createEditorV6TextElementCommand } from '../src/renderer/src/features/editorV6/editorV6TextElementCommand.ts'
 
-const pageSource = await readFile(new URL('../src/renderer/src/features/editorV6/EditorV6Page.tsx', import.meta.url), 'utf8')
-const toolRailSource = await readFile(new URL('../src/renderer/src/features/editorV6/EditorV6ToolRail.tsx', import.meta.url), 'utf8')
+const pageSource = await readFile(
+  new URL('../src/renderer/src/features/editorV6/EditorV6Page.tsx', import.meta.url),
+  'utf8'
+)
+const toolRailSource = await readFile(
+  new URL('../src/renderer/src/features/editorV6/EditorV6ToolRail.tsx', import.meta.url),
+  'utf8'
+)
 const timestamp = '2026-11-02T13:00:00.000Z'
 
 function makeCharacter(overrides = {}) {
   return {
-    id: 'actor-1', kind: 'character', characterId: 'character-1', text: 'Lia',
-    x: 18, y: 24, width: 20, height: 40, rotation: 0, zIndex: 3,
+    id: 'actor-1',
+    kind: 'character',
+    characterId: 'character-1',
+    text: 'Lia',
+    x: 18,
+    y: 24,
+    width: 20,
+    height: 40,
+    rotation: 0,
+    zIndex: 3,
     ...overrides
   }
 }
@@ -45,11 +59,20 @@ function makeHarness({ project = makeProject(), character = null } = {}) {
     activeProject: project,
     selectedCharacterElement: character,
     pausePlayback: () => events.push(['pause']),
-    getFrame: () => { events.push(['frame']); return 75 },
+    getFrame: () => {
+      events.push(['frame'])
+      return 75
+    },
     createTextElement: (kind, zIndex) => ({
-      id: `text-${++elementId}`, kind,
+      id: `text-${++elementId}`,
+      kind,
       text: kind === 'narrator' ? 'Texto do narrador' : 'Digite aqui',
-      x: 0, y: 0, width: 28, height: 16, rotation: 0, zIndex
+      x: 0,
+      y: 0,
+      width: 28,
+      height: 16,
+      rotation: 0,
+      zIndex
     }),
     createBlockId: () => `block-${++blockId}`,
     now: () => timestamp,
@@ -71,7 +94,10 @@ test('narrador pode ser adicionado sem personagem e vira bloco de vídeo no fram
 
   addTextElement('narrator')
 
-  assert.deepEqual(events.map(([name]) => name), ['pause', 'frame', 'change-scene', 'selected-element', 'selected-block', 'inspector-open', 'inspector-tab'])
+  assert.deepEqual(
+    events.map(([name]) => name),
+    ['pause', 'frame', 'change-scene', 'selected-element', 'selected-block', 'inspector-open', 'inspector-tab']
+  )
   assert.equal(state.project.elements[0].kind, 'narrator')
   assert.equal(state.project.elements[0].zIndex, 1)
   assert.equal(state.project.timeline.tracks[0].kind, 'video')
@@ -80,7 +106,7 @@ test('narrador pode ser adicionado sem personagem e vira bloco de vídeo no fram
   assert.equal(state.project.updatedAt, timestamp)
 })
 
-test('fala e pensamento preservam o vínculo e a posição inicial do personagem escolhido', () => {
+test('fala e pensamento preservam o vínculo e começam acima do personagem escolhido', () => {
   for (const kind of ['speech', 'thought']) {
     const character = makeCharacter()
     const { addTextElement, state } = makeHarness({ project: makeProject({ elements: [character] }), character })
@@ -93,7 +119,7 @@ test('fala e pensamento preservam o vínculo e a posição inicial do personagem
     assert.equal(element.attachmentOriginX, 18)
     assert.equal(element.attachmentOriginY, 24)
     assert.equal(element.x, 18)
-    assert.equal(element.y, 24)
+    assert.ok(element.y < character.y - character.height * 0.38)
     assert.equal(element.zIndex, 4)
     assert.equal(state.project.timeline.tracks.find((track) => track.kind === kind).blocks[0].startFrame, 75)
   }
@@ -118,15 +144,20 @@ test('faixa de destino bloqueada pausa antes do erro e não cria elemento nem ID
 
   addTextElement('speech')
 
-  assert.deepEqual(events, [
-    ['pause'], ['frame'], ['error', 'Desbloqueie a faixa para adicionar um bloco.']
-  ])
+  assert.deepEqual(events, [['pause'], ['frame'], ['error', 'Desbloqueie a faixa para adicionar um bloco.']])
   assert.equal(state.project.elements.length, 1)
   assert.equal(state.project.timeline.tracks[0].blocks.length, 0)
 })
 
 test('faixa bloqueada de outro tipo não impede narrador; projeto ausente não produz efeitos', () => {
-  const unrelatedLockedTrack = { id: 'speech-track', kind: 'speech', name: 'Fala', muted: false, locked: true, blocks: [] }
+  const unrelatedLockedTrack = {
+    id: 'speech-track',
+    kind: 'speech',
+    name: 'Fala',
+    muted: false,
+    locked: true,
+    blocks: []
+  }
   const narrator = makeHarness({ project: makeProject({ tracks: [unrelatedLockedTrack] }) })
   narrator.addTextElement('narrator')
   assert.ok(narrator.state.project.elements.some((element) => element.kind === 'narrator'))
@@ -134,7 +165,11 @@ test('faixa bloqueada de outro tipo não impede narrador; projeto ausente não p
   const lockedVideoTrack = { id: 'video-track', kind: 'video', name: 'Vídeo', muted: false, locked: true, blocks: [] }
   const blockedNarrator = makeHarness({ project: makeProject({ tracks: [lockedVideoTrack] }) })
   blockedNarrator.addTextElement('narrator')
-  assert.deepEqual(blockedNarrator.events, [['pause'], ['frame'], ['error', 'Desbloqueie a faixa para adicionar um bloco.']])
+  assert.deepEqual(blockedNarrator.events, [
+    ['pause'],
+    ['frame'],
+    ['error', 'Desbloqueie a faixa para adicionar um bloco.']
+  ])
   assert.deepEqual(blockedNarrator.state.project.elements, [])
 
   const absent = makeHarness({ project: null })
@@ -143,7 +178,12 @@ test('faixa bloqueada de outro tipo não impede narrador; projeto ausente não p
 })
 
 test('EditorV6Page delega a criação do elemento e preserva os callbacks da interface', () => {
-  assert.match(pageSource, /createEditorV6TextElementCommand\(\{[\s\S]*?activeProject: activeEditorV6,[\s\S]*?changeScene,[\s\S]*?setSelectedTimelineBlockId,[\s\S]*?setInspectorTab/)
-  assert.match(pageSource, /onAddText=\{addTextElement\}/)
+  assert.match(
+    pageSource,
+    /createEditorV6TextElementCommand\(\{[\s\S]*?activeProject: activeEditorV6,[\s\S]*?changeScene,[\s\S]*?setSelectedTimelineBlockId,[\s\S]*?setInspectorTab/
+  )
+  assert.match(pageSource, /toolRailActionsRef\.current = \{[\s\S]*?onAddText: addTextElement/)
+  assert.match(pageSource, /const railAddText = useCallback\([\s\S]*?toolRailActionsRef\.current\?\.onAddText\(kind\)/)
+  assert.match(pageSource, /onAddText=\{railAddText\}/)
   assert.match(toolRailSource, /onClick=\{\(\) => onAddText\('speech'\)\}/)
 })

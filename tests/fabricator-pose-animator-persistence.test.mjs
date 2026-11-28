@@ -219,3 +219,20 @@ test('manifesto não é publicado se faltar peça no rascunho do Animator', asyn
   await assert.rejects(store.writeAnimatorAnimation(1,1,animation,[]),/Imagem-base ausente/)
   await assert.rejects(fs.access(join(paths.animatorSlotPath(1,1),'animation.json')), /ENOENT/)
 })
+
+test('rejeita o deslocamento no salvamento e guarda o manifesto antes da correção explícita', async t => {
+  const { pose: store, paths } = await fixture(t)
+  const torso = { ...part, id: 'torso', name: 'Body', x: 30, y: 50 }
+  const corrected = { ...pose, parts: [part, torso], layerOrder: ['head', 'torso'] }
+  const displaced = { ...corrected, parts: [part, { ...torso, y: 55 }] }
+  const assets = [{ id: 'head', dataUrl: png }, { id: 'torso', dataUrl: png }]
+  // Old projects can already have an offset. Setting the source later simulates that saved legacy state.
+  await store.writePoseProject(1, 2, displaced, assets)
+  await fs.writeFile(join(paths.modelPath(1), 'project.json'), JSON.stringify({ parts: [torso] }))
+  await assert.rejects(store.writePoseProject(1, 2, displaced, assets), /posição original/)
+  assert.equal((await store.readPoseProject(1, 2)).parts[1].y, 55)
+  await store.writePoseProject(1, 2, corrected, assets)
+  assert.equal((await store.readPoseProject(1, 2)).parts[1].y, 50)
+  const backup = JSON.parse(await fs.readFile(join(paths.poseSlotPath(1, 2), 'pose.json.before-torso-alignment'), 'utf8'))
+  assert.equal(backup.parts[1].y, 55)
+})

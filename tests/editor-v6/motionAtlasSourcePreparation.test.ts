@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { prepareEditorV6MotionAtlasSources, type MotionAtlasSourceFrame } from '../../src/renderer/src/features/editorV6/motion/motionAtlasSourcePreparation'
+import { chooseMotionAtlasLayout } from '../../src/renderer/src/features/editorV6/motion/motionAtlasLayout'
 import type { CroppedMotionLayers } from '../../src/renderer/src/features/editorV6/motion/motionLayerCrops'
 import type { PreparedGachaLayerFrame } from '../../src/renderer/src/characters/editorV6CharacterRenderer'
 
@@ -28,7 +29,6 @@ describe('Editor V6 motion atlas source preparation', () => {
 
     const result = await prepareEditorV6MotionAtlasSources({
       samples: [{ progress: 0.25, faceMode: 'talk' }, { progress: 0.75, faceMode: 'talk-blink' }],
-      fromCrop: { left: 0, top: 0, width: 8, height: 9 }, toCrop: { left: 0, top: 0, width: 12, height: 11 },
       mouthScaleSamples: [1, 1.25], captureLayers: false, render, prepareFacePatch,
       createCanvas: () => { const value = canvas(); crops.push(value); return value }
     })
@@ -40,6 +40,19 @@ describe('Editor V6 motion atlas source preparation', () => {
     expect([first.dispose, second.dispose].map(dispose => vi.mocked(dispose).mock.calls.length)).toEqual([1, 1])
   })
 
+  it('sizes atlas cells from visible samples while keeping full source-frame endpoint geometry', async () => {
+    const result = await prepareEditorV6MotionAtlasSources({
+      samples: Array.from({ length: 7 }, (_, index) => ({ progress: (index + 1) / 8 })),
+      captureLayers: false, render: async () => ({ ...frame(744, 1217, 180, 90), dispose: vi.fn() }),
+      prepareFacePatch: async () => undefined, createCanvas: () => canvas()
+    })
+
+    expect(result).toMatchObject({ maximumWidth: 744, maximumHeight: 1217 })
+    expect(result.frames).toHaveLength(7)
+    expect(chooseMotionAtlasLayout(result.frames.length, result.maximumWidth, result.maximumHeight, 4096, 8_100_000))
+      .toMatchObject({ columns: 4, rows: 2, width: 2976, height: 2434, pixels: 7_243_584, ratio: 1 })
+  })
+
   it('releases prior cropped frames and face patches when later preparation fails', async () => {
     const first = frame(10, 12, 2, 3)
     const render = vi.fn().mockResolvedValueOnce(first).mockRejectedValueOnce(Error('falha sintética'))
@@ -47,7 +60,6 @@ describe('Editor V6 motion atlas source preparation', () => {
 
     await expect(prepareEditorV6MotionAtlasSources({
       samples: [{ progress: 0.3 }, { progress: 0.7 }],
-      fromCrop: { left: 0, top: 0, width: 8, height: 9 }, toCrop: { left: 0, top: 0, width: 12, height: 11 },
       captureLayers: false, render, prepareFacePatch: async () => ({ index: 0, canvas: patch, left: 0, top: 0, width: 3, height: 4, crop: first.crop }),
       createCanvas: () => { const value = canvas(); crops.push(value); return value }
     })).rejects.toThrow('falha sintética')
@@ -62,7 +74,7 @@ describe('Editor V6 motion atlas source preparation', () => {
     const cropLayers = vi.fn(() => croppedLayers)
 
     const result = await prepareEditorV6MotionAtlasSources({
-      samples: [{ progress: 0.5 }], fromCrop: current.crop, toCrop: current.crop,
+      samples: [{ progress: 0.5 }],
       captureLayers: true, render: async () => current, prepareFacePatch: async () => undefined, cropLayers,
       createCanvas: () => canvas()
     })
@@ -76,7 +88,7 @@ describe('Editor V6 motion atlas source preparation', () => {
   it('cleans a cropped canvas if its drawing context is unavailable', async () => {
     const current = frame(10, 12, 0, 0), brokenCanvas = { width: 0, height: 0, getContext: vi.fn(() => null) } as unknown as HTMLCanvasElement
     await expect(prepareEditorV6MotionAtlasSources({
-      samples: [{ progress: 0.5 }], fromCrop: current.crop, toCrop: current.crop,
+      samples: [{ progress: 0.5 }],
       captureLayers: false, render: async () => current, prepareFacePatch: async () => undefined,
       createCanvas: () => brokenCanvas
     })).rejects.toThrow()

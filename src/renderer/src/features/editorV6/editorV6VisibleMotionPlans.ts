@@ -1,10 +1,11 @@
 import { EDITOR_V6_MOTION_MS, editorV6MotionPlan, type EditorV6MotionPlan } from '../../../../shared/editorV6Motion'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 import type { EditorV6TimelineBlock, EditorV6TimelineTrack } from '../../../../shared/editorV6'
 
 export type EditorV6FrameRange = readonly [startFrame: number, endFrame: number]
 export type EditorV6MotionPair = readonly [previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock]
 
-const MOTION_WINDOW_FRAMES = EDITOR_V6_MOTION_MS * 30 / 1000
+const MOTION_WINDOW_FRAMES = EDITOR_V6_MOTION_MS * EDITOR_V6_TIMELINE_FPS / 1000
 
 /** Select only adjacent character states whose short transition can touch the visible range. Blocks must be ordered by startFrame. */
 export function selectEditorV6MotionPairsInRange(
@@ -43,7 +44,7 @@ export function editorV6VisibleMotionPlans(
   blocks: readonly EditorV6TimelineBlock[],
   range: EditorV6FrameRange
 ): EditorV6MotionPlan[] {
-  if (track.kind !== 'character' || track.motionEnabled === false) return []
+  if ((track.kind !== 'character' && track.kind !== 'intro') || track.motionEnabled === false) return []
   const [startFrame, endFrame] = range
   const plans: EditorV6MotionPlan[] = []
   for (const [previous, next] of selectEditorV6MotionPairsInRange(blocks, range)) {

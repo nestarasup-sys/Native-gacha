@@ -5,7 +5,6 @@ export const APPLICATION_ROUTES = {
   studio: '/estudio',
   editorV6: '/editor-v6',
   editorV6Library: '/editor-v6/library',
-  editorV7: '/editor-v7',
   roteiro: '/roteiros',
   baseVideos: '/base-videos',
   logsDev: '/logs-dev',
@@ -27,7 +26,13 @@ export function sanitizeDiagnosticRoute(value: unknown): string | undefined {
 
 export const UI_PERFORMANCE_ROUTES = new Set<string>([
   ...SAFE_DIAGNOSTIC_ROUTES,
+  '/editor-v6/page',
   '/editor-v6/scene',
   '/editor-v6/surface',
-  '/editor-v6/timeline'
+  '/editor-v6/timeline',
+  '/editor-v6/child/playback-audio',
+  '/editor-v6/child/tool-rail',
+  '/editor-v6/child/inspector',
+  '/editor-v6/child/cast-manager',
+  '/editor-v6/child/export-panel'
 ])

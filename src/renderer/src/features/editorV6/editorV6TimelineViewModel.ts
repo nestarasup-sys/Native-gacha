@@ -8,14 +8,14 @@ export type EditorV6TimelineViewportRangeInput = {
 }
 
 export function getEditorV6TimelineContentWidth(input: Pick<EditorV6TimelineViewportRangeInput, 'viewportWidth' | 'heading' | 'pixelsPerSecond' | 'durationFrames'>) {
-  return Math.max(input.viewportWidth - input.heading, input.durationFrames / 30 * input.pixelsPerSecond)
+  return Math.max(input.viewportWidth - input.heading, input.durationFrames / EDITOR_V6_TIMELINE_FPS * input.pixelsPerSecond)
 }
 
 export function getEditorV6TimelineVisibleFrameRange(input: EditorV6TimelineViewportRangeInput): [number, number] {
   const overscan = input.overscanPixels ?? 160
   return [
-    Math.max(0, (input.scrollLeft - input.heading - overscan) / input.pixelsPerSecond * 30),
-    (input.scrollLeft + input.viewportWidth + overscan) / input.pixelsPerSecond * 30
+    Math.max(0, (input.scrollLeft - input.heading - overscan) / input.pixelsPerSecond * EDITOR_V6_TIMELINE_FPS),
+    (input.scrollLeft + input.viewportWidth + overscan) / input.pixelsPerSecond * EDITOR_V6_TIMELINE_FPS
   ]
 }
 
@@ -24,10 +24,11 @@ export function getEditorV6TimelineTickSeconds(pixelsPerSecond: number) {
 }
 
 export function getEditorV6TimelineRulerTicks(range: [number, number], durationFrames: number, tickSeconds: number) {
-  const durationSeconds = durationFrames / 30
-  const firstTick = Math.max(0, Math.floor(range[0] / 30 / tickSeconds) * tickSeconds)
-  const lastTick = Math.min(durationSeconds, range[1] / 30)
+  const durationSeconds = durationFrames / EDITOR_V6_TIMELINE_FPS
+  const firstTick = Math.max(0, Math.floor(range[0] / EDITOR_V6_TIMELINE_FPS / tickSeconds) * tickSeconds)
+  const lastTick = Math.min(durationSeconds, range[1] / EDITOR_V6_TIMELINE_FPS)
   const ticks: number[] = []
   for (let second = firstTick; second <= lastTick; second += tickSeconds) ticks.push(second)
   return ticks
 }
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'

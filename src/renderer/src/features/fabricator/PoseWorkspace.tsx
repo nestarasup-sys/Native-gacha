@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { FabricatorPose, FabricatorPoseDraft, FabricatorPoseDraftSave, FabricatorPoseSave, FabricatorPoseSummary, FabricatorProject, FabricatorSlotSummary, PosePart } from '../../../../shared/fabricator'
-import { resolvePoseCategory } from '../../../../shared/fabricator'
+import { alignPoseTorso, findPoseTorso, poseTorsoIsDisplaced, poseTorsoOffset } from '../../../../shared/poseTorso'
+import { isTorsoPart } from '../../../../shared/modelRig'
+import { poseCategoryLabel, resolvePoseCategory } from '../../../../shared/fabricator'
 import { defaultExportPoseSlots, poseFromModel } from './models/poseProjection'
 import { Icon } from '../../ui/components/Icon'
 import { usePreviewBackground } from '../../ui/hooks/usePreviewBackground'
@@ -8,7 +10,7 @@ import { registerPendingWriteFlusher } from '../../ui/pendingPersistence'
 import { normalizeLayerOrder, orderedParts, partJointAnchor, repairIncompatibleModelRigJoints } from './models/rig'
 import { poseAssetsForPersistence } from './models/poseAssetSnapshots'
 import { useModelAppearanceTarget, useModelPartAppearancePreview } from './ModelAppearanceContext'
-import { isMovablePosePart, rotatePosePart, translatePoseBranch } from './poseEditorModel'
+import { isMovablePosePart, poseRotationOrigin, rotatePosePart, translatePoseBranch } from './poseEditorModel'
 import type { PoseEditorProject } from './poseEditorModel'
 import { createPoseHistory, hasPoseGestureChanged, rememberPoseProject, restorePoseProject } from './poseHistory'
 import type { PoseHistory } from './poseHistory'
@@ -126,6 +128,8 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const [selectingModel, setSelectingModel] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [duplicateSource, setDuplicateSource] = useState<number | null>(null)
+  const [duplicateTarget, setDuplicateTarget] = useState('')
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState('')
   const [saveMessage, setSaveMessage] = useState('')
@@ -188,6 +192,8 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }, [baseModelSlot])
 
   useEffect(() => { void loadLibraries() }, [loadLibraries])
+
+  useEffect(() => { setDuplicateSource(null); setDuplicateTarget('') }, [selectedModelSlot])
 
   useEffect(() => {
     const element = stageRef.current
@@ -254,7 +260,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   const assignCategory = (category: string) => {
     const normalized = category.trim().replace(/\s+/g, ' ')
     if (!normalized || normalized.length > 32) return
-    const existing = categoryOptions.find((option) => option.toLocaleLowerCase('pt-BR') === normalized.toLocaleLowerCase('pt-BR'))
+    const existing = categoryOptions.find((option) => option.toLocaleLowerCase('pt-BR') === normalized.toLocaleLowerCase('pt-BR') || poseCategoryLabel(option).toLocaleLowerCase('pt-BR') === normalized.toLocaleLowerCase('pt-BR'))
     changeProject((current) => current.category === (existing ?? normalized) ? current : { ...current, category: existing ?? normalized })
     setCategoryPickerOpen(false)
     setNewCategoryName('')
@@ -338,6 +344,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
   }
 
   const selectPoseSlot = async (slot: number) => {
+    setDuplicateSource(null)
     if (slot === editingSlot && project) return
     if (!await canReplaceCurrent()) return
     setActiveSlot(slot)
@@ -395,6 +402,10 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
         slot = slots.findIndex((item) => !item) + 1
         if (slot === 0) { setError('Os 12 slots de pose estão preenchidos. Exclua uma pose para liberar espaço.'); return }
       }
+      if (poseTorsoIsDisplaced(poseTorsoOffset(snapshot, bridgeSourceModel?.parts ?? []))) {
+        setError('Use “Levar tronco à posição original” em Ferramentas avançadas antes de salvar esta pose.')
+        return
+      }
       const assets = poseAssetsForPersistence(snapshot.parts)
       const saved: FabricatorPose = { ...snapshot, slot, category: resolvePoseCategory({ ...snapshot, slot }), updatedAt: new Date().toISOString() }
       await window.desktop.fabricator.saveFabricatorPose(snapshot.sourceModelSlot, slot, toSavedPose(saved, slot), assets)
@@ -412,6 +423,24 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     } finally {
       setSaving(false)
     }
+  }
+
+  const duplicatePose = async () => {
+    if (duplicateSource === null || !duplicateTarget || saving) return
+    setSaving(true)
+    setError('')
+    try {
+      const target = Number(duplicateTarget)
+      await window.desktop.fabricator.duplicateFabricatorPose(selectedModelSlot, duplicateSource, target)
+      const updated = await window.desktop.fabricator.listFabricatorPoseSlots()
+      setAllPoseSlots(updated)
+      setDuplicateSource(null)
+      setDuplicateTarget('')
+      setSaveMessage(`Pose duplicada no slot ${String(target).padStart(2, '0')}`)
+      window.dispatchEvent(new Event('fabricator:assets-updated'))
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Não foi possível duplicar a pose.')
+    } finally { setSaving(false) }
   }
 
   const deletePose = async () => {
@@ -436,23 +465,24 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     const displayProject = project ?? sourcePreview
     const parts = useMemo(() => displayProject ? orderedParts(displayProject.parts, displayProject.layerOrder) : [], [displayProject])
     const selectedPart = displayProject?.parts.find((part) => part.id === selectedId) ?? null
-    const selectedCanMove = Boolean(project && selectedPart && isMovablePosePart(project, selectedPart.id))
+    const torsoId = project ? findPoseTorso(project.parts, bridgeSourceModel?.parts)?.id : undefined
+    const selectedCanMove = Boolean(project && selectedPart && isMovablePosePart(project, selectedPart.id, torsoId))
     const visibleParts = useMemo(() => parts.filter((part) => !displayProject?.hiddenPartIds.includes(part.id)), [parts, displayProject?.hiddenPartIds])
     const bodyJointBridgePairs = useMemo(() => displayProject ? findBodyJointBridgePairs(displayProject) : [], [displayProject])
   const filteredParts = useMemo(() => parts.filter((part) => part.name.toLocaleLowerCase().includes(partFilter.toLocaleLowerCase())), [parts, partFilter])
   const scale = displayProject ? Math.max(0.05, Math.min((stageSize.width - 48) / displayProject.width, (stageSize.height - 48) / displayProject.height)) * zoom : 1
 
-  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => isMovablePosePart(current, partId) ? translatePoseBranch(current, partId, dx, dy) : current, false)
+  const movePart = (partId: string, dx: number, dy: number) => changeProject((current) => isMovablePosePart(current, partId, torsoId) ? translatePoseBranch(current, partId, dx, dy, torsoId) : current, false)
 
   const setPartPosition = (partId: string, axis: 'x' | 'y', value: number) => changeProject((current) => {
     const part = current.parts.find((item) => item.id === partId)
-    if (!part || !Number.isFinite(value) || !isMovablePosePart(current, partId)) return current
+    if (!part || !Number.isFinite(value) || !isMovablePosePart(current, partId, torsoId)) return current
     const delta = value - part[axis]
-    return axis === 'x' ? translatePoseBranch(current, partId, delta, 0) : translatePoseBranch(current, partId, 0, delta)
+    return axis === 'x' ? translatePoseBranch(current, partId, delta, 0, torsoId) : translatePoseBranch(current, partId, 0, delta, torsoId)
   })
 
   const rotateSelected = (partId: string, targetAngle: number, includeConnectedChildren: boolean) => changeProject(
-    (current) => rotatePosePart(current, partId, targetAngle, includeConnectedChildren)
+    (current) => rotatePosePart(current, partId, targetAngle, includeConnectedChildren, torsoId)
   )
 
   const changeLayer = (partId: string, direction: -1 | 1) => changeProject((current) => {
@@ -551,7 +581,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
     event.preventDefault(); event.stopPropagation()
     event.currentTarget.setPointerCapture(event.pointerId)
     setSelectedId(part.id)
-    const anchor = partJointAnchor(part, project.joints) ?? { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+    const anchor = poseRotationOrigin(part, project.joints, torsoId)
     const artboardRect = event.currentTarget.closest('.pose-artboard')?.getBoundingClientRect()
     const pivotX = (artboardRect?.left ?? 0) + anchor.x * scale
     const pivotY = (artboardRect?.top ?? 0) + anchor.y * scale
@@ -567,7 +597,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
       pivotY,
       includeConnectedChildren: rotationMode === 'branch',
       movePiece: moveToolActive,
-      canMove: isMovablePosePart(project, part.id),
+      canMove: isMovablePosePart(project, part.id, torsoId),
       before: project
     }
   }
@@ -601,7 +631,7 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                 const offsetX = attachment && currentAnchor ? currentAnchor.x - attachment.referenceAnchor.x : 0
                 const offsetY = attachment && currentAnchor ? currentAnchor.y - attachment.referenceAnchor.y : 0
                 const bodyRotation = attachment && bone ? bone.rotation - attachment.referenceRotation : 0
-                const image = <img key={part.id} className={`pose-part${attachment ? ' pose-wardrobe-part' : ''}${selectedId === part.id ? ' selected' : ''}${project && !attachment && !isMovablePosePart(project, part.id) ? ' move-locked' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={attachment ? { left: 0, top: 0, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` } : { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />
+                const image = <img key={part.id} className={`pose-part${attachment ? ' pose-wardrobe-part' : ''}${selectedId === part.id ? ' selected' : ''}${project && !attachment && !isMovablePosePart(project, part.id, torsoId) ? ' move-locked' : ''}`} src={appearancePreviewForPart(part)} alt={part.name} draggable={false} onClick={(event) => { event.stopPropagation(); setSelectedId(part.id) }} onPointerDown={(event) => startPartDrag(event, part)} style={attachment ? { left: 0, top: 0, width: part.width * scale, height: part.height * scale, transform: `rotate(${part.rotation}deg)` } : { left: part.x * scale, top: part.y * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transform: `rotate(${part.rotation}deg)` }} />
                 return attachment
                   ? <div key={part.id} className="pose-wardrobe-anchor" style={{ left: (part.x + offsetX) * scale, top: (part.y + offsetY) * scale, width: part.width * scale, height: part.height * scale, zIndex: index + 1, transformOrigin: `${(attachment.referenceAnchor.x - part.x) * scale}px ${(attachment.referenceAnchor.y - part.y) * scale}px`, transform: `rotate(${bodyRotation}deg)` }}>{image}</div>
                   : image
@@ -620,8 +650,10 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
                   previewForPart={appearancePreviewForPart}
                 />
               })}
-              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.filter((part) => !/tronco|corpo/i.test(part.name)).map((part) => {
-                const anchor = partJointAnchor(part, displayProject.joints)
+              {showJoints && <svg className="pose-joints" viewBox={`0 0 ${displayProject.width} ${displayProject.height}`} preserveAspectRatio="none">{displayProject.parts.map((part) => {
+                const isTorso = part.id === torsoId || isTorsoPart(part)
+                if (isTorso && part.id !== selectedId) return null
+                const anchor = isTorso ? poseRotationOrigin(part, displayProject.joints, torsoId) : partJointAnchor(part, displayProject.joints)
                 if (!anchor) return null
                 const connected = displayProject.joints.some((joint) => joint.childPartId === part.id && joint.fixed)
                 return <circle key={part.id} className={`pose-joint-marker${connected ? ' fixed' : ''}${selectedId === part.id ? ' selected' : ''}`} cx={anchor.x} cy={anchor.y} r={Math.max(8, 9 / scale)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (project) setSelectedId(part.id) }} aria-label={`Bolinha de junta de ${part.name}`} />
@@ -632,33 +664,45 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
           <footer className="pose-canvas-footer"><span><kbd>Arraste o fundo</kbd> para mover a prévia {project && <><i /> <kbd>Arraste a peça</kbd> para {moveToolActive ? 'mover' : 'girar pela bolinha'}</>}</span><span>{displayProject ? `${displayProject.parts.length} peças · ${displayProject.joints.length} juntas` : 'O modelo original fica protegido'}</span></footer>
         </section>
 
-        <aside className="pose-side-panel" aria-label="Slots e ferramentas de pose">
+        <aside className="pose-side-panel" aria-label="Poses e ferramentas">
           <section className="pose-export-slots-panel" aria-label="Poses para Editor V6 Importer">
-            <header><span><strong>Poses para Editor V6 Importer</strong><small>Escolha até cinco poses deste modelo</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
+            <header><span><strong>Poses para Editor V6 Importer</strong><small>Escolha até cinco variações. O roteiro usará as categorias selecionadas.</small></span><span className="pose-slot-count">{exportPoseSlots.filter((slot) => slot !== null).length}/5</span></header>
             <div className="pose-export-slot-list">
               {exportPoseSlots.map((poseSlot, index) => {
                 const available = allPoseSlots.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === selectedModelSlot))
                 const selectedPose = available.find((pose) => pose.slot === poseSlot)
-                return <label className="pose-export-slot-row" key={index}><b>{String(index + 1).padStart(2, '0')}</b><select aria-label={`Pose do Editor V6 Importer ${index + 1}`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Escolher pose</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose {String(poseSlot).padStart(2, '0')} · indisponível</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>Pose {String(pose.slot).padStart(2, '0')}</option>)}</select></label>
+                return <div className="pose-export-slot-row" key={index}><select aria-label={`Escolha de pose ${index + 1} para o Editor V6`} disabled={savingExportPoseSlots} value={poseSlot ?? ''} onChange={(event) => void assignExportPose(index, event.target.value ? Number(event.target.value) : null)}><option value="">Escolher pose</option>{poseSlot !== null && !selectedPose && <option value={poseSlot}>Pose indisponível</option>}{available.map((pose) => <option key={pose.slot} value={pose.slot} disabled={exportPoseSlots.some((slot, slotIndex) => slotIndex !== index && slot === pose.slot)}>{poseCategoryLabel(resolvePoseCategory(pose))} · variação {available.filter((item) => poseCategoryLabel(resolvePoseCategory(item)) === poseCategoryLabel(resolvePoseCategory(pose))).findIndex((item) => item.slot === pose.slot) + 1} · {pose.name}</option>)}</select>{poseSlot !== null && <button className="pose-export-slot-remove" type="button" disabled={savingExportPoseSlots} onClick={() => void assignExportPose(index, null)} aria-label={`Remover escolha de pose ${index + 1}`} title="Remover seleção">×</button>}</div>
               })}
             </div>
           </section>
 
           <section className="pose-slots-panel">
-            <header><span><strong>Slots de poses</strong><small>12 espaços · 6 visíveis</small></span><span className="pose-slot-count">{slots.filter(Boolean).length}/12</span></header>
-            <div className="pose-slot-grid" role="tablist" aria-label="Slots de poses">
+            <header><span><strong>Poses salvas</strong><small>12 espaços · 6 visíveis</small></span><span className="pose-slot-count">{slots.filter(Boolean).length}/12</span></header>
+            <div className="pose-slot-grid" role="tablist" aria-label="Poses salvas">
               {slots.map((slot, index) => {
                 const number = index + 1
-                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${resolvePoseCategory(slot)}` : `Slot ${number}: vazio`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? resolvePoseCategory(slot) : 'Vazio'}</small></button>
+                return <button key={number} role="tab" aria-selected={activeSlot === number} className={`pose-slot${activeSlot === number ? ' active' : ''}${slot ? ' filled' : ' empty'}`} onClick={() => { setCategoryPickerOpen(false); void selectPoseSlot(number) }} title={slot ? `${slot.name} · ${poseCategoryLabel(resolvePoseCategory(slot))}` : `Posição ${number}: vazia`} type="button"><b>{String(number).padStart(2, '0')}</b><small>{slot ? poseCategoryLabel(resolvePoseCategory(slot)) : 'Vazio'}</small></button>
               })}
+            </div>
+            <div className="pose-duplicate-controls">
+              <button className="pose-button" type="button" disabled={!slots[activeSlot - 1] || saving} onClick={() => { setDuplicateSource(activeSlot); setDuplicateTarget('') }}>Duplicar pose selecionada</button>
+              {duplicateSource !== null && <div className="pose-duplicate-target">
+                <label htmlFor="pose-duplicate-slot">Destino da pose {String(duplicateSource).padStart(2, '0')}</label>
+                <select id="pose-duplicate-slot" value={duplicateTarget} onChange={(event) => setDuplicateTarget(event.target.value)} disabled={saving}>
+                  <option value="">Escolher slot vazio</option>
+                  {slots.map((slot, index) => !slot && <option key={index} value={index + 1}>Slot {String(index + 1).padStart(2, '0')}</option>)}
+                </select>
+                {!slots.some((slot) => !slot) && <small>Todos os slots estão ocupados.</small>}
+                <div><button type="button" className="pose-button" onClick={() => setDuplicateSource(null)} disabled={saving}>Cancelar</button><button type="button" className="pose-button primary" onClick={() => void duplicatePose()} disabled={!duplicateTarget || saving}>Duplicar</button></div>
+              </div>}
             </div>
           </section>
 
           <section className="pose-category-panel" aria-label="Categoria da pose">
             <span><strong>Categoria da pose</strong><small>Organiza as poses no Customizar</small></span>
-            <button className="pose-category-trigger" disabled={!project} aria-expanded={categoryPickerOpen} onClick={() => setCategoryPickerOpen((open) => !open)} type="button">{project ? resolvePoseCategory({ ...project, slot: editingSlot ?? undefined }) : 'Crie ou abra uma pose'} <Icon name="chevronRight" /></button>
+            <button className="pose-category-trigger" disabled={!project} aria-expanded={categoryPickerOpen} onClick={() => setCategoryPickerOpen((open) => !open)} type="button">{project ? poseCategoryLabel(resolvePoseCategory({ ...project, slot: editingSlot ?? undefined })) : 'Crie ou abra uma pose'} <Icon name="chevronRight" /></button>
             {categoryPickerOpen && project && <div className="pose-category-picker">
-              <div className="pose-category-options">{categoryOptions.map((category) => <button className={resolvePoseCategory({ ...project, slot: editingSlot ?? undefined }) === category ? 'active' : ''} key={category} onClick={() => assignCategory(category)} type="button">{category}</button>)}</div>
+              <div className="pose-category-options">{categoryOptions.map((category) => <button className={resolvePoseCategory({ ...project, slot: editingSlot ?? undefined }) === category ? 'active' : ''} key={category} onClick={() => assignCategory(category)} type="button">{poseCategoryLabel(category)}</button>)}</div>
               <form onSubmit={(event) => { event.preventDefault(); assignCategory(newCategoryName) }}><input aria-label="Nome da nova categoria" maxLength={32} onChange={(event) => setNewCategoryName(event.target.value)} placeholder="Nova categoria" value={newCategoryName} /><button disabled={!newCategoryName.trim()} type="submit">Adicionar</button></form>
             </div>}
           </section>
@@ -689,6 +733,15 @@ export function PoseWorkspace({ baseModelSlot }: { baseModelSlot: number }) {
               const child = project.parts.find((part) => part.id === joint.childPartId)
               return <article key={joint.id} className={`pose-rig-row${joint.fixed ? ' fixed' : ''}`}><div className="pose-rig-title"><b>{parent?.name ?? 'Peça'}</b><Icon name="chevronRight" /><b>{child?.name ?? 'Peça'}</b></div><div className="pose-rig-status"><i />{joint.fixed ? 'Conectada no modelo' : 'Solta no modelo'}</div><button className="pose-rig-select" onClick={() => { setSelectedId(joint.childPartId); setTab('parts') }} type="button">Selecionar {child?.name ?? 'peça'} para girar</button></article>
             })}{project.joints.length === 0 && <small>Este modelo ainda não tem juntas. Prepare o rig na aba Modelos para usá-lo em poses.</small>}</div>}
+            {project && <details className="pose-advanced-tools">
+              <summary>Ferramentas avançadas</summary>
+              <button className="pose-button" type="button" disabled={saving || !poseTorsoIsDisplaced(poseTorsoOffset(project, bridgeSourceModel?.parts ?? []))}
+                onClick={() => {
+                  changeProject(current => alignPoseTorso(current, bridgeSourceModel?.parts ?? []))
+                  setError('')
+                }}>Levar tronco à posição original</button>
+              {!poseTorsoOffset(project, bridgeSourceModel?.parts ?? []) && <small>O tronco original precisa estar disponível no modelo de origem.</small>}
+            </details>}
             {!project && <div className="pose-panel-empty"><Icon name="sparkles" /><strong>{sourcePreview ? 'Prévia do modelo selecionado' : 'Crie ou abra uma pose'}</strong><small>{sourcePreview ? 'Clique em Nova pose para editar uma cópia independente.' : 'As ferramentas aparecem aqui.'}</small></div>}
           </section>
         </aside>

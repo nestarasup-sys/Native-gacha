@@ -1,3 +1,4 @@
+import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6TimelineCore'
 import { dialog, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { randomUUID } from 'node:crypto'
 import { writeFile as writeExternal } from 'node:fs/promises'
@@ -7,6 +8,7 @@ import { editorV6LibraryAssetUrl, type EditorV6Document } from '../../../src/sha
 import { editorV6DocumentSchema } from '../../../src/shared/editorV6Schema'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
 import { exportEditorV6React } from '../../../src/shared/editorV6ReactExport'
+import type { EditorV6PoseCategoryIndex } from '../../../src/shared/editorV6PoseCategories'
 
 const format = 'NYMI_EDITOR_V6_PROJECT_V1'
 const fileName = /^[0-9a-f-]{36}\.(mp4|webm|mov|m4v|mp3|wav|m4a|aac|ogg|flac|opus)$/i
@@ -29,6 +31,7 @@ export function registerEditorV6ProjectJsonHandlers(deps: {
   write: (document: EditorV6Document) => Promise<void>
   assertPoseReferencesAvailable: (document: EditorV6Document) => Promise<void>
   coordinatePoseReferenceChange: <T>(operation: () => Promise<T>) => Promise<T>
+  getPoseCategoryIndex: (document: EditorV6Document) => Promise<EditorV6PoseCategoryIndex>
   projectPath: (id: string) => string
   files: { readFile: (path: string) => Promise<Buffer>; mkdir: (path: string, options: { recursive: true }) => Promise<unknown>; writeFile: (path: string, bytes: Buffer) => Promise<unknown> }
 }) {
@@ -37,7 +40,8 @@ export function registerEditorV6ProjectJsonHandlers(deps: {
     const id = z.string().uuid().parse(value)
     const project = await deps.read(id)
     if (!project) throw Error('Projeto não encontrado.')
-    const { data, warnings } = exportEditorV6React(project)
+    const categories = await deps.getPoseCategoryIndex(project)
+    const { data, warnings } = exportEditorV6React(project, categories)
     const choice = await dialog.showSaveDialog({ title: 'Exportar projeto do Editor V6', defaultPath: `${project.title.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_')}.json`, filters: [{ name: 'Projeto Editor V6', extensions: ['json'] }] })
     if (choice.canceled || !choice.filePath) return null
     await writeExternal(choice.filePath, JSON.stringify(data, null, 2), 'utf8')
@@ -52,7 +56,7 @@ export function registerEditorV6ProjectJsonHandlers(deps: {
     const files = new Map(archive.files.map(file => [`${file.folder}/${file.name}`, file]))
     if (files.size !== archive.files.length || files.size !== expected.length || expected.some(file => !files.has(`${file.folder}/${file.name}`))) throw Error('O JSON não contém exatamente as mídias locais esperadas pelo projeto.')
     const id = randomUUID(), now = new Date().toISOString()
-    const project: EditorV6Document = { ...original, id, createdAt: now, updatedAt: now, assets: original.assets.map(asset => asset.libraryAssetId ? { ...asset, dataUrl: editorV6LibraryAssetUrl(id, asset.libraryAssetId) } : asset) }
+    const project: EditorV6Document = { ...original, timeline: normalizeEditorV6Timeline(original.timeline), id, createdAt: now, updatedAt: now, assets: original.assets.map(asset => asset.libraryAssetId ? { ...asset, dataUrl: editorV6LibraryAssetUrl(id, asset.libraryAssetId) } : asset) }
     await deps.coordinatePoseReferenceChange(async () => {
       await deps.assertPoseReferencesAvailable(project)
       for (const file of expected) {

@@ -146,6 +146,10 @@
 }
 @media (max-width: 1050px) {
   .top-brand-name { display: none; }
+  .top-navigation { gap: 5px; }
+  .top-nav-group { gap: 1px; padding: 2px; }
+  .top-nav-link { gap: 5px; min-height: 34px; padding-inline: 6px; font-size: 11px; }
+  .top-nav-link svg { width: 14px; height: 14px; }
 }
 @media (prefers-reduced-motion: reduce) {
   .top-nav-link { transition: none; }

@@ -1,6 +1,8 @@
+import { editorV6BlinkEventAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { describe, expect, it } from 'vitest'
-import type { EditorV6Timeline } from '../../src/shared/editorV6'
-import { editorV6FaceModeAtFrame, hasEditorV6CharacterSpeechOverlap, isEditorV6BlinkFrame, isEditorV6CharacterSpeakingAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
+import type { EditorV6Document, EditorV6Timeline } from '../../src/shared/editorV6'
+import { editorV6FaceModeAtFrame, hasEditorV6CharacterSpeechOverlap, isEditorV6CharacterSpeakingAtFrame } from '../../src/shared/editorV6FaceSchedule'
 
 function timeline(): EditorV6Timeline {
   return { fps: 30, durationFrames: 300, tracks: [{
@@ -42,12 +44,47 @@ describe('speech interval index', () => {
 
   it('desativa o modo de fala sem desligar piscadas automáticas', () => {
     const source = timeline()
-    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => isEditorV6BlinkFrame('project', 'alice', frame))!
-    const nonBlinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => !isEditorV6BlinkFrame('project', 'alice', frame))!
+    const blinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => Boolean(editorV6BlinkEventAtFrame('project', frame)))!
+    const nonBlinkFrame = Array.from({ length: 300 }, (_, frame) => frame).find(frame => !Boolean(editorV6BlinkEventAtFrame('project', frame)))!
 
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', nonBlinkFrame)).toBe('talk')
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', nonBlinkFrame, { includeSpeechMouth: false })).toBeUndefined()
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', blinkFrame)).toBe('talk-blink')
-    expect(editorV6FaceModeAtFrame('project', source, 'alice', blinkFrame, { includeSpeechMouth: false })).toBe('blink')
+    expect(editorV6FaceModeAtFrame(source, 'alice', nonBlinkFrame)).toBe('talk')
+    expect(editorV6FaceModeAtFrame(source, 'alice', nonBlinkFrame, { includeSpeechMouth: false })).toBeUndefined()
+    expect(editorV6FaceModeAtFrame(source, 'alice', blinkFrame, { blinking: true })).toBe('talk-blink')
+    expect(editorV6FaceModeAtFrame(source, 'alice', blinkFrame, { includeSpeechMouth: false, blinking: true })).toBe('blink')
+  })
+})
+
+
+describe('piscada global', () => {
+  it('sorteia um único personagem visível por evento, com reposição e busca determinística', () => {
+    const actors = Array.from({ length: 5 }, (_, index) => ({
+      id: 'actor-' + index, characterId: 'character-' + index, kind: 'character' as const,
+      assetId: 'idle', faceModeAssetIds: { blink: 'closed' }, text: '', x: index, y: 0,
+      width: 10, height: 10, rotation: 0, zIndex: index, visible: index !== 4
+    }))
+    const project = {
+      id: 'global-blink-regression', elements: actors,
+      timeline: { ...timeline(), tracks: [], durationFrames: 6000 }
+    } as EditorV6Document
+    const reloaded = structuredClone(project)
+    const events: Array<{ frame: number; id: string }> = []
+    for (let frame = 0; frame < project.timeline.durationFrames; frame++) {
+      const event = editorV6BlinkEventAtFrame(project.id, frame)
+      const scene = resolveEditorV6SceneAtFrame(project, frame)
+      const closed = scene.elements.filter(item => item.assetId === 'closed')
+      expect(closed.length).toBe(event ? 1 : 0)
+      if (event?.start === frame) {
+        const delta = frame - (events.at(-1)?.frame ?? 0)
+        expect(delta).toBeGreaterThanOrEqual(75)
+        expect(delta).toBeLessThanOrEqual(105)
+        events.push({ frame, id: closed[0].id })
+      }
+    }
+    expect(new Set(events.map(event => event.id))).toEqual(new Set(actors.slice(0, 4).map(actor => actor.id)))
+    expect(events.some((event, index) => event.id === events[index - 1]?.id)).toBe(true)
+    for (const { frame, id } of events.reverse()) {
+      expect(resolveEditorV6SceneAtFrame(reloaded, frame + 2, { includeVideo: false }).blinkElementId).toBe(id)
+      expect(resolveEditorV6SceneAtFrame(reloaded, frame - 1).blinkElementId).toBeUndefined()
+    }
   })
 })

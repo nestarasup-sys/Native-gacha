@@ -1,5 +1,6 @@
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import { planEditorV6Audio, type EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
+import { EDITOR_V6_AUDIO_SAMPLE_RATE, EDITOR_V6_AUDIO_SAMPLES_PER_TIMELINE_FRAME, EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 
 type PlannedAudioClip = ReturnType<typeof planEditorV6Audio>[number]
 
@@ -24,11 +25,11 @@ export function planEditorV6ProjectAudio(project: EditorV6Document, startFrame: 
 
 /** Builds strict and damaged-source recovery filter graphs for audio mixed onto the final video. */
 export function editorV6AudioFilterGraphs(audio: readonly PlannedAudioClip[], totalFrames: number) {
-  const strict = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=N/SR/TB,aresample=48000,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
-  const recoverable = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / 30}:duration=${item.durationFrames / 30},asetpts=PTS-STARTPTS,aresample=48000:async=48000:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * 1600}S:all=1[a${index}]`)
+  const strict = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / EDITOR_V6_TIMELINE_FPS}:duration=${item.durationFrames / EDITOR_V6_TIMELINE_FPS},asetpts=N/SR/TB,aresample=${EDITOR_V6_AUDIO_SAMPLE_RATE},aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * EDITOR_V6_AUDIO_SAMPLES_PER_TIMELINE_FRAME}S:all=1[a${index}]`)
+  const recoverable = audio.map((item, index) => `[${index + 1}:a:0]atrim=start=${item.sourceInFrame / EDITOR_V6_TIMELINE_FPS}:duration=${item.durationFrames / EDITOR_V6_TIMELINE_FPS},asetpts=PTS-STARTPTS,aresample=${EDITOR_V6_AUDIO_SAMPLE_RATE}:async=${EDITOR_V6_AUDIO_SAMPLE_RATE}:first_pts=0,aformat=sample_fmts=fltp:channel_layouts=stereo,volume=${item.clip.gain},adelay=${item.delayFrames * EDITOR_V6_AUDIO_SAMPLES_PER_TIMELINE_FRAME}S:all=1[a${index}]`)
   if (audio.length) {
     const inputs = audio.map((_item, index) => `[a${index}]`).join('')
-    const mix = `${inputs}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / 30},atrim=duration=${totalFrames / 30},asetpts=N/SR/TB[mix]`
+    const mix = `${inputs}amix=inputs=${audio.length}:normalize=0:duration=longest:dropout_transition=0,asetpts=N/SR/TB,apad=whole_dur=${totalFrames / EDITOR_V6_TIMELINE_FPS},atrim=duration=${totalFrames / EDITOR_V6_TIMELINE_FPS},asetpts=N/SR/TB[mix]`
     strict.push(mix)
     recoverable.push(mix)
   }

@@ -5,6 +5,7 @@ const { mkdtemp, readFile, mkdir, writeFile } = require('node:fs/promises')
 const { join, resolve } = require('node:path')
 const { tmpdir } = require('node:os')
 const { resolveEditorV6TestOutputDirectory } = require('./testOutputDirectory.cjs')
+const { removeEditorV6TemporaryFixture } = require('./temporaryFixture.cjs')
 
 async function main() {
   if (process.platform !== 'win32') throw Error('This real MP4 integration check requires Windows.')
@@ -34,6 +35,7 @@ async function main() {
     throw Error('Electron ended without an approved pixel-level parity report.')
   }
   await writeFile(join(output, 'result.json'), JSON.stringify(summary, null, 2))
+  await removeEditorV6TemporaryFixture(folder, 'editor-v6-overlay-parity-')
   console.log('Real MP4 overlap parity verified:', join(output, 'result.json'))
 }
 main().catch(reason => { console.error(reason); process.exitCode = 1 })

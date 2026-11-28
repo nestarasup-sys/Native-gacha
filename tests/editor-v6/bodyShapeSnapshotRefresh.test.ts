@@ -93,7 +93,7 @@ describe('geometria corporal no refresh de snapshots do Editor V6', () => {
     expect(refreshPlan.groups).toHaveLength(1)
   })
 
-  it('re-renderiza todos os snapshots atuais da cena e timeline quando forçado ao abrir', () => {
+  it('não re-renderiza snapshots atuais da cena e timeline ao reabrir o projeto', () => {
     const character = {
       id: 'current-character', name: 'Current', createdAt: '', updatedAt: 'character-v1', hair: '', outfit: '', skin: '',
       customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] }
@@ -108,9 +108,9 @@ describe('geometria corporal no refresh de snapshots do Editor V6', () => {
       timeline: { tracks: [{ id: 'cast-track', blocks: [{ id: 'cast-block', elementId: element.id, state: blockState }] }] }
     }
 
-    const plan = planEditorV6CharacterRefresh(project as never, [character], {}, {}, {}, {}, {}, {}, true)
+    const plan = planEditorV6CharacterRefresh(project as never, [character], {}, {}, {}, {}, {}, {})
 
-    expect(plan.groups).toHaveLength(1)
-    expect(plan.groups[0].targets.map((target) => target.id)).toEqual(['scene-element', 'cast-block'])
+    expect(plan.groups).toHaveLength(0)
+    expect(plan.missingCharacterNames).toEqual([])
   })
 })

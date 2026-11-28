@@ -8,6 +8,7 @@ type Props = {
   side: 'left' | 'right'
   tab: InspectorTab
   customView: InspectorCustomView
+  readOnly?: boolean
   editorPanel: ReactNode
   facePanel: ReactNode
   presetsPanel: ReactNode
@@ -22,6 +23,7 @@ export function EditorV6Inspector({
   side,
   tab,
   customView,
+  readOnly,
   editorPanel,
   facePanel,
   presetsPanel,
@@ -31,6 +33,7 @@ export function EditorV6Inspector({
   onClose
 }: Props) {
   const presetsActive = tab === 'custom' && customView === 'presets'
+  const panel = tab === 'editor' ? editorPanel : presetsActive ? presetsPanel : facePanel
 
   return (
     <aside className={`studio-inspector studio-inspector-${side}`} aria-label="Inspector da cena" onPointerDown={(event) => event.stopPropagation()}>
@@ -44,7 +47,7 @@ export function EditorV6Inspector({
         <button aria-pressed={presetsActive} onClick={onSelectPresets} type="button">Presets</button>
       </div>
       <div className="studio-inspector-content">
-        {tab === 'editor' ? editorPanel : presetsActive ? presetsPanel : facePanel}
+        {readOnly ? <fieldset className="v6-inspector-content-fields" disabled>{panel}</fieldset> : panel}
       </div>
     </aside>
   )

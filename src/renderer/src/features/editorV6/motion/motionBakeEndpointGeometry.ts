@@ -1,10 +1,11 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from '../editorV6SourceFrame'
 import type { CustomizerCharacter } from '../../../../../shared/customizer'
 import type { EditorV6Element } from '../../../../../shared/editorV6'
 import { editorV6FaceModeForElement, measureFaceModeCrop, type PreparedEditorV6FaceRenderer } from '../faceModeAssets'
 import type { MotionPixelCrop } from './motionPixelAnalysis'
 import { resolvedHairBakeEndpointDimensions, type HairBakeEndpointCrop } from './hairBakeEndpointGeometry'
 
-export type CachedMotionBakeEndpointGeometry = { crop: MotionPixelCrop; width: number; height: number }
+export type CachedMotionBakeEndpointGeometry = { crop: MotionPixelCrop; atlasCrop?: MotionPixelCrop; width: number; height: number }
 
 /** Exact visual inputs only; callers scope this key to the current export session. */
 export function editorV6MotionEndpointGeometryCacheKey(character: CustomizerCharacter, state: EditorV6Element): string {
@@ -24,8 +25,14 @@ export async function measureEditorV6MotionSnapshot(
   const appearance = state.faceAppearance ?? character.customization.faceAppearance
   const mode = editorV6FaceModeForElement(state, appearance)
   const { width, height } = renderer
-  const crop = await measureFaceModeCrop(state.text, renderer, appearance, state.faceTransforms, state.activeExpressionEffects, mode)
-  return { width, height, crop: crop ?? { left: 0, top: 0, width, height } }
+  const visibleCrop = await measureFaceModeCrop(state.text, renderer, appearance, state.faceTransforms, state.activeExpressionEffects, mode)
+  const fullSourceFrame = (state.faceRendererVersion ?? 0) >= EDITOR_V6_SOURCE_FRAME_VERSION
+  const fullFrame = { left: 0, top: 0, width, height }
+  return {
+    width, height,
+    crop: fullSourceFrame ? fullFrame : visibleCrop ?? fullFrame,
+    ...(visibleCrop ? { atlasCrop: visibleCrop } : {})
+  }
 }
 
 export type MotionBakeEndpointGeometry = {
@@ -33,6 +40,8 @@ export type MotionBakeEndpointGeometry = {
   toCrop: MotionPixelCrop
   maximumCanvasWidth: number
   maximumCanvasHeight: number
+  maximumAtlasWidth: number
+  maximumAtlasHeight: number
   endpointGeometryCacheHits: number
   endpointGeometryCacheMisses: number
 }
@@ -61,6 +70,8 @@ export async function resolveMotionBakeEndpointGeometry({
       toCrop: endpointCrops.to,
       maximumCanvasWidth: Math.max(endpointDimensions.firstWidth, endpointDimensions.lastWidth),
       maximumCanvasHeight: Math.max(endpointDimensions.firstHeight, endpointDimensions.lastHeight),
+      maximumAtlasWidth: Math.max(endpointCrops.from.width, endpointCrops.to.width),
+      maximumAtlasHeight: Math.max(endpointCrops.from.height, endpointCrops.to.height),
       endpointGeometryCacheHits: 0,
       endpointGeometryCacheMisses: 0
     }
@@ -100,6 +111,8 @@ export async function resolveMotionBakeEndpointGeometry({
     toCrop: to.crop,
     maximumCanvasWidth: Math.max(from.width, to.width),
     maximumCanvasHeight: Math.max(from.height, to.height),
+    maximumAtlasWidth: Math.max(from.atlasCrop?.width ?? from.width, to.atlasCrop?.width ?? to.width),
+    maximumAtlasHeight: Math.max(from.atlasCrop?.height ?? from.height, to.atlasCrop?.height ?? to.height),
     endpointGeometryCacheHits,
     endpointGeometryCacheMisses
   }

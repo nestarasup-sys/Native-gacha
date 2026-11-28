@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { dirname, join } from 'node:path'
+import { env as nodeEnv } from 'node:process'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
@@ -53,6 +54,9 @@ const message = formatEditorV6Error
 
 export async function runEditorV6Export(project: EditorV6Document, requestedOptions: EditorV6ExportOptions, deps: Dependencies): Promise<EditorV6ExportReport> {
   const { options, testSettings, requestedParts, parts: planned, speechInRange, mouthLoopBatchFrames, stressWorkerOverride } = createEditorV6ExportExecutionPlan(project, requestedOptions)
+  const producerOnly = nodeEnv.GACHA_EDITOR_V6_PRODUCER_ONLY === '1'
+  if (producerOnly && (nodeEnv.GACHA_VIDEO_STRESS_OFFSCREEN !== '1' || stressWorkerOverride !== '4'))
+    throw Error('A medição do teto do produtor exige o harness isolado e exatamente 4 workers.')
   const { report, layeredVideo, started, totalFrames } = createEditorV6ExportReportContext({ project, options, testSettings, id: deps.id, outputPath: deps.outputPath })
   let reportWriteQueue = Promise.resolve()
   const saveReport = () => {
@@ -154,6 +158,18 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
     })
     project = readiness.project
     characters = readiness.characters
+    if (producerOnly) {
+      report.currentPhase = 'rendering'
+      await saveReport()
+      const parts = await renderAttempt(planned, 'libopenh264', 4)
+      const presentedFrames = parts.reduce((total, part) => total + part.frames, 0)
+      if (presentedFrames !== totalFrames || parts.some((part) => part.pipeSink !== 'discard'))
+        throw Error(`A medição do produtor concluiu ${presentedFrames}/${totalFrames} quadros com sink inesperado.`)
+      report.validation = { benchmarkKind: 'producer-only', mp4Validated: false, framesPresented: presentedFrames }
+      report.state = 'completed'
+      await saveReport()
+      return report
+    }
     await mkdir(dirname(deps.outputPath), { recursive: true })
     await writeFile(candidate, '', { flag: 'wx' })
     report.currentPhase = 'encoderProbe'
@@ -180,8 +196,10 @@ export async function runEditorV6Export(project: EditorV6Document, requestedOpti
         progress: (patch) => deps.progress(patch),
         setAudioClipCount: (count) => { report.audioClips = count },
         setDeliveryWarning: (warning) => { report.deliveryWarning = warning },
-        setValidation: (validation) => { report.validation = validation }
+        setValidation: (validation) => { report.validation = validation },
+        collectDiagnostics: nodeEnv.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS === '1'
       })
+      if (result.finalizationDiagnostics) report.finalizationDiagnostics = result.finalizationDiagnostics
       return result.validation
     }
     const finishMeasured = async (parts: EditorV6ExportPartReport[]) => {

@@ -1,11 +1,14 @@
+import { editorV6IntroCharacterTrack } from './editorV6Intro'
 /** V6 motion contract and frame scheduling. No dependency on either Dev animator. */
 import type { CustomizerCharacter } from './customizer'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6FaceRenderMode, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
 import type { CharacterRenderAssetProvider } from './characterRenderAssets'
 import { isEditorV6CharacterSpeakingAtFrame } from './editorV6FaceSchedule'
 import { orderedEditorV6TimelineBlocks } from './editorV6TimelineCore'
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
+export { editorV6MotionChannels } from './editorV6MotionChannels'
 
-export const EDITOR_V6_MOTION_VERSION = 12
+export const EDITOR_V6_MOTION_VERSION = 13
 export const EDITOR_V6_MOTION_MS = 250
 export type EditorV6MotionSprite = { x: number; y: number; width: number; height: number; atlasWidth: number; atlasHeight: number }
 export type EditorV6FacePatch = { sprite: EditorV6MotionSprite; x: number; y: number; width: number; height: number; replace?: boolean; replaceBounds?: { x: number; y: number; width: number; height: number } }
@@ -89,7 +92,6 @@ export function invalidateIncompleteEditorV6Motions(document: EditorV6Document):
   }) }))
   return changed ? { ...document, timeline: { ...document.timeline, tracks } } : document
 }
-export const editorV6MotionChannels = { payload: 'editor-v6:motion-worker:payload', complete: 'editor-v6:motion-worker:complete' } as const
 export type EditorV6MotionBridge = { payload: () => Promise<EditorV6MotionBakeRequest | null>; provider: CharacterRenderAssetProvider; complete: (result?: EditorV6MotionBakeResult, error?: string) => Promise<void> }
 
 function faceSignature(element: EditorV6Element) {
@@ -107,8 +109,13 @@ export function editorV6MotionPlan(track: EditorV6TimelineTrack, previous: Edito
 }
 
 function motionPlanWithoutKey(track: EditorV6TimelineTrack, previous: EditorV6TimelineBlock, next: EditorV6TimelineBlock): Omit<EditorV6MotionPlan, 'key'> | null {
-  const from = previous.state, to = next.state
-  if (track.kind !== 'character' || track.motionEnabled === false || next.motionEnabled === false || !from || !to || from.kind !== 'character' || to.kind !== 'character' || from.id !== to.id || !from.characterId || from.characterId !== to.characterId || from.visible === false || to.visible === false || next.startFrame <= previous.startFrame || faceSignature(from) === faceSignature(to)) return null
+  const introStates = track.kind === 'intro' ? editorV6IntroCharacterTrack(track) : undefined
+  if (introStates && (previous.startFrame + previous.durationFrames !== next.startFrame
+    || previous.intro?.kind !== 'character' || next.intro?.kind !== 'character'
+    || !previous.intro.portraitAspect || !next.intro.portraitAspect)) return null
+  const from = introStates ? introStates.get(previous.id) : previous.state
+  const to = introStates ? introStates.get(next.id) : next.state
+  if ((track.kind !== 'character' && track.kind !== 'intro') || track.motionEnabled === false || next.motionEnabled === false || !from || !to || from.kind !== 'character' || to.kind !== 'character' || from.id !== to.id || !from.characterId || from.characterId !== to.characterId || from.visible === false || to.visible === false || next.startFrame <= previous.startFrame || faceSignature(from) === faceSignature(to)) return null
   // Material/source revisions are cuts; pose/expression motion belongs to one stable actor.
   if (from.characterSourceUpdatedAt && to.characterSourceUpdatedAt && from.characterSourceUpdatedAt !== to.characterSourceUpdatedAt) return null
   if (from.modelSourceRevision !== to.modelSourceRevision) return null
@@ -116,39 +123,28 @@ function motionPlanWithoutKey(track: EditorV6TimelineTrack, previous: EditorV6Ti
   if (from.hairSourceRevision !== to.hairSourceRevision) return null
   if (from.headExtraSourceRevision !== to.headExtraSourceRevision) return null
   if (from.eyeSourceRevision !== to.eyeSourceRevision) return null
-  const startFrame = Math.max(previous.startFrame, next.startFrame - EDITOR_V6_MOTION_MS * 30 / 1000)
+  const startFrame = Math.max(previous.startFrame, next.startFrame - EDITOR_V6_MOTION_MS * EDITOR_V6_TIMELINE_FPS / 1000)
   const samples = []
   for (let frame = Math.floor(startFrame) + 1; frame < next.startFrame; frame++) samples.push({ offset: frame - next.startFrame, progress: (frame - startFrame) / (next.startFrame - startFrame) })
   if (!samples.length) return null
   return { blockId: next.id, elementId: from.id, characterId: from.characterId, startFrame, endFrame: next.startFrame, from, to, samples }
 }
 
-/** A face-only atlas animates expression/mouth, but does not need a separate
- * hairless-body transition. Keep hair physics on the previous pose trajectory
- * unless the authored pose, actor geometry, or source actually changes. */
+/** Hair-layer transitions are required for pose or actor geometry changes,
+ * but a facial preset transition uses the regular character motion atlas and
+ * must not warp the hair/body layers along with it. */
 export function editorV6MotionChangesHairGeometry(plan: Pick<EditorV6MotionPlan, 'from' | 'to'>): boolean {
   const signature = (element: EditorV6Element) => JSON.stringify([
-    // assetId identifies the timeline snapshot as well as a pose. It changes
-    // on expression-only blocks in real projects, so it cannot classify hair
-    // geometry by itself.
+    // assetId changes for expression snapshots too; compare the actual actor geometry.
     element.poseSlot ?? null,
     element.x, element.y, element.width, element.height, element.rotation, Boolean(element.flipX),
     element.characterScale ?? null, element.characterWidthScale ?? null,
     element.characterHeightScale ?? null, element.characterCanvasWidth ?? null,
     element.characterSourceUpdatedAt ?? null, element.modelSourceRevision ?? null,
-    element.poseSourceRevision ?? null, element.hairSourceRevision ?? null
+    element.poseSourceRevision ?? null, element.wardrobeSourceRevision ?? null,
+    element.hairSourceRevision ?? null, element.headExtraSourceRevision ?? null
   ])
   return signature(plan.from) !== signature(plan.to)
-}
-
-/** Expression-only hair composition is safe only when every transition sample
- * has its own localized face patch; otherwise the full hairless atlas remains
- * the compatibility path for the saved motion sprite. */
-export function editorV6MotionHasCompleteFaceAtlas(
-  plan: Pick<EditorV6MotionPlan, 'samples'>,
-  motion: Pick<EditorV6MotionAtlas, 'faceAssetId' | 'frames'> | undefined
-): boolean {
-  return Boolean(motion?.faceAssetId && plan.samples.every(sample => motion.frames.some(frame => frame.offset === sample.offset && frame.facePatch)))
 }
 
 const plansCache = new WeakMap<EditorV6Document['timeline'], Map<boolean, EditorV6MotionPlan[]>>()
@@ -158,14 +154,14 @@ export function editorV6MotionPlans(document: EditorV6Document, options: { inclu
   if (cached && !options.preparedOnly) return cached
   const plans: EditorV6MotionPlan[] = []
   for (const track of document.timeline.tracks) {
-    if (track.kind !== 'character' || track.hidden || track.muted || track.motionEnabled === false) continue
+    if ((track.kind !== 'character' && track.kind !== 'intro') || track.hidden || track.muted || track.motionEnabled === false) continue
     const sorted = orderedEditorV6TimelineBlocks(track.blocks)
     for (let index = 1; index < sorted.length; index++) {
       if (options.preparedOnly && !sorted[index].incomingMotion) continue
       const plan = motionPlanWithoutKey(track, sorted[index - 1], sorted[index])
       if (!plan) continue
       // Baked transitions keep eyes open. Their only automatic face mode is speech.
-      if (includeSpeechMouth) {
+      if (includeSpeechMouth && track.kind === 'character') {
         for (const sample of plan.samples) {
           const frame = plan.endFrame + sample.offset
           if (isEditorV6CharacterSpeakingAtFrame(document.timeline, plan.characterId, frame)) sample.faceMode = 'talk'

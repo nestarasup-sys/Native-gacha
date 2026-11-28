@@ -5,10 +5,11 @@ import { editorV6ElementSize } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6NativeFramePlan, EditorV6NativeImageCommand } from '../../../../shared/editorV6Export'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
 import { editorV6ElementsWithBalloonsOnTop } from './editorV6SceneLayerOrder'
+import { editorV6BalloonAutoFitLayout } from './editorV6BalloonAutoFit'
 import { SceneTextContent } from './SceneTextContent'
 import { loadEditorV6WorkerMediaImage } from './exportWorkerMediaImage'
 
-type Layer = 'all' | 'background' | 'foreground' | 'stacked'
+type Layer = 'all' | 'background' | 'foreground'
 type CanvasMap = ReadonlyMap<string, HTMLCanvasElement>
 const textRasterCache = new Map<string, { id: string; dataUrl: string }>()
 const assetUrlCache = new Map<string, string>()
@@ -40,7 +41,9 @@ async function pngDataUrlFromImage(bitmap: ImageBitmap): Promise<string> {
   return dataUrlFromBlob(await canvas.convertToBlob({ type: 'image/png' }))
 }
 
-async function resolveNativeAsset(asset: EditorV6Asset, suppliedAssets: Map<string, { id: string; dataUrl: string }>): Promise<string> {
+type SuppliedNativeAsset = { id: string; dataUrl: string; lifetime: 'process' | 'frame' }
+
+async function resolveNativeAsset(asset: EditorV6Asset, suppliedAssets: Map<string, SuppliedNativeAsset>): Promise<string> {
   const cachedUrl = assetUrlCache.get(asset.id)
   const dataUrl = asset.dataUrl.startsWith('data:') ? asset.dataUrl : cachedUrl ?? await (async () => {
     try {
@@ -53,12 +56,12 @@ async function resolveNativeAsset(asset: EditorV6Asset, suppliedAssets: Map<stri
     assetUrlCache.set(asset.id, dataUrl)
     while (assetUrlCache.size > MAX_ASSET_URL_CACHE) assetUrlCache.delete(assetUrlCache.keys().next().value!)
   }
-  suppliedAssets.set(asset.id, { id: asset.id, dataUrl })
+  suppliedAssets.set(asset.id, { id: asset.id, dataUrl, lifetime: 'process' })
   return asset.id
 }
 
 async function rasterizeTextElement(element: EditorV6SceneElement, width: number, height: number): Promise<{ id: string; dataUrl: string }> {
-  const key = JSON.stringify([element.kind, element.text, element.speakerName, element.speakerColor, element.balloonScalePercent, width, height])
+  const key = JSON.stringify([element.kind, element.text, element.englishText, element.speakerName, element.speakerColor, element.speakerAnchorX, element.speakerAnchorY, element.balloonScalePercent, element.balloonAutoFitEnabled, element.balloonAutoFitFontSize, element.balloonAutoFitEnglishFontSize, element.balloonAutoFitPortugueseFontSize, width, height])
   const cached = textRasterCache.get(key)
   if (cached) return cached
   await document.fonts.ready
@@ -112,17 +115,31 @@ async function elementCommands(
   assetsById: ReadonlyMap<string, EditorV6Asset>,
   rasterCanvases: CanvasMap,
   frame: number,
-  suppliedAssets: Map<string, { id: string; dataUrl: string }>,
+  suppliedAssets: Map<string, SuppliedNativeAsset>,
   commands: EditorV6NativeImageCommand[]
 ): Promise<void> {
-  const size = editorV6ElementSize(element)
+  const size = element.balloonLayout ?? editorV6ElementSize(element)
   const isBalloon = element.kind === 'speech' || element.kind === 'thought'
   const balloonScale = isBalloon ? Math.max(1, Math.min(2.5, (element.balloonScalePercent ?? 100) / 100)) : 1
-  const width = size.width * 19.2 * balloonScale, height = size.height * 10.8 * balloonScale
-  const position = scenePosition(element.x, element.y + (isBalloon ? element.balloonOffsetY ?? 0 : 0))
+  const width = size.width * 19.2 * balloonScale
+  const maximumHeight = size.height * 10.8 * balloonScale
+  const autoFit = isBalloon ? editorV6BalloonAutoFitLayout(element, width, maximumHeight) : { height: maximumHeight }
+  const height = autoFit.height
+  const textElement = isBalloon ? {
+    ...element,
+    balloonAutoFitEnabled: 'compact' in autoFit && autoFit.compact === true,
+    ...('fontSize' in autoFit && autoFit.fontSize ? { balloonAutoFitFontSize: autoFit.fontSize } : {}),
+    ...('englishFontSize' in autoFit && autoFit.englishFontSize ? { balloonAutoFitEnglishFontSize: autoFit.englishFontSize } : {}),
+    ...('portugueseFontSize' in autoFit && autoFit.portugueseFontSize ? { balloonAutoFitPortugueseFontSize: autoFit.portugueseFontSize } : {})
+  } : element
+  const heightAnchorOffset = (maximumHeight - height) / 21.6
+  const position = scenePosition(
+    element.balloonLayout?.x ?? element.x,
+    (element.balloonLayout?.y ?? (element.y + (isBalloon ? element.balloonOffsetY ?? 0 : 0))) + heightAnchorOffset
+  )
   if (element.kind === 'narrator' || element.kind === 'speech' || element.kind === 'thought') {
-    const raster = await rasterizeTextElement(element, width, height)
-    suppliedAssets.set(raster.id, raster)
+    const raster = await rasterizeTextElement(textElement, width, height)
+    suppliedAssets.set(raster.id, { ...raster, lifetime: 'process' })
     addImageCommand(commands, raster.id, position, width, height, element.rotation)
     return
   }
@@ -134,7 +151,7 @@ async function elementCommands(
     ? `hair-${stableHash(`${element.id}:${frame}`)}`
     : await resolveNativeAsset(sourceAsset!, suppliedAssets)
   if (rasterCanvas) {
-    try { suppliedAssets.set(assetId, { id: assetId, dataUrl: rasterCanvas.toDataURL('image/png') }) }
+    try { suppliedAssets.set(assetId, { id: assetId, dataUrl: rasterCanvas.toDataURL('image/png'), lifetime: 'frame' }) }
     catch (error) { throw Error(`Não foi possível copiar o canvas de cabelo do elemento “${element.id}” para o renderizador nativo: ${error instanceof Error ? error.message : String(error)}`) }
   }
   const sprite = rasterCanvas ? undefined : element.motionSprite
@@ -180,20 +197,16 @@ export async function createEditorV6NativeFramePlan({
   height: number
   layer: Layer
 }): Promise<EditorV6NativeFramePlan> {
-  const stacked = layer === 'stacked'
   const backgroundOnly = layer === 'background'
   const foregroundOnly = layer === 'foreground'
-  const logicalHeight = stacked ? 2160 : 1080
-  const outputHeight = stacked ? height * 2 : height
+  const logicalHeight = 1080
   const assetIndex = new Map(assets.map(asset => [asset.id, asset]))
-  const suppliedAssets = new Map<string, { id: string; dataUrl: string }>()
+  const suppliedAssets = new Map<string, SuppliedNativeAsset>()
   const commands: EditorV6NativeImageCommand[] = []
-  const solidCommands: EditorV6NativeFramePlan['commands'] = []
   let backgroundColor = 'transparent'
   const background = scene.background
   if (!foregroundOnly) {
     backgroundColor = background.backgroundColor
-    if (stacked) solidCommands.push({ kind: 'solid', x: 0, y: 0, width: 1920, height: 1080, color: background.backgroundColor })
     if (background.backgroundAssetId) {
       const asset = resolveAssetById(background.backgroundAssetId)
       if (asset) {
@@ -206,14 +219,8 @@ export async function createEditorV6NativeFramePlan({
   if (!backgroundOnly) {
     const elements = editorV6ElementsWithBalloonsOnTop(scene.elements)
     for (const element of elements) {
-      const firstCommand = commands.length
       await elementCommands(element, assetIndex, rasterCanvases, frame, suppliedAssets, commands)
-      if (stacked) for (let index = firstCommand; index < commands.length; index++) commands[index].y += 1080
     }
   }
-  if (stacked) {
-    // Background assets stay in the top half; foreground commands start at y=1080.
-    return { width, height: outputHeight, logicalHeight, backgroundColor: 'transparent', assets: [...suppliedAssets.values()], commands: [...solidCommands, ...commands] }
-  }
-  return { width, height: outputHeight, logicalHeight, backgroundColor, assets: [...suppliedAssets.values()], commands: [...solidCommands, ...commands] }
+  return { width, height, logicalHeight, backgroundColor, assets: [...suppliedAssets.values()], commands }
 }

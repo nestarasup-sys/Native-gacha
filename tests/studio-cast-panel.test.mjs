@@ -26,21 +26,23 @@ test('índice do elenco mantém nomes, fallback e primeira correspondência de I
 })
 
 test('Studio e Editor V6 compartilham apresentação sem compartilhar as ações', async () => {
-  const [studio, editorV6, panel] = await Promise.all([
+  const [studio, editorV6, editorV6CastManager, panel] = await Promise.all([
     readFile('src/renderer/src/features/studio/StudioPage.tsx', 'utf8'),
     readFile('src/renderer/src/features/editorV6/EditorV6Page.tsx', 'utf8'),
+    readFile('src/renderer/src/features/editorV6/SceneCastManagerModal.tsx', 'utf8'),
     readFile('src/renderer/src/ui/components/SceneCastPanel.tsx', 'utf8')
   ])
 
   assert.match(studio, /<SceneCastPanel/)
   assert.match(studio, /onTogglePositionsLocked=\{toggleStageCharacterPositionLock\}/)
   assert.match(studio, /onRemoveCharacter=\{removeStageCharacter\}/)
-  assert.match(editorV6, /<SceneCastPanel/)
-  assert.match(editorV6, /onTogglePositionsLocked=\{toggleStageCharacterPositionLock\}/)
-  assert.match(editorV6, /onRemoveCharacter=\{removeStageCharacter\}/)
+  assert.match(editorV6, /<SceneCastManagerModal/)
+  assert.match(editorV6, /onTogglePositionsLocked=\{stageSelection\.toggleCharacterPositionLock\}/)
+  assert.match(editorV6CastManager, /<SceneCastPanel/)
+  assert.match(editorV6CastManager, /onRemoveCharacter/)
   assert.match(panel, /onSelectCharacter\(element\)/)
   assert.match(panel, /onRemoveCharacter\(element\)/)
   assert.doesNotMatch(panel, /changeScene\(|ipcRenderer|window\.desktop/)
   assert.doesNotMatch(studio, /StudioCastPanel/)
-  assert.doesNotMatch(editorV6, /EditorV6CastPanel/)
+  assert.doesNotMatch(editorV6CastManager, /window\.desktop|ipcRenderer/)
 })

@@ -22,9 +22,11 @@ resources/video-tools/
 *.db-wal
 *.backup
 *.tmp
+/video-studio-diagnostico-interrompido.zip
 
 # IDE / Sistema
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+/pasta do lixo/

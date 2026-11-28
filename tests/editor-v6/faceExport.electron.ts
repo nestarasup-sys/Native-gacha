@@ -8,7 +8,7 @@ import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
-import { editorV6FaceModeAtFrame, isEditorV6BlinkFrame } from '../../src/shared/editorV6FaceSchedule'
+import { editorV6BlinkEventAtFrame, editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 
 const root = resolve(process.argv[2]), folder = resolve(process.argv[3]), fixturePath = resolve(process.argv[4])
 const { resolveEditorV6TestVideoToolsDirectory } = require('../../scripts/editor-v6/testVideoTools.cjs') as { resolveEditorV6TestVideoToolsDirectory: (root: string) => string }
@@ -59,6 +59,7 @@ async function main() {
     sourceDataUrl: string
     sourceWidth: number
     sourceHeight: number
+    faceRendererVersion: number
     asset: EditorV6MotionBakeResult['asset']
     mouthlessBaseAssets?: EditorV6MotionBakeResult['mouthlessBaseAssets']
     metrics: EditorV6MotionBakeResult['metrics']
@@ -99,19 +100,11 @@ async function main() {
     text: 'Fixture silenciosa', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1
   }
   const thought: EditorV6Element = { id: randomUUID(), kind: 'thought', text: 'Pensamento', x: 0, y: -30, width: 28, height: 12, rotation: 0, zIndex: 2 }
-  const speech = { id: randomUUID(), label: 'Fala fixture', characterId: actor.characterId, startFrame: 8, durationFrames: 12 }
+  const projectId = randomUUID()
+  const firstBlink = Array.from({ length: 106 }, (_, frame) => frame).find(frame => editorV6BlinkEventAtFrame(projectId, frame))!
+  const speech = { id: randomUUID(), label: 'Fala fixture', characterId: actor.characterId, startFrame: 8, durationFrames: firstBlink + 2 - 8 }
   const timeline = createEditorV6Timeline([actor, thought])
-  let projectId = randomUUID()
-  let scheduleTimeline = { ...timeline, durationFrames: 40, tracks: timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [speech] } : track) }
-  for (let attempt = 0; attempt < 5000; attempt++, projectId = randomUUID()) {
-    const modes = Array.from({ length: 40 }, (_, frame) => editorV6FaceModeAtFrame(projectId, scheduleTimeline, actor.characterId!, frame))
-    const hasIdle = modes.some((mode, frame) => frame < 8 && mode === undefined)
-    const hasTalk = modes.some((mode, frame) => frame >= 8 && frame < 20 && mode === 'talk')
-    const hasBlink = modes.some((mode, frame) => (frame < 8 || frame >= 20) && mode === 'blink')
-    const hasTalkBlink = modes.some((mode) => mode === 'talk-blink')
-    if (hasIdle && hasTalk && hasBlink && hasTalkBlink) break
-    if (attempt === 4999) throw Error('Não foi possível criar uma amostra com repouso, fala, piscada e sobreposição.')
-  }
+  const scheduleTimeline = { ...timeline, durationFrames: 120, tracks: timeline.tracks.map(track => track.kind === 'speech' ? { ...track, blocks: [speech] } : track) }
   const project: EditorV6Document = {
     schemaVersion: 1, id: projectId, title: 'Validação silenciosa de faces', color: '#ffffff',
     createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), backgroundColor: '#111111',
@@ -135,7 +128,7 @@ async function main() {
   })
   let workerCount = 0
   const output = join(folder, 'face-state-silent.mp4')
-  const report = await runEditorV6Export(project, { startFrame: 0, endFrame: 40, width: 320, height: 180, turbo: false, encoder: 'cpu' }, {
+  const report = await runEditorV6Export(project, { startFrame: 0, endFrame: 120, width: 320, height: 180, turbo: false, encoder: 'cpu' }, {
     ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'face-state-silent.report.json'), signal: new AbortController().signal,
     getCharacters: async () => [syntheticSpeaker],
     bakeMotion: bakeSyntheticMouth,
@@ -149,7 +142,7 @@ async function main() {
     progress: () => {}
   })
   assert(report.state === 'completed' && !report.fallback, `A exportação silenciosa falhou: ${report.error ?? report.state}.`)
-  assert(report.totalFrames === 40 && report.audioClips === 0 && report.videoInputs === 0, 'A exportação incluiu mídia ou não entregou os 40 quadros silenciosos.')
+  assert(report.totalFrames === 120 && report.audioClips === 0 && report.videoInputs === 0, 'A exportação incluiu mídia ou não entregou os 120 quadros silenciosos.')
   assert(workerCount === 1, `A exportação abriu ${workerCount} renderizadores; esperado: 1.`)
   assert(report.options.mouthLoop === true && report.mouthAnimation?.stateAtlases === 1 && report.mouthAnimation.atlasPixels === 192 * 64, 'A exportação de fala não preparou o atlas facial sintético obrigatório.')
   assert(report.mouthAnimation.legacyPatchStates === 1 && report.mouthAnimation.isolatedStates === 0, 'O relatório não identificou o caminho facial legado do fixture de compatibilidade.')
@@ -157,15 +150,15 @@ async function main() {
   const probe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', output], { encoding: 'utf8', windowsHide: true })) as { streams: Array<{ codec_type: string; width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }>; format: { duration?: string } }
   const videos = probe.streams.filter((stream) => stream.codec_type === 'video')
   assert(videos.length === 1 && probe.streams.every((stream) => stream.codec_type === 'video'), 'O MP4 da validação silenciosa contém uma trilha que não é vídeo.')
-  assert(videos[0].width === 320 && videos[0].height === 180 && videos[0].r_frame_rate === '30/1' && Number(videos[0].nb_frames) === 40, 'O MP4 silencioso tem resolução, FPS ou quantidade de quadros incorretos.')
-  assert(Math.abs(Number(probe.format.duration) - 40 / 30) < 1 / 30, 'A duração do MP4 silencioso não corresponde a 40 quadros.')
+  assert(videos[0].width === 320 && videos[0].height === 180 && videos[0].r_frame_rate === '30/1' && Number(videos[0].nb_frames) === 120, 'O MP4 silencioso tem resolução, FPS ou quantidade de quadros incorretos.')
+  assert(Math.abs(Number(probe.format.duration) - 120 / 30) < 1 / 30, 'A duração do MP4 silencioso não corresponde a 120 quadros.')
 
-  const pixels = runFfmpeg(['-i', output, '-map', '0:v:0', '-an', '-frames:v', '40', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  const pixels = runFfmpeg(['-i', output, '-map', '0:v:0', '-an', '-frames:v', '120', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const frameBytes = 320 * 180 * 3
-  assert(pixels.length === frameBytes * 40, `A análise recebeu ${pixels.length} bytes de pixels; esperado ${frameBytes * 40}.`)
+  assert(pixels.length === frameBytes * 120, `A análise recebeu ${pixels.length} bytes de pixels; esperado ${frameBytes * 120}.`)
   const frameModes: Record<string, number> = {}
-  for (let frame = 0; frame < 40; frame++) {
-    const mode = editorV6FaceModeAtFrame(project.id, project.timeline, actor.characterId!, frame) ?? 'idle'
+  for (let frame = 0; frame < 120; frame++) {
+    const mode = editorV6FaceModeAtFrame(project.timeline, actor.characterId!, frame, { blinking: Boolean(editorV6BlinkEventAtFrame(projectId, frame)) }) ?? 'idle'
     frameModes[mode] = (frameModes[mode] ?? 0) + 1
     const [red, green, blue] = readPixels(pixels, frame, 320, 160, 90)
     const correctColor = mode === 'talk-blink'
@@ -184,6 +177,51 @@ async function main() {
     if (red > 220 && green > 220 && blue > 220) thoughtPixels++
   }
   assert(thoughtPixels > 250, `O pensamento não apareceu sobre a animação facial: ${thoughtPixels} pixels claros.`)
+  const introProject: EditorV6Document = {
+    ...project, timeline: { ...project.timeline, tracks: [...project.timeline.tracks, {
+      kind: 'intro', id: randomUUID(), name: 'Intro', muted: false, locked: false, blocks: [{
+        id: randomUUID(), label: actor.text, startFrame: 0, durationFrames: 60,
+        intro: { kind: 'character', characterId: actor.characterId!, assetId: assetIds.idle,
+          faceModeAssetIds: actor.faceModeAssetIds, portraitAspect: 1,
+          flipX: true, englishText: 'Hello.', text: 'Olá.', poseSlot: null }
+      }, {
+        id: randomUUID(), label: actor.text, startFrame: 60, durationFrames: 60,
+        intro: { kind: 'character', characterId: actor.characterId!, assetId: assetIds.idle,
+          faceModeAssetIds: actor.faceModeAssetIds, portraitAspect: 1,
+          flipX: true, englishText: 'Here I am.', text: 'Aqui estou.', poseSlot: 1 }
+      }]
+    }] }
+  }
+  const introOutput = join(folder, 'intro-blink-silent.mp4')
+  const introReport = await runEditorV6Export(introProject, { startFrame: 0, endFrame: 120, width: 320, height: 180, turbo: false, encoder: 'cpu', mouthLoop: false }, {
+    ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: introOutput,
+    reportPath: join(folder, 'intro-blink-silent.report.json'), signal: new AbortController().signal,
+    getCharacters: async () => [syntheticSpeaker],
+    bakeMotion: async ({ plan }) => ({
+      asset: assets.find(asset => asset.id === assetIds.talk)!,
+      motion: { version: 1, key: plan.key, assetId: assetIds.talk, frames: plan.samples.map(({ offset }) => ({
+        offset, sprite: { x: 0, y: 0, width: 16, height: 16, atlasWidth: 16, atlasHeight: 16 },
+        x: plan.from.x, y: plan.from.y, width: plan.from.width, height: plan.from.height,
+        rotation: plan.from.rotation, flipX: Boolean(plan.from.flipX)
+      })) },
+      metrics: { milliseconds: 1, preparedRigs: 1, samples: plan.samples.length, atlasPixels: 256 }
+    }),
+    createWorker: (renderProject, _part, signal, layeredVideo) => factory.create({ project: renderProject, width: 320, height: 180, layeredVideo }, signal),
+    audioPath: () => { throw Error('A Intro não deve usar áudio.'); },
+    mediaPath: () => { throw Error('A Intro não deve usar mídia externa.'); },
+    progress: () => {}
+  })
+  assert(introReport.state === 'completed' && !introReport.fallback && introReport.motionTransitionsPrepared === 1, 'A exportação não preparou a transição da Intro.')
+  const introFrames = runFfmpeg(['-i', introOutput, '-map', '0:v:0', '-an', '-frames:v', '120', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  const transitionPixel = readPixels(introFrames, 57, 320, 80, 90)
+  assert(transitionPixel[0] > 150 && transitionPixel[1] < 100 && transitionPixel[2] < 100, 'O MP4 não exibiu o atlas da transição na Intro.')
+  const introPixels = [firstBlink - 1, firstBlink, firstBlink + 3, firstBlink + 4].map(frame => readPixels(introFrames, frame, 320, 80, 90))
+  for (const [index, [red, green, blue]] of introPixels.entries()) {
+    const closed = index === 1 || index === 2
+    assert(closed ? red < 100 && green < 100 && blue > 150 : red > 150 && green > 100 && blue < 100,
+      `Estado incorreto da piscada da Intro no MP4: ${red},${green},${blue}.`)
+  }
+
   const hiBaseId = randomUUID(), hiPatchAsset = hiBakeFixture.asset, hiPatchId = hiPatchAsset.id
   const hiBaseAsset = { id: hiBaseId, category: 'character' as const, name: 'Personagem sintético 640 × 960', mimeType: 'image/png' as const, dataUrl: hiBakeFixture.sourceDataUrl }
   const targetBaseId = randomUUID()
@@ -196,11 +234,13 @@ async function main() {
   ]
   hiActors[0].characterCanvasWidth = hiBakeFixture.combined.characterCanvasWidth
   hiActors[0].height = hiBakeFixture.combined.characterHeight
-  for (const actor of hiActors) actor.faceModeAssetIds = { ...hiBakeFixture.combined.baseModes.assetIds, idle: hiBaseId }
+  for (const actor of hiActors) {
+    actor.faceRendererVersion = hiBakeFixture.faceRendererVersion
+    actor.faceModeAssetIds = { ...hiBakeFixture.combined.baseModes.assetIds, idle: hiBaseId }
+  }
   for (const actor of hiActors) hiCharacters.push({ id: actor.characterId!, name: actor.text, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), hair: '', outfit: '', skin: '', customization: hiBakeFixture.combined.customizations })
   const hiTimeline = createEditorV6Timeline(hiActors)
-  let hiProjectId = randomUUID()
-  while (!Array.from({ length: 15 }, (_, i) => 25 + i).some(frame => isEditorV6BlinkFrame(hiProjectId, hiActors[0].characterId!, frame))) hiProjectId = randomUUID()
+  const hiProjectId = randomUUID()
   const hiSpeechBlocks = hiActors.map((actor) => ({ id: randomUUID(), label: `Fala de ${actor.text}`, characterId: actor.characterId!, startFrame: 8, durationFrames: 16 }))
   const hiProject: EditorV6Document = {
     schemaVersion: 1, id: hiProjectId, title: 'Paridade facial em alta resolução', color: '#ffffff', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
@@ -252,7 +292,7 @@ async function main() {
     const hiProbe = JSON.parse(execFileSync(ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_entries', 'stream=width,height,r_frame_rate,nb_frames', '-of', 'json', hiOutput], { encoding: 'utf8', windowsHide: true })) as { streams: Array<{ width?: number; height?: number; r_frame_rate?: string; nb_frames?: string }> }
     assert(hiProbe.streams[0]?.width === width && hiProbe.streams[0]?.height === height && hiProbe.streams[0]?.r_frame_rate === '30/1' && Number(hiProbe.streams[0]?.nb_frames) === 40, `O MP4 facial ${label} perdeu resolução, taxa ou quadros.`)
     const speakerId = hiActors[0].characterId!
-    const speakerFrames = Array.from({ length: 16 }, (_, index) => 8 + index).filter((frame) => ['talk', 'talk-blink'].includes(editorV6FaceModeAtFrame(hiProject.id, hiProject.timeline, speakerId, frame)))
+    const speakerFrames = Array.from({ length: 16 }, (_, index) => 8 + index).filter((frame) => ['talk', 'talk-blink'].includes(editorV6FaceModeAtFrame(hiProject.timeline, speakerId, frame)))
     const talkFrame = speakerFrames[0]
     assert(talkFrame !== undefined, 'A fixture não encontrou um quadro de fala para validar a boca.')
     const decoded = runFfmpeg(['-i', hiOutput, '-vf', `select='eq(n,7)+eq(n,${talkFrame})+eq(n,19)+eq(n,20)+eq(n,24)'`, '-fps_mode', 'passthrough', '-frames:v', '5', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
@@ -335,7 +375,7 @@ async function main() {
     const exportMilliseconds = hiReport.milliseconds
     hiResults.push({ resolution: label, width, height, frames: Number(hiProbe.streams[0].nb_frames), turboParts: hiReport.attempts[0]?.parts.length ?? 0, speakingCharacters: hiActors.length, transformations: hiActors.map(({ width, height, rotation, flipX }) => ({ width, height, rotation, flipX })), seamMouthCounts, afterSpeechGreenPixels, exportMilliseconds, effectiveFps: Number((Number(hiProbe.streams[0].nb_frames) / (exportMilliseconds / 1000)).toFixed(1)), mainProcessMemory: hiReport.mainProcessMemory, phaseMilliseconds: hiReport.phaseMilliseconds, bakeMilliseconds: hiBakeFixture.bakeMilliseconds, mouthPatchAtlasPixels: hiBakeFixture.metrics.atlasPixels, bakedPatchPixels: bakedPatch.sprite.width * bakedPatch.sprite.height, fullFrameAtlasEquivalentPixels, atlasPixelReductionPercent, sourceCharacterResolution: `${hiBakeFixture.sourceWidth}x${hiBakeFixture.sourceHeight}`, sourceCharacterPixels: hiBakeFixture.sourceWidth * hiBakeFixture.sourceHeight, mouthSamples, mouthGreenPixelCounts: mouthAreas, maximumBodyReferenceMae: Number(maximumBodyReferenceMae.toFixed(4)), expressionCrossesTurboSeam: true, customizedBodyAndWardrobe: true, outsideMouthMeanAbsoluteDifference: Number(outsideMouthMeanAbsoluteDifference.toFixed(4)), output: hiOutput })
   }
-  const result = { passed: true, state: report.state, totalFrames: report.totalFrames, fps: report.fps, audioClips: report.audioClips, streams: probe.streams.map((stream) => stream.codec_type), frameModes, thoughtPixels, highResolutionMouthExports: hiResults, output }
+  const result = { passed: true, state: report.state, totalFrames: report.totalFrames, fps: report.fps, audioClips: report.audioClips, streams: probe.streams.map((stream) => stream.codec_type), frameModes, thoughtPixels, introAnimation: { firstBlink, introPixels, transitionPixel }, highResolutionMouthExports: hiResults, output }
   await writeFile(join(folder, 'result.json'), JSON.stringify(result, null, 2))
   factory.dispose()
   app.exit(0)

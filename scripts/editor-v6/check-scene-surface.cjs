@@ -10,7 +10,7 @@ async function main() {
     const root = path.resolve(__dirname, '../..')
     const taskRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'editor-v6-scene-check-'))
     const bundle = path.join(taskRoot, 'surface.browser.js')
-    await build({ entryPoints: [path.join(root, 'tests/editor-v6/surface.browser.tsx')], outfile: bundle, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', target: 'chrome140', define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'warning' })
+    await build({ entryPoints: [path.join(root, 'tests/editor-v6/surface.browser.tsx')], outfile: bundle, bundle: true, platform: 'browser', format: 'iife', jsx: 'automatic', loader: { '.png': 'dataurl' }, target: 'chrome140', define: { 'process.env.NODE_ENV': '"production"' }, logLevel: 'warning' })
     const env = { ...process.env }
     delete env.ELECTRON_RUN_AS_NODE
     const child = spawn(require('electron'), [__filename, bundle, taskRoot], { stdio: 'inherit', windowsHide: true, env })

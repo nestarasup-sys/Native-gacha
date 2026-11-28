@@ -1,3 +1,4 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from '../../src/renderer/src/features/editorV6/editorV6SourceFrame'
 import { describe, expect, it, vi } from 'vitest'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../src/shared/customizer'
 import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode } from '../../src/shared/editorV6'
@@ -46,7 +47,7 @@ function dependencies(mode: EditorV6FaceRenderMode = 'talk') {
 }
 
 describe('preparação de aparência facial do Editor V6', () => {
-  it('reaproveita as variantes e o recorte de uma expressão já preparada, com IDs novos', async () => {
+  it('reaproveita as variantes no quadro estável de uma expressão já preparada, com IDs novos', async () => {
     const faceRenderer = renderer()
     vi.mocked(faceRenderer.renderToCanvas).mockResolvedValue({ canvas: {} as HTMLCanvasElement, width: 800, height: 600 })
     const deps = dependencies('blink')
@@ -55,15 +56,15 @@ describe('preparação de aparência facial do Editor V6', () => {
       extraAssets: [{ id: 'idle', category: 'character', name: 'Hero · idle', mimeType: 'image/png', dataUrl: 'data:image/png;base64,idle', timelineSnapshot: true }]
     }))
     const apply = (from: CustomizerFaceAppearance, to: CustomizerFaceAppearance) => prepareEditorV6FaceAppearance({
-      character: character(), element: element({ faceAppearance: from }), appearance: to, faceTransforms: {}
+      character: character(), element: element({ faceAppearance: from, faceRendererVersion: EDITOR_V6_SOURCE_FRAME_VERSION }), appearance: to, faceTransforms: {}
     }, faceRenderer, deps)
 
     const first = await apply(oldAppearance, newAppearance)
     await apply(newAppearance, oldAppearance)
     const repeated = await apply(oldAppearance, newAppearance)
 
-    expect(faceRenderer.renderToCanvas).toHaveBeenCalledTimes(3)
-    expect(deps.measureCrop).toHaveBeenCalledOnce()
+    expect(faceRenderer.renderToCanvas).toHaveBeenCalledTimes(2)
+    expect(deps.measureCrop).not.toHaveBeenCalled()
     expect(deps.bakeAssets).toHaveBeenCalledTimes(2)
     expect(repeated.previousCrop).toBeNull()
     expect(repeated.baked.dataUrl).toBe(first.baked.dataUrl)

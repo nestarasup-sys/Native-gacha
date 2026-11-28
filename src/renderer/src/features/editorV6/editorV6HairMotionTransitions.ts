@@ -1,7 +1,7 @@
 import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import type { EditorV6ExportOptions } from '../../../../shared/editorV6Export'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans, type EditorV6MotionBakeResult } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionPlans, type EditorV6MotionBakeResult } from '../../../../shared/editorV6Motion'
 import type { EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 import { createEditorV6HairBakeBatch, editorV6HairBakeContentKey, selectEditorV6HairlessTransitionBakes } from './motion/hairBakeBatch'
@@ -28,12 +28,10 @@ export async function prepareEditorV6HairMotionTransitions({
   captureTransitionLayers: CaptureTransitionLayers
 }): Promise<void> {
   const rigByEndpoint = new Map(rigs.map(rig => [`${rig.elementId}:${rig.assetId}`, rig]))
-  const motionBlocks = new Map(project.timeline.tracks.flatMap(track => track.blocks.map(block => [block.id, block] as const)))
-  const exportMotionPlans = editorV6MotionPlans(project, { includeSpeechMouth: true }).filter(plan => motionBlocks.get(plan.blockId)?.incomingMotion?.key === plan.key)
-  const relevantPlans = selectEditorV6HairlessTransitionBakes(exportMotionPlans, exportOptions, plan => {
-    if (editorV6MotionChangesHairGeometry(plan)) return true
-    return !editorV6MotionHasCompleteFaceAtlas(plan, motionBlocks.get(plan.blockId)?.incomingMotion)
-  })
+  const geometryPlans = editorV6MotionPlans(project, {
+    includeSpeechMouth: exportOptions.includeSpeechMouth
+  }).filter(editorV6MotionChangesHairGeometry)
+  const relevantPlans = selectEditorV6HairlessTransitionBakes(geometryPlans, exportOptions)
   if (!relevantPlans.length) return
 
   const { bakeEditorV6Motion, createEditorV6BakeSession } = await import('./motion/bakeMotion')
@@ -46,7 +44,9 @@ export async function prepareEditorV6HairMotionTransitions({
     if (!character?.customization.hairAppearance) return undefined
     const fromRig = plan.from.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const toRig = plan.to.assetId ? rigByEndpoint.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
-    if (!fromRig || !toRig) throw Error(`Não foi possível preparar o cabelo durante a troca de pose de ${plan.from.text || character.name}.`)
+    // A partial export can finish before the incoming snapshot appears.
+    // Without both layer rigs, keep the canonical character atlas for that span.
+    if (!fromRig || !toRig) return undefined
     // Pose and facial preset interpolate together. The static talk face is
     // baked at native scale; the cyclic mouth overlay resumes after motion.
     // Identical hairless transitions share results only within this export.

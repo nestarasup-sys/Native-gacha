@@ -5,6 +5,7 @@ import { mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6MediaAsset } from '../../src/shared/editorV6'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
+import { editEditorV6IntroAppearance } from '../../src/renderer/src/features/editorV6/editorV6IntroInspectorTarget'
 import { createEditorV6WorkerFactory } from '../../electron/domains/editorV6/exportWorkers'
 import { runEditorV6Export } from '../../electron/domains/editorV6/exportRunner'
 
@@ -157,8 +158,91 @@ async function main() {
     const fastReport = JSON.parse(await readFile(join(folder, 'overlay-captura-8.report.json'), 'utf8'))
     assert(fastReport.exportTestSettings?.captureRetryMilliseconds === 8 && fastReport.options.testMode === 'captura-8',
       'The saved MP4 report omitted the selected capture strategy.')
+
+    const introFrames = 30
+    const presentationFrames = 120 + introFrames
+    const portraitId = randomUUID()
+    const editedBlockId = randomUUID()
+    const portrait = run(ffmpeg, ['-f', 'lavfi', '-i', 'color=c=blue:s=64x64', '-frames:v', '1',
+      '-threads', '1', '-f', 'image2pipe', '-c:v', 'png', 'pipe:1'])
+    const firstPart = { kind: 'character' as const, characterId: randomUUID(), assetId: portraitId, flipX: false,
+      text: 'Português', englishText: 'English' }
+    const decorated: EditorV6Document = {
+      ...document,
+      assets: [{ id: portraitId, name: 'Retrato de teste', mimeType: 'image/png', category: 'character',
+        dataUrl: 'data:image/png;base64,' + portrait.toString('base64') }],
+      timeline: { ...document.timeline, durationFrames: presentationFrames, tracks: [...document.timeline.tracks.map(track =>
+        track.kind === 'video' ? { ...track, blocks: [{
+          id: blockIds.green, label: 'green', mediaId: ids.green, startFrame: 96 + introFrames, durationFrames: 18,
+          mediaLayout: { ...layout, width: 60, height: 50 },
+          videoPresentation: { timeCard: 'Past', bottomCard: 'Context', loadingGif: true }
+        }] } : track), { id: randomUUID(), kind: 'intro', name: 'Intro', muted: false, locked: false, blocks: [
+          { id: randomUUID(), label: 'Tela preta', startFrame: 0, durationFrames: 10, intro: { kind: 'black', text: 'Arquivo' } },
+          { id: randomUUID(), label: 'Primeira parte', startFrame: 10, durationFrames: 10, intro: firstPart },
+          { id: editedBlockId, label: 'Segunda parte', startFrame: 20, durationFrames: 10, intro: {
+            ...firstPart, text: 'Texto seguinte', englishText: 'Next text',
+            flipX: true, portraitLayout: { x: -12, y: 3, characterScale: 75, characterWidthScale: 90, rotation: -12 }
+          } }
+        ] }] }
+    }
+    const changedPortrait = run(ffmpeg, ['-f', 'lavfi', '-i', 'color=c=red:s=64x64', '-frames:v', '1',
+      '-threads', '1', '-f', 'image2pipe', '-c:v', 'png', 'pipe:1'])
+    const editedPresentation = editEditorV6IntroAppearance(decorated, editedBlockId, working => ({
+      ...working, assets: working.assets.map(asset => asset.id === portraitId
+        ? { ...asset, dataUrl: 'data:image/png;base64,' + changedPortrait.toString('base64') } : asset)
+    }))
+    const presentationOutput = join(folder, 'presentation.mp4')
+    const presentationReport = await runEditorV6Export(editedPresentation, {
+      startFrame: 0, endFrame: presentationFrames, width, height, turbo: true, encoder: 'cpu'
+    }, {
+      ffmpeg, ffprobe, tempRoot: folder, reportPath: join(folder, 'presentation.report.json'),
+      outputPath: presentationOutput, id: randomUUID(),
+      createWorker: (project, _part, signal, layeredVideo) => factory.create({ project, width, height, layeredVideo }, signal),
+      getCharacters: async () => [],
+      bakeMotion: async () => { throw Error('Unexpected motion preparation in presentation test.') },
+      audioPath: () => { throw Error('Unexpected audio in presentation test.') },
+      mediaPath: (_projectId, filename) => join(mediaFolder, filename),
+      signal: new AbortController().signal, progress: () => {}
+    })
+    assert(presentationReport.state === 'completed' && !presentationReport.fallback, 'Presentation export failed.')
+    const presentationRgb = run(ffmpeg, ['-i', presentationOutput, '-f', 'rawvideo', '-pix_fmt', 'rgb24', 'pipe:1'])
+    assert(presentationRgb.length === presentationFrames * frameBytes, 'Presentation changed the output duration.')
+    const absolutePixel = (frame: number, x: number, y: number) => {
+      const offset = frame * frameBytes + (y * width + x) * 3
+      return presentationRgb.subarray(offset, offset + 3)
+    }
+    const pixel = (frame: number, x: number, y: number) => absolutePixel(frame + introFrames, x, y)
+    assert(absolutePixel(0, 10, 10).every(channel => channel < 12), 'Intro must begin with solid black.')
+    const countPixels = (frame: number, x1: number, y1: number, x2: number, y2: number, predicate: (rgb: Buffer) => boolean) => {
+      let count = 0
+      for (let y = y1; y < y2; y++) for (let x = x1; x < x2; x++) if (predicate(absolutePixel(frame, x, y))) count++
+      return count
+    }
+    assert(countPixels(9, 100, 70, 220, 110, color => color.every(channel => channel > 170)) > 15, 'Black-screen title did not render.')
+    assert(classifyPixel(...Array.from(absolutePixel(10, 80, 90)) as [number, number, number]) === 'blue', 'Portrait missing from the left half.')
+    assert(absolutePixel(20, 20, 90).every(channel => channel < 12)
+      && classifyPixel(...Array.from(absolutePixel(20, 125, 90)) as [number, number, number]) === 'red', 'Edited portrait or framing missing from encoded Intro.')
+    assert(absolutePixel(10, 165, 10).every(channel => channel > 230), 'Right half must have a white card.')
+    for (const y of [48, 132]) {
+      const dark = (color: Buffer) => color.every(channel => channel < 70)
+      const firstText = countPixels(19, 185, y - 12, 295, y + 12, dark)
+      const nextText = countPixels(20, 185, y - 12, 295, y + 12, dark)
+      assert(firstText > 10 && nextText > 10 && firstText !== nextText, 'Bilingual text must change exactly at the part boundary.')
+    }
+    assert(absolutePixel(30, 165, 10).every(channel => channel < 12), 'Intro overran the content start.')
+    const isBlack = (frame: number, x: number, y: number) => pixel(frame, x, y).every(channel => channel < 12)
+    const isLoading = (frame: number) => pixel(frame, 180, 85).every(channel => channel > 180)
+    assert(isBlack(5, 180, 85) && isLoading(6) && isLoading(59) && isLoading(60) && isLoading(95),
+      'GIF was missing, off center or mistimed at the Turbo boundary.')
+    const loadingImage = (frame: number) => presentationRgb.subarray((frame + introFrames) * frameBytes + 80 * width * 3, (frame + introFrames) * frameBytes + 100 * width * 3)
+    assert(!loadingImage(10).equals(loadingImage(18)), 'The encoded GIF did not animate.')
+    assert(classifyPixel(...Array.from(pixel(96, 160, 90)) as [number, number, number]) === 'green', 'GIF must stop when the clip starts.')
+    for (const y of [40, 140]) {
+      assert(!isBlack(96, 84, y) && isBlack(96, 76, y) && isBlack(114, 84, y), 'Card extent or timing differs from fitted video.')
+    }
     const summary = { passed: true, frames, turboParts: 2, mediaInputs: result.videoInputs,
-      seamFrames: [29, 30], segments: ['red:0-19', 'green:20-36', 'blue:37-49', 'red:50-59'] }
+      seamFrames: [29, 30], segments: ['red:0-19', 'green:20-36', 'blue:37-49', 'red:50-59'],
+      presentation: { frames: presentationFrames, intro: [0, 10, 20, 30], loading: [36, 126], cards: [126, 144] } }
     await writeFile(join(folder, 'result.json'), JSON.stringify(summary, null, 2))
     console.log(JSON.stringify(summary, null, 2))
   } finally { factory.dispose() }

@@ -25,6 +25,7 @@ function renderBrowser(overrides: Partial<ComponentProps<typeof EditorV6ProjectB
     characters: [],
     charactersReady: true,
     onCreateProject: async () => {},
+    onOpenFolder: async () => {},
     onOpenImport: vi.fn(),
     onCloseImport: vi.fn(),
     onSaveImportedProject: async () => {},
@@ -51,13 +52,14 @@ describe('biblioteca de projetos do Editor V6', () => {
     expect(html).toContain('Nenhum projeto criado')
     expect(html).toContain('Criar')
     expect(html).toContain('Importar JSON')
+    expect(html).toContain('Ir à pasta')
   })
 
   it('renderiza o diálogo de importação quando a página o solicita', () => {
     const html = renderBrowser({ importOpen: true })
 
-    expect(html).toContain('role="dialog"')
-    expect(html).toContain('Importar react JSON · Editor V6')
+    expect(html).toContain('role="status">Carregando importador…</p>')
+    expect(html).toContain('Importar JSON')
   })
 
   it('apresenta o projeto selecionado com ações acessíveis de abrir, duplicar e excluir', () => {
@@ -68,5 +70,15 @@ describe('biblioteca de projetos do Editor V6', () => {
     expect(html).toContain('aria-label="Duplicar Projeto de teste"')
     expect(html).toContain('aria-label="Excluir Projeto de teste"')
     expect(html).toContain('background-color:#d7b5cd')
+  })
+
+  it('mostra o diagnóstico de um projeto indisponível e bloqueia ações que podem alterá-lo', () => {
+    const unavailable = { ...project, id: '163b33b4-4b4b-4e45-a840-045944922630', title: 'Projeto indisponível · 163b33b4', unavailableReason: 'O manifesto tem identificador incompatível.' }
+    const html = renderBrowser({ projects: [project, unavailable] })
+
+    expect(html).toContain('class="studio-card unavailable"')
+    expect(html).toContain('role="status">ID 163b33b4-4b4b-4e45-a840-045944922630: O manifesto tem identificador incompatível.</p>')
+    expect(html).toMatch(/class="studio-card-open" disabled="" aria-label="Projeto indisponível · 163b33b4: indisponível"/)
+    expect(html).toMatch(/class="studio-card-action danger" disabled="" aria-label="Excluir Projeto indisponível · 163b33b4"/)
   })
 })

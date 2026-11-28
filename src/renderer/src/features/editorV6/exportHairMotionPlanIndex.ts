@@ -1,7 +1,7 @@
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { hairMotionPoseReactionEndFrames } from '../../../../shared/hairMotionEngine'
 import type { EditorV6HairMotionBundle, EditorV6HairMotionRig, EditorV6HairMotionTransition } from '../../../../shared/editorV6HairMotion'
-import { editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlans } from '../../../../shared/editorV6Motion'
+import { editorV6MotionChangesHairGeometry, editorV6MotionPlans } from '../../../../shared/editorV6Motion'
 import { createExportHairTransitionFrameIndex } from './exportHairTransitionIndex'
 
 type MotionPlan = ReturnType<typeof editorV6MotionPlans>[number]
@@ -43,22 +43,12 @@ export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Documen
   const motionPlans = hairAnimation ? editorV6MotionPlans(project, { includeSpeechMouth }) : []
   const transitions: IndexedHairTransition[] = []
   const preparedTransitions = new Map((hairAnimation?.motionTransitions ?? []).map((transition) => [`${transition.elementId}:${transition.key}`, transition]))
-  const expressionOnlyPlansByElement = new Map<string, typeof motionPlans>()
   for (const plan of motionPlans) {
     // One-shot pose reaction keeps the canonical full-character motion atlas;
     // it needs end-of-pose events, not interpolated hairless layers.
     const motion = motionBlocks.get(plan.blockId)?.incomingMotion
     if (motion?.key !== plan.key) continue
-    // Face-only plans keep their normal motionSprite and face atlas. They must
-    // not replace an in-flight hair pose atlas.
-    if (!editorV6MotionChangesHairGeometry(plan)) {
-      if (editorV6MotionHasCompleteFaceAtlas(plan, motion)) {
-        const entries = expressionOnlyPlansByElement.get(plan.elementId) ?? []
-        entries.push(plan)
-        expressionOnlyPlansByElement.set(plan.elementId, entries)
-      }
-      continue
-    }
+    if (!editorV6MotionChangesHairGeometry(plan)) continue
     const from = plan.from.assetId ? hairRigs.get(`${plan.elementId}:${plan.from.assetId}`) : undefined
     const to = plan.to.assetId ? hairRigs.get(`${plan.elementId}:${plan.to.assetId}`) : undefined
     transitions.push({
@@ -88,7 +78,6 @@ export function createEditorV6ExportHairMotionPlanIndex(project: EditorV6Documen
     hairRigs,
     hairPoseRigs,
     hairRigForElement,
-    expressionOnlyPlansByElement,
     hairTransitionIndex,
     hairPoseReactionEnds,
     transitionForFrame: (elementId: string, frame: number) => hairTransitionIndex.get(elementId, frame)?.transition

@@ -73,7 +73,8 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     now: dependencies.now,
     getFrame: dependencies.getFrame,
     patchDocument,
-    changeScene
+    changeScene,
+    changeVideoLayouts: editing.changeVideoLayouts
   })
 
   return {
@@ -82,6 +83,7 @@ export function createEditorV6DocumentCommands(dependencies: EditorV6DocumentCom
     recordHistory,
     changeScene,
     changeAppearance: editing.changeAppearance,
+    patchAppearance: editing.patchAppearance,
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
     ...sceneCommands,

@@ -3,25 +3,25 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { VideoLibraryItem } from '../../../../shared/mediaLibrary'
 import type { CharacterSheet, RoteiroDocument, RoteiroSectionContent } from '../../../../shared/roteiros'
 import type { VideoBackgroundLibraryItem } from '../../../../shared/studio'
-import type { FabricatorPoseSummary } from '../../../../shared/fabricator'
+import { poseCategoryLabel, resolvePoseCategory, type FabricatorPoseSummary } from '../../../../shared/fabricator'
 
 export type RoteiroV6ModelInventory = {
   modelSlot: number
-  selectedPoses: Array<{ selection: number; slot: number; name: string; available: boolean }>
+  selectedPoses: Array<{ slot: number; name: string; category?: string; available: boolean }>
   expressions: Array<{ id: string; name: string }>
 }
 
 export function selectRoteiroV6Poses(modelSlot: number, summaries: FabricatorPoseSummary[], saved: Array<number | null> | null): RoteiroV6ModelInventory['selectedPoses'] {
   const poses = summaries.filter((pose): pose is NonNullable<FabricatorPoseSummary> => Boolean(pose && pose.sourceModelSlot === modelSlot)).sort((a, b) => a.slot - b.slot)
   const selected = saved ?? poses.slice(0, 5).map((pose) => pose.slot)
-  return selected.flatMap((slot, index) => {
+  return selected.flatMap((slot) => {
     if (slot === null) return []
     const pose = poses.find((item) => item.slot === slot)
-    return [{ selection: index + 1, slot, name: pose?.name ?? `Pose ${slot}`, available: Boolean(pose) }]
+    return [{ slot, name: pose?.name ?? `Pose ${slot}`, ...(pose ? { category: resolvePoseCategory(pose) } : {}), available: Boolean(pose) }]
   })
 }
 
-/** Human-readable input for the V14.1 AI guide; IDs refer to the current app libraries. */
+/** Human-readable input for the V14.5 AI guide; IDs refer to the current app libraries. */
 export function buildRoteiroEditorV6Text(input: {
   roteiro: RoteiroDocument; characters: CustomizerCharacter[]; sheets: CharacterSheet[]
   models: RoteiroV6ModelInventory[]; videos: VideoLibraryItem[]; details: BaseVideoDetails[]; backgrounds: VideoBackgroundLibraryItem[]
@@ -39,12 +39,15 @@ export function buildRoteiroEditorV6Text(input: {
   const lines = [
     '# ROTEIRO PARA O IMPORTADOR DO EDITOR V6',
     '',
-    'Use este Markdown junto ao guia V14.1 para gerar NYMI_EDITOR_V6_REACT_V1.',
+    'Use este Markdown junto ao guia V14.5 para gerar NYMI_EDITOR_V6_REACT_V1.',
+    'Inclua presentation no vídeo apenas se o autor pedir card inferior, card temporal ou GIF de carregamento, conforme o guia.',
     'Preserve literalmente o texto, tipo, personagem e ordem de todas as falas e pensamentos.',
     'Os campos Português e English são strings JSON: decodifique as aspas e sequências de escape para recuperar o texto exato.',
     'IDs são referências da biblioteca atual. Não invente poses, expressões ou mídias. Poses indisponíveis não podem ser usadas.',
+    'Para cada personagem informe poseCategory com uma categoria disponível abaixo, como "Em pé" ou "Sentado". O Editor V6 escolhe as variações selecionadas dessa categoria.',
+    'Mantenha a categoria do personagem ao longo do roteiro, salvo mudança de postura pedida explicitamente. As trocas automáticas permanecem dentro da categoria.',
     'Tempos de cena e reações são relativos ao início de cada vídeo; o JSON do V6 usa tempos absolutos em segundos.',
-    'O formato V6 aceita uma língua por linha; preserve o português e trate traduções existentes conforme o guia.',
+    'Em cada linha do JSON, copie Português para text e, quando houver tradução fornecida, English para englishText; não invente traduções.',
     '', `Roteiro: ${roteiro.title}`, `Título do vídeo: ${roteiro.videoTitle}`, `ID do roteiro: ${roteiro.id}`, '',
     '## PERSONAGENS DO CUSTOMIZADOR'
   ]
@@ -54,8 +57,14 @@ export function buildRoteiroEditorV6Text(input: {
     if (!character) { lines.push('AVISO: personagem não encontrado no Customizador; resolva antes de importar.'); continue }
     const modelSlot = character.customization.modelSlot ?? 1, model = byModel.get(modelSlot)
     lines.push(`Modelo do Fabricador: ${modelSlot}`, `Aparência facial: ${character.customization.faceAppearance ? 'configurada' : 'não configurada'}`, 'Poses selecionadas no Poses Dev para Editor V6 Importer:')
-    if (!model?.selectedPoses.length) lines.push('- Nenhuma pose selecionada; a pose base pode ser usada com poseSlot: null.')
-    for (const pose of model?.selectedPoses ?? []) lines.push(`- Seleção ${pose.selection}: poseSlot ${pose.slot} · ${pose.name}${pose.available ? '' : ' · INDISPONÍVEL, NÃO USAR'}`)
+    if (!model?.selectedPoses.some((pose) => pose.available)) lines.push('- Nenhuma pose selecionada disponível; para usar a pose base informe "poseSlot": null.')
+    const categories = new Map<string, number>()
+    for (const pose of model?.selectedPoses ?? []) if (pose.available && pose.category) {
+      const label = poseCategoryLabel(pose.category)
+      categories.set(label, (categories.get(label) ?? 0) + 1)
+    }
+    for (const [category, count] of categories) lines.push(`- poseCategory: ${JSON.stringify(category)} · ${count} ${count === 1 ? 'variação disponível' : 'variações disponíveis'}`)
+    if (model?.selectedPoses.some((pose) => !pose.available)) lines.push('- Há poses selecionadas indisponíveis; revise a seleção em Poses Dev.')
     lines.push('Presets reais de expressão deste modelo (use ID exato):')
     if (!character.customization.faceAppearance) lines.push('- Rosto não configurado; não especifique expression até configurá-lo.')
     else if (!model?.expressions.length) lines.push('- Nenhum preset salvo; a aparência original do personagem será usada.')

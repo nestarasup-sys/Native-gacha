@@ -1,12 +1,12 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from './editorV6SourceFrame'
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Asset, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { FaceExpressionEffects } from '../../../../shared/fabricator'
 import type { TrimmedImage } from '../../characters/transparentImageTrim'
 import { mapConcurrentItems } from '../../ui/mapConcurrentItems'
 
-// Version 9 rebuilds snapshots made by the refresh path that applied body
-// dimensions twice to characters with customized proportions.
-export const EDITOR_V6_FACE_RENDER_VERSION = 10
+// Legacy versions used the union of facial pixels to crop each snapshot.
+export const EDITOR_V6_FACE_RENDER_VERSION = EDITOR_V6_SOURCE_FRAME_VERSION
 const AUTO_FACE_MODES: EditorV6FaceRenderMode[] = ['idle', 'blink', 'talk', 'talk-blink']
 const IMAGE_DATA_LITTLE_ENDIAN = new Uint8Array(new Uint32Array([1]).buffer)[0] === 1
 export type PreparedEditorV6FaceRenderer = Awaited<ReturnType<typeof import('../../characters/editorV6CharacterRenderer').prepareSavedCharacterRenderer>>
@@ -145,7 +145,8 @@ export async function bakeFaceModeAssets(
   transforms: EditorV6FaceTransforms | undefined,
   effects: FaceExpressionEffects | undefined,
   baseMode: EditorV6FaceRenderMode,
-  baseRendered?: { canvas: HTMLCanvasElement; width: number; height: number }
+  baseRendered?: { canvas: HTMLCanvasElement; width: number; height: number },
+  frame: 'alpha' | 'source' = 'alpha'
 ): Promise<{ dataUrl: string; crop: TrimmedImage | null; assetIds: Partial<Record<EditorV6FaceRenderMode, string>>; extraAssets: EditorV6Asset[] }> {
   // The renderer reuses its canvas. Retain each mode before rendering the next,
   // and use their union so an open mouth or blink cannot be clipped by idle.
@@ -160,15 +161,22 @@ export async function bakeFaceModeAssets(
   }
   try {
     await forEachFaceMode(name, renderer, appearance, transforms, effects, baseMode, baseRendered, retain)
-    const union = document.createElement('canvas')
-    union.width = Math.max(...[...frames.values()].map(frame => frame.width))
-    union.height = Math.max(...[...frames.values()].map(frame => frame.height))
-    const context = union.getContext('2d')
-    if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
-    for (const frame of frames.values()) context.drawImage(frame, 0, 0)
-    const bounds = canvasFaceAlphaBounds(union)
-    const { width: sourceWidth, height: sourceHeight } = union
-    union.width = union.height = 1
+    const sourceWidth = Math.max(...[...frames.values()].map(image => image.width))
+    const sourceHeight = Math.max(...[...frames.values()].map(image => image.height))
+    if (frame === 'source' && [...frames.values()].some(image => image.width !== sourceWidth || image.height !== sourceHeight)) {
+      throw Error(`As variantes faciais de ${name} precisam usar o mesmo quadro da pose.`)
+    }
+    let bounds = null
+    if (frame === 'alpha') {
+      const union = document.createElement('canvas')
+      union.width = sourceWidth
+      union.height = sourceHeight
+      const context = union.getContext('2d')
+      if (!context) throw new Error(`Não foi possível medir as variantes de ${name}.`)
+      for (const image of frames.values()) context.drawImage(image, 0, 0)
+      bounds = canvasFaceAlphaBounds(union)
+      union.width = union.height = 1
+    }
     const encoded = await mapConcurrentItems([...frames], async ([mode, frame]) => ({
       mode, dataUrl: await cropCharacterCanvas(frame, bounds)
     }), () => false, 2)
@@ -186,3 +194,7 @@ export async function bakeFaceModeAssets(
     for (const frame of frames.values()) frame.width = frame.height = 1
   }
 }
+
+/** The Editor V6 snapshot rectangle is the pose's source canvas in every face mode. */
+export const bakeEditorV6FaceModeAssets: typeof bakeFaceModeAssets = (name, renderer, appearance, transforms, effects, mode, rendered) =>
+  bakeFaceModeAssets(name, renderer, appearance, transforms, effects, mode, rendered, 'source')

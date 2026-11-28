@@ -152,7 +152,7 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
     if (event.allowed !== true) throw new Error('Origem não autorizada')
   }, service, {
     showSaveDialog: async (_sender, options) => {
-      assert.equal(options.defaultPath, exportPurpose === 'ai-package' ? 'pacote-completo-para-ia.txt' : exportPurpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'dados-simples-dos-videos.txt')
+      assert.equal(options.defaultPath, exportPurpose === 'ai-package' ? 'Guia para o ROT export.txt' : exportPurpose === 'editor-v6-json' ? 'roteiro-editor-v6-original.json' : 'Dados simples.txt')
       return canceled ? { canceled: true } : { canceled: false, filePath: exportPurpose === 'editor-v6-json' ? '/exports/roteiro.json' : '/exports/dados.txt' }
     },
     writeFile: async (...args) => { writes.push(args) }
@@ -160,7 +160,8 @@ test('IPC: os canais verificam origem e exportam texto apenas após o diálogo d
   assert.deepEqual([...handlers.keys()], [
     'base-videos:list-details', 'base-videos:categories:list', 'base-videos:categories:create',
     'base-videos:categories:rename', 'base-videos:categories:delete', 'base-videos:save-details',
-    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data'
+    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data',
+    'base-videos:download-editor-v6-guide'
   ])
   for (const handler of handlers.values()) {
     await assert.rejects(Promise.resolve().then(() => handler({ allowed: false })), /Origem não autorizada/)
@@ -189,7 +190,8 @@ test('contrato do preload mapeia a API inteira sem renomear canais e preserva ar
   assert.deepEqual(Object.values(baseVideosIpcChannels), [
     'base-videos:list-details', 'base-videos:save-details', 'base-videos:categories:list',
     'base-videos:categories:create', 'base-videos:categories:rename', 'base-videos:categories:delete',
-    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data'
+    'base-videos:delete-details', 'base-videos:delete', 'base-videos:publish', 'base-videos:export-simple-data',
+    'base-videos:download-editor-v6-guide'
   ])
 
   const calls = []
@@ -198,10 +200,12 @@ test('contrato do preload mapeia a API inteira sem renomear canais e preserva ar
   await invoke('publish', 'video-id')
   await invoke('exportSimpleData', 'conteúdo')
   await invoke('exportSimpleData', 'pacote', 'ai-package')
+  await invoke('downloadEditorV6Guide', '# GUIA V14.1\nConteúdo sintético')
   assert.deepEqual(calls, [
     ['base-videos:categories:rename', 'category-id', 'Ação'],
     ['base-videos:publish', 'video-id'],
     ['base-videos:export-simple-data', 'conteúdo'],
-    ['base-videos:export-simple-data', 'pacote', 'ai-package']
+    ['base-videos:export-simple-data', 'pacote', 'ai-package'],
+    ['base-videos:download-editor-v6-guide', '# GUIA V14.1\nConteúdo sintético']
   ])
 })

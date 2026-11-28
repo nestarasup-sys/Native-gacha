@@ -17,13 +17,14 @@ export function getEditorV6TimelineScrollForZoom(viewport: EditorV6TimelineViewp
 }
 
 export function getEditorV6TimelineFitZoom(clientWidth: number, heading: number, durationFrames: number) {
-  return Math.max(1, clientWidth - heading - 12) / (durationFrames / 30)
+  return Math.max(1, clientWidth - heading - 12) / (durationFrames / EDITOR_V6_TIMELINE_FPS)
 }
 
 export function getEditorV6TimelineFollowScroll(viewport: EditorV6TimelineViewport, pixelsPerSecond: number, frame: number) {
-  const playheadX = viewport.heading + frame / 30 * pixelsPerSecond
+  const playheadX = viewport.heading + frame / EDITOR_V6_TIMELINE_FPS * pixelsPerSecond
   if (playheadX > viewport.scrollLeft + viewport.clientWidth * 0.8 || playheadX < viewport.scrollLeft + viewport.heading) {
     return Math.max(0, playheadX - viewport.clientWidth * 0.5)
   }
   return null
 }
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'

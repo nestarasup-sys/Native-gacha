@@ -9,6 +9,7 @@ import type { EditorV6WorkerAssetSources } from './exportWorkerMediaProtocol'
 import { createEditorV6WorkerFrameRenderer, type EditorV6WorkerFrameRenderer } from './exportWorkerFrameRenderer'
 import { createEditorV6NativeRendererProcess, type EditorV6NativeRendererProcess } from './nativeRendererProcess'
 import { createEditorV6WorkerWindow, type EditorV6WorkerWindowDependencies } from './exportWorkerWindow'
+import { hasEditorV6VideoCards } from '../../../src/shared/editorV6VideoPresentation'
 
 export type EditorV6WorkerStartup = {
   snapshotMs?: number
@@ -31,6 +32,11 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
   const create = async (payload: EditorV6WorkerPayload, signal: AbortSignal, assetSources?: EditorV6WorkerAssetSources): Promise<EditorV6FrameWorker> => {
     signal.throwIfAborted()
     if (disposed) throw Error('A fábrica de renderizadores de exportação foi encerrada.')
+    if (payload.nativeRenderer && payload.project.timeline.tracks.some(track =>
+      !track.hidden && !track.muted && track.blocks.some(block =>
+        block.intro || (track.kind === 'video' && block.videoPresentation?.loadingGif) || (track.kind === 'card' && Boolean(block.videoCard)) || (track.kind === 'video' && hasEditorV6VideoCards(block.videoPresentation))
+      )
+    )) payload = { ...payload, nativeRenderer: false }
     const captureRetryMilliseconds = editorV6ExportTestSettings(payload.testMode).captureRetryMilliseconds
     const windowStarted = performance.now()
     const window = createEditorV6WorkerWindow(payload, deps, assetSources)
@@ -83,7 +89,7 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
         readinessAfterNavigationMs: performance.now() - navigationFinished
       }
       window.webContents.setZoomFactor(1)
-      if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.layeredVideo && payload.singlePassLayers ? payload.height * 2 : payload.height, signal)
+      if (deps.captureMode === 'paint-event' || deps.captureMode === 'compare-paint') paintCapture = createEditorV6PaintFrameCapture(window, payload.width, payload.height, signal)
       if (payload.nativeRenderer) {
         if (!deps.nativeRendererExecutable) throw Error('O executável do renderizador nativo não está configurado.')
         nativeRendererProcess = createEditorV6NativeRendererProcess(deps.nativeRendererExecutable)
@@ -93,7 +99,7 @@ export function createEditorV6WorkerFactory(deps: EditorV6WorkerWindowDependenci
         paintCapture: deps.captureMode === 'paint-event' ? paintCapture : undefined,
         comparePaintCapture: deps.captureMode === 'compare-paint' ? paintCapture : undefined,
         inspectCapture: deps.inspectCapture,
-        doubleBufferLayers: payload.layeredVideo && !payload.singlePassLayers && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0',
+        doubleBufferLayers: payload.layeredVideo && nodeEnv.GACHA_EDITOR_V6_FRAME_OVERLAP !== '0',
         nativeRendererProcess
       })
       return { close, frame: frameRenderer.frame, startup }

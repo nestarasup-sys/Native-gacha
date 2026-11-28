@@ -1,12 +1,18 @@
+import { editorV6CardRoles, editorV6CardSegment, emptyEditorV6CardComponents } from './editorV6Cards'
+import { migrateEditorV6CardBlocks } from './editorV6CardMigration'
+import { secondsToFrame } from './editorV6Timing.ts'
 /** Timeline structure, normalization, and indexed clip lookup. */
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline, EditorV6TimelineBlock, EditorV6TimelineTrack } from './editorV6'
 import { editorV6TrackKindForElement, editorV6TrackLabel, orderEditorV6TimelineTracks } from './editorV6'
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
+import { editorV6UpperBound } from './editorV6SortedSearch'
+import { stabilizeEditorV6TimelineCharacterFaceGeometry } from './editorV6CharacterFaceGeometry'
 
 export type TimelineClip = { track: EditorV6TimelineTrack; block: EditorV6TimelineBlock }
 export const MAX_TIMELINE_FRAME = 1_000_000
 export const frameTimecode = (frame: number): string => {
-  const seconds = Math.floor(frame / 30)
-  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % 30).padStart(2, '0')}`
+  const seconds = Math.floor(frame / EDITOR_V6_TIMELINE_FPS)
+  return `${String(Math.floor(seconds / 60)).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}:${String(frame % EDITOR_V6_TIMELINE_FPS).padStart(2, '0')}`
 }
 export const compareEditorV6TimelineBlocks = (a: EditorV6TimelineBlock, b: EditorV6TimelineBlock) => a.startFrame - b.startFrame || a.id.localeCompare(b.id)
 export function orderedEditorV6TimelineBlocks(blocks: EditorV6TimelineBlock[]): EditorV6TimelineBlock[] {
@@ -103,7 +109,7 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
     if (track.kind === 'video') for (const block of track.blocks) videoBlocks.set(block.id, block)
   }
   if (videoBlocks.size) tracks = tracks.map((track) => {
-    if (track.kind === 'video' || track.kind === 'character') return track
+    if (track.kind === 'video' || track.kind === 'character' || track.kind === 'card') return track
     return updateTimelineBlocks(track, (block) => {
       const parent = block.parentBlockId ? videoBlocks.get(block.parentBlockId) : undefined
       if (!parent) return block
@@ -115,7 +121,64 @@ export function normalizeEditorV6Timeline(timeline: EditorV6Timeline): EditorV6T
         : { ...block, relativeStartFrame, startFrame, durationFrames: duration }
     })
   })
-  return { ...timeline, durationFrames, tracks: orderEditorV6TimelineTracks(tracks) }
+  // Convert V14.5 and older inline card schedules to independent timeline clips.
+  // Removing only the migrated card fields makes this migration idempotent while
+  // leaving the loading GIF on its video clip.
+  const cardBlocks: EditorV6TimelineBlock[] = []
+  tracks = tracks.map((track) => track.kind !== 'video' ? track : updateTimelineBlocks(track, (block) => {
+    const presentation = block.videoPresentation
+    if (!presentation) return block
+    const offset = (seconds: number) => Math.round(seconds * EDITOR_V6_TIMELINE_FPS)
+    const addLegacy = (position: 'top' | 'bottom', text: string, startSeconds: number, endSeconds: number) => {
+      const start = offset(startSeconds), end = Math.min(block.durationFrames, offset(endSeconds))
+      if (end <= start) return
+      cardBlocks.push({ id: crypto.randomUUID(), label: text.slice(0, 120),
+        startFrame: block.startFrame + start, durationFrames: end - start,
+        videoCard: { videoBlockId: block.id, position, text, fallbackLayout: block.mediaLayout } })
+    }
+    const full = block.durationFrames / EDITOR_V6_TIMELINE_FPS
+    if (presentation.bottomCard) addLegacy('bottom', presentation.bottomCard, 0, full)
+    if (presentation.timeCard) addLegacy('top', presentation.timeCard, 0, full)
+    for (const [position, scheduled] of [['bottom', presentation.bottomCards], ['top', presentation.timeCards]] as const)
+      scheduled?.forEach(item => addLegacy(position, item.text, item.startSeconds, item.endSeconds))
+
+    for (const card of presentation.cards ?? []) {
+      const start = secondsToFrame(card.startSeconds), end = Math.min(block.durationFrames, secondsToFrame(card.endSeconds))
+      if (end <= start) continue
+      const components = emptyEditorV6CardComponents(end - start)
+      const timing = (item: NonNullable<typeof card.english>) => {
+        const from = secondsToFrame(item.startSeconds), to = Math.min(end, secondsToFrame(item.endSeconds))
+        return to > from ? { startFrame: from - start, endFrame: to - start, enabled: item.enabled }
+          : { startFrame: 0, endFrame: end - start, enabled: false }
+      }
+      if (card.temporal) components.temporal = { ...timing(card.temporal), text: card.temporal.text }
+      for (const role of ['english', 'portuguese'] as const) {
+        const item = card[role]
+        if (item) components[role] = { ...timing(item), text: item.text }
+      }
+      cardBlocks.push({ id: crypto.randomUUID(), label: 'Card', startFrame: block.startFrame + start,
+        durationFrames: end - start, videoCard: { videoBlockId: block.id, components, fallbackLayout: block.mediaLayout } })
+    }
+    const { bottomCard: _bottomCard, timeCard: _timeCard, bottomCards: _bottomCards, timeCards: _timeCards, cards: _cards, ...remaining } = presentation
+    return { ...block, videoPresentation: Object.keys(remaining).length ? remaining : undefined }
+  }))
+  if (cardBlocks.length) {
+    if (tracks.some(track => track.kind === 'card')) tracks = tracks.map((track) => track.kind === 'card' ? { ...track, blocks: [...track.blocks, ...cardBlocks] } : track)
+    else tracks.push({ id: crypto.randomUUID(), kind: 'card', name: editorV6TrackLabel('card'), muted: false, locked: false, blocks: cardBlocks })
+  }
+  tracks = tracks.map(track => {
+    if (track.kind !== 'card') return track
+    const blocks = migrateEditorV6CardBlocks(track.blocks)
+    const migrated = blocks === track.blocks ? track : { ...track, blocks }
+    return updateTimelineBlocks(migrated, block => {
+      const card = block.videoCard
+      if (!card || !('components' in card) || editorV6CardRoles.every(role => card.components[role].endFrame <= block.durationFrames)) return block
+      return { ...block, videoCard: editorV6CardSegment(card, 0, block.durationFrames) }
+    })
+  })
+  const timelineEnd = tracks.flatMap(track => track.blocks).reduce((endFrame, block) => Math.max(endFrame, block.startFrame + block.durationFrames), durationFrames)
+  return { ...timeline, durationFrames: Math.min(MAX_TIMELINE_FRAME, timelineEnd),
+    tracks: orderEditorV6TimelineTracks(stabilizeEditorV6TimelineCharacterFaceGeometry(tracks)) }
 }
 
 type ElementIndex = { clips: TimelineClip[]; maximumEnds: number[]; character: boolean }
@@ -151,8 +214,7 @@ export function editorV6ClipAtFrame(timeline: EditorV6Timeline, elementId: strin
 
 function clipAtFrame(entry: ElementIndex | undefined, frame: number): TimelineClip | undefined {
   if (!entry) return undefined
-  let left = 0, right = entry.clips.length
-  while (left < right) { const middle = (left + right) >>> 1; if (entry.clips[middle].block.startFrame <= frame) left = middle + 1; else right = middle }
+  const left = editorV6UpperBound(entry.clips, frame, clip => clip.block.startFrame)
   if (entry.character) return entry.clips[left - 1]
   for (let index = left - 1; index >= 0 && entry.maximumEnds[index] > frame; index--) {
     const clip = entry.clips[index]

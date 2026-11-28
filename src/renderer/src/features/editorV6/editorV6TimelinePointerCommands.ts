@@ -2,6 +2,7 @@ import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block } from '../../../../shared/editorV6'
 import { createEditorV6TimelineDragSnapshot, previewEditorV6TimelineDrag, type EditorV6TimelineDragSnapshot } from './editorV6TimelineDrag'
 import type { EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 
 type Drag = EditorV6TimelineDragSnapshot & { pointerId: number; x: number }
 type Ref<T> = { current: T }
@@ -51,7 +52,7 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
     if (!node) return
     const { pps, heading } = dependencies.settings()
     const frame = Math.min(dependencies.document().timeline.durationFrames, Math.max(0, Math.round(
-      (event.clientX - node.getBoundingClientRect().left + node.scrollLeft - heading) / pps * 30
+      (event.clientX - node.getBoundingClientRect().left + node.scrollLeft - heading) / pps * EDITOR_V6_TIMELINE_FPS
     )))
     if (frame === lastScrubFrame) return
     lastScrubFrame = frame
@@ -74,7 +75,7 @@ export function createEditorV6TimelinePointerCommands(dependencies: Dependencies
     const operation = drag.current
     if (!operation || operation.pointerId !== event.pointerId) return
     const { pps, snap } = dependencies.settings()
-    const deltaFrames = Math.round((event.clientX - operation.x) / pps * 30)
+    const deltaFrames = Math.round((event.clientX - operation.x) / pps * EDITOR_V6_TIMELINE_FPS)
     if (!deltaFrames && !dependencies.didDrag.current) return
     dependencies.didDrag.current = true
     const input = {

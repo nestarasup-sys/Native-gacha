@@ -418,6 +418,10 @@ export function resolvePoseCategory(pose: { category?: string; slot?: number; na
   const category = typeof pose.category === 'string' ? pose.category.trim() : ''
   return category || (pose.slot === 2 || /sentad/i.test(pose.name) ? 'Sentado' : 'Parado')
 }
+/** Rótulo de apresentação; a categoria persistida continua compatível com poses antigas. */
+export function poseCategoryLabel(category: string): string {
+  return category === 'Parado' ? 'Em pé' : category
+}
 export type FabricatorPoseDraft = { editingSlot: number | null; project: Omit<FabricatorPose, 'slot'>; updatedAt: string }
 export type FabricatorPoseDraftSave = { editingSlot: number | null; project: Omit<FabricatorPoseSave, 'slot'>; updatedAt: string }
 
@@ -497,6 +501,7 @@ export type FabricatorDesktopApi = {
   saveFabricatorExportPoseSlots: (modelSlot: number, slots: Array<number | null>) => Promise<void>
   loadFabricatorPose: (modelSlot: number, slot: number) => Promise<FabricatorPose | null>
   saveFabricatorPose: (modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]) => Promise<void>
+  duplicateFabricatorPose: (modelSlot: number, sourceSlot: number, targetSlot: number) => Promise<void>
   deleteFabricatorPose: (modelSlot: number, slot: number) => Promise<void>
   loadFabricatorPoseDraft: (modelSlot: number) => Promise<FabricatorPoseDraft | null>
   saveFabricatorPoseDraft: (modelSlot: number, draft: FabricatorPoseDraftSave, assets: FabricatorAssetSave[]) => Promise<void>

@@ -6,19 +6,16 @@ import type { resolveEditorV6SceneAtFrame } from '../../../../shared/editorV6Tim
 import { expandEditorV6HairCrop } from './editorV6HairMotionGeometry'
 import type { createEditorV6ExportHairFrameComposer } from './exportHairFrameComposer'
 import type { createEditorV6ExportHairMotionPlanIndex } from './exportHairMotionPlanIndex'
-import type { createEditorV6ExportHairRigAtFrame } from './exportHairRigAtFrame'
 
 type Scene = ReturnType<typeof resolveEditorV6SceneAtFrame>
 type SceneElement = Scene['elements'][number]
 type HairPlanIndex = ReturnType<typeof createEditorV6ExportHairMotionPlanIndex>
-type HairRigAtFrame = ReturnType<typeof createEditorV6ExportHairRigAtFrame>['hairRigAtFrame']
 type HairFrameComposer = ReturnType<typeof createEditorV6ExportHairFrameComposer>
 type HairAnimation = EditorV6WorkerPayload['hairAnimation']
 
 type Options = {
   animation?: HairAnimation
   planIndex: HairPlanIndex
-  hairRigAtFrame: HairRigAtFrame
   hairSourceAssetId: (element: Pick<SceneElement, 'assetId'>) => string | undefined
   facePatchSourceCrop?: (assetId: string) => { left: number; top: number; width: number; height: number } | undefined
   composeHairFrame: HairFrameComposer['composeHairFrame']
@@ -49,9 +46,9 @@ function sumHairDetailTimings(timings: EditorV6FrameTimings): number {
 
 /** Resolves which characters need raster hair and composes their export-frame surfaces. */
 export function createEditorV6ExportHairSceneComposer(options: Options) {
-  const { animation, planIndex, hairRigAtFrame, hairSourceAssetId } = options
+  const { animation, planIndex, hairSourceAssetId } = options
   const patchSourceCrop = options.facePatchSourceCrop ?? (() => undefined)
-  const { hairRigs, expressionOnlyPlansByElement, hairTransitionIndex } = planIndex
+  const { hairRigs, hairTransitionIndex } = planIndex
   const rigInterpolators = new WeakMap<object, (progress: number) => EditorV6HairMotionRig>()
   const mouthlessRigs = new WeakMap<EditorV6HairMotionRig, EditorV6HairMotionRig>()
 
@@ -78,10 +75,11 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
       // The compositor interpolates this same rig immediately after the
       // eligibility check. Its layer count comes from the `from` rig, so avoid
       // building a second interpolated rig just to answer a boolean question.
-      if (indexedTransition?.poseSample && indexedTransition.transition.from) {
+      if (indexedTransition?.poseSample && indexedTransition.atlasFrame && indexedTransition.transition.atlas
+        && indexedTransition.transition.from && indexedTransition.transition.to) {
         return indexedTransition.transition.from.layers.length > 0
       }
-      return Boolean(hairRigAtFrame(element, frame)?.rig.layers.length)
+      return false
     }
     return Boolean(resolveStaticHairRig(element)?.layers.length)
   }
@@ -105,22 +103,8 @@ export function createEditorV6ExportHairSceneComposer(options: Options) {
         const transitionFrame = indexed?.atlasFrame
         const poseSample = indexed?.poseSample
         if (!transition?.from || !transition.to || !transitionFrame || !poseSample || !transition.atlas) {
-          const expressionPlan = expressionOnlyPlansByElement.get(original.id)?.find(plan => frame > plan.startFrame && frame < plan.endFrame)
-          const resolvedHairRig = expressionPlan ? hairRigAtFrame(original, frame) : undefined
-          const rig = resolvedHairRig?.rig
-          if (!rig) { animatedElements.push(element); continue }
-          rasterCanvases.set(element.id, options.composeHairFrame(rig, resolvedHairRig.element, frame, timings, metrics))
-          const geometry = expandEditorV6HairCrop(original, { width: rig.outputWidth, height: rig.outputHeight }, rig.sourceCrop)
-          const patch = original.mouthPatch
-          const patchCrop = patch ? patchSourceCrop(patch.assetId) ?? rig.sourceCrop : rig.sourceCrop
-          const mouthPatch = patch ? {
-            ...patch,
-            x: (patchCrop.left + patch.x * patchCrop.width) / rig.outputWidth,
-            y: (patchCrop.top + patch.y * patchCrop.height) / rig.outputHeight,
-            width: patch.width * patchCrop.width / rig.outputWidth,
-            height: patch.height * patchCrop.height / rig.outputHeight
-          } : undefined
-          animatedElements.push({ ...element, assetId: undefined, motionSprite: undefined, ...geometry, mouthPatch })
+          // Only the layered sample has a crop expressed in rig coordinates.
+          animatedElements.push(element)
           continue
         }
 

@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "file": "background.bgra.gz",
+      "bytes": 261,
+      "sha256": "61b1c2e4dfee359c1f000ae98972de2a69daa2b51cf2820dd880160453c60a8c"
+    },
+    {
+      "file": "foreground.bgra.gz",
+      "bytes": 776476,
+      "sha256": "bd60e952cc3c360a8a29b952a5c5bff084fdabc72157669e53e6066e269b71ae"
+    },
+    {
+      "file": "golden.json",
+      "bytes": 12435,
+      "sha256": "1b7b9280fa2b49f92576e3d225fd5f2eb6059e35ae10f5acf75249739f626ec8"
+    },
+    {
+      "file": "scene.bgra.gz",
+      "bytes": 511594,
+      "sha256": "133d510edd1595a9e87efd90749fc1497e61233ebb38a5f9aaf4ec5b3bbc61ce"
+    }
+  ],
+  "totalBytes": 1300766
+}

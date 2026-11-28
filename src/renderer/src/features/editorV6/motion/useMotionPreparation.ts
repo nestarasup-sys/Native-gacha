@@ -18,7 +18,8 @@ export function useMotionPreparation(project: EditorV6Document | null, character
       if (id) void window.desktop.editorV6.cancelEditorV6Motion(id).catch(() => {})
     }
     async function prepare(epoch: number) {
-      const unique = new Map(missingEditorV6Motions(project!).map((plan) => [plan.key, plan]))
+      const introBlocks = new Set(project!.timeline.tracks.filter(track => track.kind === 'intro').flatMap(track => track.blocks.map(block => block.id)))
+      const unique = new Map(missingEditorV6Motions(project!).filter(plan => !introBlocks.has(plan.blockId)).map(plan => [plan.key, plan]))
       const characterIndex = indexMotionPreparationCharacters(characters)
       for (const plan of unique.values()) {
         if (disposed || epoch !== generation) return

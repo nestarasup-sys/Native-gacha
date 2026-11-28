@@ -10,7 +10,6 @@ const LazyCustomizerPage = lazy(async () => ({ default: (await import('../featur
 const LazyStudioPage = lazy(async () => ({ default: (await import('../features/studio/StudioPage')).StudioPage }))
 const LazyEditorV6Page = lazy(async () => ({ default: (await import('../features/editorV6/EditorV6Page')).EditorV6Page }))
 const LazyEditorV6MediaLibraryPage = lazy(async () => ({ default: (await import('../features/editorV6/EditorV6MediaLibraryPage')).EditorV6MediaLibraryPage }))
-const LazyEditorV7Page = lazy(async () => ({ default: (await import('../features/editorV7/EditorV7Page')).EditorV7Page }))
 const LazyLogsDevPage = lazy(async () => ({ default: (await import('../features/options/OptionsPage')).LogsDevPage }))
 const LazyFabricatorPage = lazy(async () => ({ default: (await import('../features/fabricator/FabricatorPage')).FabricatorPage }))
 const LazyBaseVideosPage = lazy(async () => ({ default: (await import('../features/baseVideos/BaseVideosPage')).BaseVideosPage }))
@@ -37,7 +36,6 @@ export function App() {
               <Route path={APPLICATION_ROUTES.studio} element={<LazyStudioPage />} />
               <Route path={APPLICATION_ROUTES.editorV6} element={<LazyEditorV6Page />} />
               <Route path={APPLICATION_ROUTES.editorV6Library} element={<LazyEditorV6MediaLibraryPage />} />
-              <Route path={APPLICATION_ROUTES.editorV7} element={<LazyEditorV7Page />} />
               <Route path={APPLICATION_ROUTES.roteiro} element={<LazyRoteirosPage />} />
               <Route path={APPLICATION_ROUTES.baseVideos} element={<LazyBaseVideosPage />} />
               <Route path={APPLICATION_ROUTES.logsDev} element={<LazyLogsDevPage />} />

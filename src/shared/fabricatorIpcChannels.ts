@@ -15,6 +15,7 @@ export const fabricatorIpcChannels = {
   saveFabricatorExportPoseSlots: 'fabricator:poses:export-slots:save',
   loadFabricatorPose: 'fabricator:poses:load',
   saveFabricatorPose: 'fabricator:poses:save',
+  duplicateFabricatorPose: 'fabricator:poses:duplicate',
   deleteFabricatorPose: 'fabricator:poses:delete',
   loadFabricatorPoseDraft: 'fabricator:poses:draft:load',
   saveFabricatorPoseDraft: 'fabricator:poses:draft:save',

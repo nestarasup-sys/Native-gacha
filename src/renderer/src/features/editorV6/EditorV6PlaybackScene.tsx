@@ -1,3 +1,5 @@
+import type { CustomizerCharacter } from '../../../../shared/customizer'
+import { useEditorV6PreviewMotion } from './motion/useEditorV6PreviewMotion'
 import { Profiler, useEffect, useMemo, useState } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
@@ -7,14 +9,17 @@ import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { measureEditorV6SceneResolution, recordUiCommit } from '../../ui/performanceDiagnostics'
 import { composeEditorV6FaceReplacements } from './sceneFaceComposition'
 
-export function EditorV6PlaybackScene({ project, selectedId, interaction, playing, fullView }: {
+export function EditorV6PlaybackScene({ project: source, previewMotionCharacters, previewMotionEnabled, selectedId, interaction, playing, fullView }: {
   project: EditorV6Document
+  previewMotionCharacters: readonly CustomizerCharacter[]
+  previewMotionEnabled: boolean
   selectedId: string | null
   interaction?: SceneSurfaceInteraction
   playing: boolean
   fullView: boolean
 }) {
   const frame = useEditorV6PlaybackFrame()
+  const project = useEditorV6PreviewMotion(source, frame, previewMotionCharacters, previewMotionEnabled)
   const scene = useMemo(() => measureEditorV6SceneResolution(() => {
     const resolved = resolveEditorV6SceneAtFrame(project, frame)
     const media = resolved.mediaVideo

@@ -28,7 +28,7 @@ export function rollbackEditorV6StageDrag(
     : project)
   dependencies.setSelectedTimelineBlockId(drag.target === 'background'
     ? null
-    : drag.target === 'video'
+    : drag.target === 'video' || drag.target === 'intro'
       ? drag.blockId
       : editorV6ClipAtFrame(drag.before.timeline, drag.id, drag.frame)?.block.id ?? null)
   dependencies.markUnsaved()

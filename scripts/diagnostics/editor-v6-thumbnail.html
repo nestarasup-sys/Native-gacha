@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Diagnóstico de thumbnail do Editor V6</title>
+  </head>
+  <body>
+    <label>URL local do projeto JSON <input id="project-url" type="url" size="90"></label>
+    <button id="capture" type="button">Capturar quadro 0</button>
+    <pre id="result">Informe uma URL local do projeto e inicie a captura.</pre>
+    <img id="preview" alt="Prévia do quadro capturado" style="max-width:480px">
+    <script type="module">
+      window.$RefreshReg$ = () => {}
+      window.$RefreshSig$ = () => (type) => type
+      const input = document.querySelector('#project-url')
+      const result = document.querySelector('#result')
+      const queryProject = new URLSearchParams(location.search).get('project')
+      if (queryProject) input.value = queryProject
+
+      document.querySelector('#capture').addEventListener('click', async () => {
+        try {
+          if (!input.value) throw new Error('Informe a URL do JSON do projeto.')
+          result.textContent = 'Carregando renderizador e projeto…'
+          const [{ captureEditorV6Frame }, response] = await Promise.all([
+            import('/src/features/editorV6/sceneCapture.tsx'),
+            fetch(input.value)
+          ])
+          if (!response.ok) throw new Error(`Leitura do projeto retornou HTTP ${response.status}.`)
+          const project = await response.json()
+          const started = performance.now()
+          const thumbnail = await Promise.race([
+            captureEditorV6Frame(project, 0, 480, 270, 'image/jpeg'),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Captura excedeu 15 segundos.')), 15_000))
+          ])
+          document.querySelector('#preview').src = thumbnail
+          result.textContent = JSON.stringify({ status: 'ok', milliseconds: Math.round(performance.now() - started), bytes: thumbnail.length, id: project.id })
+        } catch (error) {
+          result.textContent = JSON.stringify({ status: 'error', message: String(error), stack: error?.stack })
+        }
+      })
+    </script>
+  </body>
+</html>

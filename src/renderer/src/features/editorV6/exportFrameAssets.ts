@@ -1,3 +1,5 @@
+import type { EditorV6IntroClip } from '../../../../shared/editorV6Intro'
+
 /** A worker must not retain assets generated for individual frames.
  *
  * Durable project assets (and explicitly reusable transition atlases) belong
@@ -21,6 +23,7 @@ export function selectEditorV6RenderableAssets<T extends { id: string }>(
   scene: {
     background: { backgroundAssetId?: string | null }
     elements: readonly { assetId?: string | null; mouthPatch?: { assetId: string } }[]
+    intro?: EditorV6IntroClip
   },
   layer: 'all' | 'background' | 'foreground',
   resolve: (id: string) => T | undefined
@@ -34,6 +37,7 @@ export function selectEditorV6RenderableAssets<T extends { id: string }>(
     if (asset) visible.push(asset)
   }
   if (layer !== 'foreground') include(scene.background.backgroundAssetId)
+  if (layer !== 'background' && !scene.elements.length && scene.intro?.kind === 'character') include(scene.intro.assetId)
   if (layer !== 'background') for (const element of scene.elements) {
     include(element.assetId)
     include(element.mouthPatch?.assetId)

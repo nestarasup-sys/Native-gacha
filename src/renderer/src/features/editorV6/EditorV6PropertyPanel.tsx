@@ -1,8 +1,11 @@
+import { EditorV6VideoCardPropertyPanel } from './EditorV6VideoCardPropertyPanel'
 import { EditorV6BackgroundPropertyPanel } from './EditorV6BackgroundPropertyPanel'
 import { EditorV6ObjectsPropertyPanel } from './EditorV6ObjectsPropertyPanel'
 import { EditorV6SelectedElementPropertyPanel } from './EditorV6SelectedElementPropertyPanel'
 import { EditorV6VideoPropertyPanel } from './EditorV6VideoPropertyPanel'
+import { EditorV6IntroPropertyPanel } from './EditorV6IntroPropertyPanel'
 import type { EditorV6PropertyPanelProps } from './editorV6PropertyPanelTypes'
+import { EDITOR_V6_INTRO_PORTRAIT_DEFAULTS } from '../../../../shared/editorV6Intro'
 
 export type { EditorV6NumericControl } from './editorV6PropertyPanelTypes'
 
@@ -20,6 +23,9 @@ export function EditorV6PropertyPanel({
   sharedBackgrounds,
   sharedObjects,
   selectedVideoBlock,
+  selectedVideoCardClip,
+  videoCardOwnerStartFrame,
+  selectedIntroClip,
   selectedVideo,
   control,
   onBackgroundChange,
@@ -32,11 +38,22 @@ export function EditorV6PropertyPanel({
   onUpdateCharacterNameColor,
   onUpdateBalloonScale,
   onUpdateBalloonOffsetY,
+  onResetBalloonPosition,
   onUpdateVideoBlock,
+  onUpdateVideoCard,
+  onApplyVideoWidthToAll,
+  onUpdateIntroText,
+  onUpdateIntroPortrait,
+  onReplicateIntroPortrait,
   onRecordHistory,
   onDeleteSelected
 }: EditorV6PropertyPanelProps) {
   if (!project) return null
+
+  const introPanel = selectedIntroClip && onUpdateIntroText && onUpdateIntroPortrait && onReplicateIntroPortrait
+    ? <EditorV6IntroPropertyPanel key={selectedIntroClip.block.id} clip={selectedIntroClip} onUpdate={onUpdateIntroText}
+      onUpdatePortrait={onUpdateIntroPortrait} onReplicate={onReplicateIntroPortrait} /> : undefined
+  if (selectedIntroClip?.block.intro?.kind === 'black') return introPanel
 
   if (activeTool === 'background') return <EditorV6BackgroundPropertyPanel
     project={project} mode="library" background={background} selectedElementId={selectedElementId}
@@ -56,16 +73,25 @@ export function EditorV6PropertyPanel({
     selectedVideo={selectedVideo}
     control={control}
     onUpdateVideoBlock={onUpdateVideoBlock}
+    onApplyVideoWidthToAll={onApplyVideoWidthToAll}
     onRecordHistory={onRecordHistory}
     onDeleteSelected={onDeleteSelected}
   />
 
+  if (selectedVideoCardClip) return <EditorV6VideoCardPropertyPanel block={selectedVideoCardClip.block}
+    videoStartFrame={videoCardOwnerStartFrame} locked={selectedVideoCardClip.track.locked}
+    control={control} onUpdate={onUpdateVideoCard} onDelete={onDeleteSelected} />
+
   if (selectedElement) return <EditorV6SelectedElementPropertyPanel
     selectedElement={selectedElement} characterNameColor={characterNameColor}
     balloonScalePercent={balloonScalePercent} balloonOffsetY={balloonOffsetY} control={control}
-    onUpdateElement={onUpdateElement} onUpdateCharacterNameColor={onUpdateCharacterNameColor}
+    onUpdateElement={selectedIntroClip && onUpdateIntroPortrait ? onUpdateIntroPortrait : onUpdateElement} onUpdateCharacterNameColor={onUpdateCharacterNameColor}
     onUpdateBalloonScale={onUpdateBalloonScale} onUpdateBalloonOffsetY={onUpdateBalloonOffsetY}
+    onResetBalloonPosition={onResetBalloonPosition}
     onRecordHistory={onRecordHistory} onDeleteSelected={onDeleteSelected}
+    extra={introPanel}
+    characterControls={selectedIntroClip ? { characterReset: { ...EDITOR_V6_INTRO_PORTRAIT_DEFAULTS, flipX: false },
+      characterLayerMax: 1, positionNote: 'O enquadramento vale para as partes deste personagem na Intro.' } : undefined}
   />
 
   if (selectedElementId === 'background' && selectedBackgroundAsset) return <EditorV6BackgroundPropertyPanel

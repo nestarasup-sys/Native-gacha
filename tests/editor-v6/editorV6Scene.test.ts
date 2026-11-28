@@ -1,16 +1,127 @@
 import { describe, expect, it } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame, resolveEditorV6SceneAtFrame, setEditorV6BlockTiming, timelineClips } from '../../src/shared/editorV6Timeline'
+import {
+  editEditorV6BackgroundAtFrame,
+  moveEditorV6ElementInPeriod,
+  prepareEditorV6PositionAtFrame,
+  resolveEditorV6SceneAtFrame,
+  setEditorV6BlockTiming,
+  timelineClips
+} from '../../src/shared/editorV6Timeline'
 import { recordEditorV6History, redoEditorV6History, undoEditorV6History } from '../../src/shared/editorV6History'
 import { parseEditorV6Document } from '../../src/shared/editorV6Schema'
+import { setEditorV6TimelineSceneCacheBuildObserverForTests } from '../../src/shared/editorV6TimelineScene'
 
 function fixture(): EditorV6Document {
   const assetId = crypto.randomUUID()
-  const actor: EditorV6Element = { id: crypto.randomUUID(), kind: 'character', characterId: 'alice', assetId, text: 'Alice', x: 0, y: 0, width: 20, height: 40, rotation: 0, zIndex: 1 }
-  return { schemaVersion: 1, id: crypto.randomUUID(), title: 'Preview', color: '#d7b5cd', createdAt: '2026-10-25T12:00:00.000Z', updatedAt: '2026-10-25T12:00:00.000Z', backgroundColor: '#ffffff', backgroundAssetId: null, backgroundX: 0, backgroundY: 0, backgroundWidth: 100, backgroundHeight: 100, backgroundRotation: 0, elements: [actor], assets: [{ id: assetId, category: 'character', name: 'Alice', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==' }], timeline: createEditorV6Timeline([actor]) }
+  const actor: EditorV6Element = {
+    id: crypto.randomUUID(),
+    kind: 'character',
+    characterId: 'alice',
+    assetId,
+    text: 'Alice',
+    x: 0,
+    y: 0,
+    width: 20,
+    height: 40,
+    rotation: 0,
+    zIndex: 1
+  }
+  return {
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    title: 'Preview',
+    color: '#d7b5cd',
+    createdAt: '2026-10-25T12:00:00.000Z',
+    updatedAt: '2026-10-25T12:00:00.000Z',
+    backgroundColor: '#ffffff',
+    backgroundAssetId: null,
+    backgroundX: 0,
+    backgroundY: 0,
+    backgroundWidth: 100,
+    backgroundHeight: 100,
+    backgroundRotation: 0,
+    elements: [actor],
+    assets: [
+      {
+        id: assetId,
+        category: 'character',
+        name: 'Alice',
+        mimeType: 'image/png',
+        dataUrl: 'data:image/png;base64,AA=='
+      }
+    ],
+    timeline: createEditorV6Timeline([actor])
+  }
 }
 
 describe('preview e posicionamento do Editor V6', () => {
+  it('reconstrói cada índice no máximo uma vez por identidade após edições comuns', () => {
+    const builds = new Map<string, number>()
+    setEditorV6TimelineSceneCacheBuildObserverForTests((name) => builds.set(name, (builds.get(name) ?? 0) + 1))
+    try {
+      let document = fixture()
+      resolveEditorV6SceneAtFrame(document, 0)
+      builds.clear()
+      const actorId = document.elements[0].id
+      const position = prepareEditorV6PositionAtFrame(document, actorId, 120)!
+      document = moveEditorV6ElementInPeriod(position.document, position.blockId, 15, 4)
+      resolveEditorV6SceneAtFrame(document, 120)
+      const characterTrack = document.timeline.tracks.find((track) => track.kind === 'character')!
+      const poseBlock = characterTrack.blocks[0]
+      document = {
+        ...document,
+        timeline: {
+          ...document.timeline,
+          tracks: document.timeline.tracks.map((track) =>
+            track === characterTrack
+              ? {
+                  ...track,
+                  blocks: track.blocks.map((block) =>
+                    block === poseBlock ? { ...block, state: { ...block.state, poseSlot: 2 } } : block
+                  )
+                }
+              : track
+          )
+        }
+      }
+      resolveEditorV6SceneAtFrame(document, 121)
+      document = editEditorV6BackgroundAtFrame(document, 180, { backgroundColor: '#224466' })
+      resolveEditorV6SceneAtFrame(document, 180)
+      const audioTrack = document.timeline.tracks.find((track) => track.kind === 'audio')!
+      document = {
+        ...document,
+        timeline: {
+          ...document.timeline,
+          tracks: document.timeline.tracks.map((track) =>
+            track === audioTrack
+              ? {
+                  ...track,
+                  blocks: [
+                    ...track.blocks,
+                    {
+                      id: 'synthetic-added-clip',
+                      label: 'synthetic',
+                      startFrame: 240,
+                      durationFrames: 30,
+                      relativeStartFrame: 240
+                    }
+                  ]
+                }
+              : track
+          )
+        }
+      }
+      resolveEditorV6SceneAtFrame(document, 240)
+      for (const [name, count] of builds)
+        expect(count, `${name} rebuilt ${count} times for four edits`).toBeLessThanOrEqual(4)
+      expect(builds.get('background-clips')).toBe(4)
+      expect(builds.get('video-clips')).toBe(4)
+    } finally {
+      setEditorV6TimelineSceneCacheBuildObserverForTests(undefined)
+    }
+  })
+
   it('reutiliza o estado de fundo padrão e atualiza sua cache quando o projeto muda', () => {
     const document = fixture()
     const firstBackground = resolveEditorV6SceneAtFrame(document, 10).background
@@ -24,7 +135,8 @@ describe('preview e posicionamento do Editor V6', () => {
   })
 
   it('compartilha a posição em todos os quadros do personagem', () => {
-    const document = fixture(), id = document.elements[0].id
+    const document = fixture(),
+      id = document.elements[0].id
     const operation = prepareEditorV6PositionAtFrame(document, id, 120)!
     const moved = moveEditorV6ElementInPeriod(operation.document, operation.blockId, 25, -10)
     expect(resolveEditorV6SceneAtFrame(moved, 119).elements[0]).toMatchObject({ x: 25, y: -10 })
@@ -35,7 +147,8 @@ describe('preview e posicionamento do Editor V6', () => {
   })
 
   it('mantém uma única posição ao editar blocos anteriores e seguintes', () => {
-    const document = fixture(), id = document.elements[0].id
+    const document = fixture(),
+      id = document.elements[0].id
     const later = prepareEditorV6PositionAtFrame(document, id, 240)!
     const laterMoved = moveEditorV6ElementInPeriod(later.document, later.blockId, -20, 0)
     const earlier = prepareEditorV6PositionAtFrame(laterMoved, id, 90)!
@@ -48,7 +161,8 @@ describe('preview e posicionamento do Editor V6', () => {
   })
 
   it('não modifica o documento ao preparar um clique ou gesto cancelado', () => {
-    const document = fixture(), before = JSON.stringify(document)
+    const document = fixture(),
+      before = JSON.stringify(document)
     const prepared = prepareEditorV6PositionAtFrame(document, document.elements[0].id, 299)!
     expect(prepared.document.timeline.durationFrames).toBe(300)
     moveEditorV6ElementInPeriod(prepared.document, prepared.blockId, 30, 5)
@@ -56,7 +170,8 @@ describe('preview e posicionamento do Editor V6', () => {
   })
 
   it('agrupa atualizações de arraste em uma única entrada de desfazer e refazer', () => {
-    const before = fixture(), operation = prepareEditorV6PositionAtFrame(before, before.elements[0].id, 120)!
+    const before = fixture(),
+      operation = prepareEditorV6PositionAtFrame(before, before.elements[0].id, 120)!
     let live = operation.document
     for (const x of [5, 10, 15, 20]) live = moveEditorV6ElementInPeriod(live, operation.blockId, x, 0)
     const history = recordEditorV6History({ undo: [], redo: [] }, before)
@@ -84,24 +199,45 @@ describe('preview e posicionamento do Editor V6', () => {
     const first = editEditorV6BackgroundAtFrame(original, 90, { backgroundColor: '#0000ff' })
     const second = editEditorV6BackgroundAtFrame(first, 150, { backgroundColor: '#00ff00', backgroundX: 10 })
     const reopened = parseEditorV6Document(JSON.parse(JSON.stringify(second)))
-    expect(resolveEditorV6SceneAtFrame(reopened, 200).background).toMatchObject({ backgroundColor: '#00ff00', backgroundX: 10 })
+    expect(resolveEditorV6SceneAtFrame(reopened, 200).background).toMatchObject({
+      backgroundColor: '#00ff00',
+      backgroundX: 10
+    })
     expect(resolveEditorV6SceneAtFrame(reopened, 100).background.backgroundColor).toBe('#0000ff')
     expect(resolveEditorV6SceneAtFrame(reopened, 30).background.backgroundColor).toBe('#ffffff')
     expect(original.backgroundColor).toBe('#ffffff')
-    expect(timelineClips(reopened.timeline).filter(({ block }) => block.background).map(({ block }) => block.durationFrames)).toEqual([60, 150])
+    expect(
+      timelineClips(reopened.timeline)
+        .filter(({ block }) => block.background)
+        .map(({ block }) => block.durationFrames)
+    ).toEqual([60, 150])
   })
 
   it('ajusta o limite dos comentários quando outro fundo inicia dentro do período', () => {
     let document = editEditorV6BackgroundAtFrame(fixture(), 0, { backgroundColor: '#0000ff' })
     const parentId = timelineClips(document.timeline).find(({ block }) => block.background)!.block.id
-    document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks.push({ id: crypto.randomUUID(), label: 'Fala', startFrame: 80, durationFrames: 100, relativeStartFrame: 80, parentBlockId: parentId })
+    document.timeline.tracks
+      .find((track) => track.kind === 'speech')!
+      .blocks.push({
+        id: crypto.randomUUID(),
+        label: 'Fala',
+        startFrame: 80,
+        durationFrames: 100,
+        relativeStartFrame: 80,
+        parentBlockId: parentId
+      })
     document = editEditorV6BackgroundAtFrame(document, 90, { backgroundColor: '#00ff00' })
     const comment = document.timeline.tracks.find((track) => track.kind === 'speech')!.blocks[0]
     expect(comment.durationFrames).toBe(10)
     expect(() => parseEditorV6Document(document)).not.toThrow()
     const first = timelineClips(document.timeline).find(({ block }) => block.id === parentId)!
-    document = { ...document, timeline: setEditorV6BlockTiming(document.timeline, first.block.id, { durationFrames: 120 }) }
-    expect(timelineClips(document.timeline).find(({ block }) => block.background && block.id !== parentId)!.block.startFrame).toBe(120)
+    document = {
+      ...document,
+      timeline: setEditorV6BlockTiming(document.timeline, first.block.id, { durationFrames: 120 })
+    }
+    expect(
+      timelineClips(document.timeline).find(({ block }) => block.background && block.id !== parentId)!.block.startFrame
+    ).toBe(120)
   })
 
   it('usa o último quadro válido ao posicionar o cursor no fim do projeto', () => {

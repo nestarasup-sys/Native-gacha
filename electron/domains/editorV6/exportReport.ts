@@ -3,11 +3,13 @@ import { release as osRelease } from 'node:os'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6HairPreparationProfile } from '../../../src/shared/editorV6HairMotion'
 import type { EditorV6ExportOptions } from '../../../src/shared/editorV6Export'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
 import type { EditorV6MotionCacheReport, EditorV6PreparedExportMotions } from './exportMotionPreparation'
 import type { EditorV6ExportPartReport } from './exportPartRenderer'
 import type { EditorV6ExportPhaseTimings } from './exportMetrics'
 import type { EditorV6ExportProcessMemoryReport } from './exportProcessMemory'
+import type { EditorV6ExportFinalizationDiagnostics } from './exportFinalization'
 import { planEditorV6VideoOverlays } from '../../../src/shared/editorV6VideoComposition'
 import type { summarizeEditorV6ExportAttempt } from './exportAttemptSummary'
 
@@ -40,6 +42,7 @@ export type EditorV6ExportReport = {
   proxies: 0
   motionTransitionsRequired: number
   motionTransitionsPrepared: number
+  motionTransitionsSkipped?: Array<{ blockId: string; characterId: string; characterName: string; width: number; height: number; pixels: number; limitPixels: number }>
   motionPreparation?: EditorV6PreparedExportMotions['stats']
   hairPreparation?: EditorV6HairPreparationProfile
   exportTestSettings?: EditorV6ExportTestSettings
@@ -50,6 +53,7 @@ export type EditorV6ExportReport = {
   electronProcessMemory?: EditorV6ExportProcessMemoryReport
   motionPreparationMemory?: EditorV6ExportProcessMemoryReport
   phaseMilliseconds: EditorV6ExportPhaseTimings
+  finalizationDiagnostics?: EditorV6ExportFinalizationDiagnostics
   startedAt: string
   endedAt?: string
   milliseconds?: number
@@ -97,7 +101,7 @@ export function createEditorV6ExportReportContext({ project, options, testSettin
     projectId: project.id,
     currentPhase: 'preparing',
     options,
-    fps: options.fps ?? 30,
+    fps: options.fps ?? EDITOR_V6_TIMELINE_FPS,
     totalFrames,
     state: 'preparing',
     fallback: false,
@@ -110,6 +114,7 @@ export function createEditorV6ExportReportContext({ project, options, testSettin
     proxies: 0,
     motionTransitionsRequired: 0,
     motionTransitionsPrepared: 0,
+    motionTransitionsSkipped: [],
     phaseMilliseconds: { temporarySetup: 0, characterLoading: 0, motionPreparation: 0, encoderProbe: 0, rendering: 0, finalization: 0, publication: 0 },
     startedAt: new Date().toISOString(),
     outputPath

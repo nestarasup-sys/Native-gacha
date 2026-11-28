@@ -3,6 +3,7 @@ import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { EditorV6ExportOptions, EditorV6ExportPart, EditorV6ExportStatus } from '../../../src/shared/editorV6Export'
 import type { EditorV6ExportTestSettings } from '../../../src/shared/editorV6ExportTestModes'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
 import { addEditorV6PhaseTime } from './exportMetrics'
 import { renderEditorV6ExportPart, type EditorV6ExportPartReport } from './exportPartRenderer'
@@ -83,7 +84,7 @@ export async function renderEditorV6ExportAttempt(dependencies: Dependencies): P
       legacyPatchStates: mouthStats.legacyPatchStates,
       skippedStates: mouthStats.skipped,
       staleStates: mouthStats.skippedStale,
-      cycleFrames: options.mouthLoopCycleFrames ?? 30,
+      cycleFrames: options.mouthLoopCycleFrames ?? EDITOR_V6_TIMELINE_FPS,
       atlasBytes: mouthStats.atlasBytes,
       atlasPixels: mouthStats.atlasPixels,
       preparationMilliseconds: mouthStats.preparationMilliseconds,

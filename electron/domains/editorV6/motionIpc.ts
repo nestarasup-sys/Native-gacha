@@ -1,7 +1,9 @@
 import { BrowserWindow, type IpcMain, type IpcMainInvokeEvent } from 'electron'
 import { z } from 'zod'
 import { editorV6IpcChannels } from '../../../src/shared/editorV6IpcChannels'
-import { editorV6MotionChannels, editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { editorV6MotionChannels } from '../../../src/shared/editorV6MotionChannels'
+import { editorV6UsesStaticMouthAtlas, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { parseEditorV6MotionAtlasBudgetError } from '../../../src/shared/editorV6MotionBudget'
 import { editorV6MotionResultSchema, parseEditorV6MotionRequest } from '../../../src/shared/editorV6Schema'
 import { isCustomizerCharacter } from '../customizer/validation'
 import { waitForExport } from './exportProcess'
@@ -16,6 +18,9 @@ type Lane = { index: number; partition: string; window?: BrowserWindow; active?:
 export function editorV6MotionMemoryCacheKey(request: EditorV6MotionBakeRequest): string {
   return `${motionCacheKey(request)}:pixels=${request.maxAtlasPixels ?? 'unbounded'}`
 }
+export function isExpectedEditorV6BackgroundMotionSkip(cacheOnly: boolean, cancelled: boolean, error: unknown): boolean {
+  return cacheOnly && (cancelled || parseEditorV6MotionAtlasBudgetError(error) !== undefined)
+}
 const retiredWorkers = new Set<number>()
 function retire(id: number) {
   retiredWorkers.add(id)
@@ -24,7 +29,7 @@ function retire(id: number) {
 
 export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'handle'>; assertTrustedSender: (event: IpcMainInvokeEvent) => void; html: string; preload: string; devUrl?: string; concurrency?: 1 | 2 | 3 }) {
   const workers = new Map<number, Lane>()
-  const jobs = new Map<string, { owner: number; controller: AbortController; cancelled: boolean }>()
+  const jobs = new Map<string, { owner: number; controller: AbortController; cancel: () => void }>()
   const cache = new Map<string, EditorV6MotionBakeResult>()
   const scopedCacheKeys = new Map<string, Set<string>>()
   const bakeFlights = createEditorV6MotionBakeSingleFlight()
@@ -155,7 +160,7 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
       cacheStats.rasterized++
       remember(key, result, request.cacheScope)
       return result
-    }).finally(() => { lane.count--; if (signal.aborted) close(lane) })
+    }).finally(() => { lane.count-- })
     lane.tail = promise.then(() => {}, () => {})
     return promise
   }
@@ -176,29 +181,26 @@ export function createEditorV6MotionService(deps: { ipcMain: Pick<IpcMain, 'hand
     validateRequest(request)
     if (jobs.has(request.id)) throw Error('Identificador de preparação repetido.')
     const controller = new AbortController()
-    const job = { owner: event.sender.id, controller, cancelled: false }
-    const abort = () => { job.cancelled = true; controller.abort(Error('Preparação de animação cancelada.')) }
-    event.sender.once('destroyed', abort)
+    const cancellation = Error('Preparação de animação cancelada.')
+    const cancel = () => controller.abort(cancellation)
+    const job = { owner: event.sender.id, controller, cancel }
+    event.sender.once('destroyed', cancel)
     const promise = enqueueBake(request, controller.signal)
     jobs.set(request.id, job)
     try { const result = await promise; return cacheOnly ? undefined : result }
     catch (reason) {
-      // The background warm-up is routinely superseded by user input. Its
-      // cancellation is a normal outcome, not a failed IPC request.
-      if (cacheOnly && (job.cancelled || controller.signal.aborted)) return undefined
+      if (reason === cancellation) return cacheOnly ? undefined : null
+      if (isExpectedEditorV6BackgroundMotionSkip(cacheOnly, false, reason)) return undefined
       throw reason
     }
-    finally { jobs.delete(request.id); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', abort) }
+    finally { jobs.delete(request.id); if (!event.sender.isDestroyed()) event.sender.removeListener('destroyed', cancel) }
   }
   deps.ipcMain.handle(editorV6IpcChannels.bakeEditorV6Motion, (event, request) => bakeOwned(event, request, false))
   deps.ipcMain.handle(editorV6IpcChannels.prepareEditorV6Motion, (event, request) => bakeOwned(event, request, true))
   deps.ipcMain.handle(editorV6IpcChannels.cancelEditorV6Motion, (event, id) => {
     deps.assertTrustedSender(event)
     const job = jobs.get(z.string().uuid().parse(id))
-    if (job && job.owner === event.sender.id) {
-      job.cancelled = true
-      job.controller.abort(Error('Preparação de animação substituída.'))
-    }
+    if (job?.owner === event.sender.id) job.cancel()
   })
   return { bakeForExport, releaseExportCacheScope: (scope: string) => { for (const key of scopedCacheKeys.get(scope) ?? []) cache.delete(key); scopedCacheKeys.delete(scope) }, releaseIdle: () => { for (const lane of lanes) if (lane.count === 0) close(lane) }, cancelAll: () => {
     stopped = true

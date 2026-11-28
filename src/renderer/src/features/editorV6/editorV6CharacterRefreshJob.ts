@@ -31,18 +31,19 @@ export async function prepareEditorV6CharacterRefreshJob(
   const preset = state.activeExpressionPresetId
     ? await dependencies.loadPreset(modelSlot, state.activeExpressionPresetId)
     : null
-  const appearance = preset && expressionBase?.appearance
+  const savedIntroFace = targets[0]?.kind === 'intro' && state.faceAppearance
+  const appearance = savedIntroFace || (preset && expressionBase?.appearance
     ? await buildEditorV6ExpressionAppearance(preset, expressionBase.appearance,
       (id) => dependencies.loadFaceCatalogItem(preset.modelSlot, id))
-    : resolveRefreshedFaceAppearance(state, character) ?? expressionBase?.appearance
-  const faceTransforms = preset && appearance && expressionBase
+    : resolveRefreshedFaceAppearance(state, character) ?? expressionBase?.appearance)
+  const faceTransforms = savedIntroFace ? currentFaceTransforms : preset && appearance && expressionBase
     ? await buildEditorV6ExpressionTransforms(preset, appearance, expressionBase.transforms,
       (id) => dependencies.loadFaceComponentAsset(preset.modelSlot, id),
       (id) => dependencies.loadFaceCatalogItem(preset.modelSlot, id), state.activeExpressionGaze ?? 'right')
     : sourceAppearance
       ? expressionBase?.transforms ?? currentFaceTransforms
       : currentFaceTransforms ?? expressionBase?.transforms
-  const effects: FaceExpressionEffects | undefined = preset?.effects ?? state.activeExpressionEffects
+  const effects: FaceExpressionEffects | undefined = savedIntroFace ? state.activeExpressionEffects : preset?.effects ?? state.activeExpressionEffects
   const faceMode = editorV6FaceModeForElement(state, appearance)
   const characterCopy: CustomizerCharacter = {
     ...character,

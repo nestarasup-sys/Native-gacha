@@ -26,18 +26,18 @@ describe('inspector do Editor V6', () => {
     expect(html).toContain('studio-inspector-left')
     expect(html).toContain('Painel do editor')
     expect(html).not.toContain('Painel de aparência')
-    expect(html).toContain('class="active" type="button">Editor</button>')
+    expect(html).toContain('aria-pressed="true" type="button">Editor</button>')
   })
 
   it('mostra aparência ou presets segundo a subaba selecionada', () => {
     const face = renderInspector({ tab: 'custom', customView: 'face' })
     expect(face).toContain('Painel de aparência')
-    expect(face).toContain('class="active" type="button">Custom</button>')
+    expect(face).toContain('aria-pressed="true" type="button">Rosto</button>')
     expect(face).not.toContain('class="studio-inspector-presets active"')
 
     const presets = renderInspector({ tab: 'custom', customView: 'presets' })
     expect(presets).toContain('Painel de presets')
-    expect(presets).toContain('class="studio-inspector-presets active"')
+    expect(presets).toContain('aria-pressed="true" type="button">Presets</button>')
     expect(presets).not.toContain('Painel de aparência')
   })
 
@@ -45,9 +45,9 @@ describe('inspector do Editor V6', () => {
     const html = renderInspector()
 
     expect(html).toContain('aria-label="Inspector da cena"')
-    expect(html).toContain('aria-label="Fechar inspector"')
+    expect(html).toContain('aria-label="Fechar inspetor"')
     expect(html).toContain('>Editor</button>')
-    expect(html).toContain('>Custom</button>')
+    expect(html).toContain('>Rosto</button>')
     expect(html).toContain('>Presets</button>')
   })
 })

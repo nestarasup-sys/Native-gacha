@@ -1,7 +1,8 @@
+import { editorV6IntroFittedSize } from '../../../../shared/editorV6Intro'
 import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
-import { editorV6RefreshedCharacterGeometry } from './editorV6CharacterRefreshModel'
+import { editorV6SourceFrameGeometry } from './editorV6SourceFrame'
 import type { TrimmedImage } from '../../characters/transparentImageTrim.ts'
-import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets.ts'
+import { bakeEditorV6FaceModeAssets, editorV6FaceModeForElement, EDITOR_V6_FACE_RENDER_VERSION, measureFaceModeCrop } from './faceModeAssets.ts'
 import { editorV6CharacterRefreshStateSignature } from './editorV6CharacterRefreshPublication'
 import { prepareEditorV6CharacterRefreshJob } from './editorV6CharacterRefreshJob'
 import type { EditorV6CharacterRefreshGroup, EditorV6CharacterRefreshRenderJob, EditorV6CharacterRefreshResult } from './editorV6CharacterRefreshTypes'
@@ -74,8 +75,9 @@ export async function renderEditorV6CharacterRefresh(
     const firstJob = rendererJobs[0]
     const source = await memoizedPromise(sourceCache, firstJob.sourceKey, () => resolveSavedCharacterSource(firstJob.characterCopy), 8)
     const renderer = await prepareSavedCharacterRenderer(firstJob.characterCopy, { ...source, artwork: source.sourceArtwork, assetProvider: window.desktop.fabricator, materialCache })
-    type FaceBake = { rendered: { width: number; height: number }; crop: TrimmedImage | null; faceModeAssetIds: Partial<Record<EditorV6FaceRenderMode, string>> }
+    type FaceBake = { rendered: { width: number; height: number }; faceModeAssetIds: Partial<Record<EditorV6FaceRenderMode, string>> }
     const faceVariants = new Map<string, FaceBake>()
+    const legacyCrops = new Map<string, Pick<TrimmedImage, 'left' | 'top' | 'width' | 'height'> | null>()
     try {
       for (const { character, targets, poseRevision, modelRevision, wardrobeRevision, hairRevision, headExtraRevision, eyeRevision, appearance, expressionBase, faceTransforms, effects, faceMode, preset } of rendererJobs) {
         if (isCancelled()) break
@@ -84,20 +86,32 @@ export async function renderEditorV6CharacterRefresh(
         let variant = faceVariants.get(variantKey)
         if (!variant?.faceModeAssetIds[faceMode]) {
           const rendered = await renderer.renderToCanvas(appearance, faceTransforms, effects, faceMode)
-          const baked = await bakeFaceModeAssets(character.name, renderer, appearance, faceTransforms, effects, faceMode, rendered)
+          const baked = await bakeEditorV6FaceModeAssets(character.name, renderer, appearance, faceTransforms, effects, faceMode, rendered)
           const baseAssetId = crypto.randomUUID()
           const faceModeAssetIds = { ...baked.assetIds, [faceMode]: baseAssetId }
           refreshedAssets.push({ id: baseAssetId, category: 'character', name: character.name, mimeType: 'image/png', dataUrl: baked.dataUrl, timelineSnapshot: true }, ...baked.extraAssets)
-          variant = { rendered: { width: rendered.width, height: rendered.height }, crop: baked.crop, faceModeAssetIds }
+          variant = { rendered: { width: rendered.width, height: rendered.height }, faceModeAssetIds }
           faceVariants.set(variantKey, variant)
         }
-        const { rendered, crop, faceModeAssetIds } = variant
+        const { rendered, faceModeAssetIds } = variant
         const assetId = faceModeAssetIds[faceMode]
         if (!assetId) throw new Error(`Não foi possível preparar a variante facial ${faceMode} de ${character.name}.`)
         for (const target of targets) {
-          const geometry = editorV6RefreshedCharacterGeometry(target.state, rendered, crop)
+          const state = target.state
+          let crop = null
+          if ((state.faceRendererVersion ?? 0) < EDITOR_V6_FACE_RENDER_VERSION) {
+            const oldAppearance = state.faceAppearance ?? character.customization.faceAppearance
+            const oldMode = editorV6FaceModeForElement(state, oldAppearance)
+            const key = JSON.stringify([oldAppearance, state.faceTransforms, state.activeExpressionEffects, oldMode])
+            if (!legacyCrops.has(key)) legacyCrops.set(key, await measureFaceModeCrop(character.name, renderer, oldAppearance,
+              state.faceTransforms, state.activeExpressionEffects, oldMode))
+            crop = legacyCrops.get(key) ?? null
+          }
+          const previousSize = crop ?? rendered
+          const framed = target.fitLegacyPortrait ? { ...state, ...editorV6IntroFittedSize(previousSize.width / previousSize.height) } : state
+          const geometry = editorV6SourceFrameGeometry(framed, rendered, crop)
           const next: EditorV6Element = {
-            ...target.state, assetId, faceModeAssetIds, ...geometry,
+            ...framed, assetId, faceModeAssetIds, ...geometry,
             ...(appearance ? { faceAppearance: appearance } : {}),
             ...(expressionBase ? { expressionBase } : {}),
             ...(faceTransforms ? { faceTransforms } : {}),

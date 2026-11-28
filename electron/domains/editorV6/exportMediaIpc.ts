@@ -8,6 +8,7 @@ import { editorV6ExportAudioSchema, editorV6MediaAssetSchema } from '../../../sr
 import type { EditorV6MediaAsset } from '../../../src/shared/editorV6'
 import type { EditorV6ExportAudio } from '../../../src/shared/editorV6Export'
 import { probeEditorV6VideoLink, probeExportMedia } from './exportMediaProbe'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 
 type LibraryVideo = {
   path: string
@@ -67,7 +68,7 @@ export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependen
     const probe = await probeExportMedia(deps.ffprobe, source.path, new AbortController().signal)
     const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
     const duration = Number(probe.format.duration ?? audio?.duration ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    const sourceFrames = Math.max(1, Math.floor(duration * EDITOR_V6_TIMELINE_FPS))
     if (!audio || !Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('O áudio da biblioteca não passou pela validação de duração e faixa de áudio.')
     return { source, sourceFrames }
   }
@@ -87,7 +88,7 @@ export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependen
     if (!audio) throw Error('O arquivo selecionado não contém áudio.')
     const duration = Number(probe.format.duration ?? audio.duration ?? 0)
     if (!Number.isFinite(duration) || duration <= 0) throw Error('A duração do áudio não pôde ser determinada.')
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    const sourceFrames = Math.max(1, Math.floor(duration * EDITOR_V6_TIMELINE_FPS))
     if (sourceFrames > 1_000_000) throw Error('A duração do áudio passa do limite do Editor V6.')
     const id = randomUUID(), fileName = `${id}.${extension}`
     const clip = editorV6ExportAudioSchema.parse({ id, fileName, name: basename(source), sourceFrames, startFrame: 0, sourceInFrame: 0, durationFrames: sourceFrames, gain: 1, muted: false })
@@ -127,7 +128,7 @@ export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependen
     if (kind === 'video' && !video) throw Error('O arquivo selecionado não contém vídeo.')
     if (kind === 'audio' && !audio) throw Error('O arquivo selecionado não contém áudio.')
     const duration = Number(probe.format.duration ?? (kind === 'video' ? video?.duration : audio?.duration) ?? 0)
-    const sourceFrames = Math.max(1, Math.floor(duration * 30))
+    const sourceFrames = Math.max(1, Math.floor(duration * EDITOR_V6_TIMELINE_FPS))
     if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração da mídia é inválida ou passa do limite do Editor V6.')
     const mimeByExtension: Record<string, string> = { mp4: 'video/mp4', webm: kind === 'video' ? 'video/webm' : 'audio/webm', mov: 'video/quicktime', m4v: 'video/x-m4v', mp3: 'audio/mpeg', wav: 'audio/wav', m4a: 'audio/mp4', aac: 'audio/aac', ogg: 'audio/ogg', flac: 'audio/flac', opus: 'audio/opus' }
     const id = randomUUID(), fileName = `${id}.${extension}`
@@ -183,7 +184,7 @@ export function registerEditorV6ExportMediaHandlers(deps: ExportMediaIpcDependen
       const audio = probe.streams.find((stream) => stream.codec_type === 'audio')
       if (!video) throw Error('O vídeo selecionado não contém uma faixa de vídeo válida.')
       const duration = Number(probe.format.duration ?? video.duration ?? 0)
-      const sourceFrames = Math.max(1, Math.floor(duration * 30))
+      const sourceFrames = Math.max(1, Math.floor(duration * EDITOR_V6_TIMELINE_FPS))
       if (!Number.isFinite(duration) || duration <= 0 || sourceFrames > 1_000_000) throw Error('A duração do vídeo é inválida para o Editor V6.')
       const asset = editorV6MediaAssetSchema.parse({ id: libraryVideoId, libraryVideoId, name: source.name, fileName: `${libraryVideoId}.${source.extension}`, kind: 'video', mimeType: source.mimeType, sourceFrames, hasAudio: Boolean(audio), ...(video.width ? { width: video.width, height: video.height } : {}), sizeBytes: fileStats.size })
       linkedVideos.delete(libraryVideoId)

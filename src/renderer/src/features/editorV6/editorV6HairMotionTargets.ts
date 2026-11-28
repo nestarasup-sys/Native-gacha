@@ -1,3 +1,4 @@
+import { editorV6IntroCharacterTrack } from '../../../../shared/editorV6Intro'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceRenderMode } from '../../../../shared/editorV6'
 
 export type EditorV6HairMotionTarget = { elementId: string; state: EditorV6Element; assetId: string; faceMode: EditorV6FaceRenderMode }
@@ -32,6 +33,16 @@ export function selectEditorV6HairTargetStates(
 ): EditorV6Element[] {
   const states: EditorV6Element[] = [...project.elements]
   for (const track of project.timeline.tracks) {
+    if (track.kind === 'intro') {
+      if (track.muted || track.hidden) continue
+      for (const block of track.blocks) {
+        if (block.intro?.kind !== 'character' || !block.intro.portraitAspect) continue
+        if (range && (block.startFrame >= range.endFrame || block.startFrame + block.durationFrames <= range.startFrame)) continue
+        const state = editorV6IntroCharacterTrack(track).get(block.id)
+        if (state) states.push(state)
+      }
+      continue
+    }
     if (!range) {
       for (const block of track.blocks) if (block.state) states.push(block.state)
       continue

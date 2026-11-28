@@ -1,7 +1,8 @@
+import { editorV6BlinkEventAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { describe, it, expect } from 'vitest'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
-import { attachEditorV6Motion, editorV6MotionChangesHairGeometry, editorV6MotionHasCompleteFaceAtlas, editorV6MotionPlan, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
-import { isEditorV6BlinkFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
+import { attachEditorV6Motion, editorV6MotionChangesHairGeometry, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { addEditorV6ElementAtFrame, pruneEditorV6TimelineSnapshots, resolveEditorV6ElementsAtFrame, splitEditorV6Block, setEditorV6BlockTiming, duplicateEditorV6Block } from '../../src/shared/editorV6Timeline'
 import { interpolateEditorV6Face, interpolateEditorV6Pose, motionAngle } from '../../src/shared/editorV6MotionInterpolation'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { editorV6VisualKey } from '../../src/shared/editorV6Export'
@@ -21,6 +22,25 @@ function bake(document: EditorV6Document): EditorV6MotionBakeResult {
   return { asset: { id: assetId, category: 'character', name: 'Motion', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA==', timelineSnapshot: true }, motion: { version: 1, key: plan.key, assetId, frames: plan.samples.map((s, i) => ({ offset: s.offset, sprite: { x: i * 10, y: 0, width: 10, height: 10, atlasWidth: 70, atlasHeight: 10 }, x: i, y: 0, width: 20, height: 30, rotation: 0, flipX: false })) }, metrics: { milliseconds: 1, preparedRigs: 9, samples: 7, atlasPixels: 700 } }
 }
 describe('V6 motion scheduling and portable cache', () => {
+  it.each(['speech', 'thought'] as const)('keeps %s placement and tail when an atlas changes the actor crop', kind => {
+    const document = fixture(), actor = document.elements[0]
+    const balloon: EditorV6Element = { id: crypto.randomUUID(), kind, text: 'Aqui', englishText: 'Here', x: -12, y: 8, width: 25, height: 16, rotation: 0, zIndex: 5,
+      characterId: actor.characterId, attachedCharacterElementId: actor.id, attachmentOriginX: actor.x, attachmentOriginY: actor.y }
+    const authored = addEditorV6ElementAtFrame(document, balloon, 80)
+    const plan = editorV6MotionPlans(authored)[0]
+    const result = bake(authored)
+    result.motion.frames = result.motion.frames.map(frame => ({ ...frame, x: 40, y: -25, height: 15 }))
+    const prepared = attachEditorV6Motion(authored, plan.blockId, result)
+    for (const sample of plan.samples) {
+      const frame = plan.endFrame + sample.offset
+      const preview = resolveEditorV6ElementsAtFrame(authored, frame)
+      const exported = resolveEditorV6ElementsAtFrame(prepared, frame)
+      expect(exported.find(element => element.id === actor.id)?.motionSprite).toBeDefined()
+      expect(exported.find(element => element.id === balloon.id)).toEqual(preview.find(element => element.id === balloon.id))
+      expect(preview.find(element => element.id === balloon.id)).toBeDefined()
+    }
+  })
+
   it('invalidates captured frames when the same video changes its scene layout', () => {
     const scene = (x: number) => ({ frame: 42, background: '#fff', elements: [], mediaVideo: { mediaId: 'video', startFrame: 0, sourceInFrame: 0, layout: { x, y: 0, width: 40, height: 40, rotation: 0 } } })
     expect(editorV6VisualKey(scene(0))).not.toBe(editorV6VisualKey(scene(10)))
@@ -30,7 +50,7 @@ describe('V6 motion scheduling and portable cache', () => {
     const runs: number[] = []
     let previous = false, start = 0
     for (let frame = 0; frame <= 20_000; frame++) {
-      const blinking = isEditorV6BlinkFrame('long-stress-project', 'alice', frame)
+      const blinking = Boolean(editorV6BlinkEventAtFrame('long-stress-project', frame))
       if (blinking && !previous) start = frame
       if (!blinking && previous && start > 0) runs.push(frame - start)
       previous = blinking
@@ -55,30 +75,13 @@ describe('V6 motion scheduling and portable cache', () => {
     expect(plan.samples.map(s => s.offset)).toEqual([-7,-6,-5,-4,-3,-2,-1])
     expect(plan.samples[0].progress).toBeCloseTo(1 / 15)
   })
-  it('keeps expression atlases out of hair transitions while retaining pose and geometry changes', () => {
-    const doc = fixture()
-    const track = doc.timeline.tracks.find(item => item.kind === 'character')!
-    const [base, pose] = track.blocks
-    const posePlan = editorV6MotionPlan(track, base, pose)!
-    expect(editorV6MotionChangesHairGeometry(posePlan)).toBe(true)
-
-    const expressionBlock = {
-      ...pose,
-      id: crypto.randomUUID(),
-      startFrame: pose.startFrame + 90,
-      state: { ...pose.state!, assetId: crypto.randomUUID(), activeExpressionPresetId: crypto.randomUUID() }
-    }
-    const expressionPlan = editorV6MotionPlan(track, pose, expressionBlock)!
-    expect(expressionPlan).not.toBeNull()
-    expect(editorV6MotionChangesHairGeometry(expressionPlan)).toBe(false)
-    const facePatch = { sprite: { x: 0, y: 0, width: 1, height: 1, atlasWidth: 1, atlasHeight: 1 }, x: 0, y: 0, width: 1, height: 1 }
-    const faceAtlas = { faceAssetId: crypto.randomUUID(), frames: expressionPlan.samples.map(sample => ({ offset: sample.offset, facePatch })) }
-    expect(editorV6MotionHasCompleteFaceAtlas(expressionPlan, faceAtlas)).toBe(true)
-    expect(editorV6MotionHasCompleteFaceAtlas(expressionPlan, { ...faceAtlas, frames: faceAtlas.frames.slice(1) })).toBe(false)
-
-    const translatedBlock = { ...expressionBlock, state: { ...expressionBlock.state!, x: expressionBlock.state!.x + 1 } }
-    const translatedPlan = editorV6MotionPlan(track, pose, translatedBlock)!
-    expect(editorV6MotionChangesHairGeometry(translatedPlan)).toBe(true)
+  it('classifies pose and transform changes as hair geometry while ignoring expression snapshots', () => {
+    const plan = editorV6MotionPlans(fixture())[0]
+    expect(editorV6MotionChangesHairGeometry(plan)).toBe(true)
+    const facialFrom = { ...plan.from, poseSlot: 1, activeExpressionPresetId: undefined }
+    const facialTo = { ...facialFrom, assetId: crypto.randomUUID(), activeExpressionPresetId: 'expression-sad' }
+    expect(editorV6MotionChangesHairGeometry({ from: facialFrom, to: facialTo })).toBe(false)
+    expect(editorV6MotionChangesHairGeometry({ from: facialFrom, to: { ...facialTo, width: facialTo.width + 1 } })).toBe(true)
   })
   it('invalidates baked transitions when the saved pose changes', () => {
     const doc = fixture(), beforePlan = editorV6MotionPlans(doc)[0]
@@ -237,7 +240,7 @@ describe('V6 motion scheduling and portable cache', () => {
   })
   it('uses open eyes for automatic blink frames inside pose and expression motion', () => {
     const doc = fixture()
-    const blinkRunStart = Array.from({ length: 250 }, (_, index) => index + 20).find((frame) => isEditorV6BlinkFrame(doc.id, 'alice', frame) && !isEditorV6BlinkFrame(doc.id, 'alice', frame - 1))!
+    const blinkRunStart = Array.from({ length: 250 }, (_, index) => index + 20).find((frame) => Boolean(editorV6BlinkEventAtFrame(doc.id, frame)) && !Boolean(editorV6BlinkEventAtFrame(doc.id, frame - 1)))!
     const characterTrack = doc.timeline.tracks.find((track) => track.kind === 'character')!
     const transitionEnd = blinkRunStart + 7
     characterTrack.blocks[0] = { ...characterTrack.blocks[0], durationFrames: transitionEnd }
@@ -247,12 +250,12 @@ describe('V6 motion scheduling and portable cache', () => {
     speech.blocks = [{ id: crypto.randomUUID(), label: 'Fala durante a piscada', characterId: 'alice', startFrame: speakingBlinkFrame, durationFrames: 1 }]
 
     const plan = editorV6MotionPlans(doc)[0]
-    expect(editorV6FaceModeAtFrame(doc.id, doc.timeline, 'alice', speakingBlinkFrame)).toBe('talk-blink')
+    expect(editorV6FaceModeAtFrame(doc.timeline, 'alice', speakingBlinkFrame, { blinking: true })).toBe('talk-blink')
     const speakingSample = plan.samples.find((sample) => plan.endFrame + sample.offset === speakingBlinkFrame)
     expect(speakingSample?.faceMode).toBe('talk')
     const otherBlinkSamples = plan.samples.filter((sample) => {
       const frame = plan.endFrame + sample.offset
-      return isEditorV6BlinkFrame(doc.id, 'alice', frame) && frame !== speakingBlinkFrame
+      return Boolean(editorV6BlinkEventAtFrame(doc.id, frame)) && frame !== speakingBlinkFrame
     })
     expect(otherBlinkSamples.length).toBeGreaterThan(0)
     expect(otherBlinkSamples.every((sample) => sample.faceMode === undefined)).toBe(true)

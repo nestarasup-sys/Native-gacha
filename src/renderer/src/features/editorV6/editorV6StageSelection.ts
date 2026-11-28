@@ -6,6 +6,7 @@ type Dependencies = {
   stageCharacters: readonly EditorV6Element[]
   allPositionsLocked: boolean
   currentFrame: () => number
+  seek?: (frame: number) => void
   pausePlayback: () => void
   changeScene: (transform: (project: EditorV6Document) => EditorV6Document) => void
   now: () => string
@@ -53,11 +54,16 @@ export function createEditorV6StageSelectionCommands(dependencies: Dependencies)
   }
 
   const selectTimelineBlock = (block: EditorV6TimelineBlock) => {
+    if (block.intro && dependencies.seek) {
+      dependencies.pausePlayback()
+      const frame = dependencies.currentFrame()
+      if (frame < block.startFrame || frame >= block.startFrame + block.durationFrames) dependencies.seek(block.startFrame)
+    }
     dependencies.setSelectedTimelineBlockId(block.id)
     dependencies.setSelectedElementId(block.background ? 'background' : block.elementId ?? null)
     dependencies.setActiveTool(block.background ? 'background' : null)
     dependencies.setInspectorOpen(true)
-    if (block.state?.kind === 'character') dependencies.restoreCharacterInspectorView()
+    if (block.state?.kind === 'character' || block.intro?.kind === 'character') dependencies.restoreCharacterInspectorView()
     else dependencies.setInspectorTab('editor')
   }
 

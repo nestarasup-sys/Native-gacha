@@ -1,10 +1,13 @@
 import type { EditorV6Document, EditorV6Element } from '../../../../shared/editorV6'
 import type { editEditorV6BackgroundAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
+import { removeEditorV6TimelineBlock } from '../../../../shared/editorV6TimelineEdits'
 
 export type EditorV6DeleteSelectedCommandDependencies = {
   activeProject: EditorV6Document | null
   selectedElementId: string | null
   selectedTimelineVideoBlockId: string | null
+  selectedTimelineCardBlockId?: string | null
+  selectedTimelineIntroBlockId?: string
   getFrame: () => number
   editBackgroundAtFrame: typeof editEditorV6BackgroundAtFrame
   now: () => string
@@ -19,6 +22,18 @@ export function createEditorV6DeleteSelectedCommand(dependencies: EditorV6Delete
   return (): void => {
     const project = dependencies.activeProject
     if (!project) return
+    const introBlockId = dependencies.selectedTimelineIntroBlockId
+    if (introBlockId) {
+      const track = project.timeline.tracks.find(item => item.kind === 'intro' && item.blocks.some(block => block.id === introBlockId))
+      if (!track || track.locked) return
+      dependencies.changeScene(current => ({
+        ...current,
+        updatedAt: dependencies.now(),
+        timeline: removeEditorV6TimelineBlock(current.timeline, introBlockId)
+      }))
+      dependencies.setSelectedTimelineBlockId(null)
+      return
+    }
 
     if (dependencies.selectedElementId === 'background') {
       const frame = dependencies.getFrame()
@@ -31,13 +46,15 @@ export function createEditorV6DeleteSelectedCommand(dependencies: EditorV6Delete
       const blockId = dependencies.selectedTimelineVideoBlockId
       dependencies.changeScene((current) => ({
         ...current,
-        timeline: {
-          ...current.timeline,
-          tracks: current.timeline.tracks.map((track) => ({
-            ...track,
-            blocks: track.blocks.filter((block) => block.id !== blockId)
-          }))
-        },
+        timeline: removeEditorV6TimelineBlock(current.timeline, blockId),
+        updatedAt: dependencies.now()
+      }))
+      dependencies.setSelectedTimelineBlockId(null)
+    } else if (dependencies.selectedTimelineCardBlockId) {
+      const blockId = dependencies.selectedTimelineCardBlockId
+      dependencies.changeScene((current) => ({
+        ...current,
+        timeline: removeEditorV6TimelineBlock(current.timeline, blockId),
         updatedAt: dependencies.now()
       }))
       dependencies.setSelectedTimelineBlockId(null)

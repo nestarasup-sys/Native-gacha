@@ -13,6 +13,10 @@ async function main() {
   await writeFile(join(output, 'result.json'), JSON.stringify({ passed: false, state: 'running', fixtureDirectory: basename(folder) }))
   const entry = join(folder, 'export.electron.cjs')
   await build({ entryPoints: [join(root, 'tests/editor-v6/export.electron.ts')], outfile: entry, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], logLevel: 'warning' })
+  const motionPreload = await readFile(join(root, 'out/preload/editorV6MotionPreload.cjs'), 'utf8')
+  const preloadRequires = [...motionPreload.matchAll(/\brequire\(["']([^"']+)["']\)/g)].map((match) => match[1])
+  if (preloadRequires.some((name) => name !== 'electron'))
+    throw Error(`O preload sandboxado de motion depende de módulos externos: ${preloadRequires.filter((name) => name !== 'electron').join(', ')}.`)
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
   const child = spawn(require('electron'), [entry, root, folder], { windowsHide: true, stdio: 'inherit', env })

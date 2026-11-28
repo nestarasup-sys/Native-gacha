@@ -1,3 +1,4 @@
+import { editorV6SourceFrameGeometry } from '../../src/renderer/src/features/editorV6/editorV6SourceFrame'
 import { strict as assert } from 'node:assert'
 import { randomUUID } from 'node:crypto'
 import * as fs from 'node:fs/promises'
@@ -11,7 +12,7 @@ import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineSc
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import type { FabricatorProject, FaceCatalogItem, ModelPart } from '../../src/shared/fabricator'
 import { prepareEditorV6LegacyCharacterCrops } from '../../src/renderer/src/features/editorV6/editorV6LegacyCharacterCropNormalization'
-import { applyEditorV6CharacterAssetCrops, editorV6RefreshedCharacterGeometry } from '../../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel'
+import { applyEditorV6CharacterAssetCrops } from '../../src/renderer/src/features/editorV6/editorV6CharacterRefreshModel'
 
 export type LegacyParityCatalog = { poses: FabricatorProject[]; mouths: FaceCatalogItem[] }
 type Bake = (request: EditorV6MotionBakeRequest, signal: AbortSignal) => Promise<EditorV6MotionBakeResult>
@@ -112,9 +113,11 @@ export async function checkLegacyProjectParity({ folder, owner, source, arm, cha
   const anchors = [0, 12, 20, 39].map(frame => {
     const oldFrame = resolveEditorV6SceneAtFrame(reopened, frame).elements[0]
     const newFrame = resolveEditorV6SceneAtFrame(modern, frame).elements[0]
-    const refreshed = editorV6RefreshedCharacterGeometry(oldFrame, canvas, crops[frame < 20 ? 0 : 1])
+    const crop = crops[frame < 20 ? 0 : 1]
+    const refreshed = editorV6SourceFrameGeometry(oldFrame, canvas, crop)
     for (const key of ['x', 'y', 'width', 'height'] as const) assert(Math.abs(oldFrame[key] - newFrame[key]) < 1e-9, `Quadro ${frame}: ${key} divergiu ao reabrir.`)
-    assert(Math.abs(refreshed.width - newFrame.width) < 1e-9 && Math.abs(refreshed.height - newFrame.height) < 1e-9)
+    assert(Math.abs(refreshed.width! / canvas.width - newFrame.width / crop.width) < 1e-9
+      && Math.abs(refreshed.height! / canvas.height - newFrame.height / crop.height) < 1e-9)
     assert.equal(oldFrame.poseSlot, newFrame.poseSlot)
     assert.equal(oldFrame.activeExpressionPresetId, newFrame.activeExpressionPresetId)
     assert.equal(oldFrame.assetId, newFrame.assetId)

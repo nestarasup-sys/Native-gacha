@@ -11,7 +11,7 @@ const objectAsset: EditorV6Asset = {
   id: 'object-1', category: 'object', name: 'Flor', mimeType: 'image/png', dataUrl: 'data:image/png;base64,AA=='
 }
 const project = {
-  id: 'project-1', assets: [backgroundAsset, objectAsset], elements: []
+  id: 'project-1', assets: [backgroundAsset, objectAsset], elements: [], timeline: { tracks: [] }
 } as unknown as EditorV6Document
 
 const control: EditorV6NumericControl = (label, value) => createElement('span', { 'data-control': label, 'data-value': value }, label)
@@ -40,6 +40,7 @@ const baseProps = {
   onUpdateCharacterNameColor: onAction,
   onUpdateBalloonScale: onAction,
   onUpdateBalloonOffsetY: onAction,
+  onResetBalloonPosition: onAction,
   onUpdateVideoBlock: onAction,
   onRecordHistory: onAction,
   onDeleteSelected: onAction
@@ -87,6 +88,7 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).toContain('Vídeo selecionado')
     expect(html).toContain('Início da mídia')
     expect(html).not.toContain('Áudio do vídeo')
+    expect(html).not.toContain('Cards deste vídeo')
   })
 
   it('mantém os controles de áudio e os valores salvos quando o vídeo tem som', () => {
@@ -105,6 +107,27 @@ describe('EditorV6PropertyPanel', () => {
     expect(html).toContain('data-control="Volume" data-value="0.6"')
     expect(html).toContain('Áudio do vídeo')
     expect(html).toContain('type="checkbox" checked=""')
+  })
+
+  it('mostra os três componentes apenas do bloco selecionado', () => {
+    const html = renderPanel({
+      ...baseProps,
+      activeTool: null,
+      selectedVideoCardClip: { track: { id: 'cards', kind: 'card', name: 'Cards', blocks: [], muted: false, locked: false }, block: { id: 'card', label: 'Card', startFrame: 0, durationFrames: 150, videoCard: {
+        videoBlockId: 'video-block', components: {
+          temporal: { text: 'Past', enabled: true, startFrame: 0, endFrame: 150 },
+          english: { text: 'Context', enabled: true, startFrame: 30, endFrame: 150 },
+          portuguese: { text: 'Contexto inferior', enabled: false, startFrame: 0, endFrame: 90 }
+        }
+      } } }
+    })
+    expect(html).toContain('Card selecionado')
+    expect(html).toContain('Card superior')
+    expect(html).toContain('Card inferior em inglês')
+    expect(html).toContain('Card inferior em português')
+    expect(html).toContain('Contexto inferior')
+    expect(html.match(/type="checkbox"/g)).toHaveLength(3)
+    expect(html.match(/data-control="Fim"/g)).toHaveLength(3)
   })
 
   it('mantém o seletor livre de cor do nome do personagem', () => {
@@ -128,7 +151,46 @@ describe('EditorV6PropertyPanel', () => {
     })
     expect(html).toContain('Escala dos balões')
     expect(html).toContain('Posição vertical')
+    expect(html).toContain('Reposicionar no personagem')
     expect(html).toContain('Aplica a escala e a posição vertical a todas as falas e pensamentos.')
     expect(html).toContain('data-value="140"')
+  })
+
+  it('reutiliza na Intro todos os controles de transformação do personagem sem duplicá-los', () => {
+    const character = {
+      id: 'character-1', kind: 'character', characterId: 'alice', text: 'Alice', assetId: 'alice-asset',
+      x: -25, y: 0, width: 20, height: 40, rotation: 0, zIndex: 0,
+      characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, flipX: false,
+      poseSlot: 2, activeExpressionPresetId: 'happy'
+    } as EditorV6Element
+    const normal = renderPanel({ ...baseProps, activeTool: null, selectedElement: character })
+    const intro = renderPanel({
+      ...baseProps,
+      activeTool: null,
+      selectedElement: character,
+      selectedIntroClip: {
+        track: { id: 'intro-track', kind: 'intro', locked: false },
+        block: {
+          id: 'intro-clip', label: 'Alice', startFrame: 0, durationFrames: 240,
+          intro: { kind: 'character', characterId: 'alice', assetId: 'alice-asset', text: 'Olá', englishText: 'Hello', flipX: false }
+        }
+      } as NonNullable<Parameters<typeof EditorV6PropertyPanel>[0]['selectedIntroClip']>,
+      onUpdateIntroText: onAction,
+      onUpdateIntroPortrait: onAction,
+      onReplicateIntroPortrait: onAction
+    })
+
+    for (const label of ['X', 'Y', 'Scale', 'Largura', 'Altura', 'Rotação']) {
+      const count = (html: string) => html.match(new RegExp(`data-control="${label}"`, 'g'))?.length ?? 0
+      expect(count(intro), `${label} deve aparecer uma vez na Intro`).toBe(1)
+      expect(count(intro)).toBe(count(normal))
+    }
+    for (const label of ['Restaurar ajustes', 'Espelhar personagem', 'Para trás', 'Para frente']) {
+      expect(intro).toContain(`>${label}</button>`)
+      expect(intro.match(new RegExp(`>${label}</button>`, 'g'))).toHaveLength(1)
+    }
+    expect(intro).toContain('Padronizar personagens')
+    expect(intro).toContain('Inglês')
+    expect(intro).toContain('Português')
   })
 })

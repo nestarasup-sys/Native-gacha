@@ -21,12 +21,14 @@ type SceneElementControlUpdate = Partial<Pick<SceneElementControlTarget,
 type SceneElementControlsProps = {
   element: SceneElementControlTarget
   update: (values: SceneElementControlUpdate, record?: boolean) => void
-  remove: () => void
+  remove?: () => void
   control: (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix?: string) => ReactNode
   positionNote?: string
+  characterReset?: SceneElementControlUpdate
+  characterLayerMax?: number
 }
 
-export function SceneElementControls({ element, update, remove, control, positionNote }: SceneElementControlsProps) {
+export function SceneElementControls({ element, update, remove, control, positionNote, characterReset, characterLayerMax }: SceneElementControlsProps) {
   return <>
     <div className="studio-controls-grid">
       {control('X', element.x, (value, record) => update({ x: value }, record), -100, 100)}
@@ -44,9 +46,9 @@ export function SceneElementControls({ element, update, remove, control, positio
       {control('Rotação', element.rotation, (value, record) => update({ rotation: value }, record), -180, 180, '°')}
     </div>
     {element.kind === 'character' && positionNote && <small>{positionNote}</small>}
-    {element.kind === 'character' && <button className="studio-side-primary studio-character-reset" type="button" onClick={() => update({ x: 0, y: 0, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, rotation: 0, flipX: false })}><Icon name="reset" />Restaurar ajustes</button>}
-    {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}
+    {element.kind === 'character' && <button className="studio-side-primary studio-character-reset" type="button" onClick={() => update(characterReset ?? { x: 0, y: 0, characterScale: 100, characterWidthScale: 100, characterHeightScale: 100, rotation: 0, flipX: false })}><Icon name="reset" />Restaurar ajustes</button>}
+    {element.kind === 'character' && <div className="studio-layer-actions studio-character-actions"><button type="button" onClick={() => update({ flipX: !element.flipX })}><Icon name="flipHorizontal" />Espelhar personagem</button><button type="button" disabled={characterLayerMax !== undefined && element.zIndex === 0} onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button><button type="button" disabled={characterLayerMax !== undefined && element.zIndex >= characterLayerMax} onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button></div>}
     {element.kind === 'image' && <div className="studio-layer-actions"><button type="button" onClick={() => update({ zIndex: element.zIndex + 1 })}>Para frente</button><button type="button" onClick={() => update({ zIndex: Math.max(0, element.zIndex - 1) })}>Para trás</button></div>}
-    <button className="studio-side-danger" type="button" onClick={remove}><Icon name="trash" />Excluir da cena</button>
+    {remove && <button className="studio-side-danger" type="button" onClick={remove}><Icon name="trash" />Excluir da cena</button>}
   </>
 }

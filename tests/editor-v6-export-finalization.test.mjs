@@ -80,6 +80,38 @@ test('concatena partes, valida quadros por pacotes e examina as emendas sem deco
   })
 })
 
+test('mantém a coleta de diagnóstico fora do caminho padrão', async () => {
+  await withTempFolder(async (folder) => {
+    const harness = makeHarness(folder, {
+      now: () => { throw Error('O relógio de diagnóstico não deve ser chamado sem opt-in.') }
+    })
+
+    const result = await finalizeEditorV6Export(harness.dependencies)
+
+    assert.equal(result.finalizationDiagnostics, undefined)
+  })
+})
+
+test('mede etapas de finalização somente quando a coleta está habilitada', async () => {
+  await withTempFolder(async (folder) => {
+    let tick = 0
+    const harness = makeHarness(folder, {
+      collectDiagnostics: true,
+      now: () => tick++
+    })
+
+    const result = await finalizeEditorV6Export(harness.dependencies)
+
+    assert.ok(result.finalizationDiagnostics)
+    assert.ok(result.finalizationDiagnostics.concatMuxMs > 0)
+    assert.ok(result.finalizationDiagnostics.packetProbeMs > 0)
+    assert.ok(result.finalizationDiagnostics.seamDecodeMs > 0)
+    assert.ok(result.finalizationDiagnostics.validationWallMs > 0)
+    assert.equal(result.finalizationDiagnostics.fallbackFrameProbeMs, 0)
+    assert.ok(result.finalizationDiagnostics.validationChecksMs > 0)
+  })
+})
+
 test('usa a contagem decodificada como fallback se a contagem de pacotes não for conclusiva', async () => {
   await withTempFolder(async (folder) => {
     const harnessProbeCounts = []

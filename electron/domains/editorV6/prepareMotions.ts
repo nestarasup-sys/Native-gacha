@@ -3,6 +3,7 @@ import type { EditorV6Document } from '../../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../../src/shared/editorV6CharacterSource.ts'
 import { editorV6MotionHasAvailableAssets, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../../src/shared/editorV6Motion'
+import { parseEditorV6MotionAtlasBudgetError } from '../../../src/shared/editorV6MotionBudget'
 import { editorV6MotionBakeLaneAssignments } from './motionBakeSchedule'
 
 export async function prepareExportMotions(project: EditorV6Document, startFrame: number, endFrame: number, deps: {
@@ -57,7 +58,10 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const preparedByBlock = new Map<string, Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>>()
   const transitionProfiles: Array<{ milliseconds: number; preparedRigs: number; reusedRigs: number; profile?: EditorV6MotionBakeResult['metrics']['profile'] }> = []
   const groupedPlans = [...groups.values()]
-  const preparedGroups: Array<{ result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number } | undefined> = Array(groupedPlans.length)
+  type SkippedTransition = { blockId: string; characterId: string; characterName: string; width: number; height: number; pixels: number; limitPixels: number }
+  type PreparedGroup = { result: Pick<EditorV6MotionBakeResult, 'asset' | 'faceAsset' | 'motion'>; baked: boolean; milliseconds: number }
+    | { skipped: SkippedTransition[]; milliseconds: number }
+  const preparedGroups: Array<PreparedGroup | undefined> = Array(groupedPlans.length)
   const concurrency = deps.concurrency ?? 1
   const schedulableLaneCount = Math.min(concurrency, Math.max(1, groupedPlans.length)) as 1 | 2 | 3
   // Keep a character's sequence on one stable bake loop. A shared work-stealing
@@ -106,6 +110,15 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
         completed += plans.length
         deps.progress(completed, missing.length, plan.from.text)
       } catch (error) {
+        const budget = parseEditorV6MotionAtlasBudgetError(error)
+        if (budget && !controller.signal.aborted && !deps.signal.aborted) {
+          const skipped = plans.map((entry) => ({ blockId: entry.blockId, characterId: entry.characterId,
+            characterName: entry.from.text || character.name, ...budget }))
+          preparedGroups[index] = { skipped, milliseconds: performance.now() - started }
+          completed += plans.length
+          deps.progress(completed, missing.length, `${plan.from.text || character.name} · animação ignorada para preservar resolução e memória`)
+          continue
+        }
         if (failure === undefined) failure = error
         controller.abort(error)
         throw error
@@ -119,17 +132,22 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
     if (failedWorker?.status === 'rejected') throw failedWorker.reason
     deps.signal.throwIfAborted()
   } finally { deps.signal.removeEventListener('abort', abortWithParent) }
-  const timings: number[] = []
+  const timings: number[] = [], skippedTransitions: SkippedTransition[] = []
   for (let index = 0; index < preparedGroups.length; index++) {
     const prepared = preparedGroups[index]
     if (!prepared) throw Error('A preparação não concluiu todas as transições solicitadas.')
-    if (prepared.baked) baked++
     timings.push(prepared.milliseconds)
+    if ('skipped' in prepared) {
+      skippedTransitions.push(...prepared.skipped)
+      continue
+    }
+    if (prepared.baked) baked++
     assets.set(prepared.result.asset.id, prepared.result.asset)
     if (prepared.result.faceAsset) assets.set(prepared.result.faceAsset.id, prepared.result.faceAsset)
     for (const repeated of groupedPlans[index]) preparedByBlock.set(repeated.blockId, prepared.result)
   }
-  if (preparedByBlock.size) {
+  const skippedBlockIds = new Set(skippedTransitions.map((transition) => transition.blockId))
+  if (preparedByBlock.size || skippedBlockIds.size) {
     const blocksWithPlans = new Set(plansByBlock.keys())
     project = {
       ...project,
@@ -139,6 +157,11 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
         tracks: project.timeline.tracks.map((track) => ({
           ...track,
           blocks: track.blocks.map((block) => {
+            if (skippedBlockIds.has(block.id)) {
+              const withoutMotion = { ...block }
+              delete withoutMotion.incomingMotion
+              return withoutMotion
+            }
             if (!blocksWithPlans.has(block.id)) return block
             const result = preparedByBlock.get(block.id)
             const plan = plansByBlock.get(block.id)
@@ -163,7 +186,8 @@ export async function prepareExportMotions(project: EditorV6Document, startFrame
   const characterSequences = new Set(groupedPlans.map((group) => group[0]?.characterId).filter((id): id is string => Boolean(id))).size
   const assignedLanes = laneAssignments.filter((lane) => lane.length > 0).length
   return { project, stats: {
-    total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked,
+    total: missing.length, unique: groupedPlans.length, requested: baked, reused: missing.length - baked - skippedTransitions.length,
+    skippedTransitions,
     preparedRigs, reusedRigs, rigKeyLookups, rigRebuilds, rigBuildMilliseconds, maxConcurrentBakes,
     configuredConcurrency: concurrency, characterSequences, assignedLanes,
     endpointGeometryCacheHits, endpointGeometryCacheMisses,

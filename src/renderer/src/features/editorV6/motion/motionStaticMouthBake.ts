@@ -1,3 +1,4 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from '../editorV6SourceFrame'
 import type { EditorV6Element } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeRequest, EditorV6MotionBakeResult } from '../../../../../shared/editorV6Motion'
 import { unionMotionCrops as unionCrop, type MotionPixelCrop as Crop } from './motionPixelAnalysis'
@@ -118,7 +119,9 @@ export async function bakeEditorV6StaticMouthLoop({
     }
   }
 
-  const { sourceCrop, changedBounds } = await detectLegacyMouthBounds({ baseline, scales, faceMode: from.activeFaceMode, render })
+  const { sourceCrop: measuredCrop, changedBounds } = await detectLegacyMouthBounds({ baseline, scales, faceMode: from.activeFaceMode, render })
+  const sourceCrop = (from.faceRendererVersion ?? 0) >= EDITOR_V6_SOURCE_FRAME_VERSION
+    ? { left: 0, top: 0, width: baseline.width, height: baseline.height } : measuredCrop
   const packed = await buildLegacyMouthAtlas({
     sourceCrop,
     changedBounds,

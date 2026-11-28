@@ -3,7 +3,7 @@ import type { EditorV6Asset, EditorV6Element, EditorV6FaceRenderMode, EditorV6Fa
 import type { CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { FaceExpressionEffects, FaceExpressionPreset } from '../../../../shared/fabricator'
 
-export type EditorV6CharacterRefreshTarget = { kind: 'element' | 'block'; id: string; state: EditorV6Element }
+export type EditorV6CharacterRefreshTarget = { kind: 'element' | 'block' | 'intro'; id: string; state: EditorV6Element; fitLegacyPortrait?: boolean }
 export type EditorV6CharacterRefreshGroup = {
   character: CustomizerCharacter
   state: EditorV6Element

@@ -26,6 +26,7 @@ async function makeEditorV6Thumbnail(project: EditorV6Document): Promise<string>
 function editorV6ThumbnailCacheKey(project: EditorV6Document): readonly unknown[] {
   const scene = resolveEditorV6SceneAtFrame(project, 0)
   const visibleIds = new Set<string | null | undefined>([scene.background.backgroundAssetId])
+  if (scene.intro?.kind === 'character') visibleIds.add(scene.intro.assetId)
   for (const element of scene.elements) {
     visibleIds.add(element.assetId)
     visibleIds.add(element.mouthPatch?.assetId)

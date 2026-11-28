@@ -1,5 +1,6 @@
 import type { EditorV6Document, EditorV6Element, EditorV6TimelineTrack } from '../../../../shared/editorV6'
 import { addEditorV6ElementAtFrame } from '../../../../shared/editorV6TimelineCore'
+import { editorV6DefaultBalloonPlacement } from '../../../../shared/editorV6BalloonPlacement'
 
 export type EditorV6TextElementKind = 'narrator' | 'speech' | 'thought'
 
@@ -47,15 +48,16 @@ export function createEditorV6TextElementCommand(dependencies: EditorV6TextEleme
       return
     }
 
+    const baseElement = dependencies.createTextElement(kind, Math.max(0, ...project.elements.map((item) => item.zIndex)) + 1)
     const element = {
-      ...dependencies.createTextElement(kind, Math.max(0, ...project.elements.map((item) => item.zIndex)) + 1),
+      ...baseElement,
       ...(character ? {
+        englishText: 'Type here',
         characterId: character.characterId,
         attachedCharacterElementId: character.id,
         attachmentOriginX: character.x,
         attachmentOriginY: character.y,
-        x: character.x,
-        y: character.y
+        ...editorV6DefaultBalloonPlacement(character, baseElement.height)
       } : {})
     }
     const blockId = dependencies.createBlockId()

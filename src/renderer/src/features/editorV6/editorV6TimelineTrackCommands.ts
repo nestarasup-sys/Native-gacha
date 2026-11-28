@@ -1,10 +1,12 @@
+import { emptyEditorV6CardComponents } from '../../../../shared/editorV6Cards'
 import type { EditorV6Document, EditorV6Element, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block, EditorV6TimelineTrack as Track } from '../../../../shared/editorV6'
-import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, orderEditorV6TimelineTracks } from '../../../../shared/editorV6'
+import { EDITOR_V6_DEFAULT_BLOCK_FRAMES, editorV6DefaultVideoLayout, orderEditorV6TimelineTracks } from '../../../../shared/editorV6'
 import { editorV6ClipAtFrame, normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 
 export type TrackAction = 'motion' | 'add' | 'hidden' | 'locked' | 'collapsed' | 'up' | 'down' | 'rename'
 
 export function editorV6TimelineTrackGroup(track: Track): number {
+  if (track.kind === 'intro') return -1
   return track.kind === 'character' ? 1 : track.kind === 'object' || track.kind === 'audio' ? 2 : 0
 }
 
@@ -33,8 +35,32 @@ export function createEditorV6TimelineTrackCommands(dependencies: Dependencies) 
       const document = dependencies.getDocument()
       const frame = dependencies.getFrame()
       dependencies.seek(frame)
+      if (track.kind === 'intro') {
+        dependencies.setNotice('Defina novas telas no JSON do roteiro ou duplique um bloco da Intro.')
+        return
+      }
       if (track.kind === 'audio') {
         dependencies.setNotice('Use Importar áudio para copiar uma mídia para o projeto e criar um bloco.')
+        return
+      }
+      if (track.kind === 'card') {
+        const videos = document.timeline.tracks.filter(candidate => candidate.kind === 'video').flatMap(candidate => candidate.blocks.filter(block => block.mediaId))
+        const video = videos.find(block => frame >= block.startFrame && frame < block.startFrame + block.durationFrames)
+          ?? [...videos].filter(block => block.startFrame <= frame).sort((a, b) => b.startFrame - a.startFrame)[0]
+          ?? videos[0]
+        if (!video) { dependencies.setNotice('Adicione um vídeo antes de criar um card associado.'); return }
+        const media = document.media?.find(item => item.id === video.mediaId)
+        const startFrame = Math.max(video.startFrame, Math.min(frame, video.startFrame + video.durationFrames - 1))
+        const durationFrames = video.startFrame + video.durationFrames - startFrame
+        const components = emptyEditorV6CardComponents(durationFrames)
+        components.portuguese = { ...components.portuguese, enabled: true, text: 'Novo card' }
+        const block: Block = { id: dependencies.createId(), label: 'Card', startFrame, durationFrames,
+          videoCard: { videoBlockId: video.id, components, fallbackLayout: video.mediaLayout ?? editorV6DefaultVideoLayout(media?.width, media?.height), ...(media?.width && media.height ? { aspect: media.width / media.height } : {}) } }
+        dependencies.changeDocument(current => ({ ...current, timeline: normalizeEditorV6Timeline({ ...current.timeline,
+          durationFrames: Math.max(current.timeline.durationFrames, block.startFrame + block.durationFrames),
+          tracks: current.timeline.tracks.map(candidate => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate) }) }))
+        if (startFrame !== frame) dependencies.seek(startFrame)
+        dependencies.select(block)
         return
       }
       if (track.kind === 'character' && track.blocks.some((block) => block.startFrame === frame)) {
@@ -71,7 +97,7 @@ export function createEditorV6TimelineTrackCommands(dependencies: Dependencies) 
         elements: base ? current.elements : [...current.elements, element],
         timeline: normalizeEditorV6Timeline({
           ...current.timeline,
-          durationFrames: Math.max(current.timeline.durationFrames, frame + block.durationFrames),
+          durationFrames: Math.max(current.timeline.durationFrames, block.startFrame + block.durationFrames),
           knownElementIds: [...new Set([...(current.timeline.knownElementIds ?? []), element.id])],
           tracks: current.timeline.tracks.map((candidate) => candidate.id === track.id ? { ...candidate, blocks: [...candidate.blocks, block] } : candidate)
         })

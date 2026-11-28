@@ -19,7 +19,7 @@
 using Microsoft::WRL::ComPtr;
 namespace {
 constexpr std::array<char, 4> kMagic{'V', '6', 'N', 'R'};
-constexpr std::uint32_t kVersion = 2;
+constexpr std::uint32_t kVersion = 3;
 constexpr std::uint32_t kMaxDimension = 4096;
 constexpr std::uint64_t kMaxFrameBytes = 4096ull * 2160ull * 4ull;
 constexpr std::uint32_t kMaxPacketBytes = 256u * 1024u * 1024u;
@@ -184,14 +184,23 @@ std::vector<std::uint8_t> render(const std::vector<std::uint8_t>& packet, IWICIm
   const std::uint32_t bgra = reader.read<std::uint32_t>();
   const auto assetCount = reader.read<std::uint32_t>(), commandCount = reader.read<std::uint32_t>();
   if (!width || !height || !logicalHeight || width > kMaxDimension || height > kMaxDimension || logicalHeight > 2160 || static_cast<std::uint64_t>(width) * height * 4 > kMaxFrameBytes || assetCount > kMaxAssetsPerFrame || commandCount > kMaxCommandsPerFrame) throw std::runtime_error("Limites de quadro do renderizador nativo excedidos.");
+  std::unordered_map<std::string, Image> frameAssets;
+  std::uint64_t frameAssetBytes = 0;
   for (std::uint32_t index = 0; index < assetCount; ++index) {
     const auto key = reader.string16();
+    const auto lifetime = reader.read<std::uint8_t>();
     auto bytes = reader.bytes32();
-    if (key.empty()) throw std::runtime_error("Asset sem identidade no protocolo nativo.");
-    if (!assets.contains(key)) {
+    if (key.empty() || lifetime > 1) throw std::runtime_error("Asset sem identidade ou com ciclo de vida inválido no protocolo nativo.");
+    if (lifetime == 1) {
       auto image = decodeImage(factory, bytes);
       const auto imageBytes = image.pixels.size();
-      if (cachedBytes + imageBytes > kMaxCachedAssetBytes) throw std::runtime_error("O conjunto de assets excedeu 512 MiB no processo de renderização nativa.");
+      if (frameAssetBytes + imageBytes > kMaxCachedAssetBytes) throw std::runtime_error("Os assets temporários do quadro excederam 512 MiB no renderizador nativo.");
+      frameAssetBytes += imageBytes;
+      frameAssets.insert_or_assign(key, std::move(image));
+    } else if (!assets.contains(key)) {
+      auto image = decodeImage(factory, bytes);
+      const auto imageBytes = image.pixels.size();
+      if (cachedBytes + imageBytes > kMaxCachedAssetBytes) throw std::runtime_error("O conjunto de assets permanentes excedeu 512 MiB no processo de renderização nativa.");
       cachedBytes += imageBytes;
       assets.emplace(key, std::move(image));
     }
@@ -220,9 +229,14 @@ std::vector<std::uint8_t> render(const std::vector<std::uint8_t>& packet, IWICIm
     command.sourceX = reader.read<float>(); command.sourceY = reader.read<float>(); command.sourceWidth = reader.read<float>(); command.sourceHeight = reader.read<float>();
     command.cutoutX = reader.read<float>(); command.cutoutY = reader.read<float>(); command.cutoutWidth = reader.read<float>(); command.cutoutHeight = reader.read<float>();
     command.assetId = reader.string16();
-    const auto found = assets.find(command.assetId);
-    if (found == assets.end()) throw std::runtime_error("O comando referencia um asset ainda não enviado ao processo nativo.");
-    drawImage(output, width, height, logicalHeight, found->second, command);
+    const auto frameAsset = frameAssets.find(command.assetId);
+    if (frameAsset != frameAssets.end()) {
+      drawImage(output, width, height, logicalHeight, frameAsset->second, command);
+      continue;
+    }
+    const auto processAsset = assets.find(command.assetId);
+    if (processAsset == assets.end()) throw std::runtime_error("O comando referencia um asset ainda não enviado ao processo nativo.");
+    drawImage(output, width, height, logicalHeight, processAsset->second, command);
   }
   if (!reader.finished()) throw std::runtime_error("O pacote do renderizador contém dados excedentes.");
   return output;

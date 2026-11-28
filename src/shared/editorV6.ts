@@ -1,8 +1,12 @@
+import type { EditorV6LegacyCard, EditorV6UnifiedCard } from './editorV6Cards'
 import type { CustomizerFaceAppearance } from './customizer'
 import type { FaceExpressionEffects } from './fabricator'
 import { isSceneFaceExpressionEffects, isSceneFaceTransforms, type SceneExpressionBase, type SceneFaceMode, type SceneFaceTransform, type SceneFaceTransformCategory, type SceneFaceTransforms } from './sceneFaceValidation'
 import type { EditorV6ExportAudio, EditorV6ExportOptions, EditorV6ExportStatus } from './editorV6Export'
 import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
+import type { EditorV6VideoPresentation } from './editorV6VideoPresentation'
+import type { EditorV6IntroClip } from './editorV6Intro'
 import type { EditorV6FacePatch, EditorV6MotionAtlas, EditorV6MotionBakeRequest, EditorV6MotionBakeResult, EditorV6MotionSprite } from './editorV6Motion'
 export { resolveTalkMouthCatalogId as resolveEditorV6TalkMouthId } from './faceMouthSelection'
 
@@ -137,6 +141,7 @@ export type EditorV6Element = {
   /** Width of the untrimmed character artwork relative to the EditorV6 canvas. */
   characterCanvasWidth?: number
   text: string
+  englishText?: string
   x: number
   y: number
   width: number
@@ -145,10 +150,24 @@ export type EditorV6Element = {
   zIndex: number
 }
 
-/** Runtime-only speaker information resolved from a linked actor. */
-export type EditorV6SceneElement = EditorV6Element & { speakerName?: string; speakerColor?: string; balloonScalePercent?: number; balloonOffsetY?: number }
+/** Runtime-only speaker information and balloon-to-actor direction resolved from a linked actor. */
+export type EditorV6SceneElement = EditorV6Element & {
+  speakerName?: string
+  speakerColor?: string
+  /** Linked actor's face direction in the balloon's local 1920×1080 scene coordinates. */
+  speakerAnchorX?: number
+  speakerAnchorY?: number
+  balloonLayout?: { x: number; y: number; width: number; height: number }
+  balloonScalePercent?: number
+  balloonOffsetY?: number
+  /** Runtime-only font sizes used to keep the compact balloon layout consistent across preview and export. */
+  balloonAutoFitEnabled?: boolean
+  balloonAutoFitFontSize?: number
+  balloonAutoFitEnglishFontSize?: number
+  balloonAutoFitPortugueseFontSize?: number
+}
 
-export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'object' | 'video' | 'audio'
+export type EditorV6TrackKind = 'character' | 'speech' | 'thought' | 'object' | 'video' | 'card' | 'audio' | 'intro'
 export type EditorV6BackgroundState = {
   backgroundColor: string
   backgroundAssetId: string | null
@@ -159,6 +178,7 @@ export type EditorV6BackgroundState = {
   backgroundRotation: number
 }
 export type EditorV6VideoLayout = { x: number; y: number; width: number; height: number; rotation: number }
+export type EditorV6VideoCardState = EditorV6LegacyCard | EditorV6UnifiedCard
 export const EDITOR_V6_DEFAULT_VIDEO_LAYOUT: EditorV6VideoLayout = { x: 0, y: 0, width: 40, height: 40, rotation: 0 }
 export function editorV6DefaultVideoLayout(width?: number, height?: number): EditorV6VideoLayout {
   const aspect = width && height && width > 0 && height > 0 ? width / height : 16 / 9
@@ -187,6 +207,11 @@ export type EditorV6TimelineBlock = {
   mediaId?: string
   /** Position and size of the video layer on the 1920×1080 scene. */
   mediaLayout?: EditorV6VideoLayout
+  videoPresentation?: EditorV6VideoPresentation
+  videoCard?: EditorV6VideoCardState
+  /** Root video block ID shared by right-hand clips created when splitting a video. */
+  videoCardOriginBlockId?: string
+  intro?: EditorV6IntroClip
   mediaInFrame?: number
   audioEnabled?: boolean
   gain?: number
@@ -205,7 +230,7 @@ export type EditorV6TimelineTrack = {
   blocks: EditorV6TimelineBlock[]
 }
 export type EditorV6Timeline = {
-  fps: 30
+  fps: typeof EDITOR_V6_TIMELINE_FPS
   durationFrames: number
   tracks: EditorV6TimelineTrack[]
   knownElementIds?: string[]
@@ -223,20 +248,28 @@ export function editorV6TrackKindForElement(element: EditorV6Element): EditorV6T
 }
 
 export function editorV6TrackLabel(kind: EditorV6TrackKind, index = 1): string {
-  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', audio: 'Áudio' }
+  const labels: Record<EditorV6TrackKind, string> = { character: 'Personagem', speech: 'Fala', thought: 'Pensamento', object: 'Objetos', video: 'Vídeo', card: 'Cards', audio: 'Áudio', intro: 'Intro' }
   return index === 1 ? labels[kind] : `${labels[kind]} ${index}`
 }
 
-const TIMELINE_TRACK_GROUP_ORDER: Record<EditorV6TrackKind, number> = { video: 0, speech: 0, thought: 0, character: 1, object: 2, audio: 3 }
+const TIMELINE_TRACK_GROUP_ORDER: Record<EditorV6TrackKind, number> = { intro: -1, video: 0, card: 0, speech: 0, thought: 0, character: 1, object: 2, audio: 3 }
 export function orderEditorV6TimelineTracks(tracks: readonly EditorV6TimelineTrack[]): EditorV6TimelineTrack[] {
-  return tracks.map((track, index) => ({ track, index }))
+  const ordered = tracks.map((track, index) => ({ track, index }))
     .sort((left, right) => TIMELINE_TRACK_GROUP_ORDER[left.track.kind] - TIMELINE_TRACK_GROUP_ORDER[right.track.kind] || left.index - right.index)
     .map(({ track }) => track)
+  const cardIndex = ordered.findIndex(track => track.kind === 'card')
+  const videoIndex = ordered.findIndex(track => track.kind === 'video')
+  if (cardIndex >= 0 && videoIndex >= 0 && cardIndex !== videoIndex + 1) {
+    const targetIndex = videoIndex - (cardIndex < videoIndex ? 1 : 0)
+    const [cards] = ordered.splice(cardIndex, 1)
+    ordered.splice(targetIndex + 1, 0, cards)
+  }
+  return ordered
 }
 
 /** Creates shared lanes and character lanes in the default visual stacking order. */
 export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []): EditorV6Timeline {
-  const kinds: EditorV6TrackKind[] = ['video', 'speech', 'thought']
+  const kinds: EditorV6TrackKind[] = ['video', 'card', 'speech', 'thought']
   const tracks: EditorV6TimelineTrack[] = kinds.map((kind) => ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
@@ -259,7 +292,7 @@ export function createEditorV6Timeline(elements: readonly EditorV6Element[] = []
   for (const kind of ['object', 'audio'] as const) if (!tracks.some((track) => track.kind === kind)) tracks.push({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   })
-  return { fps: 30, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks: orderEditorV6TimelineTracks(tracks), knownElementIds: elements.map((element) => element.id) }
+  return { fps: EDITOR_V6_TIMELINE_FPS, durationFrames: EDITOR_V6_DEFAULT_DURATION_FRAMES, tracks: orderEditorV6TimelineTracks(tracks), knownElementIds: elements.map((element) => element.id) }
 }
 
 export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, elements: readonly EditorV6Element[]): EditorV6Timeline {
@@ -268,10 +301,10 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   const reusableShared = new Map<EditorV6TrackKind, EditorV6TimelineTrack>()
   for (const track of timeline.tracks) {
     const previousKind = String(track.kind)
-    const kind = previousKind === 'speech' || previousKind === 'thought' || previousKind === 'object' || previousKind === 'audio' ? previousKind : previousKind === 'video' || previousKind === 'visual' ? 'video' : undefined
+    const kind = previousKind === 'speech' || previousKind === 'thought' || previousKind === 'object' || previousKind === 'audio' || previousKind === 'card' ? previousKind : previousKind === 'video' || previousKind === 'visual' ? 'video' : undefined
     if (kind && !reusableShared.has(kind)) reusableShared.set(kind, { ...track, kind, characterId: undefined, blocks: [] })
   }
-  const tracks: EditorV6TimelineTrack[] = (['video', 'speech', 'thought', 'object', 'audio'] as const).map((kind) => reusableShared.get(kind) ?? ({
+  const tracks: EditorV6TimelineTrack[] = (['video', 'card', 'speech', 'thought', 'object', 'audio'] as const).map((kind) => reusableShared.get(kind) ?? ({
     id: crypto.randomUUID(), kind, name: editorV6TrackLabel(kind), muted: false, locked: false, blocks: []
   }))
   if (!timeline.tracks.some((track) => track.kind === 'object')) {
@@ -302,10 +335,11 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
   const placedBlocks = new Set<string>()
   const knownElementIds = new Set(timeline.knownElementIds ?? timeline.tracks.flatMap((track) => track.blocks.flatMap((block) => block.elementId ? [block.elementId] : [])))
   for (const oldTrack of timeline.tracks) for (const block of oldTrack.blocks) {
+    if (oldTrack.kind === 'intro') continue
     const element = block.elementId ? elementsById.get(block.elementId) : undefined
     if (block.elementId && !element) continue
     const oldKind = String(oldTrack.kind)
-    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' || oldKind === 'object' || oldKind === 'audio' ? oldKind : 'video'))!
+    const destination = element ? destinationFor(element) : tracks.find((track) => track.kind === (oldKind === 'speech' || oldKind === 'thought' || oldKind === 'object' || oldKind === 'audio' || oldKind === 'card' ? oldKind : 'video'))!
     destination.blocks.push(element ? { ...block, state: block.state ?? { ...element }, label: block.state ? block.label : element.text.trim() || editorV6TrackLabel(editorV6TrackKindForElement(element)) } : block)
     if (block.elementId) placedBlocks.add(block.elementId)
   }
@@ -320,7 +354,7 @@ export function syncEditorV6TimelineElements(timeline: EditorV6Timeline, element
       startFrame: 0, durationFrames: kind === 'character' ? timeline.durationFrames : EDITOR_V6_DEFAULT_BLOCK_FRAMES
     })
   }
-  tracks.push(...characterTracks.values())
+  tracks.push(...characterTracks.values(), ...timeline.tracks.filter((track) => track.kind === 'intro'))
   const endFrame = tracks.flatMap((track) => track.blocks).reduce((end, block) => Math.max(end, block.startFrame + block.durationFrames), timeline.durationFrames)
   return { ...timeline, durationFrames: endFrame, tracks: orderEditorV6TimelineTracks(tracks), knownElementIds: elements.map((element) => element.id) }
 }
@@ -364,7 +398,10 @@ export type EditorV6Document = {
 }
 
 /** Metadados leves usados para montar a biblioteca sem carregar os PNGs do projeto. */
-export type EditorV6ProjectSummary = Pick<EditorV6Document, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt' | 'thumbnailDataUrl'>
+export type EditorV6ProjectSummary = Pick<EditorV6Document, 'id' | 'title' | 'color' | 'createdAt' | 'updatedAt' | 'thumbnailDataUrl'> & {
+  /** Runtime-only diagnosis. Unavailable projects remain visible but cannot be mutated from the browser. */
+  unavailableReason?: string
+}
 
 export function editorV6ProjectSummary(document: EditorV6Document): EditorV6ProjectSummary {
   const { id, title, color, createdAt, updatedAt, thumbnailDataUrl } = document
@@ -379,6 +416,7 @@ export type EditorV6DesktopApi = {
   saveEditorV6Project: (editorV6: EditorV6Document) => Promise<void>
   deleteEditorV6Project: (id: string) => Promise<void>
   getEditorV6Folder: () => Promise<string>
+  openEditorV6Folder: () => Promise<void>
   importEditorV6Image: (category: EditorV6Asset['category']) => Promise<EditorV6Asset | null>
   linkEditorV6LibraryBackground: (projectId: string, backgroundId: string) => Promise<EditorV6Asset>
   linkEditorV6LibraryAsset: (projectId: string, category: 'object', assetId: string) => Promise<EditorV6Asset>
@@ -398,7 +436,8 @@ export type EditorV6DesktopApi = {
   importEditorV6Media: (projectId: string, kind: EditorV6MediaAsset['kind']) => Promise<EditorV6MediaAsset | null>
   linkEditorV6LibraryVideo: (projectId: string, libraryVideoId: string) => Promise<EditorV6MediaAsset>
   cloneEditorV6Media: (sourceId: string, targetId: string, media: EditorV6MediaAsset[]) => Promise<void>
-  bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult>
+  /** Returns null when the caller cancels this preview request. */
+  bakeEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<EditorV6MotionBakeResult | null>
   prepareEditorV6Motion: (request: EditorV6MotionBakeRequest) => Promise<void>
   cancelEditorV6Motion: (requestId: string) => Promise<void>
 }

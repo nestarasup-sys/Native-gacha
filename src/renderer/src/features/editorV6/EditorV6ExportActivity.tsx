@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState, type CSSProperties } from 'react'
 import type { EditorV6ExportStatus } from '../../../../shared/editorV6Export'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 import { measureEditorV6ExportActivity, recordEditorV6ExportActivitySample, type EditorV6ExportActivitySample } from './editorV6ExportActivityMetrics'
 
 const isFinished = (job: EditorV6ExportStatus | null) => Boolean(job && ['completed', 'cancelled', 'failed'].includes(job.state))
@@ -21,8 +22,8 @@ function formatDuration(milliseconds: number | null): string {
 
 function ExportSpeedChart({ samples, active }: { samples: ReturnType<typeof measureEditorV6ExportActivity>['speedSamples']; active: boolean }) {
   const width = 352, chartTop = 12, chartBottom = 94, horizontalPadding = 9
-  const maxSpeed = Math.max(30, ...samples.map((sample) => sample.framesPerSecond))
-  const targetY = chartBottom - Math.min(1, 30 / maxSpeed) * (chartBottom - chartTop)
+  const maxSpeed = Math.max(EDITOR_V6_TIMELINE_FPS, ...samples.map((sample) => sample.framesPerSecond))
+  const targetY = chartBottom - Math.min(1, EDITOR_V6_TIMELINE_FPS / maxSpeed) * (chartBottom - chartTop)
   const slotWidth = samples.length ? (width - horizontalPadding * 2) / samples.length : 0
   return <div className={`v6-export-chart${samples.length ? ' has-data' : ' is-empty'}`} role="img" aria-label={samples.length ? 'Gráfico da velocidade real de renderização, em quadros por segundo' : active ? 'Aguardando amostras reais de velocidade da renderização' : 'Ainda não há amostras de renderização'}>
     {samples.length ? <svg viewBox={`0 0 ${width} 108`} aria-hidden="true">
@@ -40,7 +41,7 @@ function ExportSpeedChart({ samples, active }: { samples: ReturnType<typeof meas
     </svg> : <div className="v6-export-chart-waiting" aria-label="Coletando amostras reais de renderização">
       <span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span />
     </div>}
-    <div className="v6-export-chart-legend"><span><i /> {samples.length ? 'Quadros renderizados por segundo' : active ? 'Aguardando os primeiros quadros…' : 'Sem amostras de renderização'}</span><small>Referência: 30 FPS</small></div>
+    <div className="v6-export-chart-legend"><span><i /> {samples.length ? 'Quadros renderizados por segundo' : active ? 'Aguardando os primeiros quadros…' : 'Sem amostras de renderização'}</span><small>Referência: {EDITOR_V6_TIMELINE_FPS} FPS</small></div>
   </div>
 }
 

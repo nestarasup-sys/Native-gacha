@@ -8,7 +8,8 @@ import {
   getEditorV6TimelineBlockPixels,
   getEditorV6TimelineBlockSeekFrame,
   getEditorV6TimelineMotionPixels,
-  getEditorV6TimelineVisibleBlocks
+  getEditorV6TimelineVisibleBlocks,
+  resolveEditorV6TimelineBlockHit
 } from '../../src/renderer/src/features/editorV6/editorV6TimelineRowsModel'
 
 function track(id: string, kind: EditorV6TimelineTrack['kind'], blocks: EditorV6TimelineBlock[] = [], locked = false): EditorV6TimelineTrack {
@@ -68,6 +69,21 @@ describe('modelo de linhas da timeline do Editor V6', () => {
     expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 0, 100, 60)).toBe(30)
     expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 1000, 100, 60)).toBe(90)
     expect(getEditorV6TimelineBlockSeekFrame(clip, 2, 160, 100, 0)).toBeUndefined()
+  })
+
+  it('permite selecionar em sequência todos os blocos cujas larguras mínimas se sobrepõem', () => {
+    const previous = block('previous', 0, 10)
+    const short = block('one-frame', 10, 1)
+    const next = block('next', 11, 90)
+    const blocks = [previous, short, next]
+    // At 6 px/s, adjacent one-frame clips each render at the 3 px minimum.
+    const first = resolveEditorV6TimelineBlockHit({ blocks, targetBlockId: 'one-frame', x: 2.5, pixelsPerSecond: 6 })
+    expect(first?.block.id).toBe('one-frame')
+    const second = resolveEditorV6TimelineBlockHit({ blocks, targetBlockId: 'one-frame', x: 2.5, pixelsPerSecond: 6, previous: first?.cycle })
+    expect(second?.block.id).toBe('next')
+    const third = resolveEditorV6TimelineBlockHit({ blocks, targetBlockId: 'one-frame', x: 2.5, pixelsPerSecond: 6, previous: second?.cycle })
+    expect(third?.block.id).toBe('previous')
+    expect(resolveEditorV6TimelineBlockHit({ blocks, targetBlockId: 'next', x: 20, pixelsPerSecond: 6 })?.block.id).toBe('next')
   })
 
   it('converte o intervalo de transição em pixels pela escala atual', () => {

@@ -55,8 +55,7 @@ function preparedPose(): PreparedEditorV6PoseChange {
   }
 }
 
-function setup(overrides: Partial<Parameters<typeof createEditorV6CharacterAppearanceCommands>[0]> = {}) {
-  const initialProject = project()
+function setup(overrides: Partial<Parameters<typeof createEditorV6CharacterAppearanceCommands>[0]> = {}, initialProject = project()) {
   let currentProject = initialProject
   const changeScene = vi.fn((update: (project: EditorV6Document) => EditorV6Document) => { currentProject = update(currentProject) })
   const patchDocument = vi.fn((update: (project: EditorV6Document) => EditorV6Document) => { currentProject = update(currentProject) })
@@ -70,7 +69,6 @@ function setup(overrides: Partial<Parameters<typeof createEditorV6CharacterAppea
     facePreview: {
       withRenderer: async <T,>(_source, _poseRevision, _modelRevision, operation: (renderer: PreparedEditorV6FaceRenderer) => Promise<T>) => operation(renderer)
     },
-    sceneRef: { current: { clientWidth: 1600, clientHeight: 900 } as HTMLDivElement },
     poseSourceSnapshot: {
       projectId: initialProject.id,
       revisions: { '1:5': 'pose-rev-5' },
@@ -113,6 +111,21 @@ describe('comandos de aparência de personagem no Editor V6', () => {
     expect(context.dependencies.setFaceBusy).toHaveBeenNthCalledWith(1, true)
     expect(context.dependencies.setFaceBusy).toHaveBeenLastCalledWith(false)
     expect(context.dependencies.setError).toHaveBeenLastCalledWith(null)
+  })
+
+  it('preserva toda geometria autoral ao publicar outra expressão em renderer atual', async () => {
+    const actor = element({ faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, x: -14.25, y: 27.5,
+      width: 42.75, height: 103.125, characterCanvasWidth: 42.75, characterScale: 137,
+      characterWidthScale: 91, characterHeightScale: 108, rotation: 12 })
+    const context = setup({ activeProject: project(actor), selectedElement: actor,
+      prepareFaceAppearance: async () => preparedFace() }, project(actor))
+    const before = { x: actor.x, y: actor.y, width: actor.width, height: actor.height,
+      characterCanvasWidth: actor.characterCanvasWidth, characterScale: actor.characterScale,
+      characterWidthScale: actor.characterWidthScale, characterHeightScale: actor.characterHeightScale, rotation: actor.rotation }
+
+    await createEditorV6CharacterAppearanceCommands(context.dependencies).applyFaceAppearance(nextAppearance)
+
+    expect(context.getProject().elements[0]).toMatchObject(before)
   })
 
   it('usa patch sem histórico e preserva overrides de expressão explicitamente undefined', async () => {

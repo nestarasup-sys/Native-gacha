@@ -95,6 +95,14 @@ test('Studio mantém prints e materialização no inventário até a operação 
   await openPrints
   assert.equal(opened.length, 1)
   assert.deepEqual(openHarness.service.getPendingWrites(), [])
+
+  const projectFolderOpens = []
+  const folderHarness = createEditorV6FileHarness({ openPath: async (path) => { projectFolderOpens.push(path); return '' } })
+  await folderHarness.handlers.get(editorV6IpcChannels.openEditorV6Folder)({ trusted: true })
+  assert.deepEqual(projectFolderOpens, ['app-data/editor-v6'])
+  await assert.rejects(folderHarness.handlers.get(editorV6IpcChannels.openEditorV6Folder)({ trusted: false }), /Bloqueado/)
+  const failingFolderHarness = createEditorV6FileHarness({ openPath: async () => 'Acesso negado' })
+  await assert.rejects(failingFolderHarness.handlers.get(editorV6IpcChannels.openEditorV6Folder)({ trusted: true }), /Acesso negado/)
 })
 
 test('Editor V6 mantém prints e criação de pasta no inventário até a operação terminar', async () => {

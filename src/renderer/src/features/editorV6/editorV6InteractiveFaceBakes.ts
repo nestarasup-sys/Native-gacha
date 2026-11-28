@@ -29,9 +29,6 @@ export function createEditorV6InteractiveFaceBakes() {
     JSON.stringify([name, appearance, transforms, effects, mode])
 
   return {
-    previousCrop(renderer: PreparedEditorV6FaceRenderer, name: string, appearance: CustomizerFaceAppearance | undefined, transforms: EditorV6FaceTransforms | undefined, effects: FaceExpressionEffects | undefined, mode: EditorV6FaceRenderMode) {
-      return byRenderer.get(renderer)?.get(key(name, appearance, transforms, effects, mode))?.prepared.baked.crop
-    },
     async bake(renderer: PreparedEditorV6FaceRenderer, name: string, appearance: CustomizerFaceAppearance | undefined, transforms: EditorV6FaceTransforms | undefined, effects: FaceExpressionEffects | undefined, mode: EditorV6FaceRenderMode, bakeAssets: typeof bakeFaceModeAssets): Promise<Prepared> {
       let entries = byRenderer.get(renderer)
       if (!entries) { entries = new Map(); byRenderer.set(renderer, entries) }

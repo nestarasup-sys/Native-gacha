@@ -146,8 +146,10 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   const editorDeletion = await readFile('src/renderer/src/features/editorV6/editorV6ProjectDeletion.ts', 'utf8')
   const editorPrintCommands = await readFile('src/renderer/src/features/editorV6/editorV6PrintCommands.ts', 'utf8')
   const editorMedia = await readFile('src/renderer/src/features/editorV6/editorV6MediaCommands.ts', 'utf8')
+  const editorTimelineMedia = await readFile('src/renderer/src/features/editorV6/editorV6TimelineMediaCommands.ts', 'utf8')
   const editorPersistence = await readFile('src/renderer/src/features/editorV6/useEditorV6DocumentPersistence.ts', 'utf8')
   const exportPanel = await readFile('src/renderer/src/features/editorV6/EditorV6ExportPanel.tsx', 'utf8')
+  const exportController = await readFile('src/renderer/src/features/editorV6/useEditorV6ExportPanelController.ts', 'utf8')
   assert.match(studio, /useStudioDocumentPersistence\(/)
   assert.match(studio, /useStudioAutosave\(/)
   assert.match(studioPersistence, /registerPendingWriteFlusher\(flushWrites\)/)
@@ -171,8 +173,9 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editorPersistence, /await pendingOperations\.flush\(\)[\s\S]*?await flushDocumentWrites\(\)/)
   assert.match(editorPersistence, /const inFlightSave = savePromiseRef\.current/)
   assert.match(editor, /createEditorV6MediaCommands\([\s\S]*?trackOperation: trackEditorV6Operation/)
-  for (const operation of ['importImage', 'importTimelineMedia', 'linkVideoLibraryItem']) {
-    assert.match(editorMedia, new RegExp(`const ${operation} = .*dependencies\\.trackOperation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
+  assert.match(editorMedia, /const importImage = .*dependencies\.trackOperation\(async \(\) =>/, 'importImage deve permanecer pendente até salvar o documento relacionado')
+  for (const operation of ['importTimelineMedia', 'linkVideoLibraryItem', 'linkAudioLibraryItem']) {
+    assert.match(editorTimelineMedia, new RegExp(`const ${operation} = .*dependencies\\.trackOperation\\(async \\(\\) =>`), `${operation} deve permanecer pendente até salvar o documento relacionado`)
   }
   assert.match(editor, /useEditorV6ProjectCreation\(/)
   assert.match(editorCreationHook, /createEditorV6ProjectCreationCommands\(dependencies\)/)
@@ -184,9 +187,10 @@ test('Studio and Editor V6 flush debounced documents and wait for renderer IPC w
   assert.match(editor, /createEditorV6PrintCommands\(/)
   assert.match(editorPrintCommands, /dependencies\.flushDocumentWrites\(\)[\s\S]*?dependencies\.captureFrame\([\s\S]*?dependencies\.savePrint\(project\.id, image\)/)
   assert.match(editorPrintCommands, /const openPrints = \(projectId: string \| null\) => dependencies\.trackOperation\(async \(\) =>/)
-  assert.match(exportPanel, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.linkEditorV6LibraryExportAudio/)
-  assert.match(exportPanel, /trackOperation\(\(\) => runEditorV6ExportCommand\(/)
-  assert.match(exportPanel, /trackOperation\(\(\) => cancelEditorV6ExportCommand\(/)
+  assert.match(exportController, /trackOperation\(async \(\) => \{ const clip = await window\.desktop\.editorV6\.linkEditorV6LibraryExportAudio/)
+  assert.match(exportController, /trackOperation\(\(\) => runEditorV6ExportCommand\(/)
+  assert.match(exportController, /trackOperation\(\(\) => cancelEditorV6ExportCommand\(/)
+  assert.match(exportPanel, /useEditorV6ExportPanelController\(/)
 })
 
 test('Editor V6 renderer flush waits for hair preparation and the real export IPC result', async () => {

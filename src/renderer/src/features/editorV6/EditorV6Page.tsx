@@ -1,11 +1,12 @@
 import './editorV6Palette.css'
 import { useEditorV6Store } from './editorV6Store'
 import { createEditorV6Timeline, videoCharacterTrackColor } from '../../../../shared/editorV6'
+import type { EditorV6Document } from '../../../../shared/editorV6'
 import { EditorV6Timeline } from './EditorV6Timeline'
 import { EditorV6ExportPanel } from './EditorV6ExportPanel'
 import { useMotionPreparation } from './motion/useMotionPreparation'
 import { EditorV6ProjectBrowser } from './EditorV6ProjectBrowser'
-import { EditorV6ToolRail } from './EditorV6ToolRail'
+import { EditorV6ToolRail, type EditorV6ToolRailProps } from './EditorV6ToolRail'
 import { EditorV6Inspector } from './EditorV6Inspector'
 import { EditorV6StageSurface } from './EditorV6StageSurface'
 import { EditorV6PlaybackAudio } from './EditorV6PlaybackAudio'
@@ -13,6 +14,7 @@ import { getEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6PresetPanel } from './EditorV6PresetPanel'
 import { SceneCastManagerModal } from './SceneCastManagerModal'
 import { EditorV6PropertyPanel } from './EditorV6PropertyPanel'
+import { replicateEditorV6IntroPortrait, updateEditorV6IntroPortrait, updateEditorV6IntroText } from '../../../../shared/editorV6Intro'
 import { useEditorV6Playback } from './useEditorV6Playback'
 import { duplicateEditorV6ProjectDocument } from './editorV6ProjectDuplication'
 import { useEditorV6ProjectCreation } from './useEditorV6ProjectCreation'
@@ -35,12 +37,14 @@ import { useEditorV6InspectorState } from './useEditorV6InspectorState'
 import { useEditorV6FaceCatalog } from './useEditorV6FaceCatalog'
 import { useEditorV6PoseCatalog } from './useEditorV6PoseCatalog'
 import { useEditorV6CharacterAppearance } from './useEditorV6CharacterAppearance'
+import { useEditorV6IntroFace } from './useEditorV6IntroFace'
+import type { EditorV6Element } from '../../../../shared/editorV6'
 import { createSceneFaceActions } from '../../characters/sceneFaceActions'
 import { useFaceExpressionCatalog } from '../../characters/useFaceExpressionCatalog'
 import { createDefaultSceneFaceTransform } from '../../characters/sceneFaceSelection'
 import { useEditorV6StageInteraction, type EditorV6StageDrag } from './useEditorV6StageInteraction'
 import { createEditorV6SceneViewModel } from './editorV6SceneViewModel'
-import { bakeFaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
+import { bakeEditorV6FaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION } from './faceModeAssets'
 import { lazy, Profiler, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { editorV6ExpressionCollection } from './expressionTransforms'
 import { NumericRangeField } from '../../ui/components/NumericRangeField'
@@ -55,7 +59,13 @@ import { useEditorV6ProjectLibrary } from './useEditorV6ProjectLibrary'
 import { useEditorV6ProjectionAutosave } from './useEditorV6ProjectionAutosave'
 import { fitEditorV6CharacterToStage } from '../../../../shared/editorV6CharacterGeometry'
 import { editorV6CharacterStageReference } from './editorV6CharacterStageReference'
-import { editorV6ProjectSummary, type EditorV6FaceTransform, type EditorV6FaceTransforms, type EditorV6LibraryMediaItem, type EditorV6ProjectSummary } from '../../../../shared/editorV6'
+import {
+  editorV6ProjectSummary,
+  type EditorV6FaceTransform,
+  type EditorV6FaceTransforms,
+  type EditorV6LibraryMediaItem,
+  type EditorV6ProjectSummary
+} from '../../../../shared/editorV6'
 import { createEditorV6AddObjectCommand } from './editorV6AddObjectCommand'
 import { useEditorV6KeyboardShortcuts } from './editorV6KeyboardShortcuts'
 import { resetEditorV6ProjectSession } from './editorV6ProjectSession'
@@ -93,12 +103,29 @@ export function EditorV6Page() {
   const [castSelection, setCastSelection] = useState<string[]>([])
   const [savingCast, setSavingCast] = useState(false)
   const {
-    inspectorTab, setInspectorTab, inspectorCustomView, setInspectorCustomView,
-    characterInspectorViewRef, editorV6PresetCategory, setEditorV6PresetCategory, editorV6ExpressionCollections,
-    setEditorV6ExpressionCollections, editorV6ExpressionPresets, setEditorV6ExpressionPresets, editorV6ExpressionCollectionMenuOpen, setEditorV6ExpressionCollectionMenuOpen, editorV6ExpressionLoading,
-    setEditorV6ExpressionLoading, editorV6ExpressionBusy, setEditorV6ExpressionBusy,
-    inspectorOpen, setInspectorOpen, editorV6FaceCategory,
-    setEditorV6FaceCategory, editorV6FaceBusy, setEditorV6FaceBusy
+    inspectorTab,
+    setInspectorTab,
+    inspectorCustomView,
+    setInspectorCustomView,
+    characterInspectorViewRef,
+    editorV6PresetCategory,
+    setEditorV6PresetCategory,
+    editorV6ExpressionCollections,
+    setEditorV6ExpressionCollections,
+    editorV6ExpressionPresets,
+    setEditorV6ExpressionPresets,
+    editorV6ExpressionCollectionMenuOpen,
+    setEditorV6ExpressionCollectionMenuOpen,
+    editorV6ExpressionLoading,
+    setEditorV6ExpressionLoading,
+    editorV6ExpressionBusy,
+    setEditorV6ExpressionBusy,
+    inspectorOpen,
+    setInspectorOpen,
+    editorV6FaceCategory,
+    setEditorV6FaceCategory,
+    editorV6FaceBusy,
+    setEditorV6FaceBusy
   } = useEditorV6InspectorState()
   const [studioFolder, setEditorV6Folder] = useState('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -114,9 +141,8 @@ export function EditorV6Page() {
     exportInProgressRef.current = active
     setExportInProgress(active)
   }, [])
-  const {
-    availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot
-  } = useEditorV6CharacterSources(activeEditorV6Id, setError, exportInProgress, exportInProgressRef)
+  const { availableCharacters, availableCharactersReady, availableCharacterById, activePoseSourceSnapshot } =
+    useEditorV6CharacterSources(activeEditorV6Id, setError, exportInProgress, exportInProgressRef)
   const [activeTool, setActiveTool] = useState<Tool>(null)
   const [sharedBackgrounds, setSharedBackgrounds] = useState<VideoBackgroundLibraryItem[]>([])
   const [sharedObjects, setSharedObjects] = useState<EditorV6LibraryMediaItem[]>([])
@@ -126,8 +152,14 @@ export function EditorV6Page() {
   }
   const refreshObjectLibrary = async () => setSharedObjects(await window.desktop.editorV6MediaLibrary.list('object'))
   useEffect(() => {
-    if (activeTool === 'background') void refreshBackgroundLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os fundos compartilhados.'))
-    if (activeTool === 'objects') void refreshObjectLibrary().catch((reason) => setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de objetos.'))
+    if (activeTool === 'background')
+      void refreshBackgroundLibrary().catch((reason) =>
+        setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os fundos compartilhados.')
+      )
+    if (activeTool === 'objects')
+      void refreshObjectLibrary().catch((reason) =>
+        setError(reason instanceof Error ? reason.message : 'Não foi possível carregar a biblioteca de objetos.')
+      )
   }, [activeTool, activeEditorV6Id])
   const [fullView, setFullView] = useState(false)
   const [exportOpen, setExportOpen] = useState(false)
@@ -152,7 +184,8 @@ export function EditorV6Page() {
     () => editorV6HasDuplicateAssetIds(activeEditorV6?.assets ?? []),
     [activeEditorV6?.assets]
   )
-  const { playheadFrame, isPlaying, publishPlayheadFrame, pausePlayback, resetPlayback, startPlayback } = useEditorV6Playback(activeEditorV6Id, timelineDurationFrames)
+  const { playheadFrame, isPlaying, publishPlayheadFrame, pausePlayback, resetPlayback, startPlayback } =
+    useEditorV6Playback(activeEditorV6Id, timelineDurationFrames)
   const sceneCharacterProjection = useMemo(
     () => projectSceneCharacters(activeEditorV6?.elements ?? []),
     [activeEditorV6?.elements]
@@ -188,12 +221,16 @@ export function EditorV6Page() {
     writeDocument: writeEditorV6Document,
     createTimeline: createEditorV6Timeline
   })
-  const { faceAssetRefreshRequired } = useMemo(() => resolveEditorV6CharacterSourceRefresh({
-    project: activeEditorV6,
-    characterById: availableCharacterById,
-    poseSourceSnapshot: activePoseSourceSnapshot,
-    faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION
-  }), [activeEditorV6, availableCharacterById, activePoseSourceSnapshot])
+  const { faceAssetRefreshRequired } = useMemo(
+    () =>
+      resolveEditorV6CharacterSourceRefresh({
+        project: activeEditorV6,
+        characterById: availableCharacterById,
+        poseSourceSnapshot: activePoseSourceSnapshot,
+        faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION
+      }),
+    [activeEditorV6, availableCharacterById, activePoseSourceSnapshot]
+  )
   const characterSnapshotsRefreshing = useEditorV6CharacterSnapshotRefresh({
     project: activeEditorV6,
     availableCharacters,
@@ -206,37 +243,76 @@ export function EditorV6Page() {
     pausePlayback,
     reportError: setError
   })
-  const characterSourceRefreshRequired = !availableCharactersReady || faceAssetRefreshRequired || characterSnapshotsRefreshing
-  useMotionPreparation(activeEditorV6, availableCharacters,
-    saved && !isPlaying && !exportInProgress && !characterSourceRefreshRequired
-    && activePoseSourceSnapshot?.projectId === activeEditorV6Id)
-  const {
-    previewBackground, inspectorSelection: editorV6Selection,
-    selectedEditorV6Character, selectedEditorV6CharacterModelSlot, selectedEditorV6PoseSlot,
-    selectedEditorV6FaceAppearance, selectedEditorV6FaceMode
-  } = useMemo(() => createEditorV6SceneViewModel({
-    project: activeEditorV6,
+  const characterSourceRefreshRequired =
+    !availableCharactersReady || faceAssetRefreshRequired || characterSnapshotsRefreshing
+  useMotionPreparation(
+    activeEditorV6,
     availableCharacters,
-    playheadFrame,
-    selectedTimelineBlockId,
-    selectedElementId
-  }), [activeEditorV6, availableCharacters, playheadFrame, selectedTimelineBlockId, selectedElementId])
+    saved &&
+      !isPlaying &&
+      !exportInProgress &&
+      !characterSourceRefreshRequired &&
+      activePoseSourceSnapshot?.projectId === activeEditorV6Id
+  )
+  const {
+    previewBackground,
+    inspectorSelection: editorV6Selection,
+    selectedEditorV6Character,
+    selectedEditorV6CharacterModelSlot,
+    selectedEditorV6PoseSlot,
+    selectedEditorV6FaceAppearance: sourceFaceAppearance,
+    selectedEditorV6FaceMode
+  } = useMemo(
+    () =>
+      createEditorV6SceneViewModel({
+        project: activeEditorV6,
+        availableCharacters,
+        playheadFrame,
+        selectedTimelineBlockId,
+        selectedElementId
+      }),
+    [activeEditorV6, availableCharacters, playheadFrame, selectedTimelineBlockId, selectedElementId]
+  )
   useEffect(() => {
     if (!activeEditorV6 || !hasDuplicateAssets) return
-    updateActiveEditorV6Project((project) => project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project)
+    updateActiveEditorV6Project((project) =>
+      project.id === activeEditorV6.id ? repairEditorV6DuplicateAssets(project, selectedTimelineBlockId) : project
+    )
     markEditorV6Unsaved()
   }, [activeEditorV6, hasDuplicateAssets, selectedTimelineBlockId, markEditorV6Unsaved])
-  const { selectedTimelineVideoClip, selectedTimelineVideo, selectedElement, selectedCharacterElement, selectedBackgroundAsset } = editorV6Selection
-  const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(selectedElement, editorV6ExpressionPresets)
+  const {
+    selectedTimelineIntroClip,
+    selectedTimelineVideoClip,
+    selectedTimelineCardClip,
+    selectedTimelineCardOwner,
+    selectedTimelineVideo,
+    selectedElement: sourceElement,
+    selectedCharacterElement,
+    selectedBackgroundAsset
+  } = editorV6Selection
+  const selectedElement = useEditorV6IntroFace(sourceElement, selectedEditorV6Character, Boolean(selectedTimelineIntroClip))
+  const selectedEditorV6FaceAppearance = selectedElement?.faceAppearance ?? sourceFaceAppearance
+  const selectedEditorV6ExpressionCollectionId = editorV6ExpressionCollection(
+    selectedElement,
+    editorV6ExpressionPresets
+  )
   const editorV6PresetCatalogEnabled = shouldLoadEditorV6PresetCatalog(inspectorOpen, inspectorTab, inspectorCustomView)
-  const { poseSlots: editorV6PoseSlots, poseThumbnails: editorV6PoseThumbnails, poseDimensions: editorV6PoseDimensions } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError, editorV6PresetCatalogEnabled)
+  const {
+    poseSlots: editorV6PoseSlots,
+    poseThumbnails: editorV6PoseThumbnails,
+    poseDimensions: editorV6PoseDimensions
+  } = useEditorV6PoseCatalog(selectedEditorV6CharacterModelSlot, setError, editorV6PresetCatalogEnabled)
   const reportFaceCatalogError = useCallback((reason: unknown) => {
     setError(reason instanceof Error ? reason.message : 'Não foi possível carregar o catálogo de rosto.')
   }, [])
   const {
-    items: editorV6FaceItems, details: editorV6FaceDetails, loading: editorV6FaceLoading,
-    loadingRequiredDetails: editorV6FaceDetailsLoading, loadItem: loadEditorV6FaceCatalogItem,
-    openMouthId: selectedEditorV6OpenMouthId, selectedItemId: selectedEditorV6FaceCatalogItemId,
+    items: editorV6FaceItems,
+    details: editorV6FaceDetails,
+    loading: editorV6FaceLoading,
+    loadingRequiredDetails: editorV6FaceDetailsLoading,
+    loadItem: loadEditorV6FaceCatalogItem,
+    openMouthId: selectedEditorV6OpenMouthId,
+    selectedItemId: selectedEditorV6FaceCatalogItemId,
     sheetKind: selectedEditorV6FaceSheetKind
   } = useEditorV6FaceCatalog(
     selectedEditorV6CharacterModelSlot,
@@ -246,14 +322,23 @@ export function EditorV6Page() {
     reportFaceCatalogError,
     shouldLoadEditorV6FaceCatalog(inspectorOpen, inspectorTab)
   )
-  const selectedEditorV6OpenMouth = selectedEditorV6OpenMouthId && selectedEditorV6CharacterModelSlot !== null
-    ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
-    : undefined
-  const selectedEditorV6TalkAvailable = Boolean(selectedEditorV6OpenMouth?.pieces.some((piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex))
+  const selectedEditorV6OpenMouth =
+    selectedEditorV6OpenMouthId && selectedEditorV6CharacterModelSlot !== null
+      ? editorV6FaceDetails[`${selectedEditorV6CharacterModelSlot}:${selectedEditorV6OpenMouthId}`]
+      : undefined
+  const selectedEditorV6TalkAvailable = Boolean(
+    selectedEditorV6OpenMouth?.pieces.some(
+      (piece) => piece.sheet === 'mouth-open' && piece.index === selectedEditorV6FaceAppearance?.expressionIndex
+    )
+  )
   const stageCharacters = sceneCharacterProjection.characters
 
-  const allStageCharactersLocked = stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
-  const rememberCharacterInspectorView = (tab: 'editor' | 'custom', customView: 'face' | 'presets' = inspectorCustomView) => {
+  const allStageCharactersLocked =
+    stageCharacters.length > 0 && stageCharacters.every((element) => element.positionLocked === true)
+  const rememberCharacterInspectorView = (
+    tab: 'editor' | 'custom',
+    customView: 'face' | 'presets' = inspectorCustomView
+  ) => {
     if (selectedElement?.kind === 'character') characterInspectorViewRef.current = { tab, customView }
   }
   const restoreCharacterInspectorView = () => {
@@ -262,10 +347,13 @@ export function EditorV6Page() {
   }
 
   useEffect(() => {
-    if (selectedElement?.kind === 'character') editorV6FaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
-  }, [activeEditorV6Id, selectedElementId, selectedElement?.faceTransforms])
+    if (selectedElement?.kind === 'character')
+      editorV6FaceTransformsRef.current[selectedElement.id] = selectedElement.faceTransforms ?? {}
+  }, [activeEditorV6Id, selectedElement?.id, selectedElement?.faceTransforms])
 
-  useEffect(() => { setEditorV6ExpressionCollectionMenuOpen(false) }, [activeEditorV6Id, selectedElementId, selectedEditorV6CharacterModelSlot])
+  useEffect(() => {
+    setEditorV6ExpressionCollectionMenuOpen(false)
+  }, [activeEditorV6Id, selectedElement?.id, selectedEditorV6CharacterModelSlot])
 
   useFaceExpressionCatalog({
     modelSlot: selectedEditorV6CharacterModelSlot,
@@ -282,13 +370,20 @@ export function EditorV6Page() {
       clearHistory: (projectId) => useEditorV6Store.getState().clear(projectId),
       resetPlayback,
       clearTimelineSelection: () => setSelectedTimelineBlockId(null),
-      clearHistoryAvailability: () => { setCanUndo(false); setCanRedo(false) },
+      clearHistoryAvailability: () => {
+        setCanUndo(false)
+        setCanRedo(false)
+      },
       bumpHistoryVersion: () => setHistoryVersion((value) => value + 1),
       clearElementSelection: () => setSelectedElementId(null)
     })
   }, [activeEditorV6Id, resetPlayback])
 
-  const { creatingProject, createStudio, duplicateStudio: duplicateEditorV6Project } = useEditorV6ProjectCreation({
+  const {
+    creatingProject,
+    createStudio,
+    duplicateStudio: duplicateEditorV6Project
+  } = useEditorV6ProjectCreation({
     projects: () => editorV6Projects,
     nextNumber: nextStudioNumber,
     activeProject: () => activeEditorV6,
@@ -299,8 +394,10 @@ export function EditorV6Page() {
     createId: () => crypto.randomUUID(),
     now: () => new Date().toISOString(),
     loadProject: (projectId) => window.desktop.editorV6.loadEditorV6Project(projectId),
-    cloneExportAudio: (sourceId, duplicateId, audio) => window.desktop.editorV6.cloneEditorV6ExportAudio(sourceId, duplicateId, audio),
-    cloneMedia: (sourceId, duplicateId, media) => window.desktop.editorV6.cloneEditorV6Media(sourceId, duplicateId, media),
+    cloneExportAudio: (sourceId, duplicateId, audio) =>
+      window.desktop.editorV6.cloneEditorV6ExportAudio(sourceId, duplicateId, audio),
+    cloneMedia: (sourceId, duplicateId, media) =>
+      window.desktop.editorV6.cloneEditorV6Media(sourceId, duplicateId, media),
     writeDocument: writeEditorV6Document,
     upsertSummary: upsertEditorV6Summary,
     selectProject: setSelectedId,
@@ -308,7 +405,8 @@ export function EditorV6Page() {
     setError,
     trackOperation: trackEditorV6Operation
   })
-  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) => duplicateEditorV6Project(sourceSummary)
+  const duplicateStudio = (sourceSummary: EditorV6Card | null = selectedEditorV6) =>
+    duplicateEditorV6Project(sourceSummary)
 
   useEditorV6ProjectionAutosave({
     project: activeEditorV6,
@@ -325,6 +423,7 @@ export function EditorV6Page() {
     recordHistory,
     changeScene,
     changeAppearance,
+    patchAppearance,
     loadLatestEditorV6Project,
     persistImportedEditorV6Document,
     undo,
@@ -334,7 +433,9 @@ export function EditorV6Page() {
     updateCharacterNameColor,
     updateBalloonScale,
     updateBalloonOffsetY,
+    resetBalloonPosition,
     updateVideoBlock,
+    applyVideoWidthToAll,
     updateBackground
   } = createEditorV6DocumentCommands({
     activeProject: activeEditorV6,
@@ -356,16 +457,26 @@ export function EditorV6Page() {
     bumpHistoryVersion: () => setHistoryVersion((value) => value + 1),
     getFrame: getEditorV6PlaybackFrame
   })
+  const updateInspectorCharacter = (id: string, values: Partial<EditorV6Element>, record = true) => {
+    if (selectedTimelineIntroClip?.block.id !== id) return updateElement(id, values, record)
+    const edit = record ? changeAppearance : patchAppearance
+    const restoredFace = sourceElement !== selectedElement ? {
+      faceAppearance: selectedElement?.faceAppearance, expressionBase: selectedElement?.expressionBase, faceTransforms: selectedElement?.faceTransforms,
+      activeExpressionGaze: selectedElement?.activeExpressionGaze, activeExpressionEffects: selectedElement?.activeExpressionEffects,
+      activeExpressionCollectionId: selectedElement?.activeExpressionCollectionId
+    } : {}
+    edit(project => ({ ...project, elements: project.elements.map(element => element.id === id ? { ...element, ...restoredFace, ...values } : element) }))
+  }
   const {
     facePreview: editorV6FacePreview,
     applyFaceAppearance: applyStudioFaceAppearance,
     applyPose: applyStudioPose,
+    applyIntroPoseToAll,
     updateFaceTransform: updateEditorV6FaceTransform,
     finishFaceTransform: finishEditorV6FaceTransform
   } = useEditorV6CharacterAppearance({
     activeProject: activeEditorV6,
     activeProjectId: activeEditorV6Id,
-    sceneRef,
     transformsRef: editorV6FaceTransformsRef,
     patchProject: patchEditorV6FacePreview,
     setError,
@@ -376,13 +487,22 @@ export function EditorV6Page() {
     setFaceBusy: setEditorV6FaceBusy,
     poseSourceSnapshot: activePoseSourceSnapshot,
     changeScene: changeAppearance,
-    patchDocument,
+    patchDocument: patchAppearance,
     selectedTimelineBlockId,
     defaultTransform: defaultStudioEyeTransform,
-    updateElement,
+    updateElement: updateInspectorCharacter,
+    intro: selectedTimelineIntroClip ? { characters: availableCharacters, commit: changeScene } : undefined,
     getFrame: getEditorV6PlaybackFrame
   })
-  const { importImage, importTimelineMedia, linkVideoLibraryItem, linkAudioLibraryItem, selectBackground, linkSharedBackground, linkSharedObject } = createEditorV6MediaCommands({
+  const {
+    importImage,
+    importTimelineMedia,
+    linkVideoLibraryItem,
+    linkAudioLibraryItem,
+    selectBackground,
+    linkSharedBackground,
+    linkSharedObject
+  } = createEditorV6MediaCommands({
     activeProject: activeEditorV6,
     trackOperation: trackEditorV6Operation,
     bridge: window.desktop.editorV6,
@@ -434,6 +554,7 @@ export function EditorV6Page() {
     stageCharacters,
     allPositionsLocked: allStageCharactersLocked,
     currentFrame: getEditorV6PlaybackFrame,
+    seek: publishPlayheadFrame,
     pausePlayback,
     changeScene,
     now: () => new Date().toISOString(),
@@ -453,12 +574,12 @@ export function EditorV6Page() {
     selectedCharacterIds: castSelection,
     saving: savingCast,
     sourceSnapshot: activePoseSourceSnapshot,
-    getStageSize: () => ({ width: sceneRef.current?.clientWidth ?? 1000, height: sceneRef.current?.clientHeight ?? 562 }),
+    getStageSize: () => ({ width: 1920, height: 1080 }),
     prepareSnapshots: async (input) => {
       const { prepareSavedCharacterRenderer } = await import('../../characters/editorV6CharacterRenderer')
       return prepareEditorV6CastSnapshots(input, {
         prepareRenderer: prepareSavedCharacterRenderer,
-        bakeAssets: bakeFaceModeAssets,
+        bakeAssets: bakeEditorV6FaceModeAssets,
         getStageReference: editorV6CharacterStageReference,
         fitToStage: fitEditorV6CharacterToStage,
         createId: () => crypto.randomUUID()
@@ -496,19 +617,34 @@ export function EditorV6Page() {
     applyAppearance: applyStudioFaceAppearance
   })
 
-  const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction({
-    project: activeEditorV6, sceneRef,
-    faceBusy: editorV6FaceBusy, expressionBusy: editorV6ExpressionBusy,
-    faceRenderRunningRef: editorV6FacePreview.renderRunningRef,
-    setSelectedElementId, setActiveTool, setInspectorOpen, setInspectorTab, setSelectedTimelineBlockId,
-    restoreCharacterInspectorView, pausePlayback, publishPlayheadFrame,
-    updateActiveProject: updateActiveEditorV6Project, markUnsaved: markEditorV6Unsaved, recordHistory
-  }, dragRef)
+  const { cancelSceneDrag, interaction: sceneInteraction } = useEditorV6StageInteraction(
+    {
+      project: activeEditorV6,
+      sceneRef,
+      faceBusy: editorV6FaceBusy,
+      expressionBusy: editorV6ExpressionBusy,
+      faceRenderRunningRef: editorV6FacePreview.renderRunningRef,
+      setSelectedElementId,
+      setActiveTool,
+      setInspectorOpen,
+      setInspectorTab,
+      setSelectedTimelineBlockId,
+      restoreCharacterInspectorView,
+      pausePlayback,
+      publishPlayheadFrame,
+      updateActiveProject: updateActiveEditorV6Project,
+      markUnsaved: markEditorV6Unsaved,
+      recordHistory
+    },
+    dragRef
+  )
 
   const deleteSelected = createEditorV6DeleteSelectedCommand({
     activeProject: activeEditorV6,
     selectedElementId,
     selectedTimelineVideoBlockId: selectedTimelineVideoClip?.block.id ?? null,
+    selectedTimelineCardBlockId: selectedTimelineCardClip?.block.id ?? null,
+    selectedTimelineIntroBlockId: selectedTimelineIntroClip?.block.id,
     getFrame: getEditorV6PlaybackFrame,
     editBackgroundAtFrame: editEditorV6BackgroundAtFrame,
     now: () => new Date().toISOString(),
@@ -567,14 +703,39 @@ export function EditorV6Page() {
     historyVersion,
     dragActive: () => dragRef.current !== null,
     cancelDrag: cancelSceneDrag,
-    closeCastPicker: () => { setCastPickerOpen(false); setCastManagerOpen(false) },
+    closeCastPicker: () => {
+      setCastPickerOpen(false)
+      setCastManagerOpen(false)
+    },
     exitFullView: () => setFullView(false),
     undo,
     redo
   })
 
-  const control = (label: string, value: number, onChange: (value: number, record?: boolean) => void, min: number, max: number, suffix = '%', onFinish?: () => void, disabled = false) => (
-    <NumericRangeField key={label} label={label} value={value} onChange={onChange} onStart={() => recordHistory()} onFinish={onFinish} disabled={disabled} min={min} max={max} suffix={suffix} />
+  const control = (
+    label: string,
+    value: number,
+    onChange: (value: number, record?: boolean) => void,
+    min: number,
+    max: number,
+    suffix = '%',
+    onFinish?: () => void,
+    disabled = false,
+    precision = 1
+  ) => (
+    <NumericRangeField
+      key={label}
+      label={label}
+      value={value}
+      onChange={onChange}
+      onStart={() => recordHistory()}
+      onFinish={onFinish}
+      disabled={disabled}
+      min={min}
+      max={max}
+      suffix={suffix}
+      precision={precision}
+    />
   )
 
   const addObjectAsset = createEditorV6AddObjectCommand({
@@ -590,171 +751,434 @@ export function EditorV6Page() {
     setInspectorTab
   })
 
-  const propertyPanel = (): ReactNode => <EditorV6PropertyPanel
-    project={activeEditorV6}
-    activeTool={activeTool}
-    background={previewBackground}
-    selectedElementId={selectedElementId}
-    selectedElement={selectedElement}
-    characterNameColor={selectedElement?.kind === 'character' && selectedElement.characterId
-      ? activeEditorV6?.characterNameColors?.[selectedElement.characterId] ?? videoCharacterTrackColor(selectedElement.characterId)
-      : null}
-    balloonScalePercent={activeEditorV6?.balloonScalePercent ?? 100}
-    balloonOffsetY={activeEditorV6?.balloonOffsetY ?? 0}
-    selectedBackgroundAsset={selectedBackgroundAsset}
-    sharedBackgrounds={sharedBackgrounds}
-    sharedObjects={sharedObjects}
-    selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
-    selectedVideo={selectedTimelineVideo ?? null}
-    control={control}
-    onBackgroundChange={updateBackground}
-    onImportImage={importImage}
-    onSelectBackground={selectBackground}
-    onLinkSharedBackground={linkSharedBackground}
-    onLinkSharedObject={linkSharedObject}
-    onAddObject={addObjectAsset}
-    onUpdateElement={updateElement}
-    onUpdateCharacterNameColor={updateCharacterNameColor}
-    onUpdateBalloonScale={updateBalloonScale}
-    onUpdateBalloonOffsetY={updateBalloonOffsetY}
-    onUpdateVideoBlock={updateVideoBlock}
-    onRecordHistory={() => recordHistory()}
-    onDeleteSelected={deleteSelected}
-  />
+  const propertyPanel = (): ReactNode => (
+    <EditorV6PropertyPanel
+      project={activeEditorV6}
+      activeTool={activeTool}
+      background={previewBackground}
+      selectedElementId={selectedElementId}
+      selectedElement={selectedElement}
+      characterNameColor={
+        selectedElement?.kind === 'character' && selectedElement.characterId
+          ? (activeEditorV6?.characterNameColors?.[selectedElement.characterId] ??
+            videoCharacterTrackColor(selectedElement.characterId))
+          : null
+      }
+      balloonScalePercent={activeEditorV6?.balloonScalePercent ?? 100}
+      balloonOffsetY={activeEditorV6?.balloonOffsetY ?? 0}
+      selectedBackgroundAsset={selectedBackgroundAsset}
+      sharedBackgrounds={sharedBackgrounds}
+      sharedObjects={sharedObjects}
+      selectedVideoBlock={selectedTimelineVideoClip?.block ?? null}
+      selectedVideoCardClip={selectedTimelineCardClip}
+      videoCardOwnerStartFrame={selectedTimelineCardOwner?.block.startFrame}
+      selectedIntroClip={selectedTimelineIntroClip}
+      selectedVideo={selectedTimelineVideo ?? null}
+      control={control}
+      onBackgroundChange={updateBackground}
+      onImportImage={importImage}
+      onSelectBackground={selectBackground}
+      onLinkSharedBackground={linkSharedBackground}
+      onLinkSharedObject={linkSharedObject}
+      onAddObject={addObjectAsset}
+      onUpdateElement={updateElement}
+      onUpdateCharacterNameColor={updateCharacterNameColor}
+      onUpdateBalloonScale={updateBalloonScale}
+      onUpdateBalloonOffsetY={updateBalloonOffsetY}
+      onResetBalloonPosition={resetBalloonPosition}
+      onUpdateVideoBlock={updateVideoBlock}
+      onUpdateVideoCard={(id, values, record = true) => {
+        const update = (document: EditorV6Document) => ({
+          ...document,
+          timeline: { ...document.timeline, tracks: document.timeline.tracks.map(track =>
+            track.kind !== 'card' || track.locked ? track : { ...track, blocks: track.blocks.map(block =>
+              block.id === id ? { ...block, ...values } : block) }) },
+          updatedAt: new Date().toISOString()
+        })
+        if (record) changeScene(update)
+        else patchDocument(update)
+      }}
+      onApplyVideoWidthToAll={applyVideoWidthToAll}
+      onUpdateIntroText={(id, field, value) => changeScene(project => updateEditorV6IntroText(project, id, field, value))}
+      onReplicateIntroPortrait={(id, property) => changeScene(project => replicateEditorV6IntroPortrait(project, id, property))}
+      onUpdateIntroPortrait={(id, values, record = true) => {
+        if (record) recordHistory()
+        patchDocument(project => updateEditorV6IntroPortrait(project, id, values), false)
+      }}
+      onRecordHistory={() => recordHistory()}
+      onDeleteSelected={deleteSelected}
+    />
+  )
 
   const customPanel = (): ReactNode => {
-    if (!selectedEditorV6Character || selectedElement?.kind !== 'character' || selectedEditorV6CharacterModelSlot === null) {
-      return <div className="studio-custom-empty"><strong>Personalizar personagem</strong><span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span></div>
+    if (
+      !selectedEditorV6Character ||
+      selectedElement?.kind !== 'character' ||
+      selectedEditorV6CharacterModelSlot === null
+    ) {
+      return (
+        <div className="studio-custom-empty">
+          <strong>Personalizar personagem</strong>
+          <span>Selecione um personagem na prévia ou no elenco para escolher as peças do rosto.</span>
+        </div>
+      )
     }
-    return <EditorV6FaceInspectorPanel
-      modelSlot={selectedEditorV6CharacterModelSlot} category={editorV6FaceCategory}
-      sheetKind={selectedEditorV6FaceSheetKind} selectedItemId={selectedEditorV6FaceCatalogItemId}
-      items={editorV6FaceItems} details={editorV6FaceDetails} appearance={selectedEditorV6FaceAppearance}
-      faceMode={selectedEditorV6FaceMode} faceBusy={editorV6FaceBusy} expressionBusy={editorV6ExpressionBusy}
-      catalogLoading={editorV6FaceLoading} detailsLoading={editorV6FaceDetailsLoading}
-      talkAvailable={selectedEditorV6TalkAvailable} element={selectedElement}
-      onCategoryChange={setEditorV6FaceCategory} onFaceModeChange={(mode) => { void applyEditorV6FaceMode(mode) }}
-      onSheetSelect={(summary) => { void chooseEditorV6FaceSheet(summary) }} onAppearanceChange={updateEditorV6FaceVariant}
-      onUpdateTransform={updateEditorV6FaceTransform} onFinishTransform={finishEditorV6FaceTransform}
-      onRecordHistory={() => recordHistory()}
-    />
+    return (
+      <EditorV6FaceInspectorPanel
+        modelSlot={selectedEditorV6CharacterModelSlot}
+        category={editorV6FaceCategory}
+        sheetKind={selectedEditorV6FaceSheetKind}
+        selectedItemId={selectedEditorV6FaceCatalogItemId}
+        items={editorV6FaceItems}
+        details={editorV6FaceDetails}
+        appearance={selectedEditorV6FaceAppearance}
+        faceMode={selectedEditorV6FaceMode}
+        faceBusy={editorV6FaceBusy}
+        expressionBusy={editorV6ExpressionBusy}
+        catalogLoading={editorV6FaceLoading}
+        detailsLoading={editorV6FaceDetailsLoading}
+        talkAvailable={selectedEditorV6TalkAvailable}
+        element={selectedElement}
+        onCategoryChange={setEditorV6FaceCategory}
+        onFaceModeChange={(mode) => {
+          void applyEditorV6FaceMode(mode)
+        }}
+        onSheetSelect={(summary) => {
+          void chooseEditorV6FaceSheet(summary)
+        }}
+        onAppearanceChange={updateEditorV6FaceVariant}
+        onUpdateTransform={updateEditorV6FaceTransform}
+        onFinishTransform={finishEditorV6FaceTransform}
+        onRecordHistory={() => recordHistory()}
+      />
+    )
   }
 
   const toggleTimelinePlayback = () => {
     if (dragRef.current) return
-    if (isPlaying) { pausePlayback(); return }
+    if (isPlaying) {
+      pausePlayback()
+      return
+    }
     startPlayback()
   }
 
+  type ToolRailCallbacks = Pick<
+    EditorV6ToolRailProps,
+    | 'onBack'
+    | 'onSave'
+    | 'onUndo'
+    | 'onRedo'
+    | 'onSelectTool'
+    | 'onAddText'
+    | 'onImportTimelineMedia'
+    | 'onOpenCastManager'
+    | 'onExport'
+    | 'onPrint'
+    | 'onOpenPrints'
+    | 'onEnterFullView'
+  >
+  const toolRailActionsRef = useRef<ToolRailCallbacks | null>(null)
+  toolRailActionsRef.current = {
+    onBack: () => {
+      void leaveStudio()
+    },
+    onSave: () => {
+      void flushEditorV6Writes().catch(() => undefined)
+    },
+    onUndo: undo,
+    onRedo: redo,
+    onSelectTool: (tool) => {
+      setActiveTool(tool)
+      setInspectorOpen(true)
+      setInspectorTab('editor')
+    },
+    onAddText: addTextElement,
+    onImportTimelineMedia: (kind) => {
+      void importTimelineMedia(kind)
+    },
+    onOpenCastManager: () => setCastManagerOpen(true),
+    onExport: () => {
+      pausePlayback()
+      setExportOpen(true)
+    },
+    onPrint: () => {
+      if (activeEditorV6) void exportPrint(activeEditorV6)
+    },
+    onOpenPrints: () => {
+      if (activeEditorV6) void openPrints(activeEditorV6.id)
+    },
+    onEnterFullView: () => setFullView(true)
+  }
+  const railBack = useCallback(() => toolRailActionsRef.current?.onBack(), [])
+  const railSave = useCallback(() => toolRailActionsRef.current?.onSave(), [])
+  const railUndo = useCallback(() => toolRailActionsRef.current?.onUndo(), [])
+  const railRedo = useCallback(() => toolRailActionsRef.current?.onRedo(), [])
+  const railSelectTool = useCallback(
+    (tool: Parameters<ToolRailCallbacks['onSelectTool']>[0]) => toolRailActionsRef.current?.onSelectTool(tool),
+    []
+  )
+  const railAddText = useCallback(
+    (kind: Parameters<ToolRailCallbacks['onAddText']>[0]) => toolRailActionsRef.current?.onAddText(kind),
+    []
+  )
+  const railImportMedia = useCallback(
+    (kind: Parameters<ToolRailCallbacks['onImportTimelineMedia']>[0]) =>
+      toolRailActionsRef.current?.onImportTimelineMedia(kind),
+    []
+  )
+  const railOpenCastManager = useCallback(() => toolRailActionsRef.current?.onOpenCastManager(), [])
+  const railExport = useCallback(() => toolRailActionsRef.current?.onExport(), [])
+  const railPrint = useCallback(() => toolRailActionsRef.current?.onPrint(), [])
+  const railOpenPrints = useCallback(() => toolRailActionsRef.current?.onOpenPrints(), [])
+  const railEnterFullView = useCallback(() => toolRailActionsRef.current?.onEnterFullView(), [])
+
   if (activeEditorV6) {
     return (
-      <main className={`studio-editor v6-colored-workspace${fullView ? ' full-view' : ''}`} aria-label={`Editor do ${activeEditorV6.title}`}>
-        <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
-        <EditorV6ToolRail
-          visible={!fullView}
-          activeTool={activeTool}
-          canUndo={canUndo}
-          canRedo={canRedo}
-          saved={saved}
-          faceAssetRefreshRequired={faceAssetRefreshRequired}
-          characterSourceRefreshRequired={characterSourceRefreshRequired}
-          selectedCharacterLabel={selectedCharacterElement ? selectedCharacterElement.text : null}
-          error={error}
-          notice={notice}
-          onBack={() => { void leaveStudio() }}
-          onSave={() => { void flushEditorV6Writes().catch(() => undefined) }}
-          onUndo={undo}
-          onRedo={redo}
-          onSelectTool={(tool) => { setActiveTool(tool); setInspectorOpen(true); setInspectorTab('editor') }}
-          onAddText={addTextElement}
-          onImportTimelineMedia={(kind) => { void importTimelineMedia(kind) }}
-          onOpenCastManager={() => setCastManagerOpen(true)}
-          onExport={() => { pausePlayback(); setExportOpen(true) }}
-          onPrint={() => { void exportPrint(activeEditorV6) }}
-          onOpenPrints={() => { void openPrints(activeEditorV6.id) }}
-          onEnterFullView={() => setFullView(true)}
-        />
-        <Profiler id="/editor-v6/scene" onRender={recordUiCommit}>
-          <EditorV6StageSurface
-            project={activeEditorV6}
-            sceneRef={sceneRef}
-            backgroundColor={previewBackground.backgroundColor}
-            selectedId={selectedElementId ?? selectedTimelineBlockId}
-            interaction={sceneInteraction}
-            playing={isPlaying}
-            fullView={fullView}
-            onCanvasPointerDown={() => { setSelectedElementId(null); setSelectedTimelineBlockId(null) }}
-            onExitFullView={() => setFullView(false)}
-          />
-        </Profiler>
-        {!fullView && <aside className="studio-editor-inspector-column" aria-label="Inspector do Editor V6">
-          {inspectorOpen && <EditorV6Inspector
-              side="right"
-              tab={inspectorTab}
-              customView={inspectorCustomView}
-              editorPanel={inspectorTab === 'editor' ? propertyPanel() : null}
-              facePanel={inspectorTab === 'custom' && inspectorCustomView === 'face' ? customPanel() : null}
-              presetsPanel={inspectorTab === 'custom' && inspectorCustomView === 'presets' ? <EditorV6PresetPanel
-                characterAvailable={Boolean(selectedEditorV6Character)} element={selectedElement} category={editorV6PresetCategory}
-                onCategoryChange={setEditorV6PresetCategory} poseSlots={editorV6PoseSlots} poseThumbnails={editorV6PoseThumbnails}
-                poseDimensions={editorV6PoseDimensions} selectedPoseSlot={selectedEditorV6PoseSlot} faceBusy={editorV6FaceBusy}
-                onPoseSelect={applyStudioPose} expressionLoading={editorV6ExpressionLoading} expressionBusy={editorV6ExpressionBusy}
-                faceAppearanceAvailable={Boolean(selectedEditorV6FaceAppearance)} talkAvailable={selectedEditorV6TalkAvailable}
-                faceMode={selectedEditorV6FaceMode} onFaceModeSelect={(mode) => { void applyEditorV6FaceMode(mode) }}
-                collections={editorV6ExpressionCollections} selectedCollectionId={selectedEditorV6ExpressionCollectionId}
-                collectionMenuOpen={editorV6ExpressionCollectionMenuOpen} onToggleCollectionMenu={() => setEditorV6ExpressionCollectionMenuOpen((open) => !open)}
-                onCollectionSelect={(id) => { if (selectedElement?.kind === 'character') updateElement(selectedElement.id, { activeExpressionCollectionId: id }); setEditorV6ExpressionCollectionMenuOpen(false) }}
-                presets={editorV6ExpressionPresets} onApplyBaseExpression={() => { void applyEditorV6BaseExpression() }}
-                onApplyExpressionPreset={(preset, gaze) => { void applyEditorV6ExpressionPreset(preset, gaze) }}
-              /> : null}
-              onSelectEditor={() => { setInspectorTab('editor'); rememberCharacterInspectorView('editor') }}
-              onSelectCustom={() => { setInspectorTab('custom'); setInspectorCustomView('face'); rememberCharacterInspectorView('custom', 'face') }}
-              onSelectPresets={() => { setEditorV6PresetCategory('expression'); setInspectorTab('custom'); setInspectorCustomView('presets'); rememberCharacterInspectorView('custom', 'presets') }}
-              onClose={() => setInspectorOpen(false)}
-            />}
-        </aside>}
-        {!fullView && castManagerOpen && <SceneCastManagerModal
-          elements={stageCharacters} characters={availableCharacters} selectedElementId={selectedElementId}
-          allPositionsLocked={allStageCharactersLocked} onAddCharacter={() => { setCastManagerOpen(false); stageSelection.openCastPicker() }}
-          onTogglePositionsLocked={stageSelection.toggleCharacterPositionLock}
-          onSelectCharacter={(element) => { stageSelection.selectStageCharacter(element); setCastManagerOpen(false) }}
-          onRemoveCharacter={removeStageCharacter}
-          onClose={() => setCastManagerOpen(false)}
-        />}
-        {!fullView && <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}><EditorV6Timeline key={activeEditorV6.id} document={activeEditorV6} playing={isPlaying} selectedId={selectedTimelineBlockId}
-          onSeek={(frame) => { if (dragRef.current) cancelSceneDrag(); pausePlayback(); publishPlayheadFrame(frame) }} onPlay={toggleTimelinePlayback} onChange={changeScene}
-          onSelect={stageSelection.selectTimelineBlock} /></Profiler> }
-        <EditorV6ExportPanel key={`export-${activeEditorV6.id}`} project={activeEditorV6} open={exportOpen} characterSourceRefreshRequired={characterSourceRefreshRequired} onClose={() => setExportOpen(false)} onExitEditor={() => { setExportOpen(false); void leaveStudio() }} onChange={(update) => patchDocument(update, false)} onActivity={onExportActivity} trackOperation={trackEditorV6Operation} />
-        {videoPickerOpen && <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}><EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} /></Suspense>}
-        {audioPickerOpen && <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}><EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} /></Suspense>}
-        {castPickerOpen && <SceneCastPickerModal title="Personagens do Editor V6" characters={availableCharacters} selection={castSelection} saving={savingCast} onToggle={(characterId, selected) => setCastSelection((current) => selected ? current.filter((id) => id !== characterId) : [...current, characterId])} onClose={() => setCastPickerOpen(false)} onSave={() => void saveCastSelection()} />}
-      </main>
+      <Profiler id="/editor-v6/page" onRender={recordUiCommit}>
+        <main
+          className={`studio-editor v6-colored-workspace${fullView ? ' full-view' : ''}`}
+          aria-label={`Editor do ${activeEditorV6.title}`}
+        >
+          <Profiler id="/editor-v6/child/playback-audio" onRender={recordUiCommit}>
+            <EditorV6PlaybackAudio project={activeEditorV6} playing={isPlaying} />
+          </Profiler>
+          <Profiler id="/editor-v6/child/tool-rail" onRender={recordUiCommit}>
+            <EditorV6ToolRail
+              visible={!fullView}
+              activeTool={activeTool}
+              canUndo={canUndo}
+              canRedo={canRedo}
+              saved={saved}
+              faceAssetRefreshRequired={faceAssetRefreshRequired}
+              characterSourceRefreshRequired={characterSourceRefreshRequired}
+              selectedCharacterLabel={selectedCharacterElement ? selectedCharacterElement.text : null}
+              error={error}
+              notice={notice}
+              onBack={railBack}
+              onSave={railSave}
+              onUndo={railUndo}
+              onRedo={railRedo}
+              onSelectTool={railSelectTool}
+              onAddText={railAddText}
+              onImportTimelineMedia={railImportMedia}
+              onOpenCastManager={railOpenCastManager}
+              onExport={railExport}
+              onPrint={railPrint}
+              onOpenPrints={railOpenPrints}
+              onEnterFullView={railEnterFullView}
+            />
+          </Profiler>
+          <Profiler id="/editor-v6/scene" onRender={recordUiCommit}>
+            <EditorV6StageSurface
+              project={activeEditorV6}
+              previewMotionCharacters={availableCharacters}
+              previewMotionEnabled={!exportInProgress && !characterSourceRefreshRequired}
+              sceneRef={sceneRef}
+              backgroundColor={previewBackground.backgroundColor}
+              selectedId={selectedElementId ?? selectedTimelineBlockId}
+              interaction={sceneInteraction}
+              playing={isPlaying}
+              fullView={fullView}
+              onCanvasPointerDown={() => {
+                setSelectedElementId(null)
+                setSelectedTimelineBlockId(null)
+              }}
+              onExitFullView={() => setFullView(false)}
+            />
+          </Profiler>
+          {!fullView && (
+            <aside className="studio-editor-inspector-column" aria-label="Inspector do Editor V6">
+              {inspectorOpen && (
+                <Profiler id="/editor-v6/child/inspector" onRender={recordUiCommit}>
+                  <EditorV6Inspector
+                    side="right"
+                    tab={inspectorTab}
+                    customView={inspectorCustomView}
+                    readOnly={selectedTimelineIntroClip?.track.locked}
+                    editorPanel={inspectorTab === 'editor' ? propertyPanel() : null}
+                    facePanel={inspectorTab === 'custom' && inspectorCustomView === 'face' ? customPanel() : null}
+                    presetsPanel={
+                      inspectorTab === 'custom' && inspectorCustomView === 'presets' ? (
+                        <EditorV6PresetPanel
+                          characterAvailable={Boolean(selectedEditorV6Character)}
+                          element={selectedElement}
+                          category={editorV6PresetCategory}
+                          onCategoryChange={setEditorV6PresetCategory}
+                          poseSlots={editorV6PoseSlots}
+                          poseThumbnails={editorV6PoseThumbnails}
+                          poseDimensions={editorV6PoseDimensions}
+                          selectedPoseSlot={selectedEditorV6PoseSlot}
+                          faceBusy={editorV6FaceBusy}
+                          onPoseSelect={applyStudioPose}
+                          onApplyPoseToIntro={selectedTimelineIntroClip ? applyIntroPoseToAll : undefined}
+                          expressionLoading={editorV6ExpressionLoading}
+                          expressionBusy={editorV6ExpressionBusy}
+                          faceAppearanceAvailable={Boolean(selectedEditorV6FaceAppearance)}
+                          talkAvailable={selectedEditorV6TalkAvailable}
+                          faceMode={selectedEditorV6FaceMode}
+                          onFaceModeSelect={(mode) => {
+                            void applyEditorV6FaceMode(mode)
+                          }}
+                          collections={editorV6ExpressionCollections}
+                          selectedCollectionId={selectedEditorV6ExpressionCollectionId}
+                          collectionMenuOpen={editorV6ExpressionCollectionMenuOpen}
+                          onToggleCollectionMenu={() => setEditorV6ExpressionCollectionMenuOpen((open) => !open)}
+                          onCollectionSelect={(id) => {
+                            if (selectedElement?.kind === 'character')
+                              updateInspectorCharacter(selectedElement.id, { activeExpressionCollectionId: id })
+                            setEditorV6ExpressionCollectionMenuOpen(false)
+                          }}
+                          presets={editorV6ExpressionPresets}
+                          onApplyBaseExpression={() => {
+                            void applyEditorV6BaseExpression()
+                          }}
+                          onApplyExpressionPreset={(preset, gaze) => {
+                            void applyEditorV6ExpressionPreset(preset, gaze)
+                          }}
+                        />
+                      ) : null
+                    }
+                    onSelectEditor={() => {
+                      setInspectorTab('editor')
+                      rememberCharacterInspectorView('editor')
+                    }}
+                    onSelectCustom={() => {
+                      setInspectorTab('custom')
+                      setInspectorCustomView('face')
+                      rememberCharacterInspectorView('custom', 'face')
+                    }}
+                    onSelectPresets={() => {
+                      setEditorV6PresetCategory('expression')
+                      setInspectorTab('custom')
+                      setInspectorCustomView('presets')
+                      rememberCharacterInspectorView('custom', 'presets')
+                    }}
+                    onClose={() => setInspectorOpen(false)}
+                  />
+                </Profiler>
+              )}
+            </aside>
+          )}
+          {!fullView && castManagerOpen && (
+            <Profiler id="/editor-v6/child/cast-manager" onRender={recordUiCommit}>
+              <SceneCastManagerModal
+                elements={stageCharacters}
+                characters={availableCharacters}
+                selectedElementId={selectedElementId}
+                allPositionsLocked={allStageCharactersLocked}
+                onAddCharacter={() => {
+                  setCastManagerOpen(false)
+                  stageSelection.openCastPicker()
+                }}
+                onTogglePositionsLocked={stageSelection.toggleCharacterPositionLock}
+                onSelectCharacter={(element) => {
+                  stageSelection.selectStageCharacter(element)
+                  setCastManagerOpen(false)
+                }}
+                onRemoveCharacter={removeStageCharacter}
+                onClose={() => setCastManagerOpen(false)}
+              />
+            </Profiler>
+          )}
+          {!fullView && (
+            <Profiler id="/editor-v6/timeline" onRender={recordUiCommit}>
+              <EditorV6Timeline
+                key={activeEditorV6.id}
+                document={activeEditorV6}
+                playing={isPlaying}
+                selectedId={selectedTimelineBlockId}
+                onSeek={(frame) => {
+                  if (dragRef.current) cancelSceneDrag()
+                  pausePlayback()
+                  publishPlayheadFrame(frame)
+                }}
+                onPlay={toggleTimelinePlayback}
+                onChange={changeScene}
+                onSelect={stageSelection.selectTimelineBlock}
+              />
+            </Profiler>
+          )}
+          <Profiler id="/editor-v6/child/export-panel" onRender={recordUiCommit}>
+            <EditorV6ExportPanel
+              key={`export-${activeEditorV6.id}`}
+              project={activeEditorV6}
+              open={exportOpen}
+              characterSourceRefreshRequired={characterSourceRefreshRequired}
+              onClose={() => setExportOpen(false)}
+              onExitEditor={() => {
+                setExportOpen(false)
+                void leaveStudio()
+              }}
+              onChange={(update) => patchDocument(update, false)}
+              onActivity={onExportActivity}
+              trackOperation={trackEditorV6Operation}
+            />
+          </Profiler>
+          {videoPickerOpen && (
+            <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}>
+              <EditorV6VideoPickerModal onClose={() => setVideoPickerOpen(false)} onSelect={linkVideoLibraryItem} />
+            </Suspense>
+          )}
+          {audioPickerOpen && (
+            <Suspense fallback={<span role="status">Abrindo biblioteca…</span>}>
+              <EditorV6AudioLibraryPicker onClose={() => setAudioPickerOpen(false)} onSelect={linkAudioLibraryItem} />
+            </Suspense>
+          )}
+          {castPickerOpen && (
+            <SceneCastPickerModal
+              title="Personagens do Editor V6"
+              characters={availableCharacters}
+              selection={castSelection}
+              saving={savingCast}
+              onToggle={(characterId, selected) =>
+                setCastSelection((current) =>
+                  selected ? current.filter((id) => id !== characterId) : [...current, characterId]
+                )
+              }
+              onClose={() => setCastPickerOpen(false)}
+              onSave={() => void saveCastSelection()}
+            />
+          )}
+        </main>
+      </Profiler>
     )
   }
 
-  return <EditorV6ProjectBrowser
-    folder={studioFolder}
-    loading={loading}
-    creatingProject={creatingProject}
-    projects={editorV6Projects}
-    selectedProjectId={selectedId}
-    error={error}
-    importOpen={reactImportOpen}
-    onCreateProject={createStudio}
-    onOpenImport={() => setReactImportOpen(true)}
-    onCloseImport={() => setReactImportOpen(false)}
-    onSaveImportedProject={writeEditorV6Document}
-    onImportCompleted={(project) => completeEditorV6ProjectImport(project, {
-      projectSummary: editorV6ProjectSummary,
-      upsertSummary: upsertEditorV6Summary,
-      selectProject: setSelectedId,
-      activateProject: setActiveEditorV6Id,
-      setSaved,
-      closeImport: () => setReactImportOpen(false),
-      setError
-    })}
-    onOpenProject={(projectId) => openEditorV6Project(projectId, { selectProject: setSelectedId, activateProject: setActiveEditorV6Id })}
-    onDuplicateProject={(project) => { void duplicateStudio(project) }}
-    onDeleteProject={(project) => { void deleteStudio(project) }}
-  />
+  return (
+    <EditorV6ProjectBrowser
+      folder={studioFolder}
+      loading={loading}
+      creatingProject={creatingProject}
+      projects={editorV6Projects}
+      selectedProjectId={selectedId}
+      error={error}
+      importOpen={reactImportOpen}
+      onCreateProject={createStudio}
+      onOpenFolder={() => window.desktop.editorV6.openEditorV6Folder()}
+      onOpenImport={() => setReactImportOpen(true)}
+      onCloseImport={() => setReactImportOpen(false)}
+      onSaveImportedProject={writeEditorV6Document}
+      onImportCompleted={(project) =>
+        completeEditorV6ProjectImport(project, {
+          projectSummary: editorV6ProjectSummary,
+          upsertSummary: upsertEditorV6Summary,
+          selectProject: setSelectedId,
+          activateProject: setActiveEditorV6Id,
+          setSaved,
+          closeImport: () => setReactImportOpen(false),
+          setError
+        })
+      }
+      onOpenProject={(projectId) =>
+        openEditorV6Project(projectId, { selectProject: setSelectedId, activateProject: setActiveEditorV6Id })
+      }
+      onDuplicateProject={(project) => {
+        void duplicateStudio(project)
+      }}
+      onDeleteProject={(project) => {
+        void deleteStudio(project)
+      }}
+    />
+  )
 }

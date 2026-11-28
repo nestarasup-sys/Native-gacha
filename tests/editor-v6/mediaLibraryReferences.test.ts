@@ -19,4 +19,23 @@ describe('referências por ID à biblioteca de mídia V6', () => {
     await expect(index.assertUnreferenced('audio', itemId)).rejects.toThrow(/vinculado pelo ID/)
     await expect(index.assertUnreferenced('background', itemId)).resolves.toBeUndefined()
   })
+
+  it('mantém a listagem disponível quando um projeto não tem manifesto e bloqueia exclusão sem verificação completa', async () => {
+    const unavailableProject = {
+      ...projects[0],
+      id: '32345678-1234-4abc-8abc-123456789abc',
+      title: 'Projeto sem manifesto',
+      unavailableReason: 'O manifesto do projeto não foi encontrado.'
+    }
+    const index = createEditorV6MediaReferenceIndex({
+      listProjects: async () => [...projects, unavailableProject],
+      readManifest: async (id) => {
+        if (id === unavailableProject.id) throw new Error('não deveria tentar ler projeto indisponível')
+        return { assets: [{ libraryAssetId: itemId, category: 'background' }] }
+      }
+    })
+
+    await expect(index.references('background', itemId)).resolves.toEqual([{ projectId: projects[0].id, title: projects[0].title }])
+    await expect(index.assertUnreferenced('background', itemId)).rejects.toThrow(/Projeto sem manifesto.*manifesto do projeto não foi encontrado/)
+  })
 })

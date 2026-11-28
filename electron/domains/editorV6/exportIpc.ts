@@ -1,4 +1,5 @@
 import { editorV6OutputFrame } from '../../../src/shared/editorV6Export'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../src/shared/editorV6Timing'
 import { app, BrowserWindow, dialog, shell, type IpcMain, type IpcMainInvokeEvent, type ProcessMetric } from 'electron'
 import * as fs from 'node:fs/promises'
 import { stat } from 'node:fs/promises'
@@ -138,9 +139,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
         const snapshotMs = performance.now() - snapshotStarted
         const { assetSources, ...payloadData } = workerData
         const worker = await workers.create({ ...payloadData, width: options.width, height: options.height, layeredVideo,
-          // Separate 1080p readbacks avoid the tall 2160p surface on export.
-          // Keep the combined capture available for isolated A/B validation.
-          singlePassLayers: layeredVideo && nodeEnv.GACHA_EDITOR_V6_LAYER_CAPTURE === 'stacked',
+          // Layered video exports use separate 1080p readbacks for stable alpha parity.
           nativeRenderer: options.nativeRenderer === true,
           waitForRaf: nodeEnv.GACHA_EDITOR_V6_RAF_GATE === '1',
           reuseRestHair: nodeEnv.GACHA_EDITOR_V6_REUSE_REST_HAIR !== '0',
@@ -212,7 +211,7 @@ export function registerEditorV6ExportHandlers(deps: EditorV6ExportIpcDependenci
       const totalExportMilliseconds = report.milliseconds === undefined ? undefined : report.milliseconds + (report.hairPreparation?.totalMilliseconds ?? 0)
       const seconds = totalExportMilliseconds === undefined ? 'não medido' : `${(totalExportMilliseconds / 1000).toFixed(2).replace('.', ',')} s`
       const modeNote = options.testMode ? ` Modo ${options.testMode} · ${seconds} incluindo preparo.` : ''
-      const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${modeNote}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / 30}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
+      const message = `${report.deliveryWarning ?? 'MP4 exportado e validado.'}${modeNote}${mouth ? ` Loop da boca em ${mouth.characters} personagem(ns) · ${mouth.cycleFrames / EDITOR_V6_TIMELINE_FPS}s${mouth.skippedStates ? ` · ${mouth.skippedStates} estado(s) ignorado(s); veja o relatório` : ''}.` : ''}`
       job.status = { ...job.status, state: 'completed', outputPath: report.outputPath, fallback: report.fallback, frames: status.totalFrames, message, ...(totalExportMilliseconds !== undefined ? { totalExportMilliseconds } : {}) }
     }, (error: unknown) => {
       const cancelled = controller.signal.aborted

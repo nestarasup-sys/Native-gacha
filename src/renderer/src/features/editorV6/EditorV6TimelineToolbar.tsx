@@ -1,4 +1,5 @@
 import { frameTimecode } from '../../../../shared/editorV6TimelineCore'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 
 type Props = {
   playbackFrame: number
@@ -18,7 +19,7 @@ type Props = {
 
 export function EditorV6TimelineToolbar({ playbackFrame, durationFrames, playing, snap, compact, canSplit, onPlay, onToggleSnap, onZoomOut, onZoomIn, onFit, onToggleCompact, onSplit }: Props) {
   return <header className="editor-v6-timeline-toolbar">
-    <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(durationFrames)}</span><small>30 FPS</small></div>
+    <div className="editor-v6-timeline-title"><strong>Timeline</strong><span>{frameTimecode(playbackFrame)} / {frameTimecode(durationFrames)}</span><small>{EDITOR_V6_TIMELINE_FPS} FPS</small></div>
     <div className="editor-v6-timeline-actions">
       <button type="button" onClick={onPlay} title="Reproduzir / Pausar (Espaço)" aria-label={playing ? 'Pausar' : 'Reproduzir'}>{playing ? 'Ⅱ' : '▶'}</button>
       <button type="button" className={snap ? 'active' : ''} aria-pressed={snap} onClick={onToggleSnap} title="Magnetismo (S). Alt ignora temporariamente.">Snap</button>

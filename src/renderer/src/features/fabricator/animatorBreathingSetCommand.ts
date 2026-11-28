@@ -74,9 +74,12 @@ export function createAnimatorBreathingSetCommand(dependencies: AnimatorBreathin
         const pose = await dependencies.loadPose(modelSlot, summary.slot)
         return pose ? { pose, category: resolvePoseCategory(pose) } : null
       }))
-      const standing = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('parad'))
+      const standing = poses.find((entry) => {
+        const category = entry?.category.toLocaleLowerCase('pt-BR')
+        return category?.includes('parad') || category === 'em pé'
+      })
       const sitting = poses.find((entry) => entry?.category.toLocaleLowerCase('pt-BR').includes('sentad'))
-      if (!standing || !sitting) throw new Error('Salve pelo menos uma pose “Parado” e uma “Sentado” em Poses Dev para criar as variações.')
+      if (!standing || !sitting) throw new Error('Salve pelo menos uma pose “Em pé” e uma “Sentado” em Poses Dev para criar as variações.')
 
       const replaceable = new Set(oldBreathing.map((item) => item.slot))
       const occupied = new Set(summariesBefore.filter((item) => !replaceable.has(item.slot)).map((item) => item.slot))

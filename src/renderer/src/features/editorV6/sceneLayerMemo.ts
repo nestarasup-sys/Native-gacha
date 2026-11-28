@@ -36,9 +36,15 @@ export function sceneLayerPropsEqual(previous: SceneLayerProps, next: SceneLayer
   // Timeline snapshots are immutable; when the same state object survives to
   // the next frame, no nested field comparison is needed.
   if (left === right) return true
-  const keys = Object.keys(left) as Array<keyof EditorV6Element>
+  const keys = Object.keys(left) as Array<keyof EditorV6SceneElement>
   if (keys.length !== Object.keys(right).length) return false
   return keys.every((key) => key === 'motionSprite' ? sameMotionSprite(left.motionSprite, right.motionSprite)
     : key === 'mouthPatch' ? sameMouthPatch(left.mouthPatch, right.mouthPatch)
-      : Object.is(left[key], right[key]))
+      : key === 'balloonLayout' ? sameBalloonLayout(left.balloonLayout, right.balloonLayout)
+        : Object.is(left[key], right[key]))
+}
+
+function sameBalloonLayout(left: EditorV6SceneElement['balloonLayout'], right: EditorV6SceneElement['balloonLayout']): boolean {
+  return left === right || Boolean(left && right && left.x === right.x && left.y === right.y
+    && left.width === right.width && left.height === right.height)
 }

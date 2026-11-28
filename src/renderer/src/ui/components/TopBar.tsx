@@ -20,7 +20,6 @@ const groups = [
   { tone: 'slate', label: 'Desenvolvimento', sections: [
     { label: 'Logs Dev', path: APPLICATION_ROUTES.logsDev, icon: 'settings' },
     { label: 'Fabricador Dev', path: APPLICATION_ROUTES.fabricatorDev, icon: 'box' },
-    { label: 'Editor V7', path: APPLICATION_ROUTES.editorV7, icon: 'sparkles' },
   ] },
 ] as const
 

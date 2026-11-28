@@ -17,9 +17,10 @@ import { disposeCroppedMotionLayers, type CroppedMotionLayers } from './motionLa
 import { prepareEditorV6MotionFacePatch, type BakedFacePatch } from './motionFacePatchPreparation'
 import type { prepareSavedCharacterRenderer } from '../../../characters/editorV6CharacterRenderer'
 import type { EditorV6MotionLayerAtlasCapture } from './motionLayerAtlasCapture'
+import { editorV6MotionAtlasBudgetError } from '../../../../../shared/editorV6MotionBudget'
 import { disposeEditorV6MotionLayerAtlases, type MotionLayerAtlases } from './motionLayerAtlasWriter'
 import { prepareEditorV6MotionAtlasSources } from './motionAtlasSourcePreparation'
-import { bakeEditorV6MotionAtlasFrames } from './motionAtlasFrameBaking'
+import { bakeEditorV6MotionAtlasFrames, MotionAtlasCellOverflow } from './motionAtlasFrameBaking'
 import { finalizeEditorV6MotionBake } from './motionBakeResult'
 import { createEditorV6MotionFrameRenderer } from './motionFrameRenderer'
 import { bakeEditorV6StaticMouthLoop } from './motionStaticMouthBake'
@@ -132,40 +133,41 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
         } finally { rigPreparer.disposeTransientRenderer(renderer) }
       }
     })
-    const { fromCrop, toCrop, maximumCanvasWidth, maximumCanvasHeight } = endpointGeometry
+    const { fromCrop, toCrop, maximumAtlasWidth, maximumAtlasHeight } = endpointGeometry
     profile.endpointGeometryCacheHits = endpointGeometry.endpointGeometryCacheHits
     profile.endpointGeometryCacheMisses = endpointGeometry.endpointGeometryCacheMisses
     profile.endpointGeometryMs += performance.now() - endpointStarted
     const count = request.plan.samples.length
     const maxAtlasPixels = Math.min(MAX_MOTION_ATLAS_PIXELS, request.maxAtlasPixels ?? MAX_MOTION_ATLAS_PIXELS)
-    let maximumWidth = maximumCanvasWidth, maximumHeight = maximumCanvasHeight
+    let maximumWidth = maximumAtlasWidth, maximumHeight = maximumAtlasHeight
     let layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
-    let ratio = layout.ratio
     const frames: EditorV6MotionFrame[] = []
     const facePatches: BakedFacePatch[] = pendingFacePatches = []
-    if (ratio < 1) {
-      // The canvas can contain large transparent margins. Keep native cropped samples so
-      // the atlas uses visible bounds without rendering the same transition twice.
+    const sampleOptions = {
+      samples: request.plan.samples,
+      mouthScaleSamples: request.mouthScaleSamples,
+      captureLayers: Boolean(captureLayerAtlases),
+      render: (progress: number, faceMode: EditorV6MotionBakeRequest['plan']['samples'][number]['faceMode'], mouthScale: number, captureLayers: boolean) =>
+        render(progress, faceMode, mouthScale, false, undefined, false, captureLayers),
+      prepareFacePatch: ({ index, faceMode, progress, mouthScale, frame }: Omit<Parameters<typeof prepareFacePatch>[0], 'render' | 'mouthScaleSamples'>) =>
+        prepareFacePatch({ index, faceMode, progress, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render }),
+      profile
+    }
+    const measureSampleBounds = async () => {
       const prepared = await prepareEditorV6MotionAtlasSources({
-        samples: request.plan.samples,
-        fromCrop,
-        toCrop,
-        profile,
-        mouthScaleSamples: request.mouthScaleSamples,
-        captureLayers: Boolean(captureLayerAtlases),
-        render: (progress, faceMode, mouthScale, captureLayers) => render(progress, faceMode, mouthScale, false, undefined, false, captureLayers),
-        prepareFacePatch: ({ index, faceMode, progress, mouthScale, frame }) => prepareFacePatch({ index, faceMode, progress, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render })
+        ...sampleOptions
       })
       preparedAtlasFrames = prepared.frames
       facePatches.push(...prepared.facePatches)
       maximumWidth = prepared.maximumWidth
       maximumHeight = prepared.maximumHeight
       layout = chooseMotionAtlasLayout(count, maximumWidth, maximumHeight, 4096, maxAtlasPixels)
-      ratio = layout.ratio
+      if (layout.ratio < 1) throw editorV6MotionAtlasBudgetError({
+        width: layout.width, height: layout.height, pixels: layout.pixels, limitPixels: maxAtlasPixels
+      })
     }
-    if (ratio < 1) throw Error(`A transição deste personagem precisa de ${layout.width}×${layout.height} pixels em resolução nativa e excede o limite seguro. A exportação foi interrompida para não reduzir a nitidez do personagem.`)
-    const bakedAtlas = await bakeEditorV6MotionAtlasFrames({
-      samples: request.plan.samples,
+    const bakeAtlas = () => bakeEditorV6MotionAtlasFrames({
+      ...sampleOptions,
       from,
       to,
       fromCrop,
@@ -174,13 +176,16 @@ export async function bakeEditorV6Motion(request: EditorV6MotionBakeRequest, raw
       maximumHeight,
       columns: layout.columns,
       rows: layout.rows,
-      ratio,
-      preparedFrames: preparedAtlasFrames,
-      mouthScaleSamples: request.mouthScaleSamples,
-      captureLayers: Boolean(captureLayerAtlases),
-      render: (progress, faceMode, mouthScale, captureLayers) => render(progress, faceMode, mouthScale, false, undefined, false, captureLayers),
-      prepareFacePatch: ({ index, faceMode, progress, mouthScale, frame }) => prepareFacePatch({ index, faceMode, progress, mouthScale, mouthScaleSamples: request.mouthScaleSamples, frame, render }),
-      profile
+      ratio: layout.ratio,
+      preparedFrames: preparedAtlasFrames
+    })
+    if (layout.ratio < 1) await measureSampleBounds()
+    const bakedAtlas = await bakeAtlas().catch(async (error: unknown) => {
+      // An intermediate pose can be wider or taller than both endpoints.
+      // Repack at native resolution before a sample can cross into another cell.
+      if (!(error instanceof MotionAtlasCellOverflow) || preparedAtlasFrames) throw error
+      await measureSampleBounds()
+      return bakeAtlas()
     })
     const rigMetrics = rigPreparer.metrics()
     profile.rigBuildMs = rigMetrics.rigBuildMilliseconds

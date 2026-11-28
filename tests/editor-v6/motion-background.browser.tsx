@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client'
 import { flushSync } from 'react-dom'
 import { useMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/useMotionPreparation'
+import { useEditorV6PreviewMotion } from '../../src/renderer/src/features/editorV6/motion/useEditorV6PreviewMotion'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 
@@ -42,6 +43,34 @@ Object.assign(globalThis, { runBackgroundCheck: async () => {
     assert(calls === 2, 'Idle preparation did not resume')
     document.dispatchEvent(new WheelEvent('wheel', { bubbles: true })); await wait(80)
     assert(calls === 2, 'Already prepared transitions were repeatedly requested')
-    return { passed: true, idle: true, pausedWhileDragging: true, cancellation: true, disabledDuringPlaybackOrExport: true, noRepeatedRequests: true }
+    flushSync(() => root.render(<Harness enabled={false} />))
+    const requestIds: string[] = [], cancelledIds: string[] = []
+    const pending = new Map<string, () => void>()
+    Object.defineProperty(window, 'desktop', { configurable: true, value: { editorV6: {
+      bakeEditorV6Motion: ({ id }: { id: string }) => {
+        requestIds.push(id)
+        return new Promise<null>(resolve => pending.set(id, () => resolve(null)))
+      },
+      cancelEditorV6Motion: async (id: string) => { cancelledIds.push(id); pending.get(id)?.(); pending.delete(id) }
+    } } })
+    const track = project.timeline.tracks.find(track => track.kind === 'character')!
+    const [first, second] = track.blocks
+    const previewProject = { ...project, timeline: { ...project.timeline, tracks: project.timeline.tracks.map(item => item === track
+      ? { ...track, blocks: [{ ...first, durationFrames: 60 }, { ...second, durationFrames: 60 },
+        { ...second, id: crypto.randomUUID(), startFrame: 120, durationFrames: 180, state: { ...actor, poseSlot: 3 } }] }
+      : item) } }
+    function Preview({ frame }: { frame: number }) {
+      useEditorV6PreviewMotion(previewProject, frame, characters, true)
+      return null
+    }
+    flushSync(() => root.render(<Preview frame={0} />))
+    assert(requestIds.length === 1, 'Preview did not request the first transition')
+    flushSync(() => root.render(<Preview frame={40} />))
+    assert(requestIds.length === 2 && cancelledIds.length === 0, 'Entering lookahead cancelled an overlapping transition')
+    flushSync(() => root.render(<Preview frame={60} />))
+    assert(requestIds.length === 2 && cancelledIds.length === 1 && cancelledIds[0] === requestIds[0], 'Leaving lookahead cancelled useful work or restarted it')
+    flushSync(() => root.render(null))
+    assert(cancelledIds.length === 2 && cancelledIds[1] === requestIds[1], 'Unmount did not cancel the remaining preview request')
+    return { passed: true, idle: true, pausedWhileDragging: true, cancellation: true, disabledDuringPlaybackOrExport: true, noRepeatedRequests: true, previewRetainsOverlappingRequests: true }
   } finally { flushSync(() => root.unmount()); mount.remove(); window.setTimeout = nativeTimeout }
 } })

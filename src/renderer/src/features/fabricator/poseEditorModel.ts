@@ -1,15 +1,15 @@
 import type { FabricatorPose, JointLink } from '../../../../shared/fabricator'
-import { isModelRigConnectionCompatible, partJointAnchor } from '../../../../shared/modelRig.ts'
+import { isModelRigConnectionCompatible, isTorsoPart, modelRigSegmentKind, partJointAnchor } from '../../../../shared/modelRig.ts'
 import { rotatePointAroundOrigin } from './models/geometry.ts'
 
 export type PoseEditorProject = Omit<FabricatorPose, 'slot'>
 
-export function isMovablePosePart(project: PoseEditorProject, partId: string): boolean {
+export function isMovablePosePart(project: PoseEditorProject, partId: string, torsoId?: string): boolean {
   const part = project.parts.find((item) => item.id === partId)
-  return Boolean(part && !/tronco|corpo|cabeça|cabeca/i.test(part.name))
+  return Boolean(part && part.id !== torsoId && !isTorsoPart(part) && modelRigSegmentKind(part.name) !== 'head')
 }
 
-function fixedPoseBranch(project: PoseEditorProject, rootId: string): Set<string> {
+function fixedPoseBranch(project: PoseEditorProject, rootId: string, torsoId?: string): Set<string> {
   const movingIds = new Set([rootId])
   const parts = new Map(project.parts.map((part) => [part.id, part]))
   let changed = true
@@ -18,7 +18,7 @@ function fixedPoseBranch(project: PoseEditorProject, rootId: string): Set<string
     for (const joint of project.joints) if (joint.fixed && movingIds.has(joint.parentPartId) && !movingIds.has(joint.childPartId)) {
       const parent = parts.get(joint.parentPartId)
       const child = parts.get(joint.childPartId)
-      if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
+      if (!parent || !child || (child.id === torsoId || isTorsoPart(child)) || !isModelRigConnectionCompatible(parent, child)) continue
       movingIds.add(joint.childPartId)
       changed = true
     }
@@ -43,37 +43,31 @@ function translateParts(project: PoseEditorProject, partIds: Set<string>, dx: nu
   }
 }
 
-export function translatePoseBranch(project: PoseEditorProject, rootId: string, dx: number, dy: number): PoseEditorProject {
-  return translateParts(project, fixedPoseBranch(project, rootId), dx, dy)
+export function translatePoseBranch(project: PoseEditorProject, rootId: string, dx: number, dy: number, torsoId?: string): PoseEditorProject {
+  if (!isMovablePosePart(project, rootId, torsoId) || !Number.isFinite(dx) || !Number.isFinite(dy) || (!dx && !dy)) return project
+  return translateParts(project, fixedPoseBranch(project, rootId, torsoId), dx, dy)
+}
+
+export function poseRotationOrigin(part: PoseEditorProject['parts'][number], joints: JointLink[], torsoId?: string) {
+  const center = { x: part.x + part.width / 2, y: part.y + part.height / 2 }
+  return part.id === torsoId || isTorsoPart(part) ? center : partJointAnchor(part, joints) ?? center
 }
 
 export function rotatePosePart(
   project: PoseEditorProject,
   partId: string,
   targetAngle: number,
-  includeConnectedChildren: boolean
+  includeConnectedChildren: boolean,
+  torsoId?: string
 ): PoseEditorProject {
   const selected = project.parts.find((part) => part.id === partId)
   if (!selected) return project
   const amount = targetAngle - selected.rotation
-  if (!amount) return project
+  if (!Number.isFinite(amount) || !amount) return project
 
-  const origin = partJointAnchor(selected, project.joints) ?? { x: selected.x + selected.width / 2, y: selected.y + selected.height / 2 }
-  const affected = new Set<string>([selected.id])
-  if (includeConnectedChildren) {
-    let changed = true
-    while (changed) {
-      changed = false
-      for (const joint of project.joints) {
-        if (!joint.fixed || !affected.has(joint.parentPartId) || affected.has(joint.childPartId)) continue
-        const parent = project.parts.find((part) => part.id === joint.parentPartId)
-        const child = project.parts.find((part) => part.id === joint.childPartId)
-        if (!parent || !child || !isModelRigConnectionCompatible(parent, child)) continue
-        affected.add(joint.childPartId)
-        changed = true
-      }
-    }
-  }
+  const torso = selected.id === torsoId || isTorsoPart(selected)
+  const origin = poseRotationOrigin(selected, project.joints, torsoId)
+  const affected = includeConnectedChildren ? fixedPoseBranch(project, selected.id, torsoId) : new Set([selected.id])
 
   const parts = project.parts.map((part) => {
     if (!affected.has(part.id)) return part
@@ -81,8 +75,8 @@ export function rotatePosePart(
     const anchor = partJointAnchor(part, project.joints)
     return {
       ...part,
-      x: center.x - part.width / 2,
-      y: center.y - part.height / 2,
+      x: torso && part.id === selected.id ? part.x : center.x - part.width / 2,
+      y: torso && part.id === selected.id ? part.y : center.y - part.height / 2,
       rotation: part.rotation + amount,
       ...(anchor ? { jointAnchor: rotatePointAroundOrigin(anchor, origin, amount) } : {})
     }

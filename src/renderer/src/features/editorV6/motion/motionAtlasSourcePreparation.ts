@@ -20,8 +20,6 @@ export type PreparedMotionAtlasFrame = { canvas: HTMLCanvasElement; crop: Motion
 
 type PrepareMotionAtlasSourcesOptions<Frame extends MotionAtlasSourceFrame> = {
   samples: EditorV6MotionPlan['samples']
-  fromCrop: MotionPixelCrop
-  toCrop: MotionPixelCrop
   mouthScaleSamples?: number[]
   captureLayers: boolean
   render: (progress: number, faceMode: EditorV6FaceRenderMode | undefined, mouthScale: number, captureLayers: boolean) => Promise<Frame>
@@ -41,8 +39,6 @@ export type PreparedMotionAtlasSources = {
 /** Renders native-size source frames for a tighter atlas layout and transfers their ownership on success. */
 export async function prepareEditorV6MotionAtlasSources<Frame extends MotionAtlasSourceFrame>({
   samples,
-  fromCrop,
-  toCrop,
   mouthScaleSamples,
   captureLayers,
   render,
@@ -52,7 +48,10 @@ export async function prepareEditorV6MotionAtlasSources<Frame extends MotionAtla
   profile
 }: PrepareMotionAtlasSourcesOptions<Frame>): Promise<PreparedMotionAtlasSources> {
   const frames: PreparedMotionAtlasFrame[] = [], facePatches: BakedFacePatch[] = []
-  let maximumWidth = Math.max(fromCrop.width, toCrop.width), maximumHeight = Math.max(fromCrop.height, toCrop.height)
+  // Endpoint crops define source-frame scale and anchor, not atlas occupancy.
+  // Size the atlas from the visible rectangles actually rendered for samples;
+  // otherwise a full source frame keeps transparent margins in every cell.
+  let maximumWidth = 1, maximumHeight = 1
   try {
     for (const [index, sample] of samples.entries()) {
       const progress = motionEase(sample.progress)

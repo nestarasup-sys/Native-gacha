@@ -18,7 +18,7 @@
 
 Para comparar relatórios com diferentes layouts de captura das camadas, use `node scripts/editor-v6/compare-run-reports.cjs ... --allow-layer-capture-change`. O comparador exibe `single+stacked` ou `single+serial`; essa flag autoriza somente a diferença de layout e continua exigindo o mesmo intervalo, animações, encoder e validações.
 
-O padrão atual é serial para trechos com vídeo. A estratégia stacked fica para comparações isoladas por `GACHA_EDITOR_V6_LAYER_CAPTURE=stacked`. A fixture integrada compara os pixels das camadas com tolerância máxima de 1 LSB, sem diferença em alpha.
+Captura serial é a única estratégia disponível no export de produção para trechos com vídeo. A antiga opção `GACHA_EDITOR_V6_LAYER_CAPTURE=stacked` e sua superfície de renderização foram removidas: a fixture Electron detectou divergências determinísticas de alpha nos limites do personagem, e o A/B também ficou mais lento que serial. Os testes do caminho sem suporte foram retirados; a compatibilidade de relatórios antigos ainda reconhece o rótulo `stacked`. Só reintroduza uma estratégia combinada após corrigir a origem e validar paridade de pixels e ganho de parede.
 
 O V6 usa uma timeline de 30 FPS e pode exportar a 24 ou 30 FPS. Para mudanças de agendamento ou amostragem, cubra ambos e cheque o primeiro e o último quadro de cada trecho.
 

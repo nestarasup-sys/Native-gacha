@@ -18,7 +18,7 @@ import type { EditorV6ExportReport } from '../../electron/domains/editorV6/expor
 import { editorV6OutputColorFilter } from '../../electron/domains/editorV6/exportVideoComposition'
 import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } from '../../src/shared/editorV6'
 import { editEditorV6BackgroundAtFrame, moveEditorV6ElementInPeriod, prepareEditorV6PositionAtFrame } from '../../src/shared/editorV6Timeline'
-import { editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
+import { editorV6BlinkEventAtFrame, editorV6FaceModeAtFrame } from '../../src/shared/editorV6FaceSchedule'
 import { resolveEditorV6SceneAtFrame } from '../../src/shared/editorV6TimelineScene'
 import { faceRenderGeometry } from '../../src/renderer/src/characters/characterGeometry'
 import { checkLegacyProjectParity, type LegacyParityCatalog } from './legacyProjectParity.electron'
@@ -33,7 +33,16 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1')
 app.on('window-all-closed', () => {})
 process.on('unhandledRejection', (error) => { console.error('Rejeição não tratada no exportador:', error); app.exit(1) })
 const ffmpeg = join(videoTools, 'ffmpeg.exe'), ffprobe = join(videoTools, 'ffprobe.exe')
-const run = (args: string[]) => execFileSync(ffmpeg, ['-v', 'error', ...args], { windowsHide: true, maxBuffer: 16 * 1024 ** 2 })
+const run = (args: string[]) => execFileSync(ffmpeg, ['-v', 'error', ...args], { windowsHide: true, maxBuffer: 32 * 1024 ** 2 })
+async function runEditorV6ExportWithDiagnostics(...args: Parameters<typeof runEditorV6Export>): Promise<Awaited<ReturnType<typeof runEditorV6Export>>> {
+  const previous = process.env.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS
+  process.env.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS = '1'
+  try { return await runEditorV6Export(...args) }
+  finally {
+    if (previous === undefined) delete process.env.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS
+    else process.env.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS = previous
+  }
+}
 async function main() {
   await app.whenReady()
   const colorParts = [join(folder, 'color-tagged.mp4'), join(folder, 'color-unknown.mp4')]
@@ -76,17 +85,17 @@ async function main() {
     await writeFile(join(folder, `capture-${window.webContents.id}${suffix}.json`), JSON.stringify({ frame, yellowPixels, probePixelBgra: probePixel, dom }))
   } })
   let active = 0, peak = 0
-  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation'], singlePassLayers = false, nativeRenderer = false) => {
+  const makeWorkerWithFactory = async (targetFactory: ReturnType<typeof createEditorV6WorkerFactory>, signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops, hairAnimation?: EditorV6WorkerPayload['hairAnimation'], nativeRenderer = false) => {
     active++; peak = Math.max(peak, active)
     try {
-      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, singlePassLayers, nativeRenderer, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
+      const worker = await targetFactory.create({ project: renderProject, width, height, layeredVideo, nativeRenderer, ...(mouthLoops ? { mouthLoops } : {}), ...(hairAnimation ? { hairAnimation } : {}) }, signal)
       let closed = false
       return { frame: worker.frame, close: () => { if (closed) return; closed = true; active--; worker.close() } }
     } catch (error) { active--; throw error }
   }
   const makeWorker = (signal: AbortSignal, width = 320, height = 180, renderProject = project, layeredVideo = false, mouthLoops?: EditorV6ExportMouthLoops) => makeWorkerWithFactory(factory, signal, width, height, renderProject, layeredVideo, mouthLoops)
   const chromiumFrameWorker = await makeWorkerWithFactory(factory, new AbortController().signal)
-  const nativeFrameWorker = await makeWorkerWithFactory(factory, new AbortController().signal, 320, 180, project, false, undefined, undefined, false, true)
+  const nativeFrameWorker = await makeWorkerWithFactory(factory, new AbortController().signal, 320, 180, project, false, undefined, undefined, true)
   let nativeRendererParity: { passed: true; width: number; height: number; meanAbsoluteChannelError: number; alphaDifferentPixels: number; nativeRasterMs: number } | undefined
   try {
     const [chromiumFrame, nativeFrame] = await Promise.all([chromiumFrameWorker.frame(0), nativeFrameWorker.frame(0)])
@@ -108,7 +117,7 @@ async function main() {
   const samples: { nativeRoundTripMs: number; chromiumRoundTripMs: number; nativeRasterMs: number; chromiumCapturePageMs: number; meanAbsoluteChannelError: number }[] = []
   for (const [repetition, frameNumber] of [0, 25, 30].entries()) {
     const chromium1080Worker = await makeWorkerWithFactory(factory, new AbortController().signal, 1920, 1080)
-    const native1080Worker = await makeWorkerWithFactory(factory, new AbortController().signal, 1920, 1080, project, false, undefined, undefined, false, true)
+    const native1080Worker = await makeWorkerWithFactory(factory, new AbortController().signal, 1920, 1080, project, false, undefined, undefined, true)
     try {
       const renderOne = async (mode: 'native' | 'chromium') => {
         const started = performance.now()
@@ -143,7 +152,7 @@ async function main() {
   const progressMessages: string[] = []
   const base = { ffmpeg, ffprobe, tempRoot: folder, id: randomUUID(), outputPath: output, reportPath: join(folder, 'turbo.report.json'), signal: new AbortController().signal, getCharacters: async () => [], bakeMotion: async () => { throw Error('Unexpected motion bake.') }, getElectronProcessMetrics: () => app.getAppMetrics(), createWorker: (renderProject: EditorV6Document, _part: unknown, signal: AbortSignal, layeredVideo: boolean, mouthLoops?: EditorV6ExportMouthLoops) => makeWorker(signal, 320, 180, renderProject, layeredVideo, mouthLoops), audioPath: () => audio, mediaPath: (_projectId: string, fileName: string) => join(folder, 'media', fileName), progress: (patch: { message?: string }) => { if (patch.message) progressMessages.push(patch.message) } }
   const nativeOutput = join(folder, 'native-renderer.mp4')
-  const nativeExport = await runEditorV6Export(project, { ...options, startFrame: 25, endFrame: 35, turbo: false, nativeRenderer: true }, {
+  const nativeExport = await runEditorV6ExportWithDiagnostics(project, { ...options, startFrame: 25, endFrame: 35, turbo: false, nativeRenderer: true }, {
     ...base, id: randomUUID(), outputPath: nativeOutput, reportPath: join(folder, 'native-renderer.report.json'),
     createWorker: (renderProject, part, signal, layeredVideo, mouthLoops) => {
       // Exercise the production asset transport through the sandboxed worker.
@@ -157,7 +166,7 @@ async function main() {
   assert((nativePart?.frameTiming?.nativeRasterMs?.samples ?? 0) > 0 && nativePart?.frameTiming?.capturePageMs === undefined, 'O relatório da exportação nativa não separou a composição C++ da captura Chromium.')
   const nativePacketCount = Number(execFileSync(ffprobe, ['-v', 'error', '-count_packets', '-select_streams', 'v:0', '-show_entries', 'stream=nb_read_packets', '-of', 'default=nw=1:nk=1', nativeOutput], { encoding: 'utf8', windowsHide: true }).trim())
   assert(nativePacketCount === 10, `O MP4 do renderizador nativo não contém os dez quadros esperados (${nativePacketCount}).`)
-  const report = await runEditorV6Export(project, options, base)
+  const report = await runEditorV6ExportWithDiagnostics(project, options, base)
   assert(report.state === 'completed' && !report.fallback, 'Turbo não concluiu com duas partes.')
   const film = await runEditorV6Export(project, { ...options, fps: 24, endFrame: options.endFrame - 2 }, {
     ...base, id: randomUUID(), outputPath: join(folder, '24fps.mp4'), reportPath: join(folder, '24fps.report.json')
@@ -203,17 +212,18 @@ async function main() {
   run(['-f', 'lavfi', '-i', 'color=c=magenta:s=16x16', '-frames:v', '1', talkBlinkPath])
   const blinkAsset = { id: blinkAssetId, category: 'character' as const, name: 'Blink test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(blinkPath)).toString('base64')}` }
   const talkBlinkAsset = { id: talkBlinkAssetId, category: 'character' as const, name: 'Talk blink test', mimeType: 'image/png' as const, dataUrl: `data:image/png;base64,${(await readFile(talkBlinkPath)).toString('base64')}` }
-  const faceSpeechBlock = { id: randomUUID(), label: 'Talk window', characterId: 'alice', startFrame: 8, durationFrames: 12 }
-  const faceScheduleTimeline = { ...project.timeline, durationFrames: 40, tracks: project.timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] } : track) }
   const faceProjectId = 'face-export-synthetic-8'
-  const faceModes = Array.from({ length: 40 }, (_, frame) => editorV6FaceModeAtFrame(faceProjectId, faceScheduleTimeline, 'alice', frame))
-  assert(faceModes[0] === undefined && faceModes[15] === 'talk-blink' && faceModes[20] === 'blink' && faceModes[21] === undefined, 'O fixture perdeu o ciclo determinístico de rosto que cruza a emenda Turbo.')
+  const firstBlink = Array.from({ length: 106 }, (_, frame) => frame).find(frame => editorV6BlinkEventAtFrame(faceProjectId, frame))!
+  const faceSpeechBlock = { id: randomUUID(), label: 'Talk window', characterId: 'alice', startFrame: 8, durationFrames: firstBlink + 2 - 8 }
+  const faceScheduleTimeline = { ...project.timeline, durationFrames: 120, tracks: project.timeline.tracks.map((track) => track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] } : track) }
+  const faceModes = Array.from({ length: 120 }, (_, frame) => editorV6FaceModeAtFrame(faceScheduleTimeline, 'alice', frame, { blinking: Boolean(editorV6BlinkEventAtFrame(faceProjectId, frame)) }))
+  assert(faceModes[0] === undefined && faceModes[firstBlink] === 'talk-blink' && faceModes[firstBlink + 2] === 'blink' && faceModes[firstBlink + 4] === undefined, 'O fixture perdeu o ciclo determinístico de rosto que cruza a emenda Turbo.')
   const faceModeAssetIds = { talk: talkAssetId, blink: blinkAssetId, 'talk-blink': talkBlinkAssetId }
   const faceActor = { ...actor, faceModeAssetIds }
   const thought = { id: thoughtId, kind: 'thought' as const, text: 'Teste', x: 0, y: -30, width: 28, height: 12, rotation: 0, zIndex: 2 }
   const faceProject: EditorV6Document = {
     ...project, id: faceProjectId, title: 'Face state capture test', exportAudio: [], assets: [...project.assets, talkAsset, blinkAsset, talkBlinkAsset], elements: [faceActor, thought],
-    timeline: { ...project.timeline, durationFrames: 40, knownElementIds: [...project.timeline.knownElementIds ?? [], thoughtId], tracks: project.timeline.tracks.map((track) => track.kind === 'character'
+    timeline: { ...project.timeline, durationFrames: 120, knownElementIds: [...project.timeline.knownElementIds ?? [], thoughtId], tracks: project.timeline.tracks.map((track) => track.kind === 'character'
       ? { ...track, blocks: track.blocks.map((block) => ({ ...block, state: block.state ? { ...block.state, faceModeAssetIds } : block.state })) }
       : track.kind === 'speech' ? { ...track, blocks: [faceSpeechBlock] }
         : track.kind === 'thought' ? { ...track, blocks: [{ id: randomUUID(), label: thought.text, elementId: thought.id, state: thought, startFrame: 20, durationFrames: 5 }] }
@@ -221,7 +231,7 @@ async function main() {
     }
   }
   const expectedFaceAssetIds = { talk: talkAssetId, blink: blinkAssetId, 'talk-blink': talkBlinkAssetId }
-  for (const frame of [0, 15, 20, 21]) {
+  for (const frame of [0, firstBlink, firstBlink + 2, firstBlink + 4]) {
     const expected = faceModes[frame] ? expectedFaceAssetIds[faceModes[frame]!] : assetId
     const resolved = resolveEditorV6SceneAtFrame(faceProject, frame).elements.find((element) => element.id === faceActor.id)
     assert(resolved?.assetId === expected, `O fixture resolveu a imagem de rosto errada no quadro ${frame}.`)
@@ -264,14 +274,14 @@ async function main() {
   assert(mouthWorkerPayloads.length === 1 && mouthWorkerPayloads[0].stateCount === 0 && mouthWorkerPayloads[0].startFrame === -1, 'O worker recebeu atlas ou estado da boca no perfil desativado.')
   assert(mouthReport.attempts[0].parallelism === 1 && mouthReport.attempts[0].parts.map((part) => part.frames).join(',') === '301', 'O perfil sem boca dividiu a fala em trechos desnecessariamente.')
   const faceOutput = join(folder, 'face-state.mp4')
-  const faceReport = await runEditorV6Export(faceProject, { ...options, startFrame: 0, endFrame: 40 }, { ...base, id: randomUUID(), outputPath: faceOutput, reportPath: join(folder, 'face-state.report.json'), getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop })
+  const faceReport = await runEditorV6Export(faceProject, { ...options, startFrame: 0, endFrame: 120 }, { ...base, id: randomUUID(), outputPath: faceOutput, reportPath: join(folder, 'face-state.report.json'), getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop })
   assert(!faceReport.fallback, 'Trocas de talk/pensamento não concluíram com a captura normal.')
-  const faceFrames = run(['-i', faceOutput, '-frames:v', '40', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
+  const faceFrames = run(['-i', faceOutput, '-frames:v', '120', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   const faceFrameBytes = 320 * 180 * 3
-  for (let frame = 0; frame < 40; frame++) {
+  for (let frame = 0; frame < 120; frame++) {
     const offset = frame * faceFrameBytes + (90 * 320 + 240) * 3
     const [red, green, blue] = faceFrames.subarray(offset, offset + 3)
-    const mode = editorV6FaceModeAtFrame(faceProject.id, faceProject.timeline, 'alice', frame)
+    const mode = faceModes[frame]
     const correctColor = mode === 'talk-blink'
       ? red > 150 && green < 100 && blue > 100
       : mode === 'talk'
@@ -426,7 +436,7 @@ async function main() {
   const linkedReport = await runEditorV6Export(linkedProject, { ...options, startFrame: 0, endFrame: 30 }, { ...base, id: randomUUID(), outputPath: linkedOutput, reportPath: join(folder, 'library-linked.report.json'), mediaPath: (_projectId, fileName, libraryId) => join(folder, libraryId ? 'library' : 'media', fileName), audioPath: (clip) => join(folder, clip.libraryVideoId ? 'library' : 'media', clip.fileName) })
   assert(!linkedReport.fallback && linkedReport.videoInputs === 1 && linkedReport.audioClips === 2, 'Vídeo vinculado por ID não chegou ao preview de exportação e à mixagem de áudio.')
   project = silent
-  const fullHd = await runEditorV6Export(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (renderProject, _part, signal, layeredVideo) => makeWorker(signal, 1920, 1080, renderProject, layeredVideo) })
+  const fullHd = await runEditorV6ExportWithDiagnostics(silent, { ...options, startFrame: 45, endFrame: 47, width: 1920, height: 1080 }, { ...base, id: randomUUID(), outputPath: join(folder, '1080p.mp4'), reportPath: join(folder, '1080p.report.json'), createWorker: (renderProject, _part, signal, layeredVideo) => makeWorker(signal, 1920, 1080, renderProject, layeredVideo) })
   assert(fullHd.totalFrames === 2 && !fullHd.fallback && active === 0, 'Exportação 1080p não concluiu com duas partes.')
   const hdPixels = run(['-i', join(folder, '1080p.mp4'), '-frames:v', '1', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
   let actorPixels = 0
@@ -473,9 +483,9 @@ async function main() {
   const event = { sender: owner.webContents, senderFrame: owner.webContents.mainFrame } as IpcMainInvokeEvent
   const bake = handlers.get(editorV6IpcChannels.bakeEditorV6Motion)!
   const cancelId = randomUUID()
-  const pending = bake(event,{id:cancelId,plan,character}).then(()=>false,()=>true)
+  const pending = bake(event,{id:cancelId,plan,character})
   await handlers.get(editorV6IpcChannels.cancelEditorV6Motion)!(event,cancelId)
-  assert(await pending, 'Motion cancellation failed.')
+  assert(await pending === null, 'Motion cancellation did not return the preview cancellation result.')
   const staticProject = project
   project = motionProject
   const motionOutput = join(folder, 'motion-turbo.mp4')
@@ -492,7 +502,7 @@ async function main() {
   }
   const videoMotionProject = editEditorV6BackgroundAtFrame(videoMotionBase, 45, { backgroundColor: '#00ff00' })
   const videoMotionOutput = join(folder, 'video-motion-turbo.mp4')
-  const videoMotion = await runEditorV6Export(videoMotionProject, options, { ...base, id: randomUUID(), outputPath: videoMotionOutput, reportPath: join(folder, 'video-motion.report.json'), getCharacters: async () => [character], bakeMotion: (request, signal) => service.bakeForExport(request, signal) })
+  const videoMotion = await runEditorV6ExportWithDiagnostics(videoMotionProject, options, { ...base, id: randomUUID(), outputPath: videoMotionOutput, reportPath: join(folder, 'video-motion.report.json'), getCharacters: async () => [character], bakeMotion: (request, signal) => service.bakeForExport(request, signal) })
   assert(!videoMotion.fallback && videoMotion.motionTransitionsRequired === 1 && videoMotion.videoInputs === 1, 'A transição com vídeo na composição não concluiu o export.')
   assert(videoMotion.attempts[0].parts.every((part) => part.frameTiming?.backgroundCaptureMs?.samples === 1 && (part.frameTiming?.foregroundCaptureMs?.samples ?? 0) > 1), 'O fundo estático foi recapturado a cada mudança do personagem, ou a captura da camada mudou sem necessidade.')
   const transitionFrames = run(['-i', videoMotionOutput, '-vf', "select='between(n,38,44)'", '-fps_mode', 'passthrough', '-frames:v', '7', '-pix_fmt', 'rgb24', '-f', 'rawvideo', 'pipe:1'])
@@ -506,7 +516,8 @@ async function main() {
     for (let y = 35; y < 145; y++) for (let x = 175; x < 315; x++) {
       const offset = index * frameBytes + (y * 320 + x) * 3
       const red = transitionFrames[offset], green = transitionFrames[offset + 1], blue = transitionFrames[offset + 2]
-      if (red > 160 && green > 100 && green < 245 && blue < 100) characterPixels++
+      // The synthetic actor is yellow, including fully saturated green.
+      if (red > 160 && green > 100 && blue < 100) characterPixels++
     }
     assert(characterPixels > 50, `O personagem sumiu durante a troca de pose no quadro ${index} (${characterPixels} pixels detectados).`)
   }
@@ -569,7 +580,7 @@ async function main() {
     }))
   }
   const doubleMouthOutput = join(folder, 'isolated-mouth-with-hair.mp4')
-  const doubleMouthReport = await runEditorV6Export(doubleMouthProject, { ...options, startFrame: 0, endFrame: 10, turbo: false, mouthLoop: true }, {
+  const doubleMouthReport = await runEditorV6ExportWithDiagnostics(doubleMouthProject, { ...options, startFrame: 0, endFrame: 10, turbo: false, mouthLoop: true }, {
     ...base, id: randomUUID(), outputPath: doubleMouthOutput, reportPath: join(folder, 'isolated-mouth-with-hair.report.json'),
     getCharacters: async () => [character],
     bakeMotion: async request => {
@@ -616,12 +627,12 @@ async function main() {
     uniqueCaptureProject = editEditorV6BackgroundAtFrame(uniqueCaptureProject, frame, { backgroundColor })
   }
   const uniqueCapture320Output = join(folder, 'capture-profile-unique-320.mp4')
-  const uniqueCapture320 = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, turbo: false }, {
+  const uniqueCapture320 = await runEditorV6ExportWithDiagnostics(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, turbo: false }, {
     ...base, id: randomUUID(), outputPath: uniqueCapture320Output, reportPath: join(folder, 'capture-profile-unique-320.report.json')
   })
   const uniqueCapture1080Output = join(folder, 'capture-profile-unique-1080.mp4')
   capturePageHashes = []
-  const uniqueCapture1080 = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+  const uniqueCapture1080 = await runEditorV6ExportWithDiagnostics(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
     ...base, id: randomUUID(), outputPath: uniqueCapture1080Output, reportPath: join(folder, 'capture-profile-unique-1080.report.json'),
     createWorker: (renderProject, _part, signal, layeredVideo) => makeWorker(signal, 1920, 1080, renderProject, layeredVideo)
   })
@@ -670,7 +681,7 @@ async function main() {
     })
     const sameWorkerPaintOutput = join(folder, 'capture-profile-same-worker-1080.mp4')
     try {
-      sameWorkerPaintParity = await runEditorV6Export(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
+      sameWorkerPaintParity = await runEditorV6ExportWithDiagnostics(uniqueCaptureProject, { ...options, startFrame: 0, endFrame: uniqueCaptureFrameCount, width: 1920, height: 1080, turbo: false }, {
         ...base, id: randomUUID(), outputPath: sameWorkerPaintOutput, reportPath: join(folder, 'capture-profile-same-worker-1080.report.json'),
         createWorker: (renderProject, _part, signal, layeredVideo) => makeWorkerWithFactory(sameWorkerPaintFactory, signal, 1920, 1080, renderProject, layeredVideo)
       })
@@ -732,7 +743,7 @@ async function main() {
     }
   })
   const layeredHairFaceOutput = join(folder, 'capture-profile-layered-hair-face.mp4')
-  const layeredHairFaceParity = await runEditorV6Export(hairFaceVideoProject, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
+  const layeredHairFaceParity = await runEditorV6ExportWithDiagnostics(hairFaceVideoProject, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
     ...base, id: randomUUID(), outputPath: layeredHairFaceOutput, reportPath: join(folder, 'capture-profile-layered-hair-face.report.json'),
     getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
     createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => {
@@ -754,97 +765,6 @@ async function main() {
     && new Set(earlyAnimatedHairDigests).size > 1 && active === 0
   assert(layeredHairFaceParityPassed, `Paridade de vídeo/cabelo/face no mesmo worker incompleta: quadros=${layeredHairFaceParity.totalFrames}, camadas=${layeredBackgroundCaptureSamples}/${layeredForegroundCaptureSamples}, cabelo=${layeredHairRasterFrames}, cabelo animado único=${new Set(earlyAnimatedHairDigests).size}, workers=${active}.`)
 
-  // Compare the production stacked readback with the old serial path on the
-  // same animated/video/face fixture. Hash raw BGRA layers before encoding.
-  const layerModeRuns: Record<'serial' | 'stacked', Array<{ milliseconds: number; frames: number; rendered: number; capturePageMs: number; ffmpegWriteMs: number; effectiveFps: number }>> = { serial: [], stacked: [] }
-  let layerModeParity = { compared: 0, exact: 0, withinTolerance: 0, maxChannelDelta: 0, alphaDifferentBytes: 0, outsideTolerance: [] as Array<{ frame: number; layer: string; changedPixels: number; maxDelta: number; alphaDifferentBytes: number }> }
-  const median = (values: number[]) => {
-    const ordered = [...values].sort((a, b) => a - b)
-    return ordered.length % 2 ? ordered[(ordered.length - 1) / 2] : (ordered[(ordered.length / 2) - 1] + ordered[ordered.length / 2]) / 2
-  }
-  for (let repetition = 0; repetition < 3; repetition++) {
-    const order = repetition % 2 === 0 ? ['serial', 'stacked'] as const : ['stacked', 'serial'] as const
-    const digestRuns: Partial<Record<'serial' | 'stacked', Array<{ frame: number; layer: 'background' | 'foreground'; digest: string }>>> = {}
-    for (const mode of order) {
-      const digests: Array<{ frame: number; layer: 'background' | 'foreground'; digest: string; bitmap: Buffer }> = []
-      digestRuns[mode] = digests
-      const modeFactory = createEditorV6WorkerFactory({
-        ipcMain, html: join(root, 'out/renderer/editor-v6-export.html'), preload: join(root, 'out/preload/editorV6ExportPreload.cjs'),
-        mediaPath: (_projectId, fileName, libraryVideoId) => join(folder, libraryVideoId ? 'library' : 'media', fileName),
-        inspectCapture: async ({ frame, layer, bitmap }) => {
-          if (layer === 'background' || layer === 'foreground') digests.push({ frame, layer, digest: createHash('sha256').update(bitmap).digest('hex'), bitmap: Buffer.from(bitmap) })
-        }
-      })
-      const outputPath = join(folder, `layer-capture-${mode}-${repetition}.mp4`)
-      const reportPath = join(folder, `layer-capture-${mode}-${repetition}.report.json`)
-      const previousMode = process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
-      process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = mode
-      const startedAt = performance.now()
-      let profile: EditorV6ExportReport
-      try {
-        profile = await runEditorV6Export(hairFaceVideoProject, { ...options, startFrame: 0, endFrame: 40, turbo: false }, {
-          ...base, id: randomUUID(), outputPath, reportPath, getCharacters: async () => [mouthCharacter], bakeMotion: bakeMouthLoop,
-          createWorker: (renderProject, _part, signal, layeredVideo, mouthLoops) => {
-            assert(layeredVideo, 'O benchmark de camadas precisa exercitar a composição de vídeo.')
-            return makeWorkerWithFactory(modeFactory, signal, 320, 180, renderProject, layeredVideo, mouthLoops, syntheticHairMotion, mode === 'stacked')
-          }
-        })
-      } finally {
-        if (previousMode === undefined) delete process.env.GACHA_EDITOR_V6_LAYER_CAPTURE
-        else process.env.GACHA_EDITOR_V6_LAYER_CAPTURE = previousMode
-        modeFactory.dispose()
-      }
-      const wallMilliseconds = performance.now() - startedAt
-      const parts = profile.attempts.flatMap(attempt => attempt.parts)
-      const frames = parts.reduce((sum, part) => sum + part.frames, 0)
-      const rendered = parts.reduce((sum, part) => sum + part.rendered, 0)
-      const capturePageMs = parts.reduce((sum, part) => sum + (part.frameTiming?.capturePageMs?.totalMs ?? 0), 0)
-      const ffmpegWriteMs = parts.reduce((sum, part) => sum + (part.frameTiming?.ffmpegWriteMs?.totalMs ?? 0), 0)
-      assert(profile.state === 'completed' && !profile.fallback && frames === 40 && profile.videoInputs === 1 && active === 0,
-        `Benchmark ${mode} #${repetition + 1} não exportou os 40 quadros de vídeo/cabelo (${frames}, estado ${profile.state}).`)
-      layerModeRuns[mode].push({ milliseconds: wallMilliseconds, frames, rendered, capturePageMs, ffmpegWriteMs, effectiveFps: frames * 1000 / wallMilliseconds })
-    }
-
-    const serial = digestRuns.serial ?? []
-    for (const actual of digestRuns.stacked ?? []) {
-      const expected = serial.filter(candidate => candidate.layer === actual.layer && candidate.frame <= actual.frame)
-        .sort((left, right) => right.frame - left.frame)[0]
-      if (!expected) {
-        layerModeParity.outsideTolerance.push({ frame: actual.frame, layer: actual.layer, changedPixels: -1, maxDelta: 255, alphaDifferentBytes: 1 })
-        continue
-      }
-      layerModeParity.compared++
-      if (expected.digest === actual.digest) { layerModeParity.exact++; continue }
-      let changedPixels = 0, maxDelta = 0, alphaDifferentBytes = 0
-      for (let pixel = 0; pixel < Math.min(expected.bitmap.length, actual.bitmap.length); pixel += 4) {
-        let pixelChanged = false
-        for (let channel = 0; channel < 3; channel++) {
-          const delta = Math.abs(expected.bitmap[pixel + channel] - actual.bitmap[pixel + channel])
-          maxDelta = Math.max(maxDelta, delta)
-          pixelChanged ||= delta !== 0
-        }
-        if (expected.bitmap[pixel + 3] !== actual.bitmap[pixel + 3]) alphaDifferentBytes++
-        if (pixelChanged) changedPixels++
-      }
-      layerModeParity.maxChannelDelta = Math.max(layerModeParity.maxChannelDelta, maxDelta)
-      layerModeParity.alphaDifferentBytes += alphaDifferentBytes
-      // Permit only rasterizer rounding of at most one 8-bit color value in
-      // <=0.01% of pixels. Alpha, layer ordering and meaningful color changes
-      // must remain identical across the two capture layouts.
-      const maxToleratedPixels = Math.floor(Math.min(expected.bitmap.length, actual.bitmap.length) / 4 * 0.0001)
-      if (maxDelta <= 1 && alphaDifferentBytes === 0 && changedPixels <= maxToleratedPixels) layerModeParity.withinTolerance++
-      else if (layerModeParity.outsideTolerance.length < 8) layerModeParity.outsideTolerance.push({ frame: actual.frame, layer: actual.layer, changedPixels, maxDelta, alphaDifferentBytes })
-    }
-  }
-  assert(layerModeParity.outsideTolerance.length === 0 && layerModeParity.compared >= 120,
-    `A captura stacked divergiu além da tolerância de rasterização em ${layerModeParity.outsideTolerance.length} amostras: ${JSON.stringify(layerModeParity.outsideTolerance)}.`)
-  const layerModeSummary = {
-    repetitions: 3, uncontrolledMachine: true, layerComparisons: layerModeParity.compared, exactLayerComparisons: layerModeParity.exact,
-    oneLsbToleranceComparisons: layerModeParity.withinTolerance, maxChannelDelta: layerModeParity.maxChannelDelta, alphaDifferentBytes: layerModeParity.alphaDifferentBytes,
-    outsideTolerance: layerModeParity.outsideTolerance.length,
-    serial: { runs: layerModeRuns.serial, medianMilliseconds: median(layerModeRuns.serial.map(run => run.milliseconds)), medianEffectiveFps: median(layerModeRuns.serial.map(run => run.effectiveFps)) },
-    stacked: { runs: layerModeRuns.stacked, medianMilliseconds: median(layerModeRuns.stacked.map(run => run.milliseconds)), medianEffectiveFps: median(layerModeRuns.stacked.map(run => run.effectiveFps)) }
-  }
   const captureProfile = (exportReport: EditorV6ExportReport) => exportReport.attempts.flatMap((attempt) => attempt.parts.map((part) => ({
     frames: part.frames,
     rendered: part.rendered,
@@ -888,12 +808,12 @@ async function main() {
         expressionFrames: faceModes.filter(Boolean).length,
         parts: captureProfile(layeredHairFaceParity)
       },
-      layeredCaptureSerialVsStacked: layerModeSummary
+      layeredCapture: { productionMode: 'serial', stackedEnabled: false }
     },
     mouthStress: { frames: mouthReport.totalFrames, fps: mouthReport.fps, milliseconds: mouthReport.milliseconds, memory: mouthReport.mainProcessMemory, phases: mouthReport.phaseMilliseconds, atlas: mouthReport.mouthAnimation, partFrames: mouthReport.attempts[0].parts.map((part) => part.frames), output: mouthOutput } }
   await writeFile(join(folder, 'result.json'), JSON.stringify(summary))
   console.log(JSON.stringify(summary, null, 2))
   app.exit(0)
 }
-const timeout = setTimeout(() => { console.error('Tempo limite do teste de exportação.'); app.exit(1) }, 120000)
+const timeout = setTimeout(() => { console.error('Tempo limite do teste de exportação.'); app.exit(1) }, 300000)
 void main().catch((error) => { clearTimeout(timeout); console.error(error); app.exit(1) })

@@ -15,6 +15,7 @@ type Props = {
   error: string | null
   importOpen: boolean
   onCreateProject: () => Promise<void>
+  onOpenFolder: () => Promise<void>
   onOpenImport: () => void
   onCloseImport: () => void
   onSaveImportedProject: (project: EditorV6Document) => Promise<void>
@@ -34,6 +35,7 @@ export function EditorV6ProjectBrowser({
   error,
   importOpen,
   onCreateProject,
+  onOpenFolder,
   onOpenImport,
   onCloseImport,
   onSaveImportedProject,
@@ -45,6 +47,15 @@ export function EditorV6ProjectBrowser({
   const [jsonBusy, setJsonBusy] = useState(false)
   const [jsonError, setJsonError] = useState('')
   const [jsonStatus, setJsonStatus] = useState('')
+  const [openingFolder, setOpeningFolder] = useState(false)
+  const [folderError, setFolderError] = useState('')
+  const openFolder = async () => {
+    setOpeningFolder(true)
+    setFolderError('')
+    try { await onOpenFolder() }
+    catch (reason) { setFolderError(reason instanceof Error ? reason.message : String(reason)) }
+    finally { setOpeningFolder(false) }
+  }
   const exportJson = async (id: string) => {
     setJsonBusy(true); setJsonError(''); setJsonStatus('')
     try { const result = await window.desktop.editorV6.exportEditorV6ProjectJson(id); if (result) setJsonStatus(result.warnings.length ? `JSON salvo. Alguns dados não são suportados pelo formato e podem mudar na importação:\n${result.warnings.join('\n')}` : 'JSON do projeto exportado.') }
@@ -57,17 +68,32 @@ export function EditorV6ProjectBrowser({
       <div className="studio-toolbar" aria-label="Ações do Editor V6">
         <button className="studio-action studio-action-primary" onClick={() => void onCreateProject()} disabled={loading || creatingProject} type="button"><Icon name="plus" />{creatingProject ? 'Criando…' : 'Criar'}</button>
         <button className="studio-action" onClick={onOpenImport} type="button"><Icon name="download" />Importar JSON</button>
+        <button className="studio-action" onClick={() => void openFolder()} disabled={openingFolder} type="button"><Icon name="folder" />{openingFolder ? 'Abrindo…' : 'Ir à pasta'}</button>
       </div>
       {importOpen && <Suspense fallback={<p role="status">Carregando importador…</p>}><EditorV6ReactImportDialog onClose={onCloseImport} onSave={onSaveImportedProject} onImported={onImportCompleted} /></Suspense>}
       {error && <p className="studio-error-message" role="alert">{error}</p>}
+      {folderError && <p className="studio-error-message" role="alert">{folderError}</p>}
       {jsonError && <p className="studio-error-message" role="alert">{jsonError}</p>}
       {jsonStatus && <p role="status" style={{ whiteSpace: 'pre-line' }}>{jsonStatus}</p>}
       {loading ? <section className="studio-empty-state"><strong>Carregando projetos…</strong></section> : projects.length ? (
         <section className="studio-grid" aria-label="Projetos do Editor V6">
-          {projects.map((project) => <article className={`studio-card${selectedProjectId === project.id ? ' selected' : ''}`} key={project.id}>
-            <header className="studio-card-heading"><button className="studio-card-open" onClick={() => onOpenProject(project.id)} aria-label={`Abrir ${project.title}`} type="button">{project.title}</button><div className="studio-card-actions"><button className="studio-card-action" disabled={jsonBusy} onClick={() => void exportJson(project.id)} aria-label={`Exportar ${project.title} em JSON`} title="Exportar projeto em JSON" type="button"><Icon name="download" /></button><button className="studio-card-action" onClick={() => onDuplicateProject(project)} aria-label={`Duplicar ${project.title}`} title={`Duplicar ${project.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button><button className="studio-card-action danger" onClick={() => onDeleteProject(project)} aria-label={`Excluir ${project.title}`} title={`Excluir ${project.title}`} type="button"><Icon name="trash" /></button></div></header>
-            <button className="studio-cover" style={{ backgroundColor: project.color, ...(project.thumbnailDataUrl ? { backgroundImage: `url(${project.thumbnailDataUrl})` } : {}) }} onClick={() => onOpenProject(project.id)} aria-label={`Abrir ${project.title}`} type="button" />
-          </article>)}
+          {projects.map((project) => {
+            const unavailable = Boolean(project.unavailableReason)
+            return (
+              <article className={`studio-card${selectedProjectId === project.id ? ' selected' : ''}${unavailable ? ' unavailable' : ''}`} key={project.id}>
+                <header className="studio-card-heading">
+                  <button className="studio-card-open" disabled={unavailable} onClick={() => onOpenProject(project.id)} aria-label={unavailable ? `${project.title}: indisponível` : `Abrir ${project.title}`} title={project.title} type="button">{project.title}</button>
+                  <div className="studio-card-actions">
+                    <button className="studio-card-action" disabled={jsonBusy || unavailable} onClick={() => void exportJson(project.id)} aria-label={`Exportar ${project.title} em JSON`} title="Exportar projeto em JSON" type="button"><Icon name="download" /></button>
+                    <button className="studio-card-action" disabled={unavailable} onClick={() => onDuplicateProject(project)} aria-label={`Duplicar ${project.title}`} title={`Duplicar ${project.title}`} type="button"><span className="studio-duplicate-icon" aria-hidden="true">▢</span></button>
+                    <button className="studio-card-action danger" disabled={unavailable} onClick={() => onDeleteProject(project)} aria-label={`Excluir ${project.title}`} title={`Excluir ${project.title}`} type="button"><Icon name="trash" /></button>
+                  </div>
+                </header>
+                <button className="studio-cover" disabled={unavailable} style={{ backgroundColor: project.color, ...(project.thumbnailDataUrl ? { backgroundImage: `url(${project.thumbnailDataUrl})` } : {}) }} onClick={() => onOpenProject(project.id)} aria-label={unavailable ? `${project.title}: indisponível` : `Abrir ${project.title}`} type="button" />
+                {unavailable && <p className="v6-project-card-error" role="status">ID {project.id}: {project.unavailableReason}</p>}
+              </article>
+            )
+          })}
         </section>
       ) : <section className="studio-empty-state"><span><Icon name="camera" /></span><strong>Nenhum projeto criado</strong><small>Crie um projeto para começar.</small></section>}
     </main>

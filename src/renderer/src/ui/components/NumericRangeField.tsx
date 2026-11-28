@@ -10,13 +10,14 @@ type NumericRangeFieldProps = {
   min: number
   max: number
   suffix: string
+  precision?: number
 }
 
-export function NumericRangeField({ label, value, onChange, onStart, onFinish, disabled, min, max, suffix }: NumericRangeFieldProps) {
-  const format = (number: number) => String(Number(number.toFixed(1)))
+export function NumericRangeField({ label, value, onChange, onStart, onFinish, disabled, min, max, suffix, precision = 1 }: NumericRangeFieldProps) {
+  const format = (number: number) => String(Number(number.toFixed(precision)))
   const [draft, setDraft] = useState(() => format(value))
 
-  useEffect(() => { setDraft(format(value)) }, [value])
+  useEffect(() => { setDraft(format(value)) }, [value, precision])
 
   const commit = () => {
     const parsed = Number(draft)
@@ -37,7 +38,7 @@ export function NumericRangeField({ label, value, onChange, onStart, onFinish, d
       value={draft}
       min={min}
       max={max}
-      step="0.1"
+      step={10 ** -precision}
       disabled={disabled}
       onChange={(event) => setDraft(event.target.value)}
       onBlur={commit}
@@ -53,7 +54,7 @@ export function NumericRangeField({ label, value, onChange, onStart, onFinish, d
       type="range"
       min={min}
       max={max}
-      step="0.1"
+      step={10 ** -precision}
       value={Math.min(max, Math.max(min, value))}
       disabled={disabled}
       onPointerDown={onStart}

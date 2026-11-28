@@ -1,3 +1,4 @@
+import { alignPoseTorso } from '../src/shared/poseTorso.ts'
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -106,4 +107,35 @@ test('PoseWorkspace usa snapshots compartilhados e não serializa o projeto no f
   assert.match(workspace, /rememberPoseProject\(current, before\)/)
   assert.match(workspace, /hasPoseGestureChanged\(drag\.before, current\)/)
   assert.doesNotMatch(workspace, /structuredClone|JSON\.stringify\(drag\.before/)
+})
+
+test('fixa a posição do tronco pelo nome ou ID, mantendo rotação e membros livres', () => {
+  const before = project()
+  const torso = before.parts[2] = { ...before.parts[2], name: 'Torso_Base', jointAnchor: { x: 80, y: 90 } }
+  assert.equal(translatePoseBranch(before, torso.id, 17, -2), before)
+  const rotated = rotatePosePart(before, torso.id, 32, false)
+  assert.deepEqual([rotated.parts[2].x, rotated.parts[2].y, rotated.parts[2].rotation], [torso.x, torso.y, 32])
+  assert.notDeepEqual(rotated.parts[2].jointAnchor, torso.jointAnchor)
+  const renamed = { ...before, parts: before.parts.map(part => part.id === torso.id ? { ...part, name: 'Peça central' } : part) }
+  assert.equal(translatePoseBranch(renamed, torso.id, 5, 5, torso.id), renamed)
+})
+
+test('alinhar o tronco translada toda a pose, sem recalcular juntas, membros ou coordenadas locais', () => {
+  const before = project()
+  before.parts[0].wardrobeAttachment = { setId: 'vestuario', attachedPartId: 'torso', referenceAnchor: { x: 8, y: 12 }, referenceRotation: 5 }
+  before.joints[0].pivot = { x: 65, y: 94 }
+  const source = [{ ...before.parts[2], x: 67, y: 90 }]
+  const moved = alignPoseTorso(before, source)
+  for (const [index, part] of before.parts.entries()) {
+    assert.equal(moved.parts[index].x, part.x - 3)
+    assert.equal(moved.parts[index].y, part.y + 10)
+    assert.deepEqual([moved.parts[index].rotation, moved.parts[index].width, moved.parts[index].height, moved.parts[index].dataUrl],
+      [part.rotation, part.width, part.height, part.dataUrl])
+  }
+  assert.deepEqual(moved.parts[0].wardrobeAttachment.referenceAnchor, { x: 5, y: 22 })
+  assert.deepEqual(moved.joints[0].parentAnchor, { x: 57, y: 100 })
+  assert.deepEqual(moved.joints[0].childAnchor, { x: 57, y: 110 })
+  assert.deepEqual(moved.joints[0].pivot, { x: 62, y: 104 })
+  assert.equal(alignPoseTorso(moved, source), moved)
+  assert.equal(alignPoseTorso(before, []), before)
 })

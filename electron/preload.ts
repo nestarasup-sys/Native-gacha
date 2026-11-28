@@ -9,8 +9,6 @@ import type { FabricatorDesktopApi, FabricatorModelSourcePublishRequest } from '
 import type { CustomizerDesktopApi } from '../src/shared/customizer'
 import type { StudioDesktopApi, VideoBackgroundLibraryDesktopApi } from '../src/shared/studio'
 import type { EditorV6DesktopApi, EditorV6MediaLibraryDesktopApi } from '../src/shared/editorV6'
-import { editorV7IpcChannels } from '../src/shared/editorV7IpcChannels'
-import type { EditorV7DesktopApi, EditorV7ExportStatus } from '../src/shared/editorV7'
 import type { RoteirosDesktopApi } from '../src/shared/roteiros'
 import type { BaseVideosDesktopApi } from '../src/shared/baseVideos'
 import type { MediaLibraryDesktopApi } from '../src/shared/mediaLibrary'
@@ -38,6 +36,7 @@ const fabricatorApi: FabricatorDesktopApi = {
   saveFabricatorExportPoseSlots: (modelSlot, slots) => invokeFabricator('saveFabricatorExportPoseSlots', modelSlot, slots),
   loadFabricatorPose: (modelSlot, slot) => invokeFabricator('loadFabricatorPose', modelSlot, slot),
   saveFabricatorPose: (modelSlot, slot, project, assets) => invokeFabricator('saveFabricatorPose', modelSlot, slot, project, assets),
+  duplicateFabricatorPose: (modelSlot, sourceSlot, targetSlot) => invokeFabricator('duplicateFabricatorPose', modelSlot, sourceSlot, targetSlot),
   deleteFabricatorPose: (modelSlot, slot) => invokeFabricator('deleteFabricatorPose', modelSlot, slot),
   loadFabricatorPoseDraft: (modelSlot) => invokeFabricator('loadFabricatorPoseDraft', modelSlot),
   saveFabricatorPoseDraft: (modelSlot, draft, assets) => invokeFabricator('saveFabricatorPoseDraft', modelSlot, draft, assets),
@@ -115,6 +114,7 @@ const editorV6Api: EditorV6DesktopApi = {
   saveEditorV6Project: (document) => invokeEditorV6('saveEditorV6Project', document),
   deleteEditorV6Project: (id) => invokeEditorV6('deleteEditorV6Project', id),
   getEditorV6Folder: () => invokeEditorV6('getEditorV6Folder'),
+  openEditorV6Folder: () => invokeEditorV6('openEditorV6Folder'),
   importEditorV6Image: (category) => invokeEditorV6('importEditorV6Image', category),
   linkEditorV6LibraryBackground: (projectId, id) => invokeEditorV6('linkEditorV6LibraryBackground', projectId, id),
   linkEditorV6LibraryAsset: (projectId, category, id) => invokeEditorV6('linkEditorV6LibraryAsset', projectId, category, id),
@@ -137,18 +137,6 @@ const editorV6Api: EditorV6DesktopApi = {
   bakeEditorV6Motion: (request) => invokeEditorV6('bakeEditorV6Motion', request),
   prepareEditorV6Motion: (request) => invokeEditorV6('prepareEditorV6Motion', request),
   cancelEditorV6Motion: (id) => invokeEditorV6('cancelEditorV6Motion', id)
-}
-
-const editorV7Api: EditorV7DesktopApi = {
-  startExport: (document) => ipcRenderer.invoke(editorV7IpcChannels.startExport, document),
-  getExportStatus: (id) => ipcRenderer.invoke(editorV7IpcChannels.getExportStatus, id),
-  cancelExport: (id) => ipcRenderer.invoke(editorV7IpcChannels.cancelExport, id),
-  revealExport: (id) => ipcRenderer.invoke(editorV7IpcChannels.revealExport, id),
-  onExportProgress: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, status: EditorV7ExportStatus) => callback(status)
-    ipcRenderer.on(editorV7IpcChannels.progress, listener)
-    return () => ipcRenderer.removeListener(editorV7IpcChannels.progress, listener)
-  }
 }
 
 const mediaLibraryApi: MediaLibraryDesktopApi = {
@@ -260,7 +248,6 @@ contextBridge.exposeInMainWorld('desktop', {
   customizer: customizerApi,
   studio: studioApi,
   editorV6: editorV6Api,
-  editorV7: editorV7Api,
   roteiros: roteirosApi,
   mediaLibrary: mediaLibraryApi,
   videoBackgrounds: videoBackgroundsApi,

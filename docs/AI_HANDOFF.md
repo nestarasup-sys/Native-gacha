@@ -1,18 +1,18 @@
 # Handoff técnico para IA — Native Gacha
 
-**Atualizado:** 2026-11-05
+**Atualizado:** 2026-11-24
 
 **Repositório:** https://github.com/nestarasup-sys/Native-gacha
 
 **Branch de referência:** `Dev-V2`
 
-**Commit de referência do código:** `2b559233` (`feat(editor-v7): export text and media overlays`)
+**Commit de referência:** confira o `HEAD` e o estado local antes de continuar o trabalho.
 
-Este guia acompanha o código-fonte para que outra IA possa entender o aplicativo, continuar o trabalho com segurança e distinguir comportamento comprovado de trabalho ainda aberto. Leia primeiro `AGENTS.md`, `README.md` e este documento. O repositório GitHub é a fonte completa do código e do histórico; o ZIP de handoff é uma cópia sem `.git` e sem dados locais.
+Este guia acompanha o código-fonte para que outra IA possa entender o aplicativo, continuar o trabalho com segurança e distinguir comportamento comprovado de trabalho ainda aberto. Leia primeiro `AGENTS.md`, `README.md` e este documento. O repositório local contém o código e o histórico completos; a branch remota pode estar atrás dos commits locais. O ZIP de handoff é uma cópia sem `.git` e sem dados locais.
 
 ## O produto
 
-Native Gacha é um aplicativo desktop para criação de personagens, customização, composição e edição/exportação audiovisual. A aplicação usa Electron, React e TypeScript, com persistência local e módulos de domínio. V6 continua sendo o editor existente e proprietário de seus documentos; V7 é uma área paralela em evolução e ainda não substitui V6.
+Native Gacha é um aplicativo desktop para criação de personagens, customização, composição e edição/exportação audiovisual. A aplicação usa Electron, React e TypeScript, com persistência local e módulos de domínio. Editor V6 é o editor audiovisual ativo e proprietário de seus documentos.
 
 O `README.md` pode descrever outra branch como oficial. Para este handoff, a branch pedida e publicada pelo usuário é `Dev-V2`; confirme `git remote -v`, `git status -sb` e o commit antes de alterar ou publicar.
 
@@ -32,8 +32,6 @@ Verificações úteis por área:
 
 ```bash
 npm run test:editor-v6:quick
-npm run test:editor-v7:core
-npm run test:editor-v7:renderer
 ```
 
 Consulte os scripts efetivamente disponíveis em `package.json`; escolha testes relacionados à mudança. Alguns testes de integração/export dependem de Windows, Electron, FFmpeg e do backup sintético/verificado autorizado.
@@ -48,9 +46,8 @@ Consulte os scripts efetivamente disponíveis em `package.json`; escolha testes 
 - `scripts/`: gates de arquitetura, diagnósticos, benchmarks e harnesses autorizados.
 - `docs/architecture/`: ADRs e histórico de decisões arquiteturais.
 - `docs/editor-v6/atual/README.md`, `docs/lixo/editor-v6/origens-externas/EDITOR V6 MES 11/texto.md`: arquitetura, evolução, medições e plano vivo do V6.
-- `docs/editor-v7/EDITOR_V7.md`: pesquisa, estado, critérios e decisões provisórias do V7.
 
-Propriedade de dados: Fabricador é dono do catálogo-fonte; Customizador é dono da instância/personagem e personalizações; Studio é dono da cena/documento próprio; Editor V6 é dono do projeto/timeline V6. Consumidores devem ligar dados por IDs e contratos estáveis, sem copiar catálogos ou importar detalhes internos de outra feature.
+Propriedade de dados: Fabricador é dono do catálogo-fonte; Customizador é dono da instância/personagem e personalizações; Studio é dono da cena/documento próprio; Editor V6 é dono do projeto/timeline V6. Consumidores devem ligar dados por IDs e contratos estáveis, sem copiar catálogos ou importar detalhes internos de outra feature. O Editor V7 foi retirado da aplicação na Rodada 1.6; sua cópia local arquivada não é executável.
 
 ## Editor V6 — estado e problemas
 
@@ -88,14 +85,6 @@ Primeira validação básica sem cabelo dinâmico: quadros 443–922 (480 quadro
 
 **Balões e bibliotecas de mídia do V6:** fundo branco; contorno e nome compartilham a cor do personagem. `Escala dos balões` (100%–250%), `Posição vertical` (-100% a +100%) e `characterNameColors` persistem por roteiro; a normalização de leitura preserva esses valores. A área `Biblioteca V6` na barra superior separa Fundos, Objetos e Áudios. Fundos reutilizam a biblioteca de fundos compartilhada com Roteiros; objetos e áudios têm catálogos V6 próprios. Novos vínculos gravam os IDs canônicos em `assets[].libraryAssetId`, `media[].libraryAudioId` ou `exportAudio[].libraryAudioId`; não copiam os arquivos para a pasta do roteiro. Preview e exportação resolvem os IDs pela biblioteca. O protocolo privado verifica o manifesto do projeto antes de servir imagem/áudio; exclusão consulta referências de Editor V6 e Roteiros e é serializada com a criação/remoção dos vínculos. Duplicar roteiro preserva IDs compartilhados e copia somente mídia local legada. `libraryBackgroundId` legado permanece metadado de cópias locais criadas por builds anteriores; essas cópias continuam portáveis. Balões são desenhados depois de todos os outros elementos e ficam acima de personagens, objetos e vídeo, preservando a ordem entre si. O texto é medido numa coluna interna com margem e clip arredondado; quando excede o espaço vertical, a última linha recebe reticências para não atravessar o contorno.
 
-## Editor V7 — estado e limites
-
-- V7 foi iniciado como arquitetura paralela, com core determinístico em TypeScript, tempo em ticks inteiros, avaliação da cena independente de Electron/React e backend inicial de renderização Sharp/libvips + FFmpeg.
-- Módulos principais: `src/shared/editorV7.ts`, `src/shared/editorV7Svg.ts`, `electron/domains/editorV7/renderFrame.ts` e `electron/domains/editorV7/exportRunner.ts`.
-- O código atual já contempla camadas de texto no renderer nativo e overlays de vídeo/áudio no exportador. Testes sintéticos exercitam schema/texto/renderização.
-- Validação real mais recente: exportação dos primeiros 30 quadros do projeto autorizado, 1920×1080/30 FPS, com 1 clipe de vídeo/áudio, MP4 H.264 validado; 2,456 s ponta a ponta (`2b559233`). Isso comprova somente o trecho testado, não a paridade visual/funcional completa com V6 nem a timeline inteira.
-- V7 não migra, substitui ou altera os projetos V6. Consulte `docs/editor-v7/EDITOR_V7.md` para critérios e pendências.
-
 ## Restrições para qualquer IA que continue o projeto
 
 1. Antes de editar, leia `AGENTS.md`, confira raiz, branch, commit, `git status` e alterações locais. Preserve qualquer mudança existente e faça commit local pequeno por tarefa concluída.
@@ -109,8 +98,6 @@ Primeira validação básica sem cabelo dinâmico: quadros 443–922 (480 quadro
 ## Histórico/links para continuar
 
 - Código e histórico completo: https://github.com/nestarasup-sys/Native-gacha/tree/Dev-V2
-- Commit de referência deste pacote: https://github.com/nestarasup-sys/Native-gacha/commit/2b559233
 - Protocolo V6 e métricas: `docs/lixo/editor-v6/origens-externas/EDITOR V6 MES 11/texto.md`
 - Arquitetura V6: `docs/lixo/editor-v6/ARQUITETURA_E_INTEGRACAO.md`
 - Exportação V6: `docs/lixo/editor-v6/EXPORTACAO.md`
-- Pesquisa/estado V7: `docs/editor-v7/EDITOR_V7.md`

@@ -26,7 +26,7 @@ describe('Editor V6 motion endpoint geometry', () => {
 
     const result = await resolveMotionBakeEndpointGeometry({ captureLayerAtlases: true, endpointCrops: { from, to }, measure })
 
-    expect(result).toEqual({ fromCrop: from, toCrop: to, maximumCanvasWidth: 440, maximumCanvasHeight: 640, endpointGeometryCacheHits: 0, endpointGeometryCacheMisses: 0 })
+    expect(result).toEqual({ fromCrop: from, toCrop: to, maximumCanvasWidth: 440, maximumCanvasHeight: 640, maximumAtlasWidth: 90, maximumAtlasHeight: 130, endpointGeometryCacheHits: 0, endpointGeometryCacheMisses: 0 })
     expect(measure).not.toHaveBeenCalled()
   })
 
@@ -49,6 +49,17 @@ describe('Editor V6 motion endpoint geometry', () => {
     expect(first.endpointGeometryCacheMisses).toBe(2)
     expect(second.endpointGeometryCacheHits).toBe(1)
     expect(second.endpointGeometryCacheMisses).toBe(1)
+  })
+
+  it('keeps full-frame transform geometry while sizing atlases from alpha bounds', async () => {
+    const from = { width: 1122, height: 1402, crop: crop(0, 0, 1122, 1402), atlasCrop: crop(180, 90, 744, 1217) }
+    const to = { width: 1122, height: 1402, crop: crop(0, 0, 1122, 1402), atlasCrop: crop(170, 84, 740, 1190) }
+    const result = await resolveMotionBakeEndpointGeometry({ captureLayerAtlases: false, measure: async (endpoint) => endpoint === 'from' ? from : to })
+
+    expect(result.fromCrop).toEqual(from.crop)
+    expect(result.toCrop).toEqual(to.crop)
+    expect([result.maximumCanvasWidth, result.maximumCanvasHeight]).toEqual([1122, 1402])
+    expect([result.maximumAtlasWidth, result.maximumAtlasHeight]).toEqual([744, 1217])
   })
 
   it('keeps supplied hair crops separate from cached snapshot measurements', async () => {

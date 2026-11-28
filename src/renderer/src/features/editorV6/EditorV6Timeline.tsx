@@ -1,6 +1,8 @@
+import { pasteEditorV6CardBlock } from '../../../../shared/editorV6Cards'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { EditorV6Document, EditorV6Timeline as Timeline, EditorV6TimelineBlock as Block } from '../../../../shared/editorV6'
 import { frameTimecode, findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 import { EditorV6TimelineRows, type EditorV6TimelineRowsProps } from './EditorV6TimelineRows'
 import { createEditorV6TimelineTrackCommands } from './editorV6TimelineTrackCommands'
@@ -43,6 +45,7 @@ export function EditorV6Timeline(props: Props) {
   const [notice, setNotice] = useState('')
   const scroll = useRef<HTMLDivElement>(null)
   const root = useRef<HTMLElement>(null)
+  const cardClipboard = useRef<Block | null>(null)
   const didDrag = useRef(false)
   const settings = useRef({ pps, snap, heading: compact ? 116 : 156 })
   settings.current = { pps, snap, heading: compact ? 116 : 156 }
@@ -109,6 +112,22 @@ export function EditorV6Timeline(props: Props) {
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const current = latest.current
+      if (!event.defaultPrevented && !editableTarget(event.target) && !event.shiftKey && !event.altKey && (event.ctrlKey || event.metaKey)) {
+        const key = event.key.toLowerCase()
+        if (key === 'c') {
+          const block = findEditorV6TimelineClip(current.document.timeline, current.selectedId)?.block
+          cardClipboard.current = block?.videoCard ? structuredClone(block) : null
+          if (cardClipboard.current) { event.preventDefault(); return }
+        } else if (key === 'v' && cardClipboard.current) {
+          const pasted = pasteEditorV6CardBlock(current.document, cardClipboard.current, current.frame, crypto.randomUUID())
+          if (pasted) {
+            event.preventDefault()
+            changeTimeline(() => pasted.timeline)
+            current.onSelect(pasted.block)
+            return
+          }
+        }
+      }
       const command = resolveEditorV6TimelineKeyCommand({
         key: event.key,
         ctrlKey: event.ctrlKey,
@@ -139,7 +158,7 @@ export function EditorV6Timeline(props: Props) {
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [cancel, duplicate, fit, remove, split, zoomIn, zoomOut])
+  }, [cancel, changeTimeline, duplicate, fit, remove, split, zoomIn, zoomOut])
   useEffect(() => {
     if (!menu) return
     const close = (event: PointerEvent) => { if (!(event.target instanceof HTMLElement) || !event.target.closest('.v6-timeline-menu')) setMenu(null) }
@@ -167,7 +186,7 @@ export function EditorV6Timeline(props: Props) {
       <div className="editor-v6-timeline-content" style={{ width: heading + width }}>
         <EditorV6TimelineRuler timeline={timeline} pixelsPerSecond={pps} width={width} heading={heading} range={range} onScrub={onScrub} />
         <EditorV6TimelineRows timeline={timeline} characterNameColors={props.document.characterNameColors} pps={pps} width={width} heading={heading} range={range} selectedId={props.selectedId} onPointer={onPointer} onSelect={select} onMenu={onMenu} onTrack={onTrack} onScrub={onScrub} />
-        <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${playbackFrame / 30 * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / 30 * pps }} />}</div>
+        <div className="v6-cursor-overlay" style={{ left: heading, width, clipPath: `inset(0 0 0 ${viewport.left}px)` }}><i className="v6-main-playhead" style={{ transform: `translateX(${playbackFrame / EDITOR_V6_TIMELINE_FPS * pps}px)` }} />{guide !== undefined && <i className="v6-snap-guide" style={{ left: guide / EDITOR_V6_TIMELINE_FPS * pps }} />}</div>
       </div>
     </div>
     {readout && <div className="v6-drag-readout" role="status">Início {frameTimecode(readout.startFrame)} · Fim {frameTimecode(readout.startFrame + readout.durationFrames)} · Duração {frameTimecode(readout.durationFrames)} <kbd>Esc cancela</kbd></div>}

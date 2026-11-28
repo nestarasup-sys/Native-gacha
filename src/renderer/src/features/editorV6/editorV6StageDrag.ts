@@ -4,8 +4,9 @@ import { normalizeEditorV6Timeline, timelineClips, type TimelineClip } from '../
 import { moveEditorV6ElementInPeriod } from '../../../../shared/editorV6TimelineEdits'
 import { editEditorV6BackgroundAtFrame, prepareEditorV6PositionAtFrame } from '../../../../shared/editorV6TimelineSceneEdits'
 import type { EditorV6ResolvedScene } from '../../../../shared/editorV6TimelineScene'
+import { resolveEditorV6IntroPortrait, updateEditorV6IntroPortrait } from '../../../../shared/editorV6Intro'
 
-export type StageDragTarget = 'element' | 'background' | 'video'
+export type StageDragTarget = 'element' | 'background' | 'video' | 'intro'
 
 export type EditorV6StageDrag = {
   id: string
@@ -46,7 +47,13 @@ export function prepareEditorV6StageDrag(input: PrepareEditorV6StageDragInput): 
   let prepared: EditorV6Document
   let blockId: string
 
-  if (target === 'video') {
+  const portrait = target === 'intro' && scene.intro?.kind === 'character'
+    ? resolveEditorV6IntroPortrait(scene.intro) : undefined
+  if (target === 'intro') {
+    if (!portrait || portrait.positionLocked || scene.introTrackLocked || scene.introBlockId !== id) return null
+    prepared = project
+    blockId = id
+  } else if (target === 'video') {
     if (!videoClip || videoClip.track.locked) return null
     prepared = project
     blockId = videoClip.block.id
@@ -74,7 +81,7 @@ export function prepareEditorV6StageDrag(input: PrepareEditorV6StageDragInput): 
     ? { x: scene.background.backgroundX, y: scene.background.backgroundY }
     : target === 'video'
       ? { x: videoLayout.x, y: videoLayout.y }
-      : element ? { x: element.x, y: element.y } : null
+      : portrait ?? element
   if (!origin) return null
 
   return {
@@ -111,6 +118,10 @@ export function editorV6StageDragPosition(
 
 /** Applies a drag destination to the document prepared for the active frame. */
 export function moveEditorV6StageDrag(drag: EditorV6StageDrag, x: number, y: number): EditorV6Document {
+  if (drag.target === 'intro') {
+    const clamp = (coordinate: number) => Math.max(-100, Math.min(100, coordinate))
+    return updateEditorV6IntroPortrait(drag.prepared, drag.blockId, { x: clamp(x), y: clamp(y) })
+  }
   if (drag.target === 'background') {
     return editEditorV6BackgroundAtFrame(drag.prepared, drag.frame, { backgroundX: x, backgroundY: y }, drag.blockId)
   }

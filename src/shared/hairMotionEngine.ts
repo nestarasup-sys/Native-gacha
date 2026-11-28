@@ -1,3 +1,5 @@
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
+
 export type HairMotionSide = 'front' | 'back' | 'fringe'
 export type HairMotionSettings = {
   wind: number
@@ -72,7 +74,7 @@ export function parseHairMotionPresets(text: string | null): Array<HairMotionPre
 }
 
 export const HAIR_MOTION_SIMULATION_HZ = 120
-export const HAIR_MOTION_OUTPUT_FPS = 30
+export const HAIR_MOTION_OUTPUT_FPS = EDITOR_V6_TIMELINE_FPS
 export const HAIR_MOTION_STEPS_PER_FRAME = HAIR_MOTION_SIMULATION_HZ / HAIR_MOTION_OUTPUT_FPS
 /** Two simulated seconds give the spring chain a stable export-only starting pose. */
 export const HAIR_MOTION_PREWARM_STEPS = HAIR_MOTION_SIMULATION_HZ * 2
@@ -118,7 +120,7 @@ export function prewarmHairMotionState(
 
 /** Stable fixed-step spring chain; the first point remains attached to the head. */
 export function stepHairMotion(state: HairMotionState, settings: HairMotionSettings, dt: number, headX: number, phase: number): void {
-  const step = Math.min(1 / 30, Math.max(0, dt * settings.speed / 100))
+  const step = Math.min(1 / HAIR_MOTION_OUTPUT_FPS, Math.max(0, dt * settings.speed / 100))
   if (!step) return
   if (!settings.enabled) {
     state.offsets.fill(0)

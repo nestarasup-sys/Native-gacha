@@ -20,9 +20,28 @@ export function createEditorV6LibraryIndex(deps: {
   }
 
   async function listEditorV6s(): Promise<EditorV6ProjectSummary[]> {
-    const documents = await Promise.all((await listEditorV6Ids()).map((id) => deps.readEditorV6Summary(id)))
-    return documents.filter((editorV6): editorV6 is EditorV6ProjectSummary => editorV6 !== null)
-      .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.title.localeCompare(right.title))
+    const ids = await listEditorV6Ids()
+    const results = await Promise.allSettled(ids.map((id) => deps.readEditorV6Summary(id)))
+    const documents = results.flatMap((result, index): EditorV6ProjectSummary[] => {
+      if (result.status === 'fulfilled' && result.value) return [result.value]
+      const id = ids[index]
+      const detail = result.status === 'rejected'
+        ? result.reason instanceof Error ? result.reason.message : String(result.reason)
+        : 'O manifesto do projeto não foi encontrado.'
+      const reason = detail.trim() ? detail.slice(0, 1000) : 'O manifesto do projeto não pôde ser lido.'
+      return [{
+        id,
+        title: `Projeto indisponível · ${id.slice(0, 8)}`,
+        color: '#fff4e5',
+        createdAt: '1970-01-01T00:00:00.000Z',
+        updatedAt: '1970-01-01T00:00:00.000Z',
+        unavailableReason: reason
+      }]
+    })
+    return documents.sort((left, right) => {
+      if (Boolean(left.unavailableReason) !== Boolean(right.unavailableReason)) return left.unavailableReason ? 1 : -1
+      return left.createdAt.localeCompare(right.createdAt) || left.title.localeCompare(right.title)
+    })
   }
 
   async function listEditorV6PoseReferenceDocuments(): Promise<EditorV6PoseReferenceDocument[]> {

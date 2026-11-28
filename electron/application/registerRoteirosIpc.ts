@@ -43,7 +43,7 @@ export type RegisterRoteirosIpcDependencies = {
   assertLibraryVideoReferencesAvailable: (ids: readonly string[]) => Promise<void>
   assertLibraryBackgroundReferencesAvailable: (ids: readonly string[]) => Promise<void>
   assertEditorV6BackgroundUnreferenced: (id: string) => Promise<void>
-  listEditorV6BackgroundReferences: (id: string) => Promise<Array<{ id: string; title: string }>>
+  listEditorV6BackgroundReferencesForIds: (ids: readonly string[]) => Promise<Map<string, Array<{ id: string; title: string }>>>
   coordinateBackgroundReferenceChange: <T>(operation: () => Promise<T> | T) => Promise<T>
   assertLibraryUiGifReferencesAvailable: (ids: readonly string[]) => Promise<void>
 }
@@ -64,7 +64,7 @@ export function registerRoteirosIpc(deps: RegisterRoteirosIpcDependencies): Rote
     library: deps.videoBackgroundLibrary,
     assertRoteiroUnreferenced: createRoteiroBackgroundReferenceGuard(deps.getDatabase),
     assertEditorV6Unreferenced: deps.assertEditorV6BackgroundUnreferenced,
-    editorV6References: deps.listEditorV6BackgroundReferences,
+    editorV6ReferencesForIds: deps.listEditorV6BackgroundReferencesForIds,
     coordinateReferenceChange: (operation) => deps.coordinateBackgroundReferenceChange(operation),
     enqueueWrite: deps.enqueueWrite
   })

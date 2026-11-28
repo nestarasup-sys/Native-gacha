@@ -27,7 +27,7 @@ export function createEditorV6ExportMouthLoopResolver(
 
   const hairSourceAssetId = (element: { assetId?: string }) => element.assetId ? mouthlessSourceAssetById.get(element.assetId) ?? element.assetId : undefined
   const applyMouthLoop = (scene: Scene, frame: number) => {
-    if (!mouthLoops && !hairPoseReactionEnds.size) return scene
+    if (scene.intro || (!mouthLoops && !hairPoseReactionEnds.size)) return scene
     let sampleIndex: number | undefined
     const resolveElement = (element: Scene['elements'][number]) => {
       if (element.kind !== 'character' || !element.characterId) return element
@@ -37,7 +37,7 @@ export function createEditorV6ExportMouthLoopResolver(
 
       const reacting = hairMotionPoseReactionIsActive(hairPoseReactionEnds.get(element.id) ?? [], frame)
       if (!mouthLoops && !reacting) return element
-      const faceMode = editorV6FaceModeAtFrame(project.id, project.timeline, element.characterId, frame)
+      const faceMode = editorV6FaceModeAtFrame(project.timeline, element.characterId, frame, { blinking: scene.blinkElementId === element.id })
       if (faceMode !== 'talk' && faceMode !== 'talk-blink') {
         if (!reacting || faceMode !== 'blink') return element
         const block = editorV6ClipAtFrame(project.timeline, element.id, frame)?.block

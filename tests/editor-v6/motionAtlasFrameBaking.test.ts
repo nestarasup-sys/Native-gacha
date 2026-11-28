@@ -79,6 +79,20 @@ describe('Editor V6 motion atlas frame baking', () => {
     expect(croppedLayers.behindFace.width).toBe(1)
   })
 
+  it('rejects a sample wider than its estimated cell before drawing into the next frame', async () => {
+    const atlas = canvas(), oversized = frame(12, 10, 0, 0)
+    await expect(bakeEditorV6MotionAtlasFrames({
+      ...common,
+      samples: [{ offset: 1, progress: 0.5 }],
+      render: async () => oversized,
+      prepareFacePatch: async () => undefined,
+      createCanvas: () => atlas.canvas
+    })).rejects.toThrow('não cabe na célula')
+    expect(atlas.drawImage).not.toHaveBeenCalled()
+    expect(oversized.dispose).toHaveBeenCalledOnce()
+    expect([atlas.canvas.width, atlas.canvas.height]).toEqual([1, 1])
+  })
+
   it('releases atlas and completed face patches if a later frame render fails', async () => {
     const atlas = canvas(), first = frame(8, 10, 2, 3), patch = canvas(2, 2).canvas
     const render = vi.fn().mockResolvedValueOnce(first).mockRejectedValueOnce(Error('falha sintética'))

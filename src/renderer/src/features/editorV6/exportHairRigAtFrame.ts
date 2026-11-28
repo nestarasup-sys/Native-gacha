@@ -26,12 +26,6 @@ export function createEditorV6ExportHairRigAtFrame(index: MotionPlanIndex) {
           }
         }
       }
-      const expressionPlan = index.expressionOnlyPlansByElement.get(elementId)?.find(plan => frame > plan.startFrame && frame < plan.endFrame)
-      if (expressionPlan) {
-        const rig = (expressionPlan.from.assetId ? index.hairRigs.get(`${elementId}:${expressionPlan.from.assetId}`) : undefined)
-          ?? index.hairPoseRigs.get(`${elementId}:${expressionPlan.from.poseSlot ?? 'base'}`)
-        if (rig) return { rig, element: expressionPlan.from }
-      }
     }
     const rig = element.assetId ? index.hairRigs.get(`${element.id}:${element.assetId}`) : undefined
     return rig ? { rig, element } : undefined

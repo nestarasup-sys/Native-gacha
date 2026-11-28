@@ -32,7 +32,7 @@ export function createEditorV6ExportWorkerHairRuntime(
   let resolvedRawScene: ReturnType<typeof resolveEditorV6SceneAtFrame> | undefined
   const resolveRawSceneAtFrame = (frame: number) => {
     if (resolvedFrame !== frame || !resolvedRawScene) {
-      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false, includeSpeechMouth })
+      resolvedRawScene = resolveEditorV6SceneAtFrame(project, frame, { includeVideo: false, includeVideoPresentation: true, includeSpeechMouth })
       resolvedFrame = frame
     }
     return resolvedRawScene
@@ -74,7 +74,7 @@ export function createEditorV6ExportWorkerHairRuntime(
     return resolved
   }
   const hairScene = createEditorV6ExportHairSceneComposer({
-    animation: hairAnimation, planIndex, hairRigAtFrame, hairSourceAssetId, facePatchSourceCrop, composeHairFrame, composeMotionHairFrame
+    animation: hairAnimation, planIndex, hairSourceAssetId, facePatchSourceCrop, composeHairFrame, composeMotionHairFrame
   })
 
   return {

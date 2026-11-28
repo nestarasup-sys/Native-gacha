@@ -84,7 +84,7 @@ function validateEditorV6ReactImport(source: Record<string, unknown>, items: Vid
   let sourceDocument: EditorV6ReactImportSource
   try {
     const bytes = new TextEncoder().encode(JSON.stringify(source)).byteLength
-    if (bytes > 2 * 1024 * 1024) return { data: null, errors: ['O guia V14.1 limita o JSON a 2 MB.'], warnings }
+    if (bytes > 2 * 1024 * 1024) return { data: null, errors: ['O guia V14.5 limita o JSON a 2 MB.'], warnings }
     parsed = parseEditorV6ReactImport(source)
     sourceDocument = JSON.parse(JSON.stringify(source)) as EditorV6ReactImportSource
   } catch (reason) {
@@ -116,6 +116,16 @@ function validateEditorV6ReactImport(source: Record<string, unknown>, items: Vid
       outputCharacters.push({ characterId: resolved.id, name: resolved.name })
     } catch (reason) { errors.push(reason instanceof Error ? reason.message : String(reason)) }
   }
+  for (const [index, entry] of (parsed.intro ?? []).entries()) {
+    if (entry.kind !== 'character') continue
+    try {
+      const character = resolveCharacter(entry.character)
+      if (!castIds.has(character.id)) errors.push(`Intro[${index + 1}]: “${character.name}” precisa estar no elenco.`)
+    } catch (reason) {
+      errors.push(`Intro[${index + 1}]: ${reason instanceof Error ? reason.message : String(reason)}`)
+    }
+  }
+  if (parsed.intro) warnings.push('A Intro fica no JSON original. Importe esse arquivo no Editor V6 para criar a faixa Intro.')
   // Resolve names and stable video numbers using current library metadata supplied by the caller.
   const currentDetails = Object.values(detailsById)
   let resolvedVideos: EditorV6ReactImport['videos'] = []
@@ -154,9 +164,9 @@ function validateEditorV6ReactImport(source: Record<string, unknown>, items: Vid
     const active = intervals.find((interval) => line.startSeconds >= interval.start && line.startSeconds < interval.end)
     const blockType = line.kind === 'speech' ? 'speech' : 'thought'
     if (active) {
-      blocks.push({ type: blockType, characterId: character.id, videoId: active.video.videoId, text: line.text, startAt: line.startSeconds - active.start })
+      blocks.push({ type: blockType, characterId: character.id, videoId: active.video.videoId, text: line.text, ...(line.englishText !== undefined ? { englishText: line.englishText } : {}), startAt: line.startSeconds - active.start })
     } else if (intervals.length && line.startSeconds < intervals[0].start) {
-      openingBlocks.push({ type: blockType, characterId: character.id, text: line.text, startAt: line.startSeconds })
+      openingBlocks.push({ type: blockType, characterId: character.id, text: line.text, ...(line.englishText !== undefined ? { englishText: line.englishText } : {}), startAt: line.startSeconds })
     } else {
       errors.push(`Linhas[${index + 1}]: início ${line.startSeconds}s não está dentro de nenhum vídeo da Base; ajuste o tempo ou o intervalo dos clipes.`)
     }

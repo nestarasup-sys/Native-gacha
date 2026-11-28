@@ -78,7 +78,7 @@ beforeEach(() => {
 })
 
 describe('preparação de transições sem cabelo do Editor V6', () => {
-  it('bakes only geometry changes and transitions lacking a complete face atlas, then serializes each layer', async () => {
+  it('bakes secondary hair layers only for geometry changes, leaving expression-only changes on their motion atlas', async () => {
     const geometryPlan = motionPlan({
       blockId: 'geometry-block', key: 'geometry-key', characterId: 'character-1', elementId: 'actor-1',
       from: endpoint('pose-a', 1), to: endpoint('pose-b', 2)
@@ -89,14 +89,14 @@ describe('preparação de transições sem cabelo do Editor V6', () => {
     })
     const missingFacePlan = motionPlan({
       blockId: 'missing-face-block', key: 'missing-face-key', characterId: 'character-1', elementId: 'actor-3',
-      from: endpoint('same-c', 1), to: endpoint('same-d', 1)
+      from: endpoint('same-c', 1), to: endpoint('same-d', 2)
     })
     const { project, character, rigs, assets, fabricator, session } = fixture(
       [geometryPlan, completeFacePlan, missingFacePlan],
       [
         { id: geometryPlan.blockId, incomingMotion: { key: geometryPlan.key } },
         { id: completeFacePlan.blockId, incomingMotion: { key: completeFacePlan.key, faceAssetId: 'face-atlas', frames: [{ offset: -2, facePatch: {} }] } },
-        { id: missingFacePlan.blockId, incomingMotion: { key: missingFacePlan.key, faceAssetId: 'face-atlas', frames: [{ offset: -2 }] } }
+        { id: missingFacePlan.blockId, incomingMotion: { key: missingFacePlan.key } }
       ]
     )
     const recordStage = vi.fn()

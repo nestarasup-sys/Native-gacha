@@ -7,6 +7,7 @@
  */
 import { editorV6DefaultVideoLayout, type EditorV6Document, type EditorV6VideoLayout } from './editorV6'
 import { compareEditorV6TimelineBlocks } from './editorV6TimelineCore'
+import { hasEditorV6VideoCards } from './editorV6VideoPresentation'
 
 export type EditorV6VideoOverlay = {
   blockId: string
@@ -16,10 +17,12 @@ export type EditorV6VideoOverlay = {
   startFrame: number
   endFrame: number
   layout: EditorV6VideoLayout
+  cardVideoSize?: { aspect?: number }
 }
 
 export function planEditorV6VideoOverlays(project: EditorV6Document, startFrame: number, endFrame: number): EditorV6VideoOverlay[] {
   const media = new Map((project.media ?? []).filter((asset) => asset.kind === 'video').map((asset) => [asset.id, asset]))
+  const cardVideoIds = new Set(project.timeline.tracks.filter(track => track.kind === 'card' && !track.hidden && !track.muted).flatMap(track => track.blocks.flatMap(block => block.videoCard ? [block.videoCard.videoBlockId] : [])))
   const ordered = project.timeline.tracks
     .filter((track) => track.kind === 'video' && !track.hidden && !track.muted)
     .flatMap((track) => track.blocks
@@ -39,7 +42,10 @@ export function planEditorV6VideoOverlays(project: EditorV6Document, startFrame:
       mediaInFrame: (block.mediaInFrame ?? 0) + start - block.startFrame,
       startFrame: start,
       endFrame: end,
-      layout: block.mediaLayout ?? editorV6DefaultVideoLayout(asset.width, asset.height)
+      layout: block.mediaLayout ?? editorV6DefaultVideoLayout(asset.width, asset.height),
+      ...(cardVideoIds.has(block.id) || cardVideoIds.has(block.videoCardOriginBlockId ?? '') || hasEditorV6VideoCards(block.videoPresentation) ? {
+        cardVideoSize: asset.width && asset.height ? { aspect: asset.width / asset.height } : {}
+      } : {})
     }]
   })
 }

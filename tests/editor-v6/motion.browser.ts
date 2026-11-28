@@ -1,4 +1,5 @@
-import { bakeFaceModeAssets, measureFaceModeCrop, trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
+import standardPresets from '../../src/renderer/src/features/fabricator/legacyStandardExpressions.json'
+import { bakeEditorV6FaceModeAssets, EDITOR_V6_FACE_RENDER_VERSION, bakeFaceModeAssets, measureFaceModeCrop, trimTransparentCanvas } from '../../src/renderer/src/features/editorV6/faceModeAssets'
 import { defaultCharacterBodyDimensions, defaultCharacterProportions } from '../../src/shared/customizer'
 import { bindWardrobeComponent } from '../../src/shared/wardrobePose'
 import { editorV6MouthLoopScaleAtFrame } from '../../src/shared/editorV6Export'
@@ -60,6 +61,41 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     const ctx = check.getContext('2d')!; ctx.drawImage(decoded, 0, 0)
     assert(ctx.getImageData(32, 32, 1, 1).data[3] === 255, 'A facial variant lost pixels outside idle bounds')
   }
+  // Exercise the source-frame bake against each shipped preset's facial footprint.
+  const presetCanvas = document.createElement('canvas')
+  presetCanvas.width = 96; presetCanvas.height = 120
+  const presetContext = presetCanvas.getContext('2d', { willReadFrequently: true })!
+  const futureExpressionFixtures = [
+    { ...standardPresets[0], key: 'future-custom-tall', name: 'Synthetic future tall', eyes: { ...standardPresets[0].eyes,
+      left: { ...standardPresets[0].eyes.left, y: -18, scaleY: 2.4 } } },
+    { ...standardPresets[0], key: 'future-custom-low', name: 'Synthetic future low', eyes: { ...standardPresets[0].eyes,
+      left: { ...standardPresets[0].eyes.left, y: 24, scaleY: 0.2 } } }
+  ]
+  const expressionFixtures = [...standardPresets, ...futureExpressionFixtures]
+  const presetRenderer = { renderToCanvas: async (_appearance: unknown, index: number, _effect: unknown, mode: string) => {
+    const preset = expressionFixtures[index]
+    presetContext.clearRect(0, 0, 96, 120)
+    presetContext.fillStyle = '#2458a0'
+    presetContext.fillRect(24, 40, 48, 68)
+    presetContext.fillStyle = '#fa2012'
+    presetContext.fillRect(35 + preset.eyes.left.x, 10 + preset.eyes.left.y + (mode === 'blink' ? 5 : 0), 11, 9 * preset.eyes.left.scaleY)
+    return { canvas: presetCanvas, width: 96, height: 120 }
+  } } as unknown as Parameters<typeof bakeEditorV6FaceModeAssets>[1]
+  const facePixels = new Set<string>()
+  for (const [index, preset] of expressionFixtures.entries()) {
+    const stable = await bakeEditorV6FaceModeAssets(preset.name, presetRenderer, undefined, index as never, undefined, 'idle')
+    assert(!stable.crop, `${preset.name}: a expressão recortou a moldura do corpo`)
+    facePixels.add(stable.dataUrl)
+    for (const url of [stable.dataUrl, ...stable.extraAssets.map(asset => asset.dataUrl)]) {
+      const raster = await image(url)
+      assert(raster.width === 96 && raster.height === 120, `${preset.name}: o tamanho mudou entre variantes faciais`)
+      const body = document.createElement('canvas'); body.width = 96; body.height = 120
+      const context = body.getContext('2d')!; context.drawImage(raster, 0, 0)
+      const [r, g, b, a] = context.getImageData(24, 107, 1, 1).data
+      assert(r === 36 && g === 88 && b === 160 && a === 255, `${preset.name}: o corpo saiu da posição original`)
+    }
+  }
+  assert(facePixels.size > 1, 'A fixture não exercitou mudanças reais de recorte facial')
   const source: FabricatorProject = { schemaVersion: 1, slot: 1, name: 'Synthetic', sourceName: 'test', sourceAssetName: 'test', sourceDataUrl: '', width: 100, height: 100, tolerance: 0, updatedAt: new Date().toISOString(), joints: [], layerOrder: ['head','arm'], parts: [ { id: 'head', name: 'head', x: 35, y: 20, width: 30, height: 60, rotation: 0, dataUrl: png('#ff0000') }, { id: 'arm', name: 'arm', x: 10, y: 50, width: 10, height: 10, rotation: 0, dataUrl: png('#0000ff') } ] }
   const target = { ...source, parts: source.parts.map(p => p.id === 'arm' ? { ...p, x: 80 } : p) }
   const character: CustomizerCharacter = { id: 'alice', name: 'Alice', hair: '', outfit: '', skin: '', createdAt: source.updatedAt, updatedAt: source.updatedAt, customization: { modelSlot: 1, poseSlot: null, partOverrides: {}, layerOrder: [] } }
@@ -386,7 +422,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     proportions: { ...defaultCharacterProportions, head: 110 }, bodyDimensions: { ...defaultCharacterBodyDimensions, thighsWidth: 125, torsoWidth: 108 },
     wardrobeGroups: [{ modelSlot: 1, setId: wardrobe.id, category: 'camisa' as const, componentId: shirt.id, offsetX: 0, offsetY: 0, scaleX: 1, scaleY: 1, rotation: 0 }]
   } }
-  const hiActor: EditorV6Element = { ...actor, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
+  const hiActor: EditorV6Element = { ...actor, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION, characterId: hiCharacter.id, faceAppearance: hiAppearance, activeFaceMode: 'talk', poseSlot: 1 }
   const hiPlan = { ...mouthPlan, elementId: hiActor.id, characterId: hiCharacter.id, key: 'native-resolution-mouth-patch', from: hiActor, to: { ...hiActor }, samples: mouthSamples }
   const hiMouthBake = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: hiPlan, character: hiCharacter, mouthScaleSamples: [1, 1.08, 1.1325], maxAtlasPixels: 8_000_000 }, hiProvider)
   const hiPatchAtlas = await image(hiMouthBake.asset.dataUrl)
@@ -399,9 +435,8 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     && hiPatchPixels.length === hiPatchSprite.width * hiPatchSprite.height * 4, 'A high-resolution mouth patch is not a transparent mouth-only overlay')
   const hiBodyRenderer = await prepareSavedCharacterRenderer(hiCharacter, { source: hiSource, artwork: hiSource, assetProvider: hiProvider })
   const hiBody = await hiBodyRenderer.renderToCanvas(hiAppearance, {}, undefined, 'idle')
-  const hiBodyCrop = trimTransparentCanvas(hiBody.canvas)
-  const hiBodyDataUrl = hiBodyCrop?.dataUrl ?? hiBody.canvas.toDataURL('image/png')
-  const baseModes = await bakeFaceModeAssets('Synthetic body and clothes', hiBodyRenderer, hiAppearance, {}, undefined, 'idle')
+  const baseModes = await bakeEditorV6FaceModeAssets('Synthetic body and clothes', hiBodyRenderer, hiAppearance, {}, undefined, 'idle', hiBody)
+  const hiBodyDataUrl = baseModes.dataUrl
   assert(Boolean(baseModes.assetIds.blink && baseModes.assetIds['talk-blink']), 'Combined fixture has no blink variants')
   const neutralTransform = { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
   const ptPreset: FaceExpressionPreset = { schemaVersion: 1, id: 'synthetic-expression', modelSlot: 1, name: 'Synthetic PT', updatedAt: source.updatedAt, noseOpacity: 1,
@@ -411,11 +446,11 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   }
   const targetTransforms = await buildEditorV6ExpressionTransforms(ptPreset, hiAppearance, {}, async id => components.get(id) ?? null, async () => hiMouth, 'left')
   assert(targetTransforms['expression-component:pupil-left']?.sourceTransformOverride?.x !== pupil.defaultTransform.x, 'PT did not change pupil position')
-  const targetModes = await bakeFaceModeAssets('Synthetic expression target', hiBodyRenderer, hiAppearance, targetTransforms, undefined, 'idle')
+  const targetModes = await bakeEditorV6FaceModeAssets('Synthetic expression target', hiBodyRenderer, hiAppearance, targetTransforms, undefined, 'idle')
   const targetMouthState = { ...hiActor, faceTransforms: targetTransforms }
   const targetMouth = await bakeEditorV6Motion({ id: crypto.randomUUID(), plan: { ...hiPlan, key: 'target-mouth', from: targetMouthState, to: { ...targetMouthState } }, character: hiCharacter, mouthScaleSamples: [1, 1.08, 1.1325] }, hiProvider)
-  const expressionFrom = { ...hiActor, x: -32, width: 20, height: 20 * 1920 / 1080 * (hiBodyCrop?.height ?? hiBody.height) / (hiBodyCrop?.width ?? hiBody.width), activeFaceMode: 'idle' as const,
-    characterCanvasWidth: 20 * hiBody.width / (hiBodyCrop?.width ?? hiBody.width) }
+  const expressionFrom = { ...hiActor, x: -32, width: 20, height: 20 * 1920 / 1080 * hiBody.height / hiBody.width, activeFaceMode: 'idle' as const,
+    characterCanvasWidth: 20 }
   const expressionTo = { ...expressionFrom, activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
   const expressionBlockFrom = { id: crypto.randomUUID(), elementId: expressionFrom.id, label: 'Normal', startFrame: 0, durationFrames: 23, state: expressionFrom }
   const expressionBlockTo = { ...expressionBlockFrom, id: crypto.randomUUID(), label: 'Expression', startFrame: 23, durationFrames: 17, state: expressionTo }
@@ -443,7 +478,7 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
     assert(withoutHair.crop && expectedBaseCrop.top < withoutHair.crop.top, 'The fixture must have different bounds with and without hair')
   } finally { hairlessRenderer.dispose() }
   const exportEyesAppearance = { ...hiAppearance, eyesAboveRearHair: true }
-  const exportBase: EditorV6Element = { ...expressionFrom, assetId: 'synthetic-hair-base', width: 18, height: 82, faceAppearance: exportEyesAppearance, faceTransforms: {}, activeFaceMode: 'idle' }
+  const exportBase: EditorV6Element = { ...expressionFrom, faceRendererVersion: undefined, assetId: 'synthetic-hair-base', width: 18, height: 82, faceAppearance: exportEyesAppearance, faceTransforms: {}, activeFaceMode: 'idle' }
   const exportTarget: EditorV6Element = { ...exportBase, assetId: 'synthetic-hair-expression', activeExpressionPresetId: 'synthetic-expression', faceTransforms: targetTransforms }
   const hairTimeline = createEditorV6Timeline([exportBase])
   hairTimeline.durationFrames = 40
@@ -587,14 +622,15 @@ async function captureScene(scene: unknown, assets: unknown[], renderLayer: 'all
   assert(!editorV6MotionPlan(track,previous,{...next,motionEnabled:false}),'Destination block motion opt-out was ignored')
   uiRoot.unmount();mount.remove()
   return {
-    passed: true, metrics: result.metrics, concurrentSourceRefresh, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
+    passed: true, sourceFramePresets: standardPresets.length, futureExpressionFixtures: futureExpressionFixtures.length,
+    metrics: result.metrics, concurrentSourceRefresh, timelineControls: true, expressionRigs: facial.metrics.preparedRigs, blueXs, greenXs,
     facialGeometry: { maxBodyLandmarkDriftPixels: maxLandmarkDrift, exactAnchorThresholdPixels: 1, softCropPreviewBodyDimensions: redSpans },
     faceComposition: { backgrounds: compositionComparisons, assetRevisionInvalidation: true, characterRotationDegrees: compositeActor.rotation, mirrored: compositeActor.flipX },
     highResolutionMouth: { source: '640x960', atlasPixels: hiMouthBake.metrics.atlasPixels, patchPixels: hiPatch!.sprite.width * hiPatch!.sprite.height, patch: { width: hiPatch!.sprite.width, height: hiPatch!.sprite.height, x: hiPatch!.x, y: hiPatch!.y, widthRatio: hiPatch!.width, heightRatio: hiPatch!.height } },
     mouthExportFixture: {
       sourceDataUrl: hiBodyDataUrl,
-      sourceWidth: hiBodyCrop?.width ?? hiBody.width,
-      sourceHeight: hiBodyCrop?.height ?? hiBody.height,
+      sourceWidth: hiBody.width,
+      sourceHeight: hiBody.height, faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION,
       asset: hiMouthBake.asset,
       mouthlessBaseAssets: hiMouthBake.mouthlessBaseAssets,
       metrics: hiMouthBake.metrics,

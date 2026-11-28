@@ -1,3 +1,4 @@
+import { editorV6IntroPortraitAssetIds } from '../../../../shared/editorV6Intro'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 
 /**
@@ -19,6 +20,7 @@ export function restorePersistedCharacterAssets(
   for (const track of document.timeline.tracks) {
     for (const block of track.blocks) {
       collectCharacterAssets(block.state)
+      for (const id of editorV6IntroPortraitAssetIds(block.intro)) requiredIds.add(id)
       if (block.incomingMotion) {
         requiredIds.add(block.incomingMotion.assetId)
         if (block.incomingMotion.faceAssetId) requiredIds.add(block.incomingMotion.faceAssetId)

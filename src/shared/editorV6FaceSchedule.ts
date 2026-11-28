@@ -1,4 +1,6 @@
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
 import type { EditorV6FaceRenderMode, EditorV6Timeline } from './editorV6'
+import { editorV6UpperBound } from './editorV6SortedSearch'
 
 export function isEditorV6BlinkRenderMode(mode: EditorV6FaceRenderMode | undefined): boolean {
   return mode === 'blink' || mode === 'talk-blink'
@@ -47,8 +49,7 @@ function speechIntervals(timeline: EditorV6Timeline): Map<string, Array<{ start:
 export function isEditorV6CharacterSpeakingAtFrame(timeline: EditorV6Timeline, characterId: string, frame: number): boolean {
   const intervals = speechIntervals(timeline).get(characterId)
   if (!intervals?.length) return false
-  let left = 0, right = intervals.length
-  while (left < right) { const middle = (left + right) >>> 1; if (intervals[middle].start <= frame) left = middle + 1; else right = middle }
+  const left = editorV6UpperBound(intervals, frame, interval => interval.start)
   return Boolean(intervals[left - 1] && frame < intervals[left - 1].end)
 }
 
@@ -57,29 +58,42 @@ export function hasEditorV6CharacterSpeechOverlap(timeline: EditorV6Timeline, ch
   if (endFrame <= startFrame) return false
   const intervals = speechIntervals(timeline).get(characterId)
   if (!intervals?.length) return false
-  let left = 0, right = intervals.length
-  while (left < right) { const middle = (left + right) >>> 1; if (intervals[middle].end <= startFrame) left = middle + 1; else right = middle }
+  const left = editorV6UpperBound(intervals, startFrame, interval => interval.end)
   return Boolean(intervals[left] && intervals[left].start < endFrame)
 }
 
-/** Stable per-character schedule: a brief blink every 2.7–3.7 seconds. */
-const blinkScheduleCache = new Map<string, { period: number; phase: number; length: number; secondBlink: boolean }>()
-export function isEditorV6BlinkFrame(projectId: string, characterId: string, frame: number): boolean {
-  const key = `${projectId}:${characterId}`
-  let schedule = blinkScheduleCache.get(key)
+/** The project clock is independent of playback order and export worker ranges. */
+const schedules = new Map<string, { state: number; events: Array<{ start: number; roll: number }> }>()
+export function editorV6BlinkEventAtFrame(projectId: string, frame: number) {
+  const fps = EDITOR_V6_TIMELINE_FPS
+  const minimum = Math.ceil(2.5 * fps), maximum = Math.floor(3.5 * fps)
+  const duration = 4
+  if (frame < minimum) return undefined
+  let schedule = schedules.get(projectId)
   if (!schedule) {
-    let hash = 2166136261
-    for (const character of key) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619) >>> 0
-    schedule = { period: 82 + hash % 31, phase: hash % (82 + hash % 31), length: 3 + (hash >>> 8) % 2, secondBlink: hash % 5 === 0 }
-    blinkScheduleCache.set(key, schedule)
-    if (blinkScheduleCache.size > 2048) blinkScheduleCache.delete(blinkScheduleCache.keys().next().value!)
+    let seed = 2166136261
+    for (const character of projectId) seed = Math.imul(seed ^ character.charCodeAt(0), 16777619)
+    schedule = { state: seed, events: [] }
+    schedules.set(projectId, schedule)
+    if (schedules.size > 8) schedules.delete(schedules.keys().next().value!)
   }
-  const cycleFrame = ((frame + schedule.phase) % schedule.period + schedule.period) % schedule.period
-  return cycleFrame < schedule.length || schedule.secondBlink && cycleFrame >= schedule.period - 3
+  const { events } = schedule
+  const random = () => {
+    let value = schedule.state = (schedule.state + 0x6d2b79f5) | 0
+    value = Math.imul(value ^ value >>> 15, value | 1)
+    value ^= value + Math.imul(value ^ value >>> 7, value | 61)
+    return ((value ^ value >>> 14) >>> 0) / 0x100000000
+  }
+  while (!events.length || events[events.length - 1].start <= frame) {
+    const previous = events.at(-1)
+    const start = (previous?.start ?? 0) + minimum + Math.floor(random() * (maximum - minimum + 1))
+    events.push({ start, roll: random() })
+  }
+  const event = events[editorV6UpperBound(events, frame, item => item.start) - 1]
+  return event && frame < event.start + duration ? event : undefined
 }
 
-export function editorV6FaceModeAtFrame(projectId: string, timeline: EditorV6Timeline, characterId: string, frame: number, options: { includeSpeechMouth?: boolean } = {}): EditorV6FaceRenderMode | undefined {
+export function editorV6FaceModeAtFrame(timeline: EditorV6Timeline, characterId: string, frame: number, options: { includeSpeechMouth?: boolean; blinking?: boolean } = {}): EditorV6FaceRenderMode | undefined {
   const talking = options.includeSpeechMouth !== false && isEditorV6CharacterSpeakingAtFrame(timeline, characterId, frame)
-  const blinking = isEditorV6BlinkFrame(projectId, characterId, frame)
-  return talking ? blinking ? 'talk-blink' : 'talk' : blinking ? 'blink' : undefined
+  return talking ? options.blinking ? 'talk-blink' : 'talk' : options.blinking ? 'blink' : undefined
 }

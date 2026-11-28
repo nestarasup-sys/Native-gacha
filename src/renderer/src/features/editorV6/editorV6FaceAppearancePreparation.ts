@@ -1,3 +1,4 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from './editorV6SourceFrame'
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Element, EditorV6FaceRenderMode, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { bakeFaceModeAssets, measureFaceModeCrop, PreparedEditorV6FaceRenderer } from './faceModeAssets'
@@ -48,17 +49,12 @@ export async function prepareEditorV6FaceAppearance(
   const baseMode = faceMode ?? dependencies.faceModeForElement(element, appearance)
 
   const previousAppearance = element.faceAppearance ?? character.customization.faceAppearance
-  let previousCrop: PreparedEditorV6FaceAppearance['previousCrop'] | undefined = element.activeFaceMode && dependencies.interactiveBakes.previousCrop(
-    renderer, element.text, previousAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode
-  )
-  // Saved snapshots use the union of all face modes, not the active frame alone.
-  if (previousCrop === undefined) {
-    const previousRendered = await renderer.renderToCanvas(previousAppearance, element.faceTransforms, element.activeExpressionEffects, element.activeFaceMode)
-    previousCrop = await dependencies.measureCrop(
-      element.text, renderer, previousAppearance, element.faceTransforms, element.activeExpressionEffects,
-      element.activeFaceMode ?? dependencies.faceModeForElement(element, previousAppearance),
-      previousRendered
-    )
+  let previousCrop: PreparedEditorV6FaceAppearance['previousCrop'] = null
+  if ((element.faceRendererVersion ?? 0) < EDITOR_V6_SOURCE_FRAME_VERSION) {
+    const previousMode = element.activeFaceMode ?? dependencies.faceModeForElement(element, previousAppearance)
+    const previous = await renderer.renderToCanvas(previousAppearance, element.faceTransforms, element.activeExpressionEffects, previousMode)
+    previousCrop = await dependencies.measureCrop(element.text, renderer, previousAppearance, element.faceTransforms,
+      element.activeExpressionEffects, previousMode, previous)
   }
   const prepared = await dependencies.interactiveBakes.bake(renderer, element.text, appearance, faceTransforms, activeEffects, baseMode, dependencies.bakeAssets)
   return { baseMode, ...prepared, previousCrop }

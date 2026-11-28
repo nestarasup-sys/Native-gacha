@@ -1,3 +1,6 @@
+import { constants } from 'node:fs'
+import { findPoseTorso, poseTorsoIsDisplaced, poseTorsoOffset } from '../../../src/shared/poseTorso.ts'
+import { isTorsoPart } from '../../../src/shared/modelRig.ts'
 /** Persistência de poses DEV: snapshots e rascunhos, sem camada Electron.
  * O adaptador é injetado para manter o DomainFileSystem e compatibilidade legada.
  */
@@ -81,6 +84,29 @@ async function writePoseProject(modelSlot: number, slot: number, project: Fabric
   if (!areModelPartSkinContoursValid(project.parts)) throw new Error('Contornos artificiais inválidos na pose.')
   if (project.category !== undefined && (typeof project.category !== 'string' || !project.category.trim() || project.category.trim().length > 32 || /[\r\n\t]/.test(project.category))) throw new Error('Categoria de pose inválida.')
   const folder = poseSlotPath(modelSlot, slot)
+  const manifestPath = join(folder, 'pose.json')
+  const readOptional = async <T>(path: string): Promise<T | undefined> => {
+    try { return JSON.parse(await readFile(path, 'utf8')) as T }
+    catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'ENOENT') throw reason }
+  }
+  const model = await readOptional<{ parts: Array<Pick<ModelPart, 'id' | 'name' | 'x' | 'y'>> }>(join(modelSlotPath(modelSlot), 'project.json'))
+  const original = await readOptional<FabricatorPoseSave>(manifestPath)
+  const source = model?.parts ?? []
+  const offset = poseTorsoOffset(project, source)
+  if (poseTorsoIsDisplaced(offset)) throw Error('Use “Levar tronco à posição original” antes de salvar esta pose.')
+  if (!offset) {
+    const savedTorso = original && findPoseTorso(original.parts)
+    const archivedTorso = savedTorso && project.parts.find(part => part.id === savedTorso.id)
+    if (savedTorso && (!archivedTorso || archivedTorso.x !== savedTorso.x || archivedTorso.y !== savedTorso.y)) {
+      throw Error('O tronco não pode ser deslocado sem a referência do modelo de origem.')
+    }
+    if (!archivedTorso && source.some(isTorsoPart)) throw Error('O tronco do modelo de origem não foi encontrado na pose.')
+  }
+  if (offset && original && poseTorsoIsDisplaced(poseTorsoOffset(original, source))) {
+    const backup = manifestPath + '.before-torso-alignment'
+    try { await copyFile(manifestPath, backup, constants.COPYFILE_EXCL) }
+    catch (reason) { if ((reason as NodeJS.ErrnoException).code !== 'EEXIST') throw reason }
+  }
   // A edição automática salva primeiro no diretório de rascunho e consome as
   // imagens pendentes no renderer. Ao salvar no slot, copie as partes já
   // persistidas no rascunho para que o slot independente tenha sua biblioteca.

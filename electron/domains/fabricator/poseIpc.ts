@@ -2,7 +2,7 @@ import { fabricatorIpcChannels } from '../../../src/shared/fabricatorIpcChannels
 /** Canais legados de Poses DEV: transporte isolado, autorização obrigatória. */
 import type { IpcMain, IpcMainInvokeEvent } from 'electron'
 import { basename, dirname, join, resolve } from 'node:path'
-import { type FabricatorAssetSave, type FabricatorPose, type FabricatorPoseDraft, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorPoseSummary } from '../../../src/shared/fabricator'
+import { resolvePoseCategory, type FabricatorAssetSave, type FabricatorPose, type FabricatorPoseDraft, type FabricatorPoseDraftSave, type FabricatorPoseSave, type FabricatorPoseSummary } from '../../../src/shared/fabricator'
 import { readPoseSlotSummaries } from './poseSummaryReader'
 import type * as fs from 'node:fs/promises'
 
@@ -82,6 +82,29 @@ export function registerFabricatorPoseHandlers(deps: PoseIpcDependencies): void 
   ipcMain.handle(fabricatorIpcChannels.saveFabricatorPose, async (event, modelSlot: number, slot: number, project: FabricatorPoseSave, assets: FabricatorAssetSave[]): Promise<void> => {
     assertTrustedSender(event)
     await queuePoseWrite(() => coordinatePoseReferenceChange(() => writePoseProject(modelSlot, slot, project, assets)))
+  })
+
+  ipcMain.handle(fabricatorIpcChannels.duplicateFabricatorPose, async (event, modelSlot: number, sourceSlot: number, targetSlot: number): Promise<void> => {
+    assertTrustedSender(event)
+    if (!isValidModelSlot(modelSlot) || !isValidPoseSlot(sourceSlot) || !isValidPoseSlot(targetSlot) || sourceSlot === targetSlot) throw new Error('Slots de pose inválidos.')
+    await ensureLegacyPoseMigration()
+    await queuePoseWrite(() => coordinatePoseReferenceChange(async () => {
+      const source = await readPoseProject(modelSlot, sourceSlot)
+      if (!source) throw new Error('A pose de origem não está disponível.')
+      await mkdir(poseModelPath(modelSlot), { recursive: true })
+      try { await mkdir(poseSlotPath(modelSlot, targetSlot)) } catch (reason) {
+        if ((reason as NodeJS.ErrnoException).code === 'EEXIST') throw new Error('O slot de destino já está ocupado.')
+        throw reason
+      }
+      const assets = source.parts.map(({ id, dataUrl }) => ({ id, dataUrl }))
+      const project = { ...source, slot: targetSlot, category: resolvePoseCategory(source), updatedAt: new Date().toISOString(), parts: source.parts.map(({ dataUrl: _dataUrl, ...part }) => part) }
+      try {
+        await writePoseProject(modelSlot, targetSlot, project, assets)
+      } catch (reason) {
+        await rm(poseSlotPath(modelSlot, targetSlot), { recursive: true, force: true })
+        throw reason
+      }
+    }))
   })
 
   ipcMain.handle(fabricatorIpcChannels.deleteFabricatorPose, async (event, modelSlot: number, slot: number): Promise<void> => {

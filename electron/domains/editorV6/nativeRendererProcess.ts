@@ -48,21 +48,22 @@ function writeImageCommand(buffer: Buffer, command: Extract<EditorV6NativeFrameP
   return writeString16(buffer, command.assetId, offset)
 }
 
-function buildPacket(plan: EditorV6NativeFramePlan, assetsToSend: Array<{ id: string; bytes: Buffer }>): Buffer {
+function buildPacket(plan: EditorV6NativeFramePlan, assetsToSend: Array<{ id: string; bytes: Buffer; lifetime: 'process' | 'frame' }>): Buffer {
   if (![plan.width, plan.height, plan.logicalHeight].every(Number.isSafeInteger) || plan.width < 1 || plan.height < 1 || plan.width > 4096 || plan.height > 2160 || plan.logicalHeight < 1 || plan.logicalHeight > 2160) throw Error('Dimensões inválidas no plano de quadro nativo.')
   if (plan.width * plan.height * 4 > MAX_FRAME_BYTES) throw Error('O quadro excede o limite de memória do renderizador nativo.')
   const assets = assetsToSend.map(asset => ({ ...asset, id: Buffer.from(asset.id, 'utf8') }))
   let size = 32
-  for (const asset of assets) size += 2 + asset.id.length + 4 + asset.bytes.length
+  for (const asset of assets) size += 2 + asset.id.length + 1 + 4 + asset.bytes.length
   for (const command of plan.commands) size += command.kind === 'solid' ? 24 : 4 + 14 * 4 + 2 + Buffer.byteLength(command.assetId, 'utf8')
   if (size > MAX_PACKET_BYTES) throw Error('O plano de quadro excedeu o limite de transferência do renderizador nativo.')
   const packet = Buffer.allocUnsafe(size)
-  packet.write('V6NR', 0, 'ascii'); packet.writeUInt32LE(2, 4)
+  packet.write('V6NR', 0, 'ascii'); packet.writeUInt32LE(3, 4)
   packet.writeUInt32LE(plan.width, 8); packet.writeUInt32LE(plan.height, 12); packet.writeUInt32LE(plan.logicalHeight, 16)
   packet.writeUInt32LE(colorToBgra(plan.backgroundColor), 20); packet.writeUInt32LE(assets.length, 24); packet.writeUInt32LE(plan.commands.length, 28)
   let offset = 32
   for (const asset of assets) {
     packet.writeUInt16LE(asset.id.length, offset); asset.id.copy(packet, offset + 2); offset += 2 + asset.id.length
+    packet.writeUInt8(asset.lifetime === 'frame' ? 1 : 0, offset); offset += 1
     packet.writeUInt32LE(asset.bytes.length, offset); asset.bytes.copy(packet, offset + 4); offset += 4 + asset.bytes.length
   }
   for (const command of plan.commands) {
@@ -118,14 +119,19 @@ export function createEditorV6NativeRendererProcess(executablePath: string): Edi
       if (closed || child.killed) throw Error(processFailure())
       const planAssets = new Map(plan.assets.map(asset => [asset.id, asset]))
       const requiredIds = new Set(plan.commands.filter(command => command.kind === 'image').map(command => command.assetId))
-      const assetsToSend = [...requiredIds].filter(id => !sentAssets.has(id)).map(id => {
+      const assetsToSend = [...requiredIds].filter(id => {
         const asset = planAssets.get(id)
         if (!asset) throw Error(`O plano nativo não forneceu os dados do asset “${id}”.`)
-        return { id, bytes: imageDataFromUrl(asset.dataUrl) }
+        if (asset.lifetime !== 'process' && asset.lifetime !== 'frame') throw Error(`O plano nativo não informou o ciclo de vida do asset “${id}”.`)
+        return asset.lifetime === 'frame' || !sentAssets.has(id)
+      }).map(id => {
+        const asset = planAssets.get(id)
+        if (!asset) throw Error(`O plano nativo não forneceu os dados do asset “${id}”.`)
+        return { id, lifetime: asset.lifetime, bytes: imageDataFromUrl(asset.dataUrl) }
       })
       const framed = buildPacket(plan, assetsToSend)
       await writeToChild(child, framed)
-      for (const asset of assetsToSend) sentAssets.add(asset.id)
+      for (const asset of assetsToSend) if (asset.lifetime === 'process') sentAssets.add(asset.id)
       const header = await readExactly(16)
       const status = header.readUInt32LE(0), length = header.readUInt32LE(4)
       const processMilliseconds = header.readDoubleLE(8)

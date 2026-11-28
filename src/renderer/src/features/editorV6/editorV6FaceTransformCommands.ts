@@ -49,7 +49,7 @@ export function createEditorV6FaceTransformCommands(dependencies: EditorV6FaceTr
     if (!project || !character || !appearance || !element.assetId || !projectId) return
 
     const selectedClip = timelineClips(project.timeline).find(({ block }) =>
-      block.id === dependencies.selectedTimelineBlockId && block.elementId === element.id
+      block.id === dependencies.selectedTimelineBlockId && (block.elementId === element.id || (block.intro && block.id === element.id))
     ) ?? editorV6ClipAtFrame(project.timeline, element.id, dependencies.getFrame())
     const previewCharacter: CustomizerCharacter = {
       ...character,

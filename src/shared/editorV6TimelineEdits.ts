@@ -1,7 +1,10 @@
+import { editorV6IntroPortraitAssetIds } from './editorV6Intro'
+import { editorV6CardSegment } from './editorV6Cards'
 /** Timeline editing, position persistence, and asset repair operations. */
 import type { EditorV6Asset, EditorV6Document, EditorV6Element, EditorV6Timeline } from './editorV6'
 import { editorV6MotionPlans } from './editorV6Motion'
 import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, findEditorV6TimelineClip, timelineClips } from './editorV6TimelineCore'
+import { editorV6LowerBound } from './editorV6SortedSearch'
 
 export function moveEditorV6ElementInPeriod(document: EditorV6Document, blockId: string, x: number, y: number): EditorV6Document {
   if (!Number.isFinite(x) || !Number.isFinite(y)) return document
@@ -41,11 +44,92 @@ export function setEditorV6CharacterPosition(document: EditorV6Document, element
   return changed ? { ...document, elements, timeline: { ...document.timeline, tracks } } : document
 }
 
+/** Remove one timeline block without rippling time or deleting attached clips. */
+export function removeEditorV6TimelineBlock(timeline: EditorV6Timeline, blockId: string): EditorV6Timeline {
+  const clip = findEditorV6TimelineClip(timeline, blockId)
+  if (!clip || clip.track.locked) return timeline
+
+  // Character tracks hold the most recent state until another one starts. Keep
+  // a hidden state in the deleted interval so the previous pose cannot extend.
+  const preserveCharacterGap = clip.track.kind === 'character'
+
+  return {
+    ...timeline,
+    tracks: timeline.tracks.map(track => {
+      let changed = false
+      const blocks = track.blocks.flatMap(block => {
+        if (track.id === clip.track.id && block.id === blockId) {
+          changed = true
+          if (!preserveCharacterGap) return []
+          return [{
+            ...block,
+            id: crypto.randomUUID(),
+            label: 'Vazio',
+            state: block.state ? { ...block.state, visible: false } : undefined,
+            emptyGap: true,
+            incomingMotion: undefined
+          }]
+        }
+        if (block.parentBlockId !== blockId) return [block]
+        changed = true
+        const { parentBlockId: _parentBlockId, relativeStartFrame: _relativeStartFrame, ...independent } = block
+        return [independent]
+      })
+      return changed ? { ...track, blocks } : track
+    })
+  }
+}
+
+type CharacterTransform = Pick<EditorV6Element, 'characterScale' | 'characterWidthScale' | 'characterHeightScale' | 'rotation' | 'flipX' | 'zIndex'>
+const characterTransformKeys = ['characterScale', 'characterWidthScale', 'characterHeightScale', 'rotation', 'flipX', 'zIndex'] as const
+
+/** Share only the controls actually edited; pose artwork and its geometry remain per block. */
+export function setEditorV6CharacterTransform(document: EditorV6Document, elementId: string, values: Partial<CharacterTransform>): EditorV6Document {
+  const base = document.elements.find((element) => element.id === elementId && element.kind === 'character')
+  const characterId = base?.characterId
+  if (!characterId || document.timeline.tracks.some((track) => track.kind === 'character' && track.characterId === characterId && track.locked)) return document
+  const apply = (element: EditorV6Element) => element.kind === 'character' && element.characterId === characterId
+    && characterTransformKeys.some((key) => key in values && element[key] !== values[key]) ? { ...element, ...values } : element
+  const elements = document.elements.map(apply)
+  const tracks = document.timeline.tracks.map((track) => {
+    if (track.kind !== 'character' || track.characterId !== characterId) return track
+    const blocks = track.blocks.map((block) => {
+      if (!block.state || block.state.kind !== 'character' || (block.elementId !== elementId && block.state.characterId !== characterId)) return block
+      const state = characterTransformKeys.some((key) => key in values && block.state![key] !== values[key]) ? { ...block.state, ...values } : block.state
+      return state === block.state ? block : { ...block, state }
+    })
+    return blocks.some((block, index) => block !== track.blocks[index]) ? { ...track, blocks } : track
+  })
+  return elements.some((element, index) => element !== document.elements[index]) || tracks.some((track, index) => track !== document.timeline.tracks[index])
+    ? { ...document, elements, timeline: { ...document.timeline, tracks } } : document
+}
+
+function changedCharacterTransform(before: EditorV6Element, after: EditorV6Element): Partial<CharacterTransform> {
+  const result: Partial<CharacterTransform> = {}
+  for (const key of characterTransformKeys) if (before[key] !== after[key]) Object.assign(result, { [key]: after[key] })
+  return result
+}
+
 /** Make an inspector edit affect only its selected period; rendered images use copy-on-write. */
 export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId: string | null, transform: (document: EditorV6Document) => EditorV6Document): EditorV6Document {
   const clip = blockId ? findEditorV6TimelineClip(document.timeline, blockId) : undefined
   const base = clip?.block.elementId ? document.elements.find((element) => element.id === clip.block.elementId) : undefined
-  if (!clip || !base) return transform(document)
+  if (!clip || !base) {
+    let next = transform(document)
+    for (const before of document.elements) {
+      if (before.kind !== 'character') continue
+      const after = next.elements.find((element) => element.id === before.id && element.kind === 'character')
+      if (!after) continue
+      if (document.timeline.tracks.some((track) => track.kind === 'character' && track.characterId === before.characterId && track.locked)) {
+        if (after !== before) next = { ...next, elements: next.elements.map((element) => element.id === before.id ? before : element) }
+        continue
+      }
+      if (after.x !== before.x || after.y !== before.y) next = setEditorV6CharacterPosition(next, before.id, { x: after.x, y: after.y })
+      const values = changedCharacterTransform(before, after)
+      if (Object.keys(values).length) next = setEditorV6CharacterTransform(next, before.id, values)
+    }
+    return next
+  }
   const before = clip.block.state ?? base
   const working = { ...document, elements: document.elements.map((element) => element.id === base.id ? before : element) }
   let next = transform(working)
@@ -72,6 +156,19 @@ export function editEditorV6DocumentAtBlock(document: EditorV6Document, blockId:
   if (clip.track.kind === 'character' && state.kind === 'character' && (state.x !== before.x || state.y !== before.y)) {
     next = setEditorV6CharacterPosition(next, base.id, { x: state.x, y: state.y })
   }
+  if (clip.track.kind === 'character' && state.kind === 'character') {
+    const values = changedCharacterTransform(before, state)
+    const oldBlocks = new Map(clip.track.blocks.map((block) => [block.id, block.state]))
+    const updatedTrack = next.timeline.tracks.find((track) => track.id === clip.track.id)
+    for (const block of updatedTrack?.blocks ?? []) {
+      const old = oldBlocks.get(block.id)
+      if (!old || !block.state || block.id === blockId) continue
+      for (const key of characterTransformKeys) {
+        if (old[key] !== block.state[key] && block.state[key] === state[key]) Object.assign(values, { [key]: state[key] })
+      }
+    }
+    if (Object.keys(values).length) next = setEditorV6CharacterTransform(next, base.id, values)
+  }
   return pruneEditorV6TimelineSnapshots(next)
 }
 
@@ -86,7 +183,7 @@ export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): Edit
   }
   const referenced = new Set([document.backgroundAssetId,
     ...document.elements.flatMap((element) => [element.assetId, ...Object.values(element.faceModeAssetIds ?? {})]),
-    ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, ...Object.values(block.state?.faceModeAssetIds ?? {}), block.background?.backgroundAssetId, block.incomingMotion?.assetId, block.incomingMotion?.faceAssetId])])
+    ...timelineClips(document.timeline).flatMap(({ block }) => [block.state?.assetId, ...Object.values(block.state?.faceModeAssetIds ?? {}), block.background?.backgroundAssetId, block.incomingMotion?.assetId, block.incomingMotion?.faceAssetId, ...editorV6IntroPortraitAssetIds(block.intro)])])
   const assets = document.assets.filter((asset) => !asset.timelineSnapshot || referenced.has(asset.id))
   return assets.length === document.assets.length ? document : { ...document, assets }
 }
@@ -94,7 +191,7 @@ export function pruneEditorV6TimelineSnapshots(document: EditorV6Document): Edit
 /** Drop optional facial mode links whose image was removed by an edit or legacy cleanup. */
 export function repairEditorV6FaceModeAssetReferences(document: EditorV6Document): EditorV6Document {
   const characterAssets = new Set(document.assets.filter((asset) => asset.category === 'character').map((asset) => asset.id))
-  const repairElement = (element: EditorV6Element): EditorV6Element => {
+  const repairElement = <T extends Pick<EditorV6Element, 'faceModeAssetIds'>>(element: T): T => {
     if (!element.faceModeAssetIds) return element
     const previous = element.faceModeAssetIds
     const faceModeAssetIds = Object.fromEntries(Object.entries(previous).filter(([, assetId]) => assetId && characterAssets.has(assetId))) as NonNullable<EditorV6Element['faceModeAssetIds']>
@@ -105,11 +202,11 @@ export function repairEditorV6FaceModeAssetReferences(document: EditorV6Document
   const tracks = document.timeline.tracks.map((track) => {
     let trackChanged = false
     const blocks = track.blocks.map((block) => {
-      if (!block.state) return block
-      const state = repairElement(block.state)
-      if (state === block.state) return block
+      const state = block.state && repairElement(block.state)
+      const intro = block.intro?.kind === 'character' ? repairElement(block.intro) : block.intro
+      if (state === block.state && intro === block.intro) return block
       trackChanged = true
-      return { ...block, state }
+      return { ...block, state, intro }
     })
     if (!trackChanged) return track
     changed = true
@@ -154,15 +251,18 @@ export function repairEditorV6DuplicateAssets(document: EditorV6Document, select
   }
   const categoryForElement = (element: EditorV6Element): EditorV6Asset['category'] | undefined =>
     element.kind === 'character' ? 'character' : element.kind === 'image' ? 'object' : undefined
+  const remapFaceModes = (modes: EditorV6Element['faceModeAssetIds']): EditorV6Element['faceModeAssetIds'] =>
+    modes && Object.fromEntries(Object.entries(modes).map(([mode, id]) => [mode, resolveAssetId(id, 'character')]))
   const repairElement = (element: EditorV6Element, preferLast = false): EditorV6Element => ({
     ...element,
     ...(element.assetId ? { assetId: resolveAssetId(element.assetId, categoryForElement(element), preferLast) } : {}),
-    ...(element.faceModeAssetIds ? { faceModeAssetIds: Object.fromEntries(Object.entries(element.faceModeAssetIds).map(([mode, id]) => [mode, resolveAssetId(id, 'character')])) as EditorV6Element['faceModeAssetIds'] } : {})
+    ...(element.faceModeAssetIds ? { faceModeAssetIds: remapFaceModes(element.faceModeAssetIds) } : {})
   })
   const elements = document.elements.map((element) => repairElement(element))
   const timeline = { ...document.timeline, tracks: document.timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.map((block) => ({
     ...block,
     ...(block.state ? { state: repairElement(block.state, block.id === selectedBlockId) } : {}),
+    ...(block.intro?.kind === 'character' ? { intro: { ...block.intro, assetId: resolveAssetId(block.intro.assetId, 'character')!, faceModeAssetIds: remapFaceModes(block.intro.faceModeAssetIds) } } : {}),
     ...(block.background ? { background: { ...block.background, backgroundAssetId: resolveAssetId(block.background.backgroundAssetId ?? undefined, 'background') ?? null } } : {}),
     ...(block.incomingMotion ? { incomingMotion: {
       ...block.incomingMotion,
@@ -188,9 +288,8 @@ export function snapEditorV6Frame(timeline: EditorV6Timeline, frame: number, cur
   for (const [pointOrder, point] of points.entries()) for (const [edgeOrder, edge] of [0, duration].entries()) consider(point, edge, pointOrder * 2 + edgeOrder)
   for (const [edgeOrder, edge] of [0, duration].entries()) {
     const target = frame + edge
-    let left = 0, right = blockPoints.length
     const minimum = target - threshold
-    while (left < right) { const middle = (left + right) >>> 1; if (blockPoints[middle].frame < minimum) left = middle + 1; else right = middle }
+    const left = editorV6LowerBound(blockPoints, minimum, point => point.frame)
     for (let index = left; index < blockPoints.length && blockPoints[index].frame <= target + threshold; index++) {
       const point = blockPoints[index]
       consider(point.frame, edge, points.length * 2 + point.order * 2 + edgeOrder)
@@ -219,19 +318,23 @@ export function setEditorV6BlockTiming(timeline: EditorV6Timeline, blockId: stri
 }
 
 export function splitEditorV6Block(timeline: EditorV6Timeline, blockId: string, frame: number): EditorV6Timeline {
-  const clip = findEditorV6TimelineClip(timeline, blockId)
+  const sourceTimeline = normalizeEditorV6Timeline(timeline)
+  const clip = findEditorV6TimelineClip(sourceTimeline, blockId)
   if (!clip || clip.track.locked || frame <= clip.block.startFrame || frame >= clip.block.startFrame + clip.block.durationFrames) return timeline
   const cut = frame - clip.block.startFrame
-  const right = { ...clip.block, id: crypto.randomUUID(), startFrame: frame, durationFrames: clip.block.durationFrames - cut,
+  const right = { ...structuredClone(clip.block), id: crypto.randomUUID(), startFrame: frame, durationFrames: clip.block.durationFrames - cut,
+    ...(clip.block.videoCard ? { videoCard: editorV6CardSegment(clip.block.videoCard, cut, clip.block.durationFrames) } : {}),
+    ...(clip.track.kind === 'video' ? { videoCardOriginBlockId: clip.block.videoCardOriginBlockId ?? clip.block.id } : {}),
+    ...(clip.block.videoPresentation ? { videoPresentation: { ...clip.block.videoPresentation, loadingGif: false } } : {}),
     ...(clip.block.parentBlockId ? { relativeStartFrame: (clip.block.relativeStartFrame ?? 0) + cut } : {}),
     ...(clip.block.mediaInFrame !== undefined ? { mediaInFrame: clip.block.mediaInFrame + cut } : {}) }
-  const tracks = timeline.tracks.map((track) => ({ ...track, blocks: track.blocks.flatMap((block) => {
-    if (block.id === blockId) return [{ ...block, durationFrames: cut }, right]
+  const tracks = sourceTimeline.tracks.map((track) => ({ ...track, blocks: track.blocks.flatMap((block) => {
+    if (block.id === blockId) return [{ ...block, durationFrames: cut, ...(block.videoCard ? { videoCard: editorV6CardSegment(block.videoCard, 0, cut) } : {}) }, right]
     if (block.parentBlockId !== blockId) return [block]
     const end = block.startFrame + block.durationFrames
     if (block.startFrame >= frame) return [{ ...block, parentBlockId: right.id, relativeStartFrame: block.startFrame - frame }]
     if (end <= frame) return [block]
-    return [{ ...block, durationFrames: frame - block.startFrame }, { ...block, id: crypto.randomUUID(), parentBlockId: right.id, startFrame: frame, relativeStartFrame: 0, durationFrames: end - frame }]
+    return [{ ...block, durationFrames: frame - block.startFrame }, { ...structuredClone(block), id: crypto.randomUUID(), parentBlockId: right.id, startFrame: frame, relativeStartFrame: 0, durationFrames: end - frame }]
   }) }))
   return normalizeEditorV6Timeline({ ...timeline, tracks })
 }
@@ -241,11 +344,13 @@ export function duplicateEditorV6Block(timeline: EditorV6Timeline, blockId: stri
   if (!clip || clip.track.locked) return timeline
   const persistent = clip.track.kind === 'character' || Boolean(clip.block.background)
   const copyId = crypto.randomUUID(), startFrame = clip.block.startFrame + clip.block.durationFrames
-  const copy = { ...clip.block, id: copyId, startFrame, ...(clip.block.parentBlockId ? { relativeStartFrame: (clip.block.relativeStartFrame ?? 0) + clip.block.durationFrames } : {}) }
+  const sourceBlock = structuredClone(clip.block)
+  delete sourceBlock.videoCardOriginBlockId
+  const copy = { ...sourceBlock, id: copyId, startFrame, ...(clip.block.parentBlockId ? { relativeStartFrame: (clip.block.relativeStartFrame ?? 0) + clip.block.durationFrames } : {}) }
   const tracks = timeline.tracks.map((track) => ({ ...track, blocks: [
     ...track.blocks.map((block) => track.id === clip.track.id && persistent && (!clip.block.background || block.background) && block.startFrame >= startFrame ? { ...block, startFrame: block.startFrame + copy.durationFrames } : block),
     ...(track.id === clip.track.id ? [copy] : []),
-    ...track.blocks.filter((block) => block.parentBlockId === blockId).map((block) => ({ ...block, id: crypto.randomUUID(), parentBlockId: copyId, startFrame: startFrame + (block.relativeStartFrame ?? block.startFrame - clip.block.startFrame) }))
+    ...track.blocks.filter((block) => block.parentBlockId === blockId).map((block) => ({ ...structuredClone(block), id: crypto.randomUUID(), parentBlockId: copyId, startFrame: startFrame + (block.relativeStartFrame ?? block.startFrame - clip.block.startFrame) }))
   ] }))
   return normalizeEditorV6Timeline({ ...timeline, durationFrames: Math.max(timeline.durationFrames + (persistent ? copy.durationFrames : 0), startFrame + copy.durationFrames), tracks })
 }

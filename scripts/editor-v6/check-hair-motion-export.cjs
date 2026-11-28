@@ -17,6 +17,9 @@ async function main() {
   await build({ entryPoints: [join(root, 'tests/editor-v6/hairMotionExport.electron.ts')], outfile: entry, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], logLevel: 'warning' })
   const env = { ...process.env }
   delete env.ELECTRON_RUN_AS_NODE
+  // This harness asserts the per-frame hair composition metrics in the export
+  // report. Keep the heavier instrumentation scoped to this hidden test app.
+  env.GACHA_EDITOR_V6_PHASE2_DIAGNOSTICS = '1'
   const child = spawn(require('electron'), [entry, root, folder, ...process.argv.slice(2)], { windowsHide: true, stdio: 'inherit', env })
   const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve) })
   if (code !== 0) {

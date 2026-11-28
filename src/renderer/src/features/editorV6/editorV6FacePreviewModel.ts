@@ -2,6 +2,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import { editorV6CharacterRenderKey } from '../../../../shared/editorV6SceneModel'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceTransforms } from '../../../../shared/editorV6'
 import type { PreparedEditorV6FaceRenderer } from './faceModeAssets'
+import { editorV6IntroInspectorTarget } from './editorV6IntroInspectorTarget'
 
 export type EditorV6FacePreviewJob = {
   projectId: string
@@ -25,9 +26,11 @@ type KeyForRenderer = (character: CustomizerCharacter, poseSourceRevision?: stri
 
 export function editorV6FacePreviewTarget(job: EditorV6FacePreviewJob, project: EditorV6Document): EditorV6Element | null {
   const block = job.blockId
-    ? project.timeline.tracks.flatMap((track) => track.blocks).find((candidate) => candidate.id === job.blockId && candidate.elementId === job.elementId)
+    ? project.timeline.tracks.flatMap((track) => track.blocks).find((candidate) => candidate.id === job.blockId &&
+      (candidate.elementId === job.elementId || (candidate.intro && candidate.id === job.elementId)))
     : undefined
   if (job.blockId && !block) return null
+  if (block?.intro) return project.elements.find(element => element.id === job.elementId) ?? editorV6IntroInspectorTarget(project, block)
   return block?.state ?? project.elements.find((element) => element.id === job.elementId) ?? null
 }
 

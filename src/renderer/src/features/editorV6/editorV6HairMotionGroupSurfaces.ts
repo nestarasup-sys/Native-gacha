@@ -1,3 +1,4 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from './editorV6SourceFrame'
 import type { EditorV6HairMotionLayer, EditorV6HairMotionRig } from '../../../../shared/editorV6HairMotion'
 import type { EditorV6HairMotionTarget } from './editorV6HairMotionTargets'
 import type { PreparedEditorV6HairMotionCharacterGroup } from './editorV6HairMotionCharacterGroup'
@@ -53,7 +54,8 @@ export async function prepareEditorV6HairMotionGroupSurfaces(
     const existingFaceSurfaceId = faceSurfacesByInput.get(faceSurfaceKey)
     const hasOverlaySurface = overlaySurfacesByInput.has(faceSurfaceKey)
     const hasEyesSurface = eyesSurfacesByInput.has(faceSurfaceKey)
-    let sourceCrop = cropByFace.get(faceKey)
+    const sourceFrame = (state.faceRendererVersion ?? 0) >= EDITOR_V6_SOURCE_FRAME_VERSION
+    let sourceCrop = sourceFrame ? { left: 0, top: 0, width: originalRenderer.width, height: originalRenderer.height } : cropByFace.get(faceKey)
     let stageStarted = now()
     const [originalFrame, splitFrame] = await Promise.all([
       sourceCrop ? Promise.resolve(null) : originalRenderer.renderToCanvas(currentAppearance, faceTransforms, effects, mode),

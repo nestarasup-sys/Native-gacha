@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { editorV6MotionChannels, type EditorV6MotionBridge } from '../src/shared/editorV6Motion'
+import { editorV6MotionChannels } from '../src/shared/editorV6MotionChannels'
+import type { EditorV6MotionBridge } from '../src/shared/editorV6Motion'
 // Keep this sandboxed preload self-contained. Shared runtime imports make Rollup
 // emit require(./chunks/...), which Chromium sandboxed preloads cannot load.
 const bridge: EditorV6MotionBridge = {

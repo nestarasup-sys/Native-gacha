@@ -1,12 +1,20 @@
+import { editorV6CardComponentsSchema } from './editorV6Cards'
 import { z } from 'zod'
 import type { EditorV6Asset, EditorV6Document, EditorV6Element } from './editorV6'
 import { isValidCustomizerFaceAppearance } from './customizerValidation'
 import { isEditorV6ExpressionEffects, isEditorV6FaceTransforms } from './editorV6'
 import type { EditorV6MotionBakeRequest } from './editorV6Motion'
+import { editorV6VideoPresentationSchema } from './editorV6VideoPresentation'
+import { editorV6IntroClipSchema, editorV6IntroPortraitAssetIds } from './editorV6Intro'
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
+// Blocos podem receber IDs determinísticos (por exemplo UUID v5) em edições
+// externas. Eles continuam sendo UUIDs RFC válidos; IDs de projeto, assets e
+// elementos permanecem v4 para manter os contratos existentes.
+const TIMELINE_BLOCK_UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const UUID_SOURCE = '[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'
 const uuid = z.string().regex(UUID_PATTERN)
+const timelineBlockUuid = z.string().regex(TIMELINE_BLOCK_UUID_PATTERN)
 const finite = z.number().finite()
 const EDITOR_V6_MAX_ASSETS = 5_000
 export const editorV6ExportAudioSchema = z.object({
@@ -103,6 +111,7 @@ const editorV6ElementSchema = z.object({
   characterHeightScale: finite.optional(),
   characterCanvasWidth: finite.optional(),
   text: z.string(),
+  englishText: z.string().optional(),
   x: finite,
   y: finite,
   width: finite,
@@ -183,12 +192,26 @@ export const editorV6MotionResultSchema = z.object({
   return validPrimaryAsset && validMouthlessBaseAssets && validMouthIsolationMode && (selfContainedFaceAtlas || separateFaceAtlas)
 }, 'Atlas de animação inválido.')
 export function parseEditorV6MotionRequest(value: unknown): EditorV6MotionBakeRequest {
-  return z.object({ id: uuid, cacheScope: uuid.optional(), diagnosticDisableScopedPreparationReuse: z.boolean().optional(), character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: uuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
+  return z.object({ id: uuid, cacheScope: uuid.optional(), diagnosticDisableScopedPreparationReuse: z.boolean().optional(), character: z.object({ id: z.string(), customization: z.object({}).passthrough() }).passthrough(), plan: z.object({ blockId: timelineBlockUuid, elementId: uuid, characterId: z.string(), key: z.string().max(65536), startFrame: finite.min(0), endFrame: z.number().int().min(1).max(1_000_000), from: editorV6ElementSchema, to: editorV6ElementSchema, samples: z.array(z.object({ offset: z.number().int().min(-7).max(-1), progress: finite.gt(0).lt(1), faceMode: z.enum(['idle', 'blink', 'talk', 'talk-blink']).optional() })).min(1).max(7) }), mouthScaleSamples: z.array(finite.min(1).max(3)).min(1).max(7).optional(), maxAtlasPixels: z.number().int().min(1).max(8_000_000).optional() }).parse(value) as unknown as EditorV6MotionBakeRequest
 }
+
+const editorV6CardLinkShape = {
+  videoBlockId: timelineBlockUuid,
+  fallbackLayout: z.object({
+    x: finite.min(-200).max(200), y: finite.min(-200).max(200),
+    width: finite.min(1).max(200), height: finite.min(1).max(200),
+    rotation: finite.min(-180).max(180)
+  }).optional(),
+  aspect: finite.positive().optional()
+}
+const editorV6VideoCardSchema = z.union([
+  z.object({ ...editorV6CardLinkShape, components: editorV6CardComponentsSchema }),
+  z.object({ ...editorV6CardLinkShape, components: z.never().optional(), position: z.enum(['top', 'bottom']), text: z.string().trim().min(1).max(240) })
+])
 
 const editorV6TimelineTrackSchema = z.object({
   id: uuid,
-  kind: z.enum(['character', 'speech', 'thought', 'object', 'video', 'audio']),
+  kind: z.enum(['character', 'speech', 'thought', 'object', 'video', 'card', 'audio', 'intro']),
   characterId: z.string().min(1).max(120).optional(),
   name: z.string().trim().min(1).max(80),
   muted: z.boolean(),
@@ -197,7 +220,7 @@ const editorV6TimelineTrackSchema = z.object({
   collapsed: z.boolean().optional(),
   motionEnabled: z.boolean().optional(),
   blocks: z.array(z.object({
-    id: uuid,
+    id: timelineBlockUuid,
     elementId: uuid.optional(),
     label: z.string().max(120),
     startFrame: z.number().int().min(0).max(1_000_000),
@@ -205,10 +228,14 @@ const editorV6TimelineTrackSchema = z.object({
     state: editorV6ElementSchema.optional(),
     background: editorV6BackgroundSchema.optional(),
     characterId: z.string().min(1).max(120).optional(),
-    parentBlockId: uuid.optional(),
+    parentBlockId: timelineBlockUuid.optional(),
     emptyGap: z.boolean().optional(),
     relativeStartFrame: z.number().int().min(0).max(1_000_000).optional(),
     motionEnabled: z.boolean().optional(), incomingMotion: editorV6MotionAtlasSchema.optional(),
+    videoPresentation: editorV6VideoPresentationSchema.optional(),
+    videoCard: editorV6VideoCardSchema.optional(),
+    videoCardOriginBlockId: timelineBlockUuid.optional(),
+    intro: editorV6IntroClipSchema.optional(),
     mediaId: uuid.optional(), mediaLayout: z.object({ x: finite.min(-200).max(200), y: finite.min(-200).max(200), width: finite.min(1).max(200), height: finite.min(1).max(200), rotation: finite.min(-180).max(180) }).optional(), mediaInFrame: z.number().int().min(0).max(1_000_000).optional(), audioEnabled: z.boolean().optional(), gain: finite.min(0).max(2).optional()
   })).max(1000)
 }).passthrough()
@@ -272,6 +299,13 @@ export const editorV6DocumentSchema = z.object({
   if (new Set(allBlockIds).size !== allBlockIds.length) context.addIssue({ code: 'custom', path: ['timeline'], message: 'Os blocos precisam ter identificadores únicos.' })
   document.timeline.tracks.forEach((track, trackIndex) => {
     track.blocks.forEach((block, blockIndex) => {
+      if ((track.kind === 'intro') !== Boolean(block.intro) || (block.intro && (
+        block.elementId || block.state || block.mediaId || block.background || block.parentBlockId ||
+        editorV6IntroPortraitAssetIds(block.intro).some(id => assetsById.get(id)?.category !== 'character')
+      ))) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'intro'], message: 'O bloco de Intro exige uma tela válida e, para apresentação, uma imagem de personagem do projeto.' })
+      if ((track.kind === 'card') !== Boolean(block.videoCard) || (block.videoCard && (block.elementId || block.state || block.mediaId || block.background || block.parentBlockId || ('position' in block.videoCard && block.videoCard.position === 'top' && !['Past', 'Future', 'Indecipherable'].includes(block.videoCard.text))))) {
+        context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'videoCard'], message: 'O bloco de card precisa ficar na faixa Cards e usar conteúdo compatível com sua posição.' })
+      }
       if (block.elementId && !elementIds.has(block.elementId)) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'elementId'], message: 'O bloco aponta para uma camada que não existe mais.' })
       }
@@ -288,7 +322,7 @@ export const editorV6DocumentSchema = z.object({
       if (block.background && (track.kind !== 'video' || block.elementId || block.state || (block.background.backgroundAssetId && assetsById.get(block.background.backgroundAssetId)?.category !== 'background'))) {
         context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'background'], message: 'O estado de fundo precisa usar uma imagem de fundo válida na faixa Vídeo.' })
       }
-      if (block.incomingMotion && (track.kind !== 'character' || assetsById.get(block.incomingMotion.assetId)?.category !== 'character'
+      if (block.incomingMotion && ((track.kind !== 'character' && block.intro?.kind !== 'character') || assetsById.get(block.incomingMotion.assetId)?.category !== 'character'
         || block.incomingMotion.faceAssetId && assetsById.get(block.incomingMotion.faceAssetId)?.category !== 'character'
         || block.incomingMotion.frames.some(frame => frame.facePatch) && !block.incomingMotion.faceAssetId)) context.addIssue({ code: 'custom', path: ['timeline', 'tracks', trackIndex, 'blocks', blockIndex, 'incomingMotion'], message: 'A animação precisa apontar para os atlas corporal e facial necessários.' })
       if (block.mediaId) {

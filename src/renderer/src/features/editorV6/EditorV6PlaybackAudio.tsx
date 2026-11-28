@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { editorV6MediaUrl } from '../../../../shared/editorV6'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 import { useEditorV6PlaybackFrame } from './editorV6PlaybackClock'
 
 type AudioClip = {
@@ -90,7 +91,7 @@ export function EditorV6PlaybackAudio({ project, playing }: { project: EditorV6D
         const { audio } = node
         if (audio.volume !== clip.volume) audio.volume = clip.volume
         const inClip = frame >= clip.startFrame
-        const target = (clip.mediaInFrame + Math.max(0, frame - clip.startFrame)) / 30
+        const target = (clip.mediaInFrame + Math.max(0, frame - clip.startFrame)) / EDITOR_V6_TIMELINE_FPS
         if (Math.abs(audio.currentTime - target) > (playing ? .18 : .03)) {
           try { audio.currentTime = target } catch { /* The next playback update retries after metadata. */ }
         }

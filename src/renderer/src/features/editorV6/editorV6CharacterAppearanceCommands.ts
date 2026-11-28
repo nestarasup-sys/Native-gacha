@@ -1,6 +1,6 @@
 import type { CustomizerCharacter, CustomizerFaceAppearance } from '../../../../shared/customizer'
 import type { EditorV6Document, EditorV6Element, EditorV6FaceTransforms } from '../../../../shared/editorV6'
-import { faceRenderGeometry } from '../../characters/characterGeometry'
+import { editorV6SourceFrameGeometry } from './editorV6SourceFrame'
 import {
   editorV6CharacterEyeSourceRevision,
   editorV6CharacterHairSourceRevision,
@@ -30,13 +30,13 @@ type Dependencies = {
   faceBusy: boolean
   setFaceBusy: (busy: boolean) => void
   facePreview: FaceRendererAccess
-  sceneRef: { current: HTMLDivElement | null }
   poseSourceSnapshot: PoseRevisionSnapshot | null
   prepareFaceAppearance: (
     input: Parameters<typeof prepareEditorV6FaceAppearance>[0],
     renderer: PreparedEditorV6FaceRenderer
   ) => Promise<PreparedEditorV6FaceAppearance>
   preparePoseChange: (input: Parameters<typeof prepareEditorV6PoseChange>[0]) => Promise<PreparedEditorV6PoseChange | null>
+  resolvePoseElement?: (element: EditorV6Element, character: CustomizerCharacter) => Promise<EditorV6Element>
   changeScene: (update: (project: EditorV6Document) => EditorV6Document) => void
   patchDocument: (update: (project: EditorV6Document) => EditorV6Document) => void
   setError: (message: string | null) => void
@@ -80,7 +80,7 @@ export function createEditorV6CharacterAppearanceCommands(dependencies: Dependen
           ...expressionState,
           faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION,
           faceModeAssetIds,
-          ...faceRenderGeometry(candidate, rendered, baked.crop, dependencies.sceneRef.current?.clientWidth ?? 1000, dependencies.sceneRef.current?.clientHeight ?? 562, previousCrop),
+          ...editorV6SourceFrameGeometry(candidate, rendered, previousCrop),
           faceAppearance: appearance,
           faceTransforms,
           characterSourceUpdatedAt: character.updatedAt
@@ -106,7 +106,8 @@ export function createEditorV6CharacterAppearanceCommands(dependencies: Dependen
 
     dependencies.setFaceBusy(true)
     try {
-      const prepared = await dependencies.preparePoseChange({ character, element, poseSlot })
+      const poseElement = dependencies.resolvePoseElement ? await dependencies.resolvePoseElement(element, character) : element
+      const prepared = await dependencies.preparePoseChange({ character, element: poseElement, poseSlot })
       if (!prepared) return
       const { baseMode, baked, geometry } = prepared
       const elementId = element.id
@@ -122,7 +123,13 @@ export function createEditorV6CharacterAppearanceCommands(dependencies: Dependen
         ...current,
         elements: current.elements.map((candidate) => candidate.id === elementId ? {
           ...candidate,
+          ...(dependencies.resolvePoseElement ? {
+            faceAppearance: poseElement.faceAppearance, faceTransforms: poseElement.faceTransforms, expressionBase: poseElement.expressionBase,
+            activeExpressionEffects: poseElement.activeExpressionEffects, activeExpressionCollectionId: poseElement.activeExpressionCollectionId,
+            activeExpressionGaze: poseElement.activeExpressionGaze
+          } : {}),
           poseSlot,
+          faceRendererVersion: EDITOR_V6_FACE_RENDER_VERSION,
           ...geometry,
           ...(typeof poseSlot === 'number' ? { poseSourceRevision: revisions?.revisions[editorV6PoseRevisionKey(modelSlot, poseSlot)] ?? 'missing' } : { poseSourceRevision: undefined }),
           faceModeAssetIds: { ...baked.assetIds, [baseMode]: assetId },

@@ -4,6 +4,7 @@ import type { CustomizerCharacter } from '../../../../shared/customizer'
 import type { EditorV6Document } from '../../../../shared/editorV6'
 import { EDITOR_V6_REACT_IMPORT_FORMAT, parseEditorV6ReactImport, resolveEditorV6ReactVideos, type EditorV6ReactImport } from '../../../../shared/editorV6ReactImport'
 import { compileEditorV6ReactImport, prepareEditorV6ReactSources } from './editorV6ReactImportCompiler'
+import { editorV6ReactPoseWarnings } from './editorV6ReactPoseWarnings'
 
 type Props={
   onClose:()=>void
@@ -55,8 +56,10 @@ export function EditorV6ReactImportDialog({onClose,onSave,onImported}:Props){
           ...missingCharacters.map((actor)=>'Personagem não encontrado: '+actor.character)
         ].join('\n'))
       }else{
+        const modelSlots = [...new Set(localCharacters.filter((character) => parsed.cast.some((actor) => actor.character.toLowerCase() === character.id.toLowerCase() || actor.character.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase() === character.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim().toLowerCase())).map((character) => character.customization.modelSlot ?? 1))]
+        const catalogs = new Map(await Promise.all(modelSlots.map(async (slot) => [slot, await window.desktop.fabricator.listFabricatorPoseSlots(slot)] as const)))
         setVerified(true)
-        setWarnings(parsed.videos.length===0?['O JSON não contém vídeos; apenas elenco, falas e atuações.']:[])
+        setWarnings([...(parsed.videos.length===0?['O JSON não contém clipes da Base de Vídeos.']:[]), ...editorV6ReactPoseWarnings(parsed,localCharacters,catalogs)])
       }
     }catch(reason){setError(reason instanceof Error?reason.message:'Arquivo JSON inválido.')}
     finally{setChecking(false);if(input.current)input.current.value=''}
@@ -89,7 +92,7 @@ export function EditorV6ReactImportDialog({onClose,onSave,onImported}:Props){
       <input type="file" ref={input} accept="application/json,.json" hidden disabled={busy||checking} onChange={(event)=>void inspect(event.target.files?.[0])}/>
       <button type="button" disabled={busy||checking} onClick={()=>input.current?.click()}>Selecionar JSON</button>
       {filename&&<p><strong>Arquivo:</strong> {filename}</p>}
-      {source&&<p><strong>{source.title}</strong> · {source.cast.length} personagens · {source.videos.length} vídeos · {source.lines.length} falas/pensamentos · {source.beats.length} atuações</p>}
+      {source&&<p><strong>{source.title}</strong> · {source.cast.length} personagens · {source.videos.length} vídeos · {source.lines.length} falas/pensamentos · {source.beats.length} atuações{source.intro && ` · Intro com ${source.intro.length} etapas`}</p>}
       {Boolean(projectArchive)&&<p>Projeto V6 selecionado. O arquivo será validado antes da importação.</p>}
       {warnings.length>0&&<p role="status">{warnings.join(' | ')}</p>}
       {progress&&<p className="v6-react-json-progress" role="status">{progress}</p>}

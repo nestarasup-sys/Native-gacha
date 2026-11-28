@@ -8,7 +8,7 @@ function loadFile(name){
   const content=fs.readFileSync(path.join(__dirname,'../electron/domains/fabricator',name),'utf8')
   const js=ts.transpile(content,{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022})
   const module={exports:{}}
-  const injected=name=>name.includes('keyedOperationQueue.ts')?loadFile('../storage/keyedOperationQueue.ts'):name.includes('poseSummaryReader')?{readPoseSlotSummaries:async()=>[]}:name.includes('fabricatorIpcChannels')?{fabricatorIpcChannels:{"listFabricatorPoseSlots":"fabricator:poses:list","getFabricatorExportPoseSlots":"fabricator:poses:export-slots:get","saveFabricatorExportPoseSlots":"fabricator:poses:export-slots:save","loadFabricatorPose":"fabricator:poses:load","saveFabricatorPose":"fabricator:poses:save","deleteFabricatorPose":"fabricator:poses:delete","loadFabricatorPoseDraft":"fabricator:poses:draft:load","saveFabricatorPoseDraft":"fabricator:poses:draft:save","deleteFabricatorPoseDraft":"fabricator:poses:draft:delete","listAnimatorModelSlots":"fabricator:animator:model-slots","listAnimatorAnimations":"fabricator:animator:list","loadAnimatorAnimation":"fabricator:animator:load","saveAnimatorAnimation":"fabricator:animator:save","deleteAnimatorAnimation":"fabricator:animator:delete","loadAnimatorDraft":"fabricator:animator:draft:load","saveAnimatorDraft":"fabricator:animator:draft:save","deleteAnimatorDraft":"fabricator:animator:draft:delete"}}:name.includes('poseReferences.ts')?{assertPoseHasNoReferences:()=>undefined}:name.includes('shared/fabricator')?{resolvePoseCategory:doc=>doc.category??'normal'}:require(name)
+  const injected=name=>name.includes('keyedOperationQueue.ts')?loadFile('../storage/keyedOperationQueue.ts'):name.includes('poseSummaryReader')?{readPoseSlotSummaries:async()=>[]}:name.includes('fabricatorIpcChannels')?{fabricatorIpcChannels:{"listFabricatorPoseSlots":"fabricator:poses:list","getFabricatorExportPoseSlots":"fabricator:poses:export-slots:get","saveFabricatorExportPoseSlots":"fabricator:poses:export-slots:save","loadFabricatorPose":"fabricator:poses:load","saveFabricatorPose":"fabricator:poses:save","duplicateFabricatorPose":"fabricator:poses:duplicate","deleteFabricatorPose":"fabricator:poses:delete","loadFabricatorPoseDraft":"fabricator:poses:draft:load","saveFabricatorPoseDraft":"fabricator:poses:draft:save","deleteFabricatorPoseDraft":"fabricator:poses:draft:delete","listAnimatorModelSlots":"fabricator:animator:model-slots","listAnimatorAnimations":"fabricator:animator:list","loadAnimatorAnimation":"fabricator:animator:load","saveAnimatorAnimation":"fabricator:animator:save","deleteAnimatorAnimation":"fabricator:animator:delete","loadAnimatorDraft":"fabricator:animator:draft:load","saveAnimatorDraft":"fabricator:animator:draft:save","deleteAnimatorDraft":"fabricator:animator:draft:delete"}}:name.includes('poseReferences.ts')?{assertPoseHasNoReferences:()=>undefined}:name.includes('shared/fabricator')?{resolvePoseCategory:doc=>doc.category??'normal'}:require(name)
   new Function('require','exports','module',js)(injected,module.exports,module)
   return module.exports
 }
@@ -25,10 +25,33 @@ test('canais IPC de Poses DEV preservam nomes e bloqueiam origem externa antes d
   readPoseDraft:async()=>null,writePoseDraft:async()=>{},
   files:{readFile:async()=>'',writeFile:async()=>{},mkdir:async()=>{},rename:async()=>{},rm:async()=>{}}
  })
- assert.equal(handlers.size,9)
+ assert.equal(handlers.size,10)
  assert.ok(handlers.has('fabricator:poses:save'))
  assert.ok(handlers.has('fabricator:poses:draft:load'))
  await assert.rejects(handlers.get('fabricator:poses:save')({},1,1,{},[]),/não confiável/)
+ await assert.rejects(handlers.get('fabricator:poses:duplicate')({},1,1,2),/não confiável/)
+})
+test('duplicação reserva slot vazio e preserva pose existente',async()=>{
+ const handlers=new Map(), folders=new Set(['model/slot-1','model/slot-3']), writes=[]
+ const source={slot:1,sourceModelSlot:1,name:'Pose',category:'Sentado',parts:[{id:'part',dataUrl:'data:image/png;base64,YQ=='}]}
+ loadFile('poseIpc.ts').registerFabricatorPoseHandlers({
+  ipcMain:{handle:(key,fn)=>handlers.set(key,fn)},assertTrustedSender:()=>{},ensureLegacyPoseMigration:async()=>{},
+  isValidModelSlot:n=>n===1,isValidPoseSlot:n=>n>=1&&n<=12,slotCount:10,poseSlotCount:12,
+  poseSlotPath:(model,slot)=>`model/slot-${slot}`,poseModelPath:()=> 'model',poseDraftPath:()=> 'draft',
+  queuePoseWrite:async fn=>fn(),coordinatePoseReferenceChange:async fn=>fn(),
+  readPoseProject:async(model,slot)=>slot===1?source:null,writePoseProject:async(...args)=>writes.push(args),
+  readPoseDraft:async()=>null,writePoseDraft:async()=>{},
+  files:{readFile:async()=>'',writeFile:async()=>{},rename:async()=>{},rm:async()=>{},mkdir:async(folder,options)=>{if(options?.recursive)return;if(folders.has(folder)){const error=Error('exists');error.code='EEXIST';throw error}folders.add(folder)}}
+ })
+ const duplicate=handlers.get('fabricator:poses:duplicate')
+ await assert.rejects(duplicate({},1,1,3),/ocupado/)
+ assert.equal(writes.length,0)
+ await duplicate({},1,1,2)
+ assert.equal(writes.length,1)
+ assert.equal(writes[0][2].slot,2)
+ assert.equal(writes[0][2].category,'Sentado')
+ assert.deepEqual(writes[0][3],[{id:'part',dataUrl:source.parts[0].dataUrl}])
+ assert.equal(source.slot,1)
 })
 test('canais IPC do Animador DEV mantêm fila independente e autenticada',async()=>{
  const handlers=new Map()

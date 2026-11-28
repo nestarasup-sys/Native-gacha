@@ -33,7 +33,6 @@ describe('createEditorV6ExportHairMotionPlanIndex', () => {
     const index = createEditorV6ExportHairMotionPlanIndex(project())
     expect(index.hairRigs.size).toBe(0)
     expect(index.hairPoseRigs.size).toBe(0)
-    expect(index.expressionOnlyPlansByElement.size).toBe(0)
     expect(index.transitionForFrame('missing', 10)).toBeUndefined()
     expect(index.hairPoseReactionEnds.size).toBe(0)
   })

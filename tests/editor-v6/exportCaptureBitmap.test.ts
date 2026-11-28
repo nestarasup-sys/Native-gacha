@@ -49,7 +49,7 @@ describe('Editor V6 single-readback frame capture', () => {
     expect(image.toBitmap).toHaveBeenCalledOnce()
   })
 
-  it('keeps stacked video background and foreground contiguous with one exact-token BGRA readback', () => {
+  it('preserves contiguous BGRA rows from a full-size exact-token readback', () => {
     const width = 32, layerHeight = 20
     const captureHeight = layerHeight * 2
     const token = 0x120011

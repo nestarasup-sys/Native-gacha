@@ -1,3 +1,4 @@
+import { editorV6IntroPortraitAssetIds } from '../../../src/shared/editorV6Intro'
 /** Persistência dos documentos e mídias do EditorV6 Principal. */
 import { join, resolve, dirname, basename } from 'node:path'
 import type * as nodeFs from 'node:fs/promises'
@@ -9,8 +10,15 @@ import { normalizeEditorV6Timeline } from '../../../src/shared/editorV6TimelineC
 import { editorV6DocumentSchema, editorV6MediaAssetSchema } from '../../../src/shared/editorV6Schema'
 import { collectEditorV6VideoReferenceIds } from './videoReferences.ts'
 import { collectEditorV6LibraryReferenceIds } from './mediaReferences.ts'
+import { stabilizeEditorV6TimelineCharacterFaceGeometry } from '../../../src/shared/editorV6CharacterFaceGeometry.ts'
 
 type Files = Pick<typeof nodeFs, 'readFile' | 'writeFile' | 'mkdir' | 'access' | 'rename' | 'unlink' | 'rm'>
+
+function editorV6ValidationDetails(document: unknown): string {
+  const parsed = editorV6DocumentSchema.safeParse(document)
+  return parsed.success ? '' : parsed.error.issues.slice(0, 8)
+    .map((issue) => `${issue.path.join('.') || 'projeto'}: ${issue.message}`).join('; ')
+}
 
 export function createEditorV6DocumentPersistence(deps: {
   files: Files
@@ -29,9 +37,10 @@ export function createEditorV6DocumentPersistence(deps: {
 
   function normalizeEditorV6(value: Record<string, unknown>, id: string): EditorV6Document {
     const elements = Array.isArray(value.elements) ? value.elements as EditorV6Document['elements'] : []
-    const timeline = value.timeline && typeof value.timeline === 'object'
+    const rawTimeline = value.timeline && typeof value.timeline === 'object'
       ? normalizeEditorV6Timeline(syncEditorV6TimelineElements(value.timeline as EditorV6Timeline, elements))
       : createEditorV6Timeline(elements)
+    const timeline = { ...rawTimeline, tracks: stabilizeEditorV6TimelineCharacterFaceGeometry(rawTimeline.tracks) }
     return {
       schemaVersion: 1, id,
       title: String(value.title ?? 'Editor V6').slice(0, 100),
@@ -76,6 +85,9 @@ export function createEditorV6DocumentPersistence(deps: {
       const normalized = normalizeEditorV6(raw, id)
       const states = [...normalized.elements, ...normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.state ? [block.state] : []))]
       const visibleAssets = new Set([normalized.backgroundAssetId, ...states.flatMap(state => [state.assetId, ...Object.values(state.faceModeAssetIds ?? {})])])
+      for (const track of normalized.timeline.tracks) for (const block of track.blocks) {
+        for (const assetId of editorV6IntroPortraitAssetIds(block.intro)) visibleAssets.add(assetId)
+      }
       const derivedMotionAssets = new Set(normalized.timeline.tracks.flatMap(track => track.blocks.flatMap(block => block.incomingMotion ? [block.incomingMotion.assetId, block.incomingMotion.faceAssetId] : [])))
       const readAsset = async (asset: EditorV6Document['assets'][number]) => {
         if (!/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(asset.id)
@@ -105,7 +117,10 @@ export function createEditorV6DocumentPersistence(deps: {
       const media = (normalized.media ?? []).map((item) => editorV6MediaAssetSchema.parse(item))
       await Promise.all(media.filter((item) => !item.libraryVideoId && !item.libraryAudioId).map((item) => deps.files.access(join(folder, 'media', item.fileName))))
       const document = invalidateIncompleteEditorV6Motions({ ...normalized, assets: assets.filter(asset => asset !== null), media })
-      if (!deps.validate(document)) throw new Error(`Os dados do EditorV6 ${id} estão inválidos.`)
+      if (!deps.validate(document)) {
+        const details = editorV6ValidationDetails(document)
+        throw new Error(`Os dados do EditorV6 ${id} estão inválidos.${details ? ` ${details}` : ''}`)
+      }
       return document
     } catch (reason) {
       if ((reason as NodeJS.ErrnoException).code === 'ENOENT') return null
@@ -156,8 +171,7 @@ export function createEditorV6DocumentPersistence(deps: {
 
   async function writeEditorV6(editorV6: EditorV6Document): Promise<void> {
     if (!deps.validate(editorV6)) {
-      const parsed = editorV6DocumentSchema.safeParse(editorV6)
-      const details = parsed.success ? '' : parsed.error.issues.slice(0, 8).map((issue) => `${issue.path.join('.') || 'projeto'}: ${issue.message}`).join('; ')
+      const details = editorV6ValidationDetails(editorV6)
       throw new Error(`Dados do EditorV6 inválidos.${details ? ` ${details}` : ''}`)
     }
     const folder = deps.editorV6Path(editorV6.id)

@@ -6,6 +6,7 @@ import { createEditorV6Timeline, type EditorV6Document, type EditorV6Element } f
 import type { CustomizerCharacter } from '../../src/shared/customizer'
 import { editorV6CharacterSnapshotIsCurrent } from '../../src/shared/editorV6CharacterSource.ts'
 import { attachEditorV6Motion, editorV6MotionPlans, missingEditorV6Motions, type EditorV6MotionBakeRequest, type EditorV6MotionBakeResult } from '../../src/shared/editorV6Motion'
+import { editorV6MotionAtlasBudgetError, parseEditorV6MotionAtlasBudgetError } from '../../src/shared/editorV6MotionBudget'
 import { editorV6DocumentSchema } from '../../src/shared/editorV6Schema'
 import { editorV6MotionResultSchema } from '../../src/shared/editorV6Schema'
 import { pruneEditorV6TimelineSnapshots, repairEditorV6DuplicateAssets, resolveEditorV6ElementsAtFrame } from '../../src/shared/editorV6Timeline'
@@ -13,7 +14,7 @@ import { editEditorV6DocumentAtBlock } from '../../src/shared/editorV6TimelineEd
 import { prepareExportMotions } from '../../electron/domains/editorV6/prepareMotions'
 import { editorV6MotionBakeLaneAssignments } from '../../electron/domains/editorV6/motionBakeSchedule'
 import { createMotionDiskCache, motionCacheKey } from '../../electron/domains/editorV6/motionCache'
-import { createEditorV6MotionService, editorV6MotionMemoryCacheKey } from '../../electron/domains/editorV6/motionIpc'
+import { createEditorV6MotionService, editorV6MotionMemoryCacheKey, isExpectedEditorV6BackgroundMotionSkip } from '../../electron/domains/editorV6/motionIpc'
 import { editorV6IpcChannels } from '../../src/shared/editorV6IpcChannels'
 import { createCompletedMotionPreparation, hasCompletedMotionPreparation, indexMotionPreparationCharacters, rememberCompletedMotionPreparation } from '../../src/renderer/src/features/editorV6/motion/motionPreparationModel'
 import { subscribeToCustomizerCharacterUpdates } from '../../src/renderer/src/features/editorV6/editorV6CharacterSourceEvents.ts'
@@ -87,6 +88,50 @@ function staticMouthAtlasResultFor(request: EditorV6MotionBakeRequest): EditorV6
 }
 
 describe('transition preparation reuse', () => {
+  it('keeps other transition bakes and reports only an atlas overflow as an omitted optional animation', async () => {
+    const { project, character, request } = fixture()
+    const oldResult = resultFor(request)
+    project.assets.push(oldResult.asset)
+    const oldBlock = project.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === request.plan.blockId)!
+    oldBlock.incomingMotion = oldResult.motion
+    let bakes = 0
+    const result = await prepareExportMotions(project, 0, 240, {
+      signal: new AbortController().signal, characters: [character], progress: () => {}, ignoreExistingMotions: true,
+      bake: async (request) => {
+        bakes++
+        if (bakes === 1) throw editorV6MotionAtlasBudgetError({ width: 4488, height: 2804, pixels: 4488 * 2804, limitPixels: 8_100_000 })
+        return resultFor(request)
+      }
+    })
+
+    expect(bakes).toBe(2)
+    expect(result.stats).toMatchObject({ total: 3, requested: 1, reused: 0,
+      skippedTransitions: expect.arrayContaining([
+        { blockId: expect.any(String), characterId: 'alice', characterName: 'Alice', width: 4488, height: 2804, pixels: 4488 * 2804, limitPixels: 8_100_000 },
+        { blockId: expect.any(String), characterId: 'alice', characterName: 'Alice', width: 4488, height: 2804, pixels: 4488 * 2804, limitPixels: 8_100_000 }
+      ]) })
+    expect(missingEditorV6Motions(result.project, 0, 240).map((plan) => plan.blockId))
+      .toEqual(result.stats.skippedTransitions?.map((transition) => transition.blockId))
+    const skippedBlockId = result.stats.skippedTransitions?.[0].blockId
+    expect(project.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === skippedBlockId)?.incomingMotion).toBeDefined()
+    expect(result.project.timeline.tracks.flatMap((track) => track.blocks).find((block) => block.id === skippedBlockId)?.incomingMotion).toBeUndefined()
+  })
+
+  it('serializes only the structured marker for safe atlas-budget fallback', () => {
+    const budget = { width: 4488, height: 2804, pixels: 4488 * 2804, limitPixels: 8_100_000 }
+    expect(parseEditorV6MotionAtlasBudgetError(editorV6MotionAtlasBudgetError(budget))).toEqual(budget)
+    expect(parseEditorV6MotionAtlasBudgetError(new Error('preparação falhou por outro motivo'))).toBeUndefined()
+    expect(parseEditorV6MotionAtlasBudgetError('EDITOR_V6_MOTION_ATLAS_BUDGET:10:10:100:8100000')).toBeUndefined()
+  })
+
+  it('suppresses only budget overflow and cancellation for optional background preparation', () => {
+    const overBudget = editorV6MotionAtlasBudgetError({ width: 4488, height: 2804, pixels: 4488 * 2804, limitPixels: 8_100_000 })
+    expect(isExpectedEditorV6BackgroundMotionSkip(true, false, overBudget)).toBe(true)
+    expect(isExpectedEditorV6BackgroundMotionSkip(true, true, Error('cancelada pelo usuário'))).toBe(true)
+    expect(isExpectedEditorV6BackgroundMotionSkip(false, false, overBudget)).toBe(false)
+    expect(isExpectedEditorV6BackgroundMotionSkip(true, false, Error('falha de renderização'))).toBe(false)
+  })
+
   it('assigns whole character sequences to stable parallel lanes while preserving order', () => {
     const grouped = [
       [{ characterId: 'beta' }], [{ characterId: 'alpha' }],

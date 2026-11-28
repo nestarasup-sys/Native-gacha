@@ -6,6 +6,7 @@ import type {
 } from '../../../../shared/editorV6'
 import { compareEditorV6TimelineBlocks, MAX_TIMELINE_FRAME, normalizeEditorV6Timeline, findEditorV6TimelineClip } from '../../../../shared/editorV6TimelineCore'
 import { snapEditorV6Frame } from '../../../../shared/editorV6TimelineEdits'
+import { EDITOR_V6_TIMELINE_FPS } from '../../../../shared/editorV6Timing'
 
 export type EditorV6TimelineDragSnapshot = {
   track: Track
@@ -35,7 +36,7 @@ export function previewEditorV6TimelineDrag(input: EditorV6TimelineDragPreview):
   const { block, track, mode, initial, previous, next, afterNext, parent, getSnapPoints } = snapshot
   let value = mode === 'move' ? block.startFrame + input.deltaFrames : block.startFrame + block.durationFrames + input.deltaFrames
   const snapped = input.snap && !input.altKey
-    ? snapEditorV6Frame(initial, value, input.playheadFrame, block.id, 7 / input.pixelsPerSecond * 30, mode === 'move' ? block.durationFrames : 0, getSnapPoints())
+    ? snapEditorV6Frame(initial, value, input.playheadFrame, block.id, 7 / input.pixelsPerSecond * EDITOR_V6_TIMELINE_FPS, mode === 'move' ? block.durationFrames : 0, getSnapPoints())
     : { frame: Math.round(value), guide: undefined }
   value = Math.max(mode === 'resize' ? block.startFrame + 1 : 0, Math.min(MAX_TIMELINE_FRAME - (mode === 'move' ? block.durationFrames : 0), snapped.frame))
 

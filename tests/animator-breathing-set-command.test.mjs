@@ -117,7 +117,14 @@ test('ausência de pose sentada ou parada deixa a animação salva intacta', asy
   await harness.command()
 
   assert.equal(harness.events.some(([name]) => ['delete-animation', 'save-animation', 'create-animation'].includes(name)), false)
-  assert.match(harness.state.errors.at(-1), /Parado.*Sentado/)
+  assert.match(harness.state.errors.at(-1), /Em pé.*Sentado/)
+})
+
+test('aceita categoria Em pé já existente ao gerar respirações', async () => {
+  const harness = makeHarness({ poses: [{ slot: 1, name: 'Pose', category: 'Em pé' }, { slot: 2, name: 'Pose', category: 'Sentado' }] })
+  await harness.command()
+  assert.equal(harness.events.filter(([name]) => name === 'save-animation').length, 8)
+  assert.deepEqual(harness.state.errors.filter(Boolean), [])
 })
 
 test('slots insuficientes são detectados antes da geração ou exclusão', async () => {

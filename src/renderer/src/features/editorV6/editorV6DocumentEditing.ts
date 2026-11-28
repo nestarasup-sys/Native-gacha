@@ -2,6 +2,7 @@ import { syncEditorV6TimelineElements, type EditorV6Document } from '../../../..
 import { editorV6ClipAtFrame, findEditorV6TimelineClip, normalizeEditorV6Timeline } from '../../../../shared/editorV6TimelineCore'
 import { editEditorV6DocumentAtBlock, pruneEditorV6TimelineSnapshots, repairEditorV6FaceModeAssetReferences } from '../../../../shared/editorV6TimelineEdits'
 import { useEditorV6Store } from './editorV6Store'
+import { editEditorV6IntroAppearance } from './editorV6IntroInspectorTarget'
 
 type Dependencies = {
   activeProject: EditorV6Document | null
@@ -59,7 +60,10 @@ export function createEditorV6DocumentEditingCommands(dependencies: Dependencies
     if (dependencies.activeProjectIdRef.current !== projectId) return
     dependencies.updateActiveProject((project) => {
       if (project.id !== projectId) return project
-      return finishEdit(editEditorV6DocumentAtBlock(project, blockId ?? null, transform))
+      const clip = findEditorV6TimelineClip(project.timeline, blockId)
+      return finishEdit(clip?.block.intro
+        ? editEditorV6IntroAppearance(project, clip.block.id, transform)
+        : editEditorV6DocumentAtBlock(project, blockId ?? null, transform))
     })
     dependencies.markUnsaved()
   }
@@ -73,11 +77,27 @@ export function createEditorV6DocumentEditingCommands(dependencies: Dependencies
     })
   }
 
+  const patchAppearance = (transform: (project: EditorV6Document) => EditorV6Document) => {
+    const block = dependencies.activeProject && findEditorV6TimelineClip(dependencies.activeProject.timeline, dependencies.selectedTimelineBlockId)?.block
+    if (block?.intro) patchDocument(project => editEditorV6IntroAppearance(project, block.id, transform), false)
+    else patchDocument(transform)
+  }
   const changeAppearance = (transform: (project: EditorV6Document) => EditorV6Document) => {
     if (!dependencies.activeProject) return
     recordHistory()
-    patchDocument(transform)
+    patchAppearance(transform)
   }
 
-  return { recordHistory, patchDocument, patchFacePreview, changeScene, changeAppearance }
+  // An Inspector layout edit leaves timeline structure and element selection alone.
+  const changeVideoLayouts = (transform: (project: EditorV6Document) => EditorV6Document) => {
+    const current = useEditorV6Store.getState().activeProject
+    if (!current || current.id !== dependencies.activeProjectId) return
+    const next = transform(current)
+    if (next === current) return
+    recordHistory(current)
+    dependencies.updateActiveProject(project => project === current ? next : project)
+    dependencies.markUnsaved()
+  }
+
+  return { recordHistory, patchDocument, patchFacePreview, changeScene, changeAppearance, patchAppearance, changeVideoLayouts }
 }

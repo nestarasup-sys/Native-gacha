@@ -1,6 +1,5 @@
 import { flushSync } from 'react-dom'
 import { SceneSurface } from './SceneSurface'
-import { EditorV6StackedExportSurface } from './exportStackedSceneSurface'
 import { type EditorV6WorkerBridge } from '../../../../shared/editorV6Export'
 import { formatEditorV6Error } from '../../../../shared/editorV6Error'
 import { createEditorV6ExportWorkerHairResources } from './exportWorkerHairResources'
@@ -17,8 +16,8 @@ async function initialize() {
     __editorV6ExportDiagnosticAssets?: Array<{ index: number; state: string; mime: string; bytes: number }>
   }
   exportDiagnosticWindow.__editorV6ExportDiagnosticStage = 'worker-initialize'
-  const { project, width, height, layeredVideo, singlePassLayers = false, nativeRenderer = false, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false, reuseRestHair = true } = await worker.payload()
-  const surface = createEditorV6ExportWorkerSurface(width, height, layeredVideo && singlePassLayers)
+  const { project, width, height, layeredVideo, nativeRenderer = false, includeSpeechMouth = true, mouthLoops, hairAnimation, waitForRaf = false, reuseRestHair = true } = await worker.payload()
+  const surface = createEditorV6ExportWorkerSurface(width, height)
   const { root, setPaintToken } = surface
   const images = new Map<string, Promise<void>>()
   const assetDecodeDiagnostics = new Map<number, { index: number; state: string; mime: string; bytes: number }>()
@@ -40,9 +39,7 @@ async function initialize() {
     prepareAssets: prepareFrameAssets,
     commitSurface: surface => flushSync(() => {
       const { renderLayer, ...sceneProps } = surface
-      root.render(renderLayer === 'stacked'
-        ? <EditorV6StackedExportSurface {...sceneProps} />
-        : <SceneSurface {...sceneProps} renderLayer={renderLayer} />)
+      root.render(<SceneSurface {...sceneProps} renderLayer={renderLayer} />)
     }),
     onImageLoad: onSvgImageLoad,
     waitForSvgImages: () => {

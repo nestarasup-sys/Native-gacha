@@ -2,6 +2,7 @@ import type { EditorV6Asset } from '../../../../../shared/editorV6'
 import type { EditorV6MotionFrame } from '../../../../../shared/editorV6Motion'
 import { normalizedMotionReplacementBounds, type MotionPixelBounds } from './motionPixelAnalysis'
 import type { BakedFacePatch } from './motionFacePatchPreparation'
+import { editorV6MotionAtlasBudgetError } from '../../../../../shared/editorV6MotionBudget'
 
 export type MotionFaceAtlasFrame = Pick<EditorV6MotionFrame, 'facePatch'>
 
@@ -36,7 +37,8 @@ export function buildEditorV6MotionFaceAtlas({
   const faceHeight = Math.max(...patches.map(patch => patch.canvas.height))
   const facePixels = faceWidth * faceHeight
   if (faceWidth > 8192 || faceHeight > 8192 || facePixels + bodyPixels > maxAtlasPixels) {
-    throw Error('As camadas faciais desta transição excedem o limite seguro em resolução nativa. A exportação foi interrompida para não reduzir a nitidez do personagem.')
+    throw editorV6MotionAtlasBudgetError({ width: faceWidth, height: faceHeight,
+      pixels: facePixels + bodyPixels, limitPixels: maxAtlasPixels })
   }
 
   const faceAtlas = createCanvas()

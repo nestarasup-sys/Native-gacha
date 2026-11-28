@@ -2,6 +2,7 @@ import { EDITOR_V6_DEFAULT_DURATION_FRAMES, type EditorV6Document, type EditorV6
 import type { EditorV6MotionFrame } from './editorV6Motion'
 import type { EditorV6HairMotionBundle } from './editorV6HairMotion'
 import { isEditorV6ExportTestMode, type EditorV6ExportTestMode } from './editorV6ExportTestModes'
+import { EDITOR_V6_TIMELINE_FPS } from './editorV6Timing'
 
 export type EditorV6ExportAudio = {
   id: string; name: string; fileName: string; sourceFrames: number
@@ -51,7 +52,7 @@ export function editorV6MouthLoopScaleAtFrame(frame: number, startFrame: number,
 }
 /** Output frame index of the first sample at or after a timeline boundary. */
 export function editorV6OutputFrame(timelineFrame: number, exportStart: number, fps: 24 | 30 = 30): number {
-  return Math.ceil((timelineFrame - exportStart) * fps / 30)
+  return Math.ceil((timelineFrame - exportStart) * fps / EDITOR_V6_TIMELINE_FPS)
 }
 
 export function planEditorV6Export(options: EditorV6ExportOptions, durationFrames: number): EditorV6ExportPart[] {
@@ -97,7 +98,7 @@ export function splitEditorV6ExportParts(parts: readonly EditorV6ExportPart[], m
   return result
 }
 export const editorV6WorkerChannels = { payload: 'editor-v6:export-worker:payload', ready: 'editor-v6:export-worker:ready' } as const
-export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; singlePassLayers?: boolean; nativeRenderer?: boolean; waitForRaf?: boolean; reuseRestHair?: boolean; includeSpeechMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
+export type EditorV6WorkerPayload = { project: EditorV6Document; width: number; height: number; layeredVideo: boolean; nativeRenderer?: boolean; waitForRaf?: boolean; reuseRestHair?: boolean; includeSpeechMouth?: boolean; testMode?: EditorV6ExportTestMode; mouthLoops?: EditorV6ExportMouthLoops; hairAnimation?: EditorV6HairMotionBundle }
 export type EditorV6WorkerBridge = { payload: () => Promise<EditorV6WorkerPayload>; ready: (error?: string) => Promise<void> }
 export type EditorV6NativeImageCommand = {
   kind: 'image'
@@ -114,12 +115,13 @@ export type EditorV6NativeImageCommand = {
   cutout?: { x: number; y: number; width: number; height: number }
 }
 export type EditorV6NativeSolidCommand = { kind: 'solid'; x: number; y: number; width: number; height: number; color: string }
+export type EditorV6NativeFrameAsset = { id: string; dataUrl: string; lifetime: 'process' | 'frame' }
 export type EditorV6NativeFramePlan = {
   width: number
   height: number
   logicalHeight: number
   backgroundColor: string
-  assets: Array<{ id: string; dataUrl: string }>
+  assets: EditorV6NativeFrameAsset[]
   commands: Array<EditorV6NativeImageCommand | EditorV6NativeSolidCommand>
 }
 export type EditorV6FrameTimings = Partial<Record<'rendererFrameWorkMs' | 'sceneResolutionMs' | 'faceCompositionMs' | 'hairCompositionMs' | 'hairCompositionOtherMs' | 'hairMotionStateMs' | 'hairLayerDrawMs' | 'hairSurfaceComposeMs' | 'hairCanvasClearMs' | 'hairRigInterpolationMs' | 'hairMeshContextCheckMs' | 'hairMeshStateSetupMs' | 'hairMeshPositionMs' | 'hairMeshUploadMs' | 'hairMeshTextureUploadMs' | 'hairMeshDrawMs' | 'hairCanvasBlitMs' | 'hairMotionPrewarmMs' | 'assetPreparationMs' | 'reactCommitMs' | 'rafWaitMs' | 'ipcDrawMs' | 'nativePlanMs' | 'nativeRasterMs' | 'nativeProcessMs' | 'nativeTransportMs' | 'captureMs' | 'paintWaitMs' | 'capturePageMs' | 'captureBitmapMs' | 'backgroundCaptureMs' | 'foregroundCaptureMs' | 'frameRoundTripMs' | 'ffmpegWriteMs', number>>
@@ -131,7 +133,7 @@ export function editorV6BenchmarkAudioMatchesExport(audioClips: number, outputHa
   return Number.isSafeInteger(audioClips) && audioClips >= 0 && outputHasAudio === (audioClips > 0)
 }
 export type EditorV6RenderFrameResult = { reused: boolean; layerReused?: boolean; nativeFrame?: EditorV6NativeFramePlan; timings?: EditorV6FrameTimings; metrics?: EditorV6FrameMetrics }
-type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6SceneElement[]; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
+type EditorV6VisualKeyInput = { frame?: number; hairAnimationFrame?: number; background: unknown; elements: EditorV6SceneElement[]; intro?: unknown; videoCards?: unknown; videoCardItems?: unknown; loadingGifFrame?: number; mediaVideo?: { mediaId: string; startFrame: number; sourceInFrame: number; layout: { x: number; y: number; width: number; height: number; rotation: number } } }
 export type EditorV6VisualKeys = { key: string; layerKeys: { background: string; foreground: string } }
 type CachedElementVisualKeys = { compact?: string; complete?: string }
 /** Export-local memo for immutable scene element snapshots reused across frames. */
@@ -143,7 +145,8 @@ export function createEditorV6ExportFrameVisualKeyCache(): EditorV6ExportFrameVi
   return { elements: new WeakMap(), backgrounds: new WeakMap() }
 }
 function editorV6ElementVisualKeyParts(element: EditorV6SceneElement) {
-  return [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch, element.balloonScalePercent, element.balloonOffsetY, element.speakerName, element.speakerColor]
+  return [element.id, element.kind, element.assetId, element.text, element.x, element.y, element.width, element.height, element.rotation, element.flipX, element.characterScale, element.characterWidthScale, element.characterHeightScale, element.zIndex, element.motionSprite, element.mouthPatch, element.balloonScalePercent, element.balloonOffsetY, element.speakerName, element.speakerColor,
+    element.englishText, element.balloonLayout, element.speakerAnchorX, element.speakerAnchorY]
 }
 function editorV6ElementVisualKeys(elements: EditorV6SceneElement[]) {
   return elements.map(editorV6ElementVisualKeyParts)
@@ -182,25 +185,25 @@ function editorV6LayerVisualKeysFromSerialized(background: string, elements: str
   const foreground = hairAnimationFrame === undefined ? elements : `[${elements},${editorV6SerializeVisualKey(hairAnimationFrame)}]`
   return { background, foreground }
 }
-function editorV6LayerVisualKeysForElements(background: unknown, elements: ReturnType<typeof editorV6ElementVisualKeys>, hairAnimationFrame?: number) {
-  return editorV6LayerVisualKeysFromSerialized(editorV6SerializeVisualKey(background), editorV6SerializeVisualKey(elements), hairAnimationFrame)
-}
 function editorV6VisualKeyForElements(scene: EditorV6VisualKeyInput, elements: ReturnType<typeof editorV6ElementVisualKeys>): string {
-  const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
-  const base = [scene.background, mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout], elements]
-  return JSON.stringify(scene.hairAnimationFrame === undefined ? base : [...base, scene.hairAnimationFrame])
+  return editorV6VisualKeysFromSerializedElements(scene, editorV6SerializeVisualKey(elements)).key
 }
 function editorV6VisualKeysFromSerializedElements(scene: EditorV6VisualKeyInput, elementsKey: string, cache?: EditorV6ExportFrameVisualKeyCache): EditorV6VisualKeys {
   const backgroundKey = editorV6SerializeBackground(scene.background, cache)
   const mediaFrame = scene.mediaVideo && scene.frame !== undefined ? scene.mediaVideo.sourceInFrame + scene.frame - scene.mediaVideo.startFrame : null
   const mediaKey = editorV6SerializeVisualKey(mediaFrame === null ? null : [scene.mediaVideo?.mediaId, mediaFrame, scene.mediaVideo?.layout])
   const hairFrameKey = scene.hairAnimationFrame === undefined ? undefined : editorV6SerializeVisualKey(scene.hairAnimationFrame)
+  const presentation = scene.intro ? editorV6SerializeVisualKey({ intro: scene.intro, background: backgroundKey })
+    : scene.videoCards || scene.videoCardItems || scene.loadingGifFrame !== undefined
+      ? editorV6SerializeVisualKey([scene.videoCards, scene.videoCardItems, scene.loadingGifFrame])
+      : undefined
+  const layerKeys = editorV6LayerVisualKeysFromSerialized(backgroundKey, elementsKey, scene.hairAnimationFrame)
   // JSON.stringify([background, media, elements, hairFrame?]) has the same
   // representation, but serializing the large element projection again is
   // avoidable after its layer key has already been produced.
   return {
-    key: `[${backgroundKey},${mediaKey},${elementsKey}${hairFrameKey === undefined ? '' : `,${hairFrameKey}`}]`,
-    layerKeys: editorV6LayerVisualKeysFromSerialized(backgroundKey, elementsKey, scene.hairAnimationFrame)
+    key: `[${backgroundKey},${mediaKey},${elementsKey}${hairFrameKey === undefined ? '' : `,${hairFrameKey}`}${presentation === undefined ? '' : `,${presentation}`}]`,
+    layerKeys: presentation === undefined ? layerKeys : { ...layerKeys, foreground: `[${layerKeys.foreground},${presentation}]` }
   }
 }
 /** Builds both frame-reuse keys from one element projection. */
@@ -217,8 +220,8 @@ export function editorV6CompleteVisualKeys(scene: EditorV6VisualKeyInput, elemen
     : editorV6SerializeVisualKey(scene.elements)
   return editorV6VisualKeysFromSerializedElements(scene, elementsKey, elementCache)
 }
-export function editorV6LayerVisualKeys(scene: Pick<EditorV6VisualKeyInput, 'background' | 'elements' | 'hairAnimationFrame'>) {
-  return editorV6LayerVisualKeysForElements(scene.background, editorV6ElementVisualKeys(scene.elements), scene.hairAnimationFrame)
+export function editorV6LayerVisualKeys(scene: Omit<EditorV6VisualKeyInput, 'mediaVideo'>) {
+  return editorV6VisualKeys(scene).layerKeys
 }
 export function editorV6VisualKey(scene: EditorV6VisualKeyInput): string {
   return editorV6VisualKeyForElements(scene, editorV6ElementVisualKeys(scene.elements))

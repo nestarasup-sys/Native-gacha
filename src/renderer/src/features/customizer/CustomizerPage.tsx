@@ -1,4 +1,5 @@
 import { useCustomizerCharacterRoster } from './useCustomizerCharacterRoster'
+import { poseCategoryLabel } from '../../../../shared/fabricator'
 import { useCustomizerModelBrowserState } from './useCustomizerModelBrowserState'
 import { adjacentCustomizerPoseCategory, adjacentCustomizerPosePage, buildCustomizerPoseBrowserModel } from './customizerPoseBrowserModel'
 import { useCustomizerCatalogThumbnails } from './useCustomizerCatalogThumbnails'
@@ -182,7 +183,9 @@ export function CustomizerPage() {
   const [previewLoading, setPreviewLoading] = useState(true)
   const previewLoadRequest = useRef(0)
   const selectedCharacter = characters.find((character) => character.id === selectedCharacterId) ?? characters[0] ?? null
+  const [copyAppearanceId, setCopyAppearanceId] = useState('')
   function openCharacterDialog(mode: 'create' | 'edit') {
+    setCopyAppearanceId('')
     setCharactersError('')
     if (mode === 'create') {
       setNameDraft('')
@@ -484,10 +487,13 @@ export function CustomizerPage() {
         await createCharacter(name, initialHeadSize, dialogCharacterGender)
       } else if (dialogMode === 'edit' && selectedCharacter) {
         const currentCharacter = charactersRef.current.find((character) => character.id === selectedCharacter.id) ?? selectedCharacter
+        const source = copyAppearanceId ? charactersRef.current.find((character) => character.id === copyAppearanceId) : undefined
+        if (copyAppearanceId && !source) throw new Error('O personagem escolhido não está mais disponível.')
         await saveCharacter({
           ...currentCharacter,
+          ...(source ? { hair: source.hair, outfit: source.outfit, skin: source.skin } : {}),
           name,
-          customization: { ...currentCharacter.customization, gender: dialogCharacterGender },
+          customization: { ...structuredClone(source?.customization ?? currentCharacter.customization), gender: dialogCharacterGender },
           updatedAt: new Date().toISOString()
         })
       }
@@ -807,7 +813,7 @@ export function CustomizerPage() {
             </section>}
             {selectedCustomizerTopTab === 'modelos' && <section className="customizer-pose-carousel" aria-label="Pose do modelo">
               <header className="customizer-pose-carousel-heading" aria-live="polite">
-                <strong>{selectedPoseCategory} · Página {activePosePage + 1}{posePageCount > 1 ? ` de ${posePageCount}` : ''}</strong>
+                <strong>{poseCategoryLabel(selectedPoseCategory)} · Página {activePosePage + 1}{posePageCount > 1 ? ` de ${posePageCount}` : ''}</strong>
               </header>
               <div className="customizer-pose-carousel-body">
                 <div className="customizer-pose-carousel-nav" role="group" aria-label="Navegação à esquerda">
@@ -956,6 +962,21 @@ export function CustomizerPage() {
               <button className={'customizer-model-gender-button male' + (dialogCharacterGender === 'male' ? ' active' : '')} type="button" aria-pressed={dialogCharacterGender === 'male'} onClick={() => setDialogCharacterGender('male')}>Masculino</button>
             </div>
           </div>
+          {dialogMode === 'edit' && <div className="character-copy-appearance">
+            <label htmlFor="copy-appearance">Copiar aparência de outro personagem</label>
+            <select id="copy-appearance" value={copyAppearanceId} onChange={(event) => {
+              const source = characters.find((character) => character.id === event.target.value)
+              setCopyAppearanceId(event.target.value)
+              if (source) setDialogCharacterGender(source.customization.gender ?? 'female')
+            }}>
+              <option value="">Manter aparência atual</option>
+              {characters.filter((character) => character.id !== selectedCharacter?.id).map((character) => <option key={character.id} value={character.id}>{character.name}</option>)}
+            </select>
+            {characters.filter((character) => character.id === copyAppearanceId).map((character) => <div className="character-copy-preview" key={character.id}>
+              <RenderedCharacterPortrait className="character-copy-portrait" character={character} />
+              <div><strong>{character.name}</strong><span>Prévia da aparência selecionada</span></div>
+            </div>)}
+          </div>}
           {charactersError && <p className="character-dialog-error" role="alert">{charactersError}</p>}
           <div className="character-dialog-actions"><button className="quiet-button" type="button" onClick={() => setDialogMode(null)}>Cancelar</button><button className="primary-button" type="submit" disabled={!nameDraft.trim() || savingCharacter}>{savingCharacter ? 'Salvando…' : 'Salvar'}</button></div>
         </form>

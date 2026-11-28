@@ -8,16 +8,21 @@ export function duplicateEditorV6ProjectDocument(source: EditorV6Document, ident
   const duplicate: EditorV6Document = {
     ...source,
     ...identity,
+    media: source.media?.map((item) => ({ ...item })),
+    exportAudio: source.exportAudio?.map((item) => ({ ...item })),
+    characterNameColors: source.characterNameColors ? { ...source.characterNameColors } : undefined,
     assets: source.assets.map((asset) => asset.libraryAssetId
       ? { ...asset, id: asset.libraryAssetId, dataUrl: editorV6LibraryAssetUrl(identity.id, asset.libraryAssetId) }
       : { ...asset, id: createId() }),
     elements: source.elements.map((element) => ({
-      ...element,
+      ...structuredClone(element),
       id: createId(),
       assetId: element.assetId ? source.assets.find((asset) => asset.id === element.assetId)?.id : undefined
     }))
   }
   const oldToNew = new Map(source.assets.map((asset, index) => [asset.id, duplicate.assets[index]?.id ?? '']))
+  const remapFaceModes = (modes: EditorV6Element['faceModeAssetIds']): EditorV6Element['faceModeAssetIds'] =>
+    modes && Object.fromEntries(Object.entries(modes).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined]))
   duplicate.elements = source.elements.map((element, index) => ({
     ...duplicate.elements[index],
     assetId: element.assetId ? oldToNew.get(element.assetId) : undefined,
@@ -37,26 +42,43 @@ export function duplicateEditorV6ProjectDocument(source: EditorV6Document, ident
     tracks: source.timeline.tracks.map((track) => ({
       ...track,
       id: createId(),
-      blocks: track.blocks.map((block) => ({
-        ...block,
-        id: oldToNewBlocks.get(block.id)!,
-        elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
-        parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
-        state: block.state ? {
-          ...block.state,
-          id: oldToNewElements.get(block.state.id) ?? block.state.id,
-          attachedCharacterElementId: block.state.attachedCharacterElementId ? oldToNewElements.get(block.state.attachedCharacterElementId) : undefined,
-          assetId: block.state.assetId ? oldToNew.get(block.state.assetId) : undefined,
-          faceModeAssetIds: block.state.faceModeAssetIds
-            ? Object.fromEntries(Object.entries(block.state.faceModeAssetIds).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined])) as EditorV6Element['faceModeAssetIds']
-            : undefined
-        } : undefined,
-        background: block.background ? {
-          ...block.background,
-          backgroundAssetId: block.background.backgroundAssetId ? oldToNew.get(block.background.backgroundAssetId) ?? null : null
-        } : undefined,
-        incomingMotion: block.incomingMotion ? { ...block.incomingMotion, assetId: oldToNew.get(block.incomingMotion.assetId)! } : undefined
-      }))
+      blocks: track.blocks.map((block) => {
+        const cloned = structuredClone(block)
+        return {
+          ...cloned,
+          id: oldToNewBlocks.get(block.id)!,
+          elementId: block.elementId ? oldToNewElements.get(block.elementId) : undefined,
+          parentBlockId: block.parentBlockId ? oldToNewBlocks.get(block.parentBlockId) : undefined,
+          videoCard: cloned.videoCard ? {
+            ...cloned.videoCard,
+            videoBlockId: oldToNewBlocks.get(cloned.videoCard.videoBlockId) ?? cloned.videoCard.videoBlockId
+          } : undefined,
+          videoCardOriginBlockId: block.videoCardOriginBlockId
+            ? oldToNewBlocks.get(block.videoCardOriginBlockId) ?? block.videoCardOriginBlockId
+            : undefined,
+          state: cloned.state ? {
+            ...cloned.state,
+            id: oldToNewElements.get(block.state!.id) ?? block.state!.id,
+            attachedCharacterElementId: block.state!.attachedCharacterElementId ? oldToNewElements.get(block.state!.attachedCharacterElementId) : undefined,
+            assetId: block.state!.assetId ? oldToNew.get(block.state!.assetId) : undefined,
+            faceModeAssetIds: block.state!.faceModeAssetIds
+              ? Object.fromEntries(Object.entries(block.state!.faceModeAssetIds).map(([mode, id]) => [mode, id ? oldToNew.get(id) : undefined])) as EditorV6Element['faceModeAssetIds']
+              : undefined
+          } : undefined,
+          background: cloned.background ? {
+            ...cloned.background,
+            backgroundAssetId: block.background!.backgroundAssetId ? oldToNew.get(block.background!.backgroundAssetId) ?? null : null
+          } : undefined,
+          intro: cloned.intro?.kind === 'character'
+            ? { ...cloned.intro, assetId: oldToNew.get(cloned.intro.assetId)!, faceModeAssetIds: remapFaceModes(cloned.intro.faceModeAssetIds) }
+            : cloned.intro,
+          incomingMotion: cloned.incomingMotion ? {
+            ...cloned.incomingMotion,
+            assetId: oldToNew.get(cloned.incomingMotion.assetId)!,
+            faceAssetId: cloned.incomingMotion.faceAssetId ? oldToNew.get(cloned.incomingMotion.faceAssetId) : undefined
+          } : undefined
+        }
+      })
     }))
   }
   duplicate.backgroundAssetId = source.backgroundAssetId ? oldToNew.get(source.backgroundAssetId) ?? null : null

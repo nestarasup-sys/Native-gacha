@@ -1,3 +1,4 @@
+import { EDITOR_V6_SOURCE_FRAME_VERSION } from '../editorV6SourceFrame'
 import type { EditorV6Element, EditorV6FaceRenderMode } from '../../../../../shared/editorV6'
 import type { EditorV6MotionBakeResult } from '../../../../../shared/editorV6Motion'
 import type { prepareSavedCharacterRenderer } from '../../../characters/editorV6CharacterRenderer'
@@ -56,13 +57,19 @@ export async function prepareEditorV6MouthlessBaseAssets({
   cropCanvas = cropMotionCanvas,
   createId = () => crypto.randomUUID()
 }: PrepareMotionMouthlessBaseAssetsOptions): Promise<MotionMouthlessBaseAssets> {
-  const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
-  let sourceCrop = readCrop(fullTalk.canvas, false, 0)
-  try {
-    const fullTalkBlink = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, 'talk-blink', { mouthLayer: 'all' })
-    sourceCrop = unionMotionCrops(sourceCrop, readCrop(fullTalkBlink.canvas, false, 0))
-  } catch (error) { if (!isBlinkUnavailableError(error)) throw error }
-  if (requiredCrop) sourceCrop = unionMotionCrops(sourceCrop, requiredCrop)
+  const sourceFrame = (from.faceRendererVersion ?? 0) >= EDITOR_V6_SOURCE_FRAME_VERSION
+  let sourceCrop: MotionPixelCrop
+  if (sourceFrame) {
+    sourceCrop = { left: 0, top: 0, width: baseline.width, height: baseline.height }
+  } else {
+    const fullTalk = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, from.activeFaceMode, { mouthLayer: 'all' })
+    sourceCrop = readCrop(fullTalk.canvas, false, 0)
+    try {
+      const fullTalkBlink = await baseline.renderer.renderToCanvas(from.faceAppearance, from.faceTransforms, from.activeExpressionEffects, 'talk-blink', { mouthLayer: 'all' })
+      sourceCrop = unionMotionCrops(sourceCrop, readCrop(fullTalkBlink.canvas, false, 0))
+    } catch (error) { if (!isBlinkUnavailableError(error)) throw error }
+    if (requiredCrop) sourceCrop = unionMotionCrops(sourceCrop, requiredCrop)
+  }
 
   const encodeBase = async (mode: EditorV6FaceRenderMode | undefined) => {
     const frame = await render(0, mode, 1, false, baseline.renderer, true)

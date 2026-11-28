@@ -27,7 +27,7 @@ type Dependencies = {
   /** Close the temporary offscreen motion renderers at the render handoff. */
   releaseIdleMotionWorkers?: () => void
   getElectronProcessMetrics?: () => readonly Pick<ProcessMetric, 'type' | 'memory'>[]
-  report: Pick<EditorV6ExportReport, 'hairPreparation' | 'motionTransitionsRequired' | 'motionTransitionsPrepared' | 'motionPreparation' | 'motionCache' | 'motionPreparationMemory' | 'phaseMilliseconds'>
+  report: Pick<EditorV6ExportReport, 'hairPreparation' | 'motionTransitionsRequired' | 'motionTransitionsPrepared' | 'motionTransitionsSkipped' | 'motionPreparation' | 'motionCache' | 'motionPreparationMemory' | 'phaseMilliseconds'>
   progress: (patch: Partial<EditorV6ExportStatus>) => void
   saveReport: () => Promise<void>
   prepareMotions?: EditorV6ExportMotionPreparation
@@ -77,7 +77,11 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
       onProgress: (completed, total, name) => {
         report.motionTransitionsRequired = total
         report.motionTransitionsPrepared = completed
-        progress({ state: 'preparing', frames: 0, motionProgress: { completed, total }, message: completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
+        const skippedForBudget = name.includes('animação ignorada para preservar resolução e memória')
+        progress({ state: 'preparing', frames: 0, motionProgress: { completed, total },
+          message: skippedForBudget
+            ? `Transição de ${name.split(' · ')[0]} ignorada; a exportação seguirá sem reduzir a resolução.`
+            : completed === total ? 'Transições prontas.' : `Preparando transição ${completed + 1}/${total} · ${name}…` })
       }
     })
   } finally {
@@ -91,10 +95,16 @@ export async function prepareEditorV6ExportReadiness(dependencies: Dependencies)
   }
 
   report.motionTransitionsRequired = prepared.stats.total
-  report.motionTransitionsPrepared = prepared.stats.total
+  const skippedTransitions = prepared.stats.skippedTransitions ?? []
+  const skippedBlockIds = new Set(skippedTransitions.map((transition) => transition.blockId))
+  report.motionTransitionsSkipped = skippedTransitions
+  report.motionTransitionsPrepared = prepared.stats.total - skippedTransitions.length
   report.motionPreparation = prepared.stats
   if (prepared.motionCache) report.motionCache = prepared.motionCache
-  if (missingEditorV6Motions(prepared.project, options.startFrame, options.endFrame, { includeSpeechMouth: options.includeSpeechMouth !== false }).length) throw Error('Não foi possível preparar todas as transições deste intervalo.')
+  if (missingEditorV6Motions(prepared.project, options.startFrame, options.endFrame,
+    { includeSpeechMouth: options.includeSpeechMouth !== false }).some((plan) => !skippedBlockIds.has(plan.blockId))) {
+    throw Error('Não foi possível preparar todas as transições deste intervalo.')
+  }
   await saveReport()
   return { project: prepared.project, characters }
 }
